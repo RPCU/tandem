@@ -560,6 +560,18 @@ public class TandemHacks extends ScriptableSystem {
       TandemNative.Log(s"hacks: npc \(event.npc) would trace our V: in combat or already traced");
       return;
     }
+    // ScriptedPuppet.OnHackTargetEvent returns without a word on these two
+    // (final.reds:22119): said here instead.
+    if GameInstance.GetStatusEffectSystem(game).HasStatusEffect(v.GetEntityID(), t"AIQuickHackStatusEffect.BeingHacked") {
+      TandemNative.Log(s"hacks: npc \(event.npc)'s hack \(what) on our V: another upload runs on it, the game drops this one");
+      return;
+    }
+    let prereqs: array<wref<IPrereq_Record>>;
+    record.TargetPrereqs(prereqs);
+    if !RPGManager.CheckPrereqs(prereqs, v) {
+      TandemNative.Log(s"hacks: npc \(event.npc)'s hack \(what) on our V: its target prereqs refuse our V, the game drops it");
+      return;
+    }
     let evt = new HackTargetEvent();
     evt.targetID = v.GetEntityID();
     evt.netrunnerID = proxy.GetEntityID();
@@ -574,6 +586,14 @@ public class TandemHacks extends ScriptableSystem {
       evt.settings.HUDData.type = SimpleMessageType.Reveal;
     }
     v.QueueEvent(evt);
+    if reveal {
+      // As RevealPlayerPositionIfNeeded does after queuing its trace
+      // (final.reds:126798): where the trace began. The upload's listener
+      // stops a trace whose V is farther than RevealPositionMaxDistance from
+      // it (final.reds:195077); unset, it is the world's origin and every
+      // trace on a guest stopped at its first tick, without a word.
+      GameInstance.GetBlackboardSystem(game).Get(GetAllBlackboardDefs().HackingMinigame).SetVector4(GetAllBlackboardDefs().HackingMinigame.LastPlayerHackPosition, v.GetWorldPosition());
+    }
     TandemNative.Log(s"hacks: npc \(event.npc) hacks our V with \(what)\(reveal ? " (trace)" : "")");
   }
 
@@ -819,6 +839,46 @@ protected cb func OnStatPoolMaxValueReached(value: Float) -> Bool {
   TandemFight.SendTraced(npc);
   TandemNative.Log(s"hacks: npc \(npc)'s trace of our V ran to its end: its owner sets its squad on us");
   return result;
+}
+
+@addField(UploadFromNPCToPlayerListener)
+private let m_tandemStopSaid: Bool;
+
+// A trace on our V from a proxy, each tick of its upload: when one of the
+// reasons the game stops it holds (final.reds:195063-195092, the trace's
+// branch), said once; the game stops it without a word.
+@wrapMethod(UploadFromNPCToPlayerListener)
+public func OnStatPoolValueChanged(oldValue: Float, newValue: Float, percToPoints: Float) -> Void {
+  let npc = this.m_tandemStopSaid ? 0u : TandemHacks.TracingProxy(this.m_npcPuppet, this.m_ssAction);
+  if npc != 0u {
+    let why = "";
+    let v = this.m_playerPuppet as PlayerPuppet;
+    if this.m_useInterruptionPrereqs {
+      why = this.m_action.CanInterrupt(this.m_npcPuppet) ? "its interruption prereqs hold on the proxy" : "";
+    } else if !IsDefined(v) || !ScriptedPuppet.IsActive(v) {
+      why = "our V is not active";
+    } else if v.IsInCombat() {
+      why = "our V is in combat";
+    } else {
+      let from = GameInstance.GetBlackboardSystem(this.m_gameInstance).Get(GetAllBlackboardDefs().HackingMinigame).GetVector4(GetAllBlackboardDefs().HackingMinigame.LastPlayerHackPosition);
+      let most = GameInstance.GetStatsSystem(this.m_gameInstance).GetStatValue(Cast<StatsObjectID>(v.GetEntityID()), gamedataStatType.RevealPositionMaxDistance);
+      let far = Vector4.Distance(v.GetWorldPosition(), from);
+      if far > most {
+        why = s"our V is \(far) m from where it began, more than \(most)";
+      } else if this.StopHackBasedOnTier(v.GetPlayerStateMachineBlackboard().GetInt(GetAllBlackboardDefs().PlayerStateMachine.HighLevel)) {
+        why = "our V's scene tier forbids it";
+      } else if !ScriptedPuppet.IsActive(this.m_npcPuppet) {
+        why = "the proxy is not active";
+      } else if GameInstance.GetStatusEffectSystem(this.m_gameInstance).HasStatusEffect(v.GetEntityID(), t"BaseStatusEffect.RevealInterrupted") {
+        why = "our V has RevealInterrupted";
+      }
+    }
+    if StrLen(why) > 0 {
+      this.m_tandemStopSaid = true;
+      TandemNative.Log(s"hacks: npc \(npc)'s trace of our V stops at \(newValue)%: \(why)");
+    }
+  }
+  wrappedMethod(oldValue, newValue, percToPoints);
 }
 
 // Host: quickhack effects on our NPCs, for everyone (and a guest's alert).

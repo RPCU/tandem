@@ -291,6 +291,17 @@ GetPlayerID()` and the effect lacks the `Stealth` tag:
   `AIQuickHackAction` with the netrunner as executor; `PlayerPuppet`
   (45832) adds the reveal state. Queued on our V with a proxy as
   `netrunnerID`, it should run the hack from the proxy. [2.5-untested]
+- `OnHackTargetEvent` returns without a word when the target already has
+  `AIQuickHackStatusEffect.BeingHacked` (a trace is then dropped, any other
+  hack retried 2 s later) or the record's `TargetPrereqs` refuse it. A
+  trace's upload (`UploadFromNPCToPlayerListener.OnStatPoolValueChanged`, 195063) stops at any tick when the V is in combat, inactive, farther than
+  its `RevealPositionMaxDistance` stat from the `HackingMinigame`
+  blackboard's `LastPlayerHackPosition`, in a scene tier that forbids it,
+  has `BaseStatusEffect.RevealInterrupted`, or the netrunner and its squad
+  are inactive; a record with `InterruptionPrereqs` is stopped by those
+  alone. `RevealPlayerPositionIfNeeded` (126798) sets
+  `LastPlayerHackPosition` to the V's position when it queues the trace: a
+  trace queued another way must set it too. [2.5-untested]
 - `ExecutePuppetActionEvent{actionID}` (201075) queued on an NPC runs a
   quickhack from the local player on it, by the normal path (22452). [2.5-untested]
 - Spread (`SpreadInitEffector` 316185, `SpreadEffector` 316386) reads

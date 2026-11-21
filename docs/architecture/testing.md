@@ -244,6 +244,7 @@ read):
 | `threat puppet` | the largest threat value an NPC we run near our V holds on the first remote player's puppet (`TargetTrackerComponent`) |
 | `car marks` | the shared vehicles another player's quickhack is marked on now (their traffic ids; `Hacks.reds`), or `none` |
 | `device KIND WHAT` | the nearest device of KIND within 40 m: `attitude` (to our V: `friendly`, `neutral`, `hostile`), `puppet` (to the first puppet), `target` (what it follows: `none`, `V`, `puppet`, `other`), `alarm` (its security system: `SAFE`, `ALERTED`, `COMBAT`), `mark` (the player whose hack is marked on it; 0: none) |
+| `upload` | the upload on our V (an NPC's hack or trace), percent of its `QuickHackUpload` pool (`none`: no upload) |
 
 In a scenario: `query VAR WHAT [ARGS]` asks, waits 10 s for this answer
 and sets VAR; `expect_value V OP W` (OP `=`, `!=`, `~` an ERE, `<`, `<=`,
