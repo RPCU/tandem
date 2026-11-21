@@ -39,6 +39,8 @@ public class TandemPoliceCar {
 
 public class TandemPolice {
   private let m_game: GameInstance;
+  // (test) Police cars and the AV for a remote V: off by default.
+  private let m_carsOn: Bool;
   private let m_now: Float;
   private let m_you: Uint32;
   // Our V's level and star state as last sent (-1: not yet).
@@ -146,6 +148,11 @@ public class TandemPolice {
   public func Command(command: String, system: ref<TandemSystem>) -> Void {
     let police = this.Prevention();
     if !IsDefined(police) {
+      return;
+    }
+    if StrBeginsWith(command, "police cars ") {
+      this.m_carsOn = Equals(command, "police cars on");
+      TandemNative.Log(s"police: cars and the AV for the others \(this.m_carsOn ? "on" : "off")");
       return;
     }
     if StrBeginsWith(command, "police heat") {
@@ -429,11 +436,14 @@ public class TandemPolice {
           if stage > 0 {
             this.Crews(player, puppet, system);
             this.Dispatch(player, puppet, stage);
-            if TandemPolice.CarsFor(stage) > 0 {
+            // Cars and the AV: off until proven in game (police-host crashed
+            // a job thread 30 ms after the roads were checked for them,
+            // 2026-11-21); `police cars on` turns them on for a test.
+            if this.m_carsOn && TandemPolice.CarsFor(stage) > 0 {
               carsWanted = true;
               this.SendCar(player, puppet, stage, chased);
             }
-            if stage >= 5 {
+            if this.m_carsOn && stage >= 5 {
               this.SendAV(player, puppet);
             }
           }

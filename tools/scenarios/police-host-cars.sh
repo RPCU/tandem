@@ -5,6 +5,9 @@
 # the log and units on foot only). POLICE_AT="X Y Z [YAW]" teleports our V
 # to a street first.
 ensure host
+# Cars and the AV are off by default until proven in game: on for this test.
+cmd police cars on
+expect 'police: cars and the AV for the others on' 5
 if [ -n "${POLICE_AT:-}" ]; then
   cmd teleport "$POLICE_AT"
   pause 5
@@ -39,3 +42,4 @@ expect 'player [0-9]+: wanted level 0 ' 90
 expect 'police: AV for player [0-9]+ stands down' 10
 reject 'police: our wanted level [1-5] '
 reject 'watchdog: game thread silent'
+cmd police cars off
