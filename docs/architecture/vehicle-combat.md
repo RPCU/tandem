@@ -177,7 +177,9 @@ message changed, no version bump.
   makes in a remote player's name on purpose (the host applying a guest's
   strike from its puppet, `Outcomes.reds`; a forwarded area hit). The one
   exception is our own V: what hits our V is our game's (a copy running
-  over our V on foot hurts it here).
+  over our V on foot hurts it here), and only while the session's rules
+  allow friendly fire: off, the copy's collision deals our V nothing (its
+  knock, `OnVehicleHit`, stays). Not yet run in game.
 - Traffic: rams on world vehicles and their drivers' reactions are
   `traffic.md`'s (`TrafficHit` with the push).
 

@@ -573,13 +573,24 @@ public class TandemWheelsSync {
   // it does nothing to our world. Not the hits our game makes in a remote
   // player's name on purpose: a guest's strike the host applies from its
   // puppet (Outcomes.reds), a forwarded hit. And our own V is the
-  // exception: what hits our V is our game's.
+  // exception: what hits our V is our game's, but for a partner's car (its
+  // copy) running into it while the session's rules forbid friendly fire:
+  // its collision hurts nobody then (the knock, OnVehicleHit, stays).
   public static func CausedElsewhere(game: GameInstance, hit: ref<gameHitEvent>) -> Bool {
-    if !IsDefined(hit) || !IsDefined(hit.target) || hit.target.IsPlayer() {
+    if !IsDefined(hit) || !IsDefined(hit.target) {
       return false;
     }
     let system = TandemSystem.Of(game);
     if !IsDefined(system) || system.You() == 0u || system.IsForwardedHit(hit) {
+      return false;
+    }
+    if hit.target.IsPlayer() {
+      let car = hit.attackData.GetSource() as VehicleObject;
+      let partner = IsDefined(car) ? system.LastCarOwnerOf(car.GetEntityID()) : 0u;
+      if partner != 0u && !TandemFight.FriendlyFire() {
+        TandemNative.LogDebug(s"wheels: player \(partner)'s car ran into our V: no damage (friendly fire off)");
+        return true;
+      }
       return false;
     }
     let outcomes = TandemOutcomes.Of(game);
