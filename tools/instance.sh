@@ -83,6 +83,9 @@
 #   INSTANCE_CPU_WEIGHT   100: the scope's CPU weight. Builds over ssh run in
 #                         session scopes beside the user manager holding every
 #                         instance: their nice does not reach across cgroups
+#   INSTANCE_CPUS         the cores the game may use, as taskset -c takes them
+#                         (6-11; default: all). The user manager's scopes get
+#                         no cpuset controller, so not AllowedCPUs
 #   INSTANCE_PORT         27450 (role)
 #   INSTANCE_GAME_ARGS    arguments for Cyberpunk2077.exe (none)
 #   INSTANCE_ENV          more VAR=VALUE for the game, space separated
@@ -125,7 +128,7 @@ if [ "$host" != local ]; then
   forward=(GAME_HOST=local)
   for variable in GAME_DIR TANDEM_INSTANCES USER_COMPATDATA STEAM_ROOT PROTON_DIR INSTANCE_MIRROR \
     INSTANCE_PREFIX INSTANCE_LAUNCHER INSTANCE_RUNTIME INSTANCE_FHS INSTANCE_DISPLAY INSTANCE_SIZE INSTANCE_FPS \
-    INSTANCE_SANDBOX INSTANCE_HIDE_STEAM INSTANCE_SCOPE INSTANCE_MEMORY_MAX INSTANCE_CPU_WEIGHT INSTANCE_MIN_FREE_MB \
+    INSTANCE_SANDBOX INSTANCE_HIDE_STEAM INSTANCE_SCOPE INSTANCE_MEMORY_MAX INSTANCE_CPU_WEIGHT INSTANCE_CPUS INSTANCE_MIN_FREE_MB \
     INSTANCE_PORT INSTANCE_GAME_ARGS INSTANCE_ENV INSTANCE_PAD INSTANCE_SETTINGS INSTANCE_TEXTURES INSTANCE_VOLUME INSTANCE_ALLOW_FOREIGN; do
     [ -z "${!variable+set}" ] || forward+=("$variable=${!variable}")
   done
@@ -654,10 +657,17 @@ start() {
     scope=(systemd-run --user --scope --quiet --collect --unit "tandem-instance-$name"
       -p "MemoryMax=${INSTANCE_MEMORY_MAX:-14G}" -p "CPUWeight=${INSTANCE_CPU_WEIGHT:-100}" --)
   fi
+  # Cores of its own (two games beside each other): every process it starts
+  # inherits the affinity.
+  local cpus=()
+  if [ -n "${INSTANCE_CPUS:-}" ]; then
+    [[ $INSTANCE_CPUS =~ ^[0-9]+([-,][0-9]+)*$ ]] || die "INSTANCE_CPUS: a list such as 6-11 or 0,2,4"
+    cpus=("$(tool taskset util-linux)" -c "$INSTANCE_CPUS") || die "no taskset"
+  fi
 
   session_env
   inside "$inst/run/launch.log" "$inst/run/pid"
-  local full=(env "${forget[@]}" "${environment[@]}" "${scope[@]}" "${screen[@]}" "${sandbox[@]}" "${launch[@]}")
+  local full=(env "${forget[@]}" "${environment[@]}" "${scope[@]}" "${cpus[@]}" "${screen[@]}" "${sandbox[@]}" "${launch[@]}")
   if [ "$dry" = 1 ]; then
     echo "+ cd $(printf '%q' "$inst/game/bin/x64")"
     printf '+ setsid nohup'
