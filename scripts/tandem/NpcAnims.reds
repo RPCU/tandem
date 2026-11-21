@@ -432,6 +432,7 @@ public class TandemNpcAnims {
     if moved {
       let keep = 40.0 / bestDistance;
       let to = new Vector4(at.X + (from.X - at.X) * keep, at.Y + (from.Y - at.Y) * keep, at.Z + (from.Z - at.Z) * keep, 1.0);
+      TandemTravel.ExpectMove(this.m_game);
       GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, to, TandemYawAngles(player.GetWorldYaw()));
     }
     TandemNative.Log(s"npc seek: \(seen) in a workspot, the nearest \(TDBID.ToStringDEBUG(best.GetRecordID())) \(bestDistance) m away\(moved ? ", V moved to 40 m of it" : "")");

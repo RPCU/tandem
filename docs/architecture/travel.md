@@ -44,6 +44,17 @@
   work; the black screen above is fixed in the scripts, to run again
   (scenarios `travel`, `regroup`; `tools/game.sh cmd travel`,
   `regroup [PLAYER]`, `regroup accept|decline|offer`).
+- **Taken somewhere else** (`Travel.reds` `WatchJump`, 2026-11-21, not yet
+  run in game; scenario `regroup-jump`): the host's V moved more than 50 m
+  in a moment (beyond 100 m a second of the world's time) with nothing to
+  explain it is a quest's teleport or fade. Explained: a fast travel or a
+  regroup of ours, a move we expect (a test's teleport, a race's grid, the
+  test commands': `TandemTravel.ExpectMove`), a vehicle or a ride, our V
+  down or just up (a respawn), the host's moment (the guests beside it
+  watch it, `story.md`), an offer of ours in the last 15 s. Once V has
+  stood there a second of the world's time, the others get `Regroup`
+  reason 3 ("NAME was taken somewhere else"), shown to the far ones only
+  (`tools/game.sh cmd regroup jump X Y Z`: such a teleport).
 
 ## Open problems
 
