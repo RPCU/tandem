@@ -405,11 +405,9 @@ public class TandemOutcomes {
   // and its damage (for how strongly the NPC reacts).
   private func StrikeHit(body: ref<ScriptedPuppet>, strike: ref<TandemStrike>) -> ref<gameHitEvent> {
     let instigator = strike.instigator;
-    let melee = (strike.flags & 4) != 0;
-    let record = TweakDBInterface.GetAttackRecord(strike.attack);
-    if !IsDefined(record) {
-      record = TweakDBInterface.GetAttackRecord(melee ? t"Attacks.ForwardPush" : t"Attacks.REMOVE_BulletWithDamage");
-    }
+    // (A stand-in for a record we lack only names the hit: Process applies
+    // the guest's numbers, StrikeLoss.)
+    let record = TandemCombat.AttackRecord(this.m_game, strike.attack, (strike.flags & 4) != 0);
     let weapon = GameObject.GetActiveWeapon(instigator);
     let context: AttackInitContext;
     context.record = record;
@@ -874,10 +872,7 @@ public class TandemOutcomes {
       TandemNative.Log(s"outcomes: player \(event.player)'s hit on our V dropped: friendly fire is off");
       return;
     }
-    let record = TweakDBInterface.GetAttackRecord(event.attack);
-    if !IsDefined(record) {
-      record = TweakDBInterface.GetAttackRecord(t"Attacks.REMOVE_BulletWithDamage");
-    }
+    let record = TandemCombat.AttackRecord(this.m_game, event.attack, false);
     let source: ref<GameObject> = player;
     if IsDefined(attacker) {
       source = attacker;

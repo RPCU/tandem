@@ -122,6 +122,13 @@ public class TandemTwinPending {
   public let since: Float;
 }
 
+// What another game computed for a hit it forwarded to our V, per damage
+// type (gameAttackComputed's order): our game's rules may lower it, never
+// raise it (Combat.reds CapForwarded).
+public class TandemSentDamage {
+  public let values: array<Float>;
+}
+
 public class TandemNpcs {
   private let m_game: GameInstance;
   private let m_known: array<ref<TandemNpcKnown>>;
@@ -157,9 +164,14 @@ public class TandemNpcs {
   private let m_you: Uint32;
   private let m_now: Float;
   // Guest: the host's NPCs' hits on our V queued in our damage system, with
-  // the armour penetration the host sent for each (Combat.reds).
+  // the armour penetration and the damage the host sent for each
+  // (Combat.reds).
   private let m_forwarded: array<ref<gameHitEvent>>;
   private let m_forwardedPierce: array<Float>;
+  private let m_forwardedSent: array<ref<TandemSentDamage>>;
+  // The attack records other games named that ours lacks, each logged once
+  // a session (Combat.reds AttackRecord).
+  private let m_standIns: array<TweakDBID>;
   // Guest: the host's NPCs' melee hits on our V waiting for their proxy to
   // be drawn landing them (TandemFight.MeleeHold): the hit, its armour
   // penetration, when it runs. And whether the first was logged.
@@ -384,18 +396,33 @@ public class TandemNpcs {
   }
 
   private func RunPlayerHit(damage: ref<DamageSystem>, event: ref<gameHitEvent>, pierce: Float) -> Void {
-    // The newest few: an entry leaves when its pipeline ends.
-    while ArraySize(this.m_forwarded) >= 16 {
-      ArrayErase(this.m_forwarded, 0);
-      ArrayErase(this.m_forwardedPierce, 0);
-    }
-    ArrayPush(this.m_forwarded, event);
-    ArrayPush(this.m_forwardedPierce, pierce);
+    this.Forward(event, pierce);
     damage.QueueHitEvent(event, event.target);
   }
 
   public func IsForwarded(hit: ref<gameHitEvent>) -> Bool {
     return ArrayContains(this.m_forwarded, hit);
+  }
+
+  // The damage the sender computed, as the hit was queued here.
+  public func ForwardedSent(hit: ref<gameHitEvent>, out sent: array<Float>) -> Bool {
+    let i = 0;
+    while i < ArraySize(this.m_forwarded) {
+      if this.m_forwarded[i] == hit {
+        sent = this.m_forwardedSent[i].values;
+        return true;
+      }
+      i += 1;
+    }
+    return false;
+  }
+
+  public func NoteStandIn(attack: TweakDBID, standIn: TweakDBID) -> Void {
+    if ArrayContains(this.m_standIns, attack) || ArraySize(this.m_standIns) >= 64 {
+      return;
+    }
+    ArrayPush(this.m_standIns, attack);
+    TandemNative.Log(s"combat: attack \(TDBID.ToStringDEBUG(attack)) unknown here, stood in by \(TDBID.ToStringDEBUG(standIn)) (its damage: at most the sender's)");
   }
 
   public func ForwardedPierce(hit: ref<gameHitEvent>, out pierce: Float) -> Bool {
@@ -410,14 +437,20 @@ public class TandemNpcs {
     return false;
   }
 
-  // Another V's area effect on our V (Outcomes.reds), run like the host's.
+  // A hit another game computed, about to be queued on our V: the host's
+  // NPC's, another V's area effect (Outcomes.reds). The newest few: an entry
+  // leaves when its pipeline ends.
   public func Forward(hit: ref<gameHitEvent>, pierce: Float) -> Void {
     while ArraySize(this.m_forwarded) >= 16 {
       ArrayErase(this.m_forwarded, 0);
       ArrayErase(this.m_forwardedPierce, 0);
+      ArrayErase(this.m_forwardedSent, 0);
     }
+    let sent = new TandemSentDamage();
+    sent.values = hit.attackComputed.GetAttackValues();
     ArrayPush(this.m_forwarded, hit);
     ArrayPush(this.m_forwardedPierce, pierce);
+    ArrayPush(this.m_forwardedSent, sent);
   }
 
   public func Forget(hit: ref<gameHitEvent>) -> Void {
@@ -426,6 +459,7 @@ public class TandemNpcs {
       if this.m_forwarded[i] == hit {
         ArrayErase(this.m_forwarded, i);
         ArrayErase(this.m_forwardedPierce, i);
+        ArrayErase(this.m_forwardedSent, i);
         return;
       }
       i += 1;
