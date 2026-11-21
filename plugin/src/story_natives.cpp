@@ -68,6 +68,17 @@ struct TandemSceneView {
 };
 static_assert(alignof(TandemSceneView) <= 8, "the script VM aligns struct locals to 8");
 
+// A prop of the host's scene that nobody holds, for a guest to show
+// (TandemStory.ScenePlaceOf; on false: not in the play now).
+struct TandemScenePlace {
+  bool on{};
+  std::uint64_t entity{}; // its template's resource path hash (TandemStory.PathOf)
+  Red::CName appearance;
+  float x{}, y{}, z{};
+  float i{}, j{}, k{}, r{1.f};
+};
+static_assert(alignof(TandemScenePlace) <= 8, "the script VM aligns struct locals to 8");
+
 namespace {
 // Kinds, as StoryNatives.reds lists them.
 enum Kind : std::int32_t {
@@ -102,6 +113,8 @@ enum Kind : std::int32_t {
   kScenePropGone = 58,
   kInteractAsked = 60,
   kInteractAnswer = 61,
+  kScenePlace = 62,
+  kScenePlaceGone = 63,
 };
 
 // What our V earned in co-op (tandem/carryover.hpp): loaded from the save's
@@ -157,6 +170,11 @@ void Flatten(const scene::Cue &cue, Red::DynArray<TandemStoryEvent> &out) {
                                          mods::Kind::Item, cue.prop.record, {}, host))});
     return;
   }
+  case K::Place:
+  case K::PlaceGone:
+    out.EmplaceBack(TandemStoryEvent{.kind = cue.kind == K::Place ? kScenePlace : kScenePlaceGone,
+                                     .hash = cue.place.prop});
+    return;
   }
 }
 
@@ -164,7 +182,8 @@ bool IsScene(const proto::Message &message) {
   return std::holds_alternative<proto::SceneState>(message) ||
          std::holds_alternative<proto::SceneCast>(message) ||
          std::holds_alternative<proto::SceneLine>(message) ||
-         std::holds_alternative<proto::SceneProp>(message);
+         std::holds_alternative<proto::SceneProp>(message) ||
+         std::holds_alternative<proto::ScenePlace>(message);
 }
 
 void Flatten(const StoryInbound &in, Red::DynArray<TandemStoryEvent> &out) {
@@ -773,6 +792,33 @@ struct TandemStory : Red::IScriptable {
     if (props.size() < proto::kMaxSceneProps)
       props.push_back({key, record.value, holderNpc, holderPlayer, leftHand});
   }
+  // Host: an item entity of our scene that nobody holds, where it is, for
+  // the next SceneSample. `entity`: its template (PathHash).
+  static void ScenePlaced(std::uint64_t key, std::uint64_t entity, Red::CName appearance, float x,
+                          float y, float z, float i, float j, float k, float r) {
+    auto &placed = Story::Get().Placed();
+    if (placed.size() < proto::kMaxSceneProps)
+      placed.push_back({key, entity, appearance.hash, {x, y, z}, {i, j, k, r}});
+  }
+  // Guest: a prop the host's scene set down, as last said.
+  static TandemScenePlace ScenePlaceOf(std::uint32_t prop) {
+    const auto *place = Story::Get().Replay().PlaceOf(prop);
+    if (!place)
+      return {};
+    return {.on = true,
+            .entity = place->entity,
+            .appearance = Red::CName(place->appearance),
+            .x = place->position.x,
+            .y = place->position.y,
+            .z = place->position.z,
+            .i = place->orientation.i,
+            .j = place->orientation.j,
+            .k = place->orientation.k,
+            .r = place->orientation.r};
+  }
+  // A resource path as a number and back (the same in every copy of the game).
+  static std::uint64_t PathHash(Red::ResourcePath path) { return path.hash; }
+  static Red::ResourcePath PathOf(std::uint64_t hash) { return Red::ResourcePath(hash); }
   // Guest: the host's scene has a prop in this actor's (or, npc 0, this
   // player's) hands.
   static bool SceneHolds(std::uint32_t npc, std::uint32_t player) {
@@ -793,9 +839,11 @@ struct TandemStory : Red::IScriptable {
                              .host = {x, y, z},
                              .hostYaw = yaw,
                              .actors = std::move(story.Actors()),
-                             .props = std::move(story.Props())};
+                             .props = std::move(story.Props()),
+                             .placed = std::move(story.Placed())};
     story.Actors().clear();
     story.Props().clear();
+    story.Placed().clear();
     if (playing && Runtime::Get().config.sceneReplay) {
       // No node seen (the hook is out, or the scene is not a quest's): a
       // scene all the same, with no name.
@@ -818,6 +866,10 @@ struct TandemStory : Red::IScriptable {
         log::Info("scene: prop {} ({:#x}) {} (npc {}, player {}{})", prop->prop, prop->record,
                   prop->flags & proto::kPropGone ? "gone" : "held", prop->holder,
                   prop->holderPlayer, prop->flags & proto::kPropLeftHand ? ", left hand" : "");
+      else if (const auto *place = std::get_if<proto::ScenePlace>(&message))
+        log::Debug("scene: prop {} ({:#x}) {} at ({:.2f}, {:.2f}, {:.2f})", place->prop,
+                   place->entity, place->flags & proto::kPropGone ? "gone" : "set down",
+                   place->position.x, place->position.y, place->position.z);
       story.Send(std::move(message));
     }
     return story.Stage().On() ? static_cast<std::int32_t>(story.Stage().Play()) : 0;
@@ -1068,6 +1120,19 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemSceneView, "TandemSceneView", {
   RTTI_PROPERTY(fov);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemScenePlace, "TandemScenePlace", {
+  RTTI_PROPERTY(on);
+  RTTI_PROPERTY(entity);
+  RTTI_PROPERTY(appearance);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
+  RTTI_PROPERTY(i);
+  RTTI_PROPERTY(j);
+  RTTI_PROPERTY(k);
+  RTTI_PROPERTY(r);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(StoryOn);
   RTTI_METHOD(FreezeAvailable);
@@ -1134,6 +1199,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(SceneReplay);
   RTTI_METHOD(SceneActor);
   RTTI_METHOD(SceneProp);
+  RTTI_METHOD(ScenePlaced);
+  RTTI_METHOD(ScenePlaceOf);
+  RTTI_METHOD(PathHash);
+  RTTI_METHOD(PathOf);
   RTTI_METHOD(SceneHolds);
   RTTI_METHOD(SceneSample);
   RTTI_METHOD(SceneVoice);

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <functional>
 #include <type_traits>
 #include <utility>
@@ -206,6 +207,15 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *prop = std::get_if<SceneProp>(&message);
       prop && (prop->play == 0 || prop->prop == 0 || (prop->flags & ~kPropFlags) != 0 ||
                (prop->holder != 0 && prop->holderPlayer != kNoPlayer)))
+    return std::nullopt;
+  // A placed prop: of a play, numbered, somewhere real; what to spawn unless it goes.
+  if (const auto *place = std::get_if<ScenePlace>(&message);
+      place && (place->play == 0 || place->prop == 0 || (place->flags & ~kPropGone) != 0 ||
+                (place->entity == 0 && (place->flags & kPropGone) == 0) ||
+                !std::isfinite(place->position.x) || !std::isfinite(place->position.y) ||
+                !std::isfinite(place->position.z) || !std::isfinite(place->orientation.i) ||
+                !std::isfinite(place->orientation.j) || !std::isfinite(place->orientation.k) ||
+                !std::isfinite(place->orientation.r)))
     return std::nullopt;
   if (const auto *motion = std::get_if<NpcMotion>(&message);
       motion && motion->npcs.size() > kMaxNpcsPerState)
@@ -435,6 +445,7 @@ bool IsStory(const Message &message) {
          std::holds_alternative<StoryRestrictions>(message) ||
          std::holds_alternative<QuestInteract>(message) ||
          std::holds_alternative<SceneProp>(message) ||
+         std::holds_alternative<ScenePlace>(message) ||
          (message.index() >= kId<SceneState> && message.index() <= kId<SceneLine>) ||
          std::holds_alternative<VehicleUnlock>(message);
 }
@@ -619,7 +630,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "ThrowPath",
                                    "NpcPlaced",
                                    "NpcDeath",
-                                   "RigTracks"};
+                                   "RigTracks",
+                                   "ScenePlace"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

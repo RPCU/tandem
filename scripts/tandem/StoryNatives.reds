@@ -14,6 +14,21 @@ public native struct TandemSceneView {
   native let fov: Float;
 }
 
+// A prop the host's scene set down that nobody holds (on false: none now):
+// its template (TandemStory.PathOf), appearance and transform.
+public native struct TandemScenePlace {
+  native let on: Bool;
+  native let entity: Uint64;
+  native let appearance: CName;
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let i: Float;
+  native let j: Float;
+  native let k: Float;
+  native let r: Float;
+}
+
 public native struct TandemStoryEvent {
   // 1 in the session (player: us, hash: the host), 2 session ended,
   // 3 player joined, 4 player left;
@@ -51,7 +66,8 @@ public native struct TandemStoryEvent {
   // hash: its play), 56 it stops (line, npc, player);
   // 57 an actor holds a prop (hash: the prop's number, reward: the item,
   // npc or player: who holds it, flags: 2 in its left hand), 58 the prop is
-  // gone (hash);
+  // gone (hash); 62 a prop nobody holds is set down, or moved (hash: its
+  // number; where: TandemStory.ScenePlaceOf), 63 it is gone (hash);
   // quest interactions (docs/architecture/story.md, "Quest interactions"):
   // 60 (host) a guest's question (player, hash: its number, entity: the
   // object (placed: the same id in every game), choice, detail, layer, flags: 1 its checks passed
@@ -168,6 +184,10 @@ public native class TandemStory extends IScriptable {
   public static native func SceneView() -> TandemSceneView;
   public static native func SceneViews() -> Int32;
   public static native func SceneProp(key: Uint64, record: TweakDBID, holderNpc: Uint32, holderPlayer: Uint32, leftHand: Bool) -> Void;
+  public static native func ScenePlaced(key: Uint64, entity: Uint64, appearance: CName, x: Float, y: Float, z: Float, i: Float, j: Float, k: Float, r: Float) -> Void;
+  public static native func ScenePlaceOf(prop: Uint32) -> TandemScenePlace;
+  public static native func PathHash(path: ResRef) -> Uint64;
+  public static native func PathOf(hash: Uint64) -> ResRef;
   public static native func SceneHolds(npc: Uint32, player: Uint32) -> Bool;
   public static native func SceneSample(playing: Bool, isPrivate: Bool, tier: Int32, rate: Float, held: Bool, x: Float, y: Float, z: Float, yaw: Float) -> Int32;
   public static native func SceneVoice(line: Uint64, speakerNpc: Uint32, speakerPlayer: Uint32, duration: Float, flags: Int32) -> Bool;

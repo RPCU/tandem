@@ -2902,6 +2902,25 @@ struct RigTracks {
   friend bool operator==(const RigTracks &, const RigTracks &) = default;
 };
 
+// A prop of the host's scene that nobody holds (set on a table, dropped,
+// thrown): an item entity the scene brought in, where it is now. Said when
+// it appears, again when it moved (scene::kPlaceMoveMetres, kPlaceTurnRadians;
+// at most every scene::kPlaceEveryUs), and with kPropGone when it is no
+// longer seen or someone holds it (then a SceneProp). A guest spawns the same
+// entity template and appearance there, moves it, and deletes it when it
+// goes or the play ends. `prop` counts with the play's SceneProp numbers.
+// Event channel, a story message, kept with the scene for late joiners.
+struct ScenePlace {
+  std::uint32_t play{};
+  std::uint32_t prop{};
+  std::uint64_t entity{};     // its entity template's resource path hash
+  std::uint64_t appearance{}; // its appearance, a CName hash (0: the template's own)
+  Vec3 position;
+  Quat orientation;
+  std::uint8_t flags{}; // kPropGone only
+  friend bool operator==(const ScenePlace &, const ScenePlace &) = default;
+};
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -2922,7 +2941,7 @@ using MessageVariant = std::variant<
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
     BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
-    SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks>;
+    SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, ScenePlace>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
