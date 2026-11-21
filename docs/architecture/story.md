@@ -24,8 +24,16 @@
     `IsSavingLocked`, plus a `SaveLocksManager` lock and dropped autosaves).
     Every journal entry the mirror changes keeps its state from before; on
     leaving (the guest quits or the host is gone) the journal and tracked
-    entry go back, are checked, the freeze ends and saving unlocks. A
-    mismatch keeps saving locked and says "load your last save". The
+    entry go back, are checked, the freeze ends and saving unlocks. One
+    journal change moves others (engine facts §13.99), so the entries go
+    back parents first, a Failed one through Active, again until a pass
+    changes nothing (`RestoreEntries`); then the journal is compared with
+    the session's first snapshot of it (an entry the mirror never touched
+    must be as it was; one new since is the guest's own game's, kept). Each
+    step logs its counts and the first entries that differ. A
+    mismatch keeps saving locked and says "load your last save", until a
+    save is loaded (a later session's clean restore does not unlock it:
+    its baseline is the damaged journal). The
     design's final step (one save, then its reload) is `Saves.reds`'s, by
     `tandem.ini` `leave` (`progression.md`, "Saves").
   - _Journal, tracker, markers_: the host's journal (snapshot at join,
@@ -254,8 +262,11 @@ report` (state: the host's reasons and whether to watch, whether we
     test commands `quest apart` / `quest grouped` flip it), so nothing
     changes yet. Apart, the journal mirror leaves the guest's own gig
     entries alone and does not show the host's (going apart gives them
-    back as they were; grouped again, the host's come back as last
-    heard). Apart, one phone, one call: the host's call waits while the
+    back as they were, checked as on leaving; grouped again, the host's
+    come back as last heard and every own gig entry is hidden again: the
+    log counts those given back, hidden again, new while apart and
+    cleared meanwhile by the guest's game, which `story-gigs-apart`
+    checks). Apart, one phone, one call: the host's call waits while the
     guest's own is up, and the guest's own waits (retried every 5 s)
     while the host's is on its phone. Grouped, as before.
     `tools/game.sh cmd quest trace on` logs every phase met (its chain of

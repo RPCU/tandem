@@ -737,3 +737,41 @@ true)` (`:106188`, `Deactivate` the same, `:106190`); vanilla's camera
   with `IVisualComponent.TemporaryHide` (§13.26): which components by name
   (the meshes' `h0_`, `hh_`, `he_`… prefixes) is unmeasured
   (`tools/game.sh cmd story spectate parts` lists them). [unverified]
+
+### 13.99 One journal change moves others: the engine's rules (2026-11-21, decompiled, not run)
+
+What `JournalManager.ChangeEntryStateByHash(hash, state, notify)`
+(`0x142bde814`) does: it finds the entry (vtable `+0x220`) and calls the
+manager's `ChangeEntryState` slot `+0x268` (`0x1406c1a48` on 2.50), which
+dispatches on the new state (`gameJournalEntryState`: Undefined 0,
+Inactive 1, Active 2, Succeeded 3, Failed 4). Read with
+`tools/re/decompile`; the class tests are the RTTI class globals
+`0x143bc89c8` `gameJournalRootFolderEntry`, `0x143bc8a28`
+`gameJournalQuestDescription`, `0x143bc8ac8` `gameJournalPhoneChoiceGroup`,
+`0x143bc8ac0` `gameJournalPhoneChoiceEntry`, `0x143bc8b18`
+`gameJournalMetaQuestObjective` (named from their registration functions).
+
+- **The setter of one entry** (`0x140654c0c`) changes nothing when the
+  state is the same, and **refuses Failed on an Inactive entry**; an
+  ancestor that is a quest description is never changed for a child. It
+  then calls the journal listeners (script callbacks included) at once.
+- **Inactive** (and Undefined): that entry only.
+- **Active** (`0x1406543ec`): the entry and **every ancestor up to (not
+  including) the root folder that is not Active, whatever its state**
+  (a Succeeded quest goes back to Active), top down. Then
+  (`0x140d42168`): a phone choice group's children not Active go Active;
+  a meta quest objective's group (slot `+0x240`) others go Inactive.
+- **Succeeded, Failed** (`0x140d4201c`): the entry, then every **Active**
+  descendant, recursively, to the same state; a phone choice chosen
+  (Succeeded) fails the other choices of its group.
+
+So a journal cannot be put back by replaying each entry's old state once:
+the order matters (an Active child reactivates its finished parent; a
+finished parent ends its Active children), a Failed entry hidden as
+Inactive cannot come back directly (Active first), and entries outside
+the replayed list move too (a choice group's children, folders). What
+tandem's mirror does about it: `docs/architecture/story.md`, "Saves".
+Seen in game (2026-11-21, `story-gigs-apart`, before the fix): 176 own
+gig entries given back in reverse order, 174 found again; 91 of 1150
+entries not as before after the leave, 19 of 1318 the next session.
+[2.5-untested]
