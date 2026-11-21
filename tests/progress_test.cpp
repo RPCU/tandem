@@ -245,6 +245,128 @@ TEST_CASE("a lost host is a save, never a reload; the game never allowing a save
   }
 }
 
+TEST_CASE("the pause menu's Exit saves whatever the mode, and never loads") {
+  for (const auto mode : {LeaveMode::Stay, LeaveMode::Save, LeaveMode::Reload}) {
+    CAPTURE(NameOf(mode));
+    Leaving l(mode);
+    l.in.session = true;
+    l.At(0.0);
+    CHECK_FALSE(l.leave.Owed()); // nothing owed while in it
+    l.in.session = false;
+    l.in.chosen = true;
+    l.in.save = true;
+    l.in.left = kLeftBodies;
+    l.At(1.0);
+    CHECK(l.leave.Owed());
+    // Never while co-op state is left, as any leave.
+    CHECK(l.Next(4.0) == LeaveAction::None);
+    CHECK(l.leave.Locked());
+    l.in.left = 0;
+    CHECK(l.Next(5.0) == LeaveAction::Clean);
+    CHECK(l.Next(6.0) == LeaveAction::Save);
+    l.in.saved = 1;
+    CHECK(l.Next(7.0) == LeaveAction::Saved);
+    CHECK(l.leave.Step() == LeaveStep::Solo);
+    CHECK_FALSE(l.leave.Owed());
+  }
+}
+
+TEST_CASE("an exit the game keeps locked gives up soon, and the save stays owed") {
+  Leaving l(LeaveMode::Stay);
+  l.in.session = true;
+  l.At(0.0);
+  l.in.session = false;
+  l.in.save = true;
+  l.in.blocked = true; // a fight the precheck did not see
+  l.At(1.0);
+  CHECK(l.Next(5.0) == LeaveAction::Clean);
+  const double since = l.in.now;
+  CHECK(l.Next(since + kLeaveSaveSoonBy - 0.5) == LeaveAction::None);
+  CHECK(l.Next(since + kLeaveSaveSoonBy + 0.5) == LeaveAction::GaveUp);
+  CHECK(l.leave.Owed());
+  // Exit again later, the game unlocked: the owed save, then the exit.
+  l.in.blocked = false;
+  l.in.save = false;
+  CHECK(l.Next(100.0) == LeaveAction::None);
+  l.in.save = true;
+  CHECK(l.Next(101.0) == LeaveAction::Save);
+  l.in.saved = 1;
+  CHECK(l.Next(102.0) == LeaveAction::Saved);
+  CHECK_FALSE(l.leave.Owed());
+}
+
+TEST_CASE("leave = stay owes the session's save until one is written; a load clears it") {
+  Leaving l(LeaveMode::Stay);
+  // Solo from the start: nothing owed, an exit asks for nothing.
+  l.in.save = true;
+  CHECK(l.Next(2.0) == LeaveAction::None);
+  CHECK(l.leave.Step() == LeaveStep::Solo);
+  l.in.save = false;
+  l.in.session = true;
+  l.At(3.0);
+  l.in.session = false; // the host went
+  l.At(4.0);
+  CHECK(l.Next(8.0) == LeaveAction::Clean);
+  CHECK(l.leave.Step() == LeaveStep::Solo);
+  CHECK(l.leave.Owed());
+  CHECK(l.Next(300.0) == LeaveAction::None); // stay writes nothing by itself
+  SUBCASE("the exit's save") {
+    l.in.save = true;
+    CHECK(l.Next(301.0) == LeaveAction::Save);
+    SUBCASE("written") {
+      l.in.saved = 1;
+      CHECK(l.Next(302.0) == LeaveAction::Saved);
+      CHECK_FALSE(l.leave.Owed());
+    }
+    SUBCASE("failed: still owed") {
+      l.in.saved = -1;
+      CHECK(l.Next(302.0) == LeaveAction::SaveFailed);
+      CHECK(l.leave.Owed());
+    }
+  }
+  SUBCASE("a world loaded") {
+    l.leave.Reset();
+    CHECK_FALSE(l.leave.Owed());
+    l.in.save = true;
+    CHECK(l.Next(310.0) == LeaveAction::None);
+  }
+}
+
+TEST_CASE("an exit asked while leave = save waits switches to the shorter wait") {
+  Leaving l(LeaveMode::Save);
+  l.in.session = true;
+  l.At(0.0);
+  l.in.session = false;
+  l.in.blocked = true;
+  l.At(1.0);
+  CHECK(l.Next(5.0) == LeaveAction::Clean);
+  CHECK(l.Next(60.0) == LeaveAction::None); // the two minutes' wait
+  l.in.save = true;
+  CHECK(l.Next(60.0 + kLeaveSaveSoonBy - 0.5) == LeaveAction::None);
+  CHECK(l.Next(60.0 + kLeaveSaveSoonBy + 0.5) == LeaveAction::GaveUp);
+}
+
+TEST_CASE("a checkpoint's save is dropped when the session is back first") {
+  Leaving l(LeaveMode::Stay);
+  l.in.session = true;
+  l.At(0.0);
+  l.in.session = false;
+  l.in.save = true;
+  l.in.blocked = true;
+  l.At(1.0);
+  CHECK(l.Next(5.0) == LeaveAction::Clean);
+  l.in.session = true;
+  l.in.save = false;
+  CHECK(l.Next(8.0) == LeaveAction::None);
+  CHECK(l.leave.Step() == LeaveStep::Session);
+  // Out again without asking: stay's own way, no save.
+  l.in.session = false;
+  l.in.blocked = false;
+  l.At(9.0);
+  CHECK(l.Next(14.0) == LeaveAction::Clean);
+  CHECK(l.Next(60.0) == LeaveAction::None);
+}
+
 TEST_CASE("what is left is named") {
   CHECK(LeftNames(0).empty());
   CHECK(LeftNames(kLeftStory) == "story");

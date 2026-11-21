@@ -63,10 +63,20 @@ LeaveAction Leave::Tick(const LeaveInput &input) {
     // In a session (again): whatever was under way is dropped. A save
     // already asked for is the game's own, of a clean world.
     m_step = LeaveStep::Session;
+    m_save = false;
     return LeaveAction::None;
   }
   switch (m_step) {
   case LeaveStep::Solo:
+    // The pause menu's Exit after a session that wrote nothing (`stay`, or
+    // a save that failed): the save it still owes, now.
+    if (input.save && m_owed) {
+      m_step = LeaveStep::Waiting;
+      m_since = input.now;
+      m_save = true;
+      m_chosen = false;
+    }
+    return LeaveAction::None;
   case LeaveStep::Dirty:
   case LeaveStep::Loading:
     return LeaveAction::None;
@@ -74,9 +84,12 @@ LeaveAction Leave::Tick(const LeaveInput &input) {
     m_step = LeaveStep::Cleaning;
     m_since = input.now;
     m_chosen = input.chosen;
+    m_save = input.save;
+    m_owed = true;
     return LeaveAction::None;
   case LeaveStep::Cleaning:
     m_chosen = m_chosen || input.chosen;
+    m_save = m_save || input.save;
     if (input.now - m_since < kLeaveSettle)
       return LeaveAction::None;
     if (input.left != 0) {
@@ -85,7 +98,7 @@ LeaveAction Leave::Tick(const LeaveInput &input) {
       m_step = LeaveStep::Dirty;
       return LeaveAction::Dirty;
     }
-    if (m_mode == LeaveMode::Stay) {
+    if (m_mode == LeaveMode::Stay && !m_save) {
       m_step = LeaveStep::Solo;
     } else {
       m_step = LeaveStep::Waiting;
@@ -93,6 +106,11 @@ LeaveAction Leave::Tick(const LeaveInput &input) {
     }
     return LeaveAction::Clean;
   case LeaveStep::Waiting:
+    if (input.save && !m_save) {
+      // Asked while the game kept us waiting: the shorter wait, from now.
+      m_save = true;
+      m_since = input.now;
+    }
     // Something of the session came back (a late event): not a save.
     if (input.left != 0) {
       m_step = LeaveStep::Cleaning;
@@ -100,7 +118,7 @@ LeaveAction Leave::Tick(const LeaveInput &input) {
       return LeaveAction::None;
     }
     if (input.blocked) {
-      if (input.now - m_since < kLeaveSaveBy)
+      if (input.now - m_since < (m_save ? kLeaveSaveSoonBy : kLeaveSaveBy))
         return LeaveAction::None;
       m_step = LeaveStep::Solo;
       return LeaveAction::GaveUp;
@@ -110,7 +128,9 @@ LeaveAction Leave::Tick(const LeaveInput &input) {
     return LeaveAction::Save;
   case LeaveStep::Saving:
     if (input.saved > 0) {
-      if (m_mode == LeaveMode::Reload && m_chosen) {
+      m_owed = false;
+      // Never a load before an exit or a rejoin: the save is all they need.
+      if (m_mode == LeaveMode::Reload && m_chosen && !m_save) {
         m_step = LeaveStep::Loading;
         return LeaveAction::Load;
       }
