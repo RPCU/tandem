@@ -234,14 +234,80 @@ public class TandemPolice {
     return stage + 1;
   }
 
-  private static func RecordFor(stage: Int32) -> TweakDBID {
-    if stage >= 4 {
-      return t"Character.prevention_unit_tier3";
+  // What the game spawns on foot at a level here: the district's heat data
+  // (the prevention system's preset, PreventionData.NCPD before it has
+  // one). The script's failsafe records, Character.prevention_unit_tier1/2/3,
+  // are not in 2.50's TweakDB: a spawn of one always fails.
+  private func HeatData(stage: Int32) -> wref<PreventionHeatData_Record> {
+    let police = this.Prevention();
+    let preset: wref<DistrictPreventionData_Record>;
+    if IsDefined(police) {
+      preset = police.TandemPreset();
+    }
+    let heat = TandemPolice.HeatOf(preset, stage);
+    if !IsDefined(heat) || heat.GetUnitRecordsPoolCount() == 0 {
+      heat = TandemPolice.HeatOf(TweakDBInterface.GetDistrictPreventionDataRecord(t"PreventionData.NCPD"), stage);
+    }
+    return heat;
+  }
+
+  private static func HeatOf(preset: wref<DistrictPreventionData_Record>, stage: Int32) -> wref<PreventionHeatData_Record> {
+    if !IsDefined(preset) || stage <= 0 {
+      return null;
+    }
+    if stage == 1 {
+      return preset.Heat1();
+    }
+    if stage == 2 {
+      return preset.Heat2();
     }
     if stage == 3 {
-      return t"Character.prevention_unit_tier2";
+      return preset.Heat3();
     }
-    return t"Character.prevention_unit_tier1";
+    if stage == 4 {
+      return preset.Heat4();
+    }
+    return preset.Heat5();
+  }
+
+  // As many characters from the level's pool, drawn by weight as the
+  // game's own fallback does (PreventionSystem.GetCharacterRecordFromPool).
+  private static func DrawRecords(heat: wref<PreventionHeatData_Record>, count: Int32) -> array<TweakDBID> {
+    let out: array<TweakDBID>;
+    let pool: array<wref<PreventionUnitPoolData_Record>>;
+    heat.UnitRecordsPool(pool);
+    let sum = 0.0;
+    for entry in pool {
+      if IsDefined(entry) {
+        sum += MaxF(entry.Weight(), 0.0);
+      }
+    }
+    let n = 0;
+    while n < count {
+      let pick = RandRangeF(0.0, sum);
+      let seen = 0.0;
+      let chosen = TDBID.None();
+      let last = TDBID.None();
+      for entry in pool {
+        let character = IsDefined(entry) ? entry.CharacterRecord() : null;
+        if IsDefined(character) && !TDBID.IsValid(chosen) {
+          last = character.GetID();
+          seen += MaxF(entry.Weight(), 0.0);
+          if pick < seen {
+            chosen = last;
+          }
+        }
+      }
+      if !TDBID.IsValid(chosen) {
+        // Weights of zero, or the draw at the very end: the last one.
+        chosen = last;
+      }
+      if TDBID.IsValid(chosen) {
+        ArrayPush(out, chosen);
+      }
+      n += 1;
+    }
+    return out;
   }
 
   private func Answer(system: ref<TandemSystem>) -> Void {
@@ -261,7 +327,11 @@ public class TandemPolice {
     if this.m_pointsFor != 0u && this.m_now - this.m_pointsAt > 5.0 {
       this.m_pointsFor = 0u;
     }
-    for player in system.PuppetPlayers() {
+    // In a local: ArrayContains on the array a call returns reads some
+    // other array (tools/scripts-temporaries.py), so every level was
+    // forgotten on the tick it was learnt.
+    let here = system.PuppetPlayers();
+    for player in here {
       if TandemArea.OwnsAround(player) {
         let stage = TandemStreet.HeatStage(player);
         let was = this.StageOf(player);
@@ -288,7 +358,7 @@ public class TandemPolice {
     // A player that left takes its heat with it.
     let i = 0;
     while i < ArraySize(this.m_heatPlayers) {
-      if !ArrayContains(system.PuppetPlayers(), this.m_heatPlayers[i]) {
+      if !ArrayContains(here, this.m_heatPlayers[i]) {
         for unit in this.m_units {
           if unit.player == this.m_heatPlayers[i] {
             this.StandDown(unit);
@@ -364,15 +434,26 @@ public class TandemPolice {
     if wanted > 2 {
       wanted = 2;
     }
+    this.m_nextDispatch = this.m_now + 6.0;
+    let heat = this.HeatData(stage);
+    let records: array<TweakDBID>;
+    if IsDefined(heat) {
+      records = TandemPolice.DrawRecords(heat, wanted);
+    }
+    if ArraySize(records) == 0 {
+      TandemNative.Log(s"police: no unit records for level \(stage) here: none sent for player \(player)");
+      return;
+    }
+    // At the distances the game's own units on foot come from.
+    let range = heat.SpawnRange();
+    let near = range.X > 0.0 ? range.X : 25.0;
+    let far = range.Y > near ? range.Y : near + 20.0;
     let origins: array<Vector4>;
     ArrayPush(origins, puppet.GetWorldPosition());
-    let records: array<TweakDBID>;
-    ArrayPush(records, TandemPolice.RecordFor(stage));
     this.m_pointsFor = player;
     this.m_pointsAt = this.m_now;
-    this.m_nextDispatch = this.m_now + 6.0;
-    GameInstance.GetPreventionSpawnSystem(this.m_game).FindPursuitPointsRangeAsync(origins, 25.0, 45.0, Cast<Uint32>(wanted), records, true, NavGenAgentSize.Human, this, "OnPursuitPoints");
-    TandemNative.Log(s"police: \(wanted) unit(s) asked for player \(player) (level \(stage))");
+    GameInstance.GetPreventionSpawnSystem(this.m_game).FindPursuitPointsRangeAsync(origins, near, far, Cast<Uint32>(wanted), records, true, NavGenAgentSize.Human, this, "OnPursuitPoints");
+    TandemNative.Log(s"police: \(wanted) unit(s) asked for player \(player) (level \(stage), \(TDBID.ToStringDEBUG(records[0])), \(near)-\(far) m)");
   }
 
   // The spawn system's answer (called by the engine, by name).
@@ -392,7 +473,7 @@ public class TandemPolice {
         let at = Cast<Vector4>(point);
         WorldTransform.SetPosition(transform, at);
         WorldTransform.SetOrientationFromDir(transform, Vector4.Normalize2D(puppet.GetWorldPosition() - at));
-        let ticket = spawner.RequestUnitSpawn(characterRecords[0], transform);
+        let ticket = spawner.RequestUnitSpawn(characterRecords[sent % ArraySize(characterRecords)], transform);
         ArrayPush(this.m_tickets, ticket);
         ArrayPush(this.m_ticketPlayers, player);
         sent += 1;
@@ -526,6 +607,12 @@ public class TandemPolice {
 }
 
 // ---- the game's prevention system ----
+
+// The district's police data it spawns from (set as V changes district).
+@addMethod(PreventionSystem)
+public final func TandemPreset() -> wref<DistrictPreventionData_Record> {
+  return this.m_preventionPreset;
+}
 
 // A game that follows spawns no police of its own: the area's owner does.
 @wrapMethod(PreventionSystem)

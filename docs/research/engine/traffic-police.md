@@ -251,11 +251,21 @@ characterRecords: [TweakDBID], unitCount: Uint32) -> Int32` on the
   (`:189272`, `:140183`), which looks the ticket up in its registry and
   drops a result it has no ticket for. `SpawnRequestResult{requestID,
 policeStrategy, vehicleType, spawnedObjects, success}`. `[S]`
-- Records that exist by name in the scripts: `Character.prevention_unit_tier1`,
-  `_tier2`, `_tier3` (`:138797`), the MaxTac squads
-  `Character.maxtac_av_*` (`:317672`). The pools the game really draws
-  from are per district and stage in TweakDB
-  (`PreventionHeatData.UnitRecordsPool`). `[S]`
+- Records named in the scripts: `Character.prevention_unit_tier1`,
+  `_tier2`, `_tier3` (`:138797`, the fallback's failsafe), the MaxTac
+  squads `Character.maxtac_av_*` (`:317672`). The pools the game really
+  draws from are per district and stage in TweakDB
+  (`PreventionHeatData.UnitRecordsPool`, weighted
+  `PreventionUnitPoolData` entries; the district's preset is
+  `PreventionSystem.m_preventionPreset`, `PreventionData.NCPD` by
+  default, `:141848`). `[S]`
+- **The three tier records are not in 2.50's TweakDB**: their ids
+  (CRC32 of the name and its length) are nowhere in `r6/cache/tweakdb_ep1.bin`
+  (2026-11-21), where `Character.Judy`, `Character.Panam` and
+  `PreventionData.NCPD` are. `RequestUnitSpawn` with one comes back
+  `success = false` some 50 ms later, every time (`police-host`,
+  2026-11-21). `Police.reds` draws from the district's pool instead.
+  [2.5-verified]
 
 ## 13.34 Traffic and police: open questions (need the game)
 
