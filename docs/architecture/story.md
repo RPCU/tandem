@@ -97,7 +97,11 @@
     the panel sits in the option's row, the font size against the game's,
     the options of a timed hub. Test: `tandem-peer join --hover N` (the
     mock's cursor on option N of every hub), the story verb `hover ID
-INDEX` (the mock host's). Scenarios (not run yet):
+INDEX` (the mock host's). The host's test hub (`cmd story hub`) is held
+    up until `story hub close` (the game takes a hub it did not make off
+    the board a frame later; the tick puts it back, the test reset drops
+    it). Scenarios (run 2026-11-21, failed on the test hub gone after 13 ms
+    and on a wrong mock line; fixed, not run again):
     `dialogue-marks-host` (the mock guest's cursor marked on our hub;
     `story-host` its suggestion's, without the notice), `dialogue-marks-guest` (the mock host's cursor
     marked on ours, following it).

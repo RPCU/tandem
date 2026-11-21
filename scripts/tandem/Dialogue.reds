@@ -28,6 +28,11 @@ public class TandemDialogue {
   private let m_sentKey: String;
   private let m_sentTexts: array<String>;
   private let m_testLine: Uint64;
+  // (test) `story hub` holds its hub up until `story hub close`: the game
+  // takes a hub it did not make off the board a frame later (13 ms,
+  // dialogue-marks-host 2026-11-21: no guest's cursor could land on it).
+  private let m_testHub: Bool;
+  private let m_testHubBack: Int32;
 
   // Guest: the host's hub as it arrives, and what we show.
   private let m_pendingHub: Int32;
@@ -241,6 +246,9 @@ public class TandemDialogue {
       }
     }
     if this.m_sentOpen {
+      if this.m_testHub && this.m_sentHub == 4242 {
+        return; // (test) held: the tick puts it back on the board
+      }
       let none: array<String>;
       let noTypes: array<Int32>;
       TandemStory.SendHub(this.m_sentHub, 0, "", none, noTypes, 0.0);
@@ -312,6 +320,13 @@ public class TandemDialogue {
   // widgets (a hub redrawn spawns new option widgets, without ours).
   public func Tick(now: Float) -> Void {
     this.m_now = now;
+    if this.m_testHub && !this.TestHubUp() {
+      this.m_testHubBack += 1;
+      if this.m_testHubBack == 1 {
+        TandemNative.Log("story: test hub put back on the board (the game took it off)");
+      }
+      this.ShowTestHub();
+    }
     if ArraySize(this.m_markPlayers) > 0 || StrLen(this.m_marksKey) > 0 {
       this.DrawMarks();
     }
@@ -634,33 +649,61 @@ public class TandemDialogue {
       ArrayPush(lines, line);
       this.Board(true).SetVariant(GetAllBlackboardDefs().UIGameData.ShowDialogLine, ToVariant(lines), true);
       TandemNative.Log("story: test line shown");
+    } else if Equals(command, "story hub off") {
+      // (test reset) only a hub a test still holds.
+      if this.m_testHub {
+        this.Command("story hub close");
+      }
     } else if Equals(command, "story hub close") {
+      if this.m_testHub {
+        TandemNative.Log(s"story: test hub was put back \(this.m_testHubBack) time(s)");
+      }
+      this.m_testHub = false;
+      this.m_testHubBack = 0;
       let hubs: DialogChoiceHubs;
       let board = this.Board(false);
       board.SetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs, ToVariant(hubs), true);
       board.SetInt(GetAllBlackboardDefs().UIInteractions.ActiveChoiceHubID, -1, true);
       TandemNative.Log("story: test hub closed");
     } else if StrBeginsWith(command, "story hub") {
-      let data: ListChoiceHubData;
-      data.id = 4242;
-      data.activityState = EVisualizerActivityState.Active;
-      data.title = "Test"; // text: test only
-      let yes: ListChoiceData;
-      yes.localizedName = TandemText.Vanilla("UI-UserActions-Yes");
-      yes.inputActionName = n"ChoiceApply";
-      let no: ListChoiceData;
-      no.localizedName = TandemText.Vanilla("UI-UserActions-No");
-
-      no.inputActionName = n"ChoiceApply";
-      ArrayPush(data.choices, yes);
-      ArrayPush(data.choices, no);
-      let hubs: DialogChoiceHubs;
-      ArrayPush(hubs.choiceHubs, data);
-      let board = this.Board(false);
-      board.SetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs, ToVariant(hubs), true);
-      board.SetInt(GetAllBlackboardDefs().UIInteractions.ActiveChoiceHubID, 4242, true);
+      this.m_testHub = true;
+      this.m_testHubBack = 0;
+      this.ShowTestHub();
       TandemNative.Log("story: test hub shown");
     }
+  }
+
+  // (test) The test hub is the board's active hub, as we last heard it.
+  private func TestHubUp() -> Bool {
+    if this.m_activeHub != 4242 {
+      return false;
+    }
+    for hub in this.m_hubs.choiceHubs {
+      if hub.id == 4242 {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private func ShowTestHub() -> Void {
+    let data: ListChoiceHubData;
+    data.id = 4242;
+    data.activityState = EVisualizerActivityState.Active;
+    data.title = "Test"; // text: test only
+    let yes: ListChoiceData;
+    yes.localizedName = TandemText.Vanilla("UI-UserActions-Yes");
+    yes.inputActionName = n"ChoiceApply";
+    let no: ListChoiceData;
+    no.localizedName = TandemText.Vanilla("UI-UserActions-No");
+    no.inputActionName = n"ChoiceApply";
+    ArrayPush(data.choices, yes);
+    ArrayPush(data.choices, no);
+    let hubs: DialogChoiceHubs;
+    ArrayPush(hubs.choiceHubs, data);
+    let board = this.Board(false);
+    board.SetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs, ToVariant(hubs), true);
+    board.SetInt(GetAllBlackboardDefs().UIInteractions.ActiveChoiceHubID, 4242, true);
   }
 }
 
