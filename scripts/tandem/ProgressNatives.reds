@@ -1,6 +1,24 @@
 // Progression's natives (plugin/src/progress_natives.cpp). Keep the two in
 // sync: tools/check-natives.py checks them with Natives.reds.
 
+// The custom paint of a player's car (Paint.reds), as the session last said it.
+public native struct TandemCarPaint {
+  // How many times that player's paint changed here (0: never said).
+  native let changes: Int32;
+  // The car's record, as its owner's seat names it (none: no car).
+  native let vehicle: TweakDBID;
+  // 1 primary colour, 2 secondary colour, 4 lights, 8 a unique template; 0: stock paint.
+  native let flags: Int32;
+  // 0xRRGGBB
+  native let primary: Int32;
+  native let secondary: Int32;
+  // Degrees.
+  native let lightsHue: Float;
+  // A unique template: its VehicleColorTemplate record, the model it fits.
+  native let unique: TweakDBID;
+  native let model: CName;
+}
+
 public native class TandemProgress extends IScriptable {
   // Our V's level (1..100), when it changes: the host keeps everyone's.
   public static native func SendOwnLevel(level: Int32)
@@ -39,6 +57,11 @@ public native class TandemProgress extends IScriptable {
   public static native func SendCarLend(lend: Int32)
   public static native func CarLendOf(player: Uint32) -> Int32
   public static native func MayDrive(lend: Int32, ownerAboard: Bool, ownerInSession: Bool) -> Bool
+  // A car's custom paint (docs/architecture/vehicles.md, "Paint"): our own
+  // car's, said to everyone when it changes (flags 0: stock paint; colours
+  // 0xRRGGBB); a partner's car's (stock when it said none).
+  public static native func SendCarPaint(vehicle: TweakDBID, flags: Int32, primary: Int32, secondary: Int32, lightsHue: Float, unique: TweakDBID, model: CName)
+  public static native func CarPaintOf(player: Uint32) -> TandemCarPaint
   // Vendors (docs/architecture/progression.md, Vendors.reds). Owner: one of
   // our NPCs is a vendor placed in the world (its static entity). The placed
   // entity of a shared NPC (0: none said); whether the session says that

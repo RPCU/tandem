@@ -62,6 +62,21 @@ proto::Lend Combat::LendOf(proto::PlayerId player) {
   return it == m_lends.end() ? proto::Lend::Crew : it->second;
 }
 
+void Combat::NotePaint(const proto::CarPaint &paint) {
+  std::lock_guard _(m_lock);
+  auto &kept = m_paints[paint.player];
+  if (kept.paint == paint)
+    return;
+  kept.paint = paint;
+  ++kept.changes;
+}
+
+Combat::Paint Combat::PaintOf(proto::PlayerId player) {
+  std::lock_guard _(m_lock);
+  const auto it = m_paints.find(player);
+  return it == m_paints.end() ? Paint{.paint = {.player = player}} : it->second;
+}
+
 void Combat::NoteVendor(const proto::NpcVendor &vendor) {
   std::lock_guard _(m_lock);
   m_vendors.Note(vendor);
@@ -92,6 +107,7 @@ void Combat::EndSession() {
     std::lock_guard _(m_lock);
     m_vendors.Clear();
     m_lends.clear();
+    m_paints.clear();
   }
   SetRules({});
 }

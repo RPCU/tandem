@@ -61,6 +61,8 @@ struct NetThread::Impl {
   std::optional<proto::Held> lastHeld;
   // Who may drive our cars (said once by the scripts): again for each session.
   std::optional<proto::CarLend> lastLend;
+  // Our car's custom paint (said by the scripts when it changes): again too.
+  std::optional<proto::CarPaint> lastPaint;
   std::optional<proto::Seat> lastSeat;
   std::optional<proto::VehicleRadio> lastRadio;
   std::optional<proto::Stealth> lastStealth;
@@ -334,6 +336,8 @@ struct NetThread::Impl {
       endpoint->SetLocalHeld(*lastHeld);
     if (lastLend)
       endpoint->SendCombat(*lastLend);
+    if (lastPaint)
+      endpoint->SendCombat(*lastPaint);
     if (lastSeat)
       endpoint->SetLocalSeat(*lastSeat);
     if (lastRadio)
@@ -457,6 +461,8 @@ struct NetThread::Impl {
                 shared = true;
                 runtime.ForgetRemote(e.player);
                 runtime.PushEvent({ScriptEvent::Kind::PlayerLeft, e.player, {}, {}});
+                // Its car's paint goes with it (a namesake's car is stock).
+                Combat::Get().PushInbound(proto::CarPaint{.player = e.player});
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Left, .player = e.player});
                 Comms::Get().PushInbound({.kind = CommsInbound::Kind::Left, .player = e.player});
               } else if constexpr (std::is_same_v<E, events::NamedAs>) {
@@ -1455,6 +1461,8 @@ struct NetThread::Impl {
       for (auto &message : Combat::Get().TakeOutbound()) {
         if (const auto *lend = std::get_if<proto::CarLend>(&message))
           lastLend = *lend;
+        if (const auto *paint = std::get_if<proto::CarPaint>(&message))
+          lastPaint = *paint;
         if (!endpoint->SendCombat(message))
           if (const auto *area = std::get_if<proto::AreaHit>(&message))
             log::Info("hit on player {} dropped: not in the session, or friendly fire is off",

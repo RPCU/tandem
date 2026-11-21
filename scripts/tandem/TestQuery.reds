@@ -31,6 +31,11 @@
 //                         (the player whose hack is marked on it; 0: none)
 //   car marks             the shared vehicles another player's quickhack is
 //                         marked on now (their traffic ids), or none
+//   paint [puppet]        the custom paint the car's own state says: our
+//                         V's car (the one it sits in, else its last), or
+//                         the first remote player's car copy here: stock,
+//                         "primary R,G,B [secondary R,G,B] [lights HUE]",
+//                         "unique RECORD"; none: no such car
 //   wanted                our V's wanted level, 0..5 (the prevention
 //                         system's own)
 //   upload                the upload running on our V (an NPC's hack or
@@ -117,6 +122,13 @@ public class TandemTestQuery {
       if IsDefined(devices) {
         value = devices.Query(arg, words[4]);
       }
+    } else if Equals(what, "paint") {
+      let paints = system.Paint();
+      if IsDefined(paints) && (count == 3 || Equals(arg, "puppet")) {
+        value = paints.Query(system, Equals(arg, "puppet"));
+      } else if IsDefined(paints) {
+        value = "unknown";
+      }
     } else if Equals(what, "wanted") {
       let prevention = GameInstance.GetScriptableSystemsContainer(game).Get(n"PreventionSystem") as PreventionSystem;
       if IsDefined(prevention) {
@@ -131,7 +143,7 @@ public class TandemTestQuery {
       value = "unknown";
     }
     if Equals(value, "unknown") {
-      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks, wanted, upload)");
+      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks, paint [puppet], wanted, upload)");
       return;
     }
     TandemNative.Log(s"test query: \(asked) = \(value)");

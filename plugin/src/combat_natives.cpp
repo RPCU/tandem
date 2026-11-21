@@ -306,6 +306,11 @@ struct TandemFight : Red::IScriptable {
         Combat::Get().NoteLend(*lend);
         continue;
       }
+      // Each player's car's paint: kept here for Paint.reds (TandemProgress).
+      if (const auto *paint = std::get_if<proto::CarPaint>(&message)) {
+        Combat::Get().NotePaint(*paint);
+        continue;
+      }
       // The session's vendors: kept here for Vendors.reds (TandemProgress).
       if (const auto *vendor = std::get_if<proto::NpcVendor>(&message)) {
         Combat::Get().NoteVendor(*vendor);

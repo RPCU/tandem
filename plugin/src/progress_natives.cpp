@@ -69,6 +69,25 @@ scaling::Multipliers MultipliersFor(std::int32_t players) {
 }
 } // namespace
 
+// The custom paint of a player's car (proto::CarPaint), as the session last
+// said it. Plain fields only (the script VM aligns struct locals to 8).
+struct TandemCarPaint {
+  // How many times that player's paint changed here (0: never said).
+  std::int32_t changes{};
+  // The car's record, as its owner's seat names it (none: no car).
+  Red::TweakDBID vehicle;
+  // proto::kPaint*: 1 primary, 2 secondary, 4 lights, 8 unique; 0: stock.
+  std::int32_t flags{};
+  // 0xRRGGBB
+  std::int32_t primary{};
+  std::int32_t secondary{};
+  float lightsHue{};
+  // A unique template: its VehicleColorTemplate record, the model it fits.
+  Red::TweakDBID unique;
+  Red::CName model;
+};
+static_assert(alignof(TandemCarPaint) <= 8, "the script VM aligns struct locals to 8");
+
 struct TandemProgress : Red::IScriptable {
   // ---- levels ----
 
@@ -179,6 +198,44 @@ struct TandemProgress : Red::IScriptable {
                           : proto::Lend::Never;
     return sync::MayDrive(
         {.lend = word, .ownerAboard = ownerAboard, .ownerInSession = ownerInSession});
+  }
+  // Our car's custom paint, to everyone (the endpoint keeps it; flags 0:
+  // stock paint). Colours are 0xRRGGBB. What the wire would refuse is not
+  // said.
+  static void SendCarPaint(Red::TweakDBID vehicle, std::int32_t flags, std::int32_t primary,
+                           std::int32_t secondary, float lightsHue, Red::TweakDBID unique,
+                           Red::CName model) {
+    const auto byte = [](std::int32_t colour, int shift) {
+      return static_cast<std::uint8_t>((colour >> shift) & 0xFF);
+    };
+    const proto::CarPaint paint{.vehicle = vehicle.value,
+                                .flags = static_cast<std::uint8_t>(flags & 0xFF),
+                                .primaryR = byte(primary, 16),
+                                .primaryG = byte(primary, 8),
+                                .primaryB = byte(primary, 0),
+                                .secondaryR = byte(secondary, 16),
+                                .secondaryG = byte(secondary, 8),
+                                .secondaryB = byte(secondary, 0),
+                                .lightsHue = lightsHue,
+                                .unique = unique.value,
+                                .model = model.hash};
+    if (flags >= 0 && flags <= proto::kPaintFlags && proto::Fits(paint))
+      Combat::Get().Send(paint);
+    else
+      log::Info("paint: our car's paint not said (flags {}): not a paint the session knows", flags);
+  }
+  // A partner's car's paint (stock when it said none).
+  static TandemCarPaint CarPaintOf(std::uint32_t player) {
+    const auto kept = Combat::Get().PaintOf(player);
+    const auto &paint = kept.paint;
+    return {.changes = static_cast<std::int32_t>(kept.changes),
+            .vehicle = Red::TweakDBID(paint.vehicle),
+            .flags = paint.flags,
+            .primary = paint.primaryR << 16 | paint.primaryG << 8 | paint.primaryB,
+            .secondary = paint.secondaryR << 16 | paint.secondaryG << 8 | paint.secondaryB,
+            .lightsHue = paint.lightsHue,
+            .unique = Red::TweakDBID(paint.unique),
+            .model = Red::CName(paint.model)};
   }
 
   // ---- vendors (docs/architecture/progression.md, "Vendors") ----
@@ -312,6 +369,17 @@ struct TandemProgress : Red::IScriptable {
 };
 } // namespace tandem::plugin
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemCarPaint, "TandemCarPaint", {
+  RTTI_PROPERTY(changes);
+  RTTI_PROPERTY(vehicle);
+  RTTI_PROPERTY(flags);
+  RTTI_PROPERTY(primary);
+  RTTI_PROPERTY(secondary);
+  RTTI_PROPERTY(lightsHue);
+  RTTI_PROPERTY(unique);
+  RTTI_PROPERTY(model);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemProgress, "TandemProgress", {
   RTTI_METHOD(SendOwnLevel);
   RTTI_METHOD(SendNpcLevel);
@@ -331,6 +399,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemProgress, "TandemProgress", {
   RTTI_METHOD(SendCarLend);
   RTTI_METHOD(CarLendOf);
   RTTI_METHOD(MayDrive);
+  RTTI_METHOD(SendCarPaint);
+  RTTI_METHOD(CarPaintOf);
   RTTI_METHOD(SendVendor);
   RTTI_METHOD(VendorOf);
   RTTI_METHOD(VendorDead);
