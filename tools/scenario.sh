@@ -372,26 +372,31 @@ REMOTE
 
 # What an earlier scenario can leave that test reset cannot undo, repaired
 # before this one (each repair a "harness:" line): V dead on the death
-# screen, or saving locked after a story that could not be put back (both
-# until a save loads: the game is stopped, the scenario's ensure starts it
-# again); co-op left off (coop leave) in the role this scenario runs in,
+# screen, saving locked after a story that could not be put back, or the
+# game in the main menu (exit-host; all until a save loads: the game is
+# stopped, the scenario's ensure starts it again); co-op left off (coop leave) in the role this scenario runs in,
 # which ensure would not restart: hosted or joined again from the co-op
 # menu, at tandem.ini's address.
 repair() {
-  local want dead locked chosen started address
+  local want dead locked menu chosen started address why
   want=$(sed -n 's/^ensure //p' "$1" | head -1)
   want=${want// /,}
-  # (Since the last load, "playing": dead, locked; the last session chosen;
-  # the role the game was started in; the join address.)
-  read -r dead locked chosen started address < <(remote "cd '$dir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); \
-    awk '/\\[script\\] playing/ { dead = 0; locked = 0 } /revive: our V dies: death screen/ { dead = 1 } \
+  # (Since the last load, "playing": dead, locked, in the main menu; the
+  # last session chosen; the role the game was started in; the join
+  # address.)
+  read -r dead locked menu chosen started address < <(remote "cd '$dir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); \
+    awk '/\\[script\\] playing/ { dead = 0; locked = 0; menu = 0 } /revive: our V dies: death screen/ { dead = 1 } \
       /save: stays locked/ { locked = 1 } /save: unlocked|saving unlocked/ { locked = 0 } \
+      /\\[script\\] main menu world: not a game/ { menu = 1 } \
       /session: chosen / { sub(/.*session: chosen /, \"\"); chosen = \$1 } \
-      END { printf \"%d %d %s \", dead, locked, chosen == \"\" ? \"-\" : chosen }' \"\$f\"; \
+      END { printf \"%d %d %d %s \", dead, locked, menu, chosen == \"\" ? \"-\" : chosen }' \"\$f\"; \
     s=\$(sed 's/^[^ ]* //' red4ext/plugins/tandem/.started 2>/dev/null); a=\$(sed -n 's/^address *= *//p' red4ext/plugins/tandem/tandem.ini); \
     echo \"\${s:--} \${a:--}\"") || return 0
-  if [ "$dead" = 1 ] || [ "$locked" = 1 ]; then
-    echo "  harness: $([ "$dead" = 1 ] && echo "our V is dead on the death screen" || echo "saving stays locked (a story not put back)") since the last load: the game is stopped, ensure starts it again"
+  if [ "$dead" = 1 ] || [ "$locked" = 1 ] || [ "$menu" = 1 ]; then
+    why="our V is dead on the death screen"
+    [ "$locked" = 1 ] && why="saving stays locked (a story not put back)"
+    [ "$menu" = 1 ] && why="the game is in the main menu"
+    echo "  harness: $why since the last load: the game is stopped, ensure starts it again"
     $game stop >/dev/null 2>&1 || true
     return 0
   fi

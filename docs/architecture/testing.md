@@ -90,10 +90,11 @@ Before that reset, `tools/scenario.sh`'s `run`:
   Then the mark, so the reset's own lines (above) are still the scenario's.
 - **repairs** what the reset cannot undo (`repair`, each a `harness:`
   line): our V dead on the death screen
-  (`revive: our V dies: death screen` since the last `playing`) or saving
+  (`revive: our V dies: death screen` since the last `playing`), saving
   locked after a story not put back (`save: stays locked`, no
-  `save: unlocked` since): the game is stopped and the scenario's `ensure`
-  starts it again; co-op left off (`session: chosen off` last, after a
+  `save: unlocked` since) or the game in the main menu (`main menu world:
+not a game` since, `exit-host`'s end): the game is stopped and the
+  scenario's `ensure` starts it again; co-op left off (`session: chosen off` last, after a
   `coop leave`) in the role and keys the game runs with, which `ensure`
   would not restart: `coop join ADDRESS:27450` (tandem.ini's address) as
   guest, `coop host` as host.
@@ -174,7 +175,8 @@ read):
 <!-- prettier-ignore -->
 | Query | Value |
 | --- | --- |
-| `health` | our V's health, percent (`StatPoolsSystem`, 2 decimals) |
+| `health` | our V's health, percent (`StatPoolsSystem`, 2 decimals); starts the watch `health low` reads |
+| `health low` | the lowest our V's health went since the last `health`, read every tick: a hit's dip that regeneration fills within a second (a 10-physical hit is ~1 point through armour) |
 | `item RECORD` | its count in our inventory, every stack (`TransactionSystem`) |
 | `money` | our eddies |
 | `fact NAME` | the quest fact's value (`QuestsSystem`, 0: never set) |
@@ -191,8 +193,10 @@ and sets VAR; `expect_value V OP W` (OP `=`, `!=`, `~` an ERE, `<`, `<=`,
 "$after" down`. `task scenarios:check` refuses a query the scripts do not
 answer, an unknown operator or change, a compared variable the scenario
 never sets, and a VAR that is one of the harness's own (`$out`). The
-scenarios that assert effects so: `npcs-shoot-guest`, `npcs-hurt-guest`,
-`combat-melee-guest`, `combat-friendly-fire(-off)` (health), `revive-game`,
+scenarios that assert effects so: `npcs-shoot-guest`,
+`combat-friendly-fire(-off)` (health), `npcs-hurt-guest`,
+`combat-melee-guest` (`health` before the host's first hit, then `health
+low`), `revive-game`,
 `revive-peer` (health after the revive), `trade-peer`, `phone-trade` (item
 counts, money unchanged; the mock player keeps no inventory: its `applied`
 line is its side), `story-guest` (the reward's money), `drive`, `ride`

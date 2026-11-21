@@ -204,6 +204,10 @@ public class TandemSystem extends ScriptableSystem {
   private let m_tickGen: Int32;
   // Ticks so far (TandemPause.Frame: a world paused takes commands there).
   private let m_ticks: Int32;
+  // (test) "test query health low": the lowest our V's health went since
+  // the last "test query health", read every tick once one was asked.
+  private let m_healthWatch: Bool;
+  private let m_healthLow: Float;
   // The recorder, solo (RecordTick): its own world and NPC senders, set up
   // on the first tick of a game; when the pose source was last set; our
   // V's life as last recorded.
@@ -997,7 +1001,33 @@ public class TandemSystem extends ScriptableSystem {
     TandemNative.ScriptTickBegin();
     this.m_ticks += 1;
     this.TickOnce();
+    if this.m_healthWatch {
+      this.WatchHealth();
+    }
     TandemNative.ScriptTickEnd();
+  }
+
+  // (test) TestQuery.reds: "health" starts the watch from VALUE, "health
+  // low" reads it.
+  public func StartHealthWatch(percent: Float) -> Void {
+    this.m_healthWatch = true;
+    this.m_healthLow = percent;
+  }
+
+  public func HealthLow(out percent: Float) -> Bool {
+    percent = this.m_healthLow;
+    return this.m_healthWatch;
+  }
+
+  private func WatchHealth() -> Void {
+    let player = GetPlayer(this.GetGameInstance());
+    if !IsDefined(player) {
+      return;
+    }
+    let now = GameInstance.GetStatPoolsSystem(this.GetGameInstance()).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, true);
+    if now < this.m_healthLow {
+      this.m_healthLow = now;
+    }
   }
 
   private func TickOnce() -> Void {
