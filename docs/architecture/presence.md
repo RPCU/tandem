@@ -34,7 +34,7 @@ still see or hear.
   | Message | Channel | Size | Carries |
   | --- | --- | --- | --- |
   | `Presence` | Event, kept for late joiners | < 16 | a V's health (a byte) and flags (in a menu, photo mode, in combat); at once on a loss or a flag, else 5 Hz at most |
-  | `Cue` | State (a late one is worthless) | < 32 | where a shot's bullet ended; that a melee swing landed, and where |
+  | `Cue` | State (a late one is worthless) | < 32 | where a shot's bullet ended (`Trace`), and where a ricochet of it hit (`Ricochet`); that a melee swing landed, and where; a tech weapon's charge (`Charge`: its step, how charged; on each change and every 0.25 s while it lasts, so a lost end ends by itself 1.2 s later). `Ricochet` and `Charge` came with protocol 13 |
   | `NpcReaction` | State for a twitch, else Event | < 40 | host only: the hit reaction one of its NPCs starts, as the animation feature the game filled |
   | `StatusVisuals` | Event, kept for late joiners | < 160 | the status effects that show on a V (burning, shock, a heal's glow…): their record ids, the whole set on every change, at most 16 |
 
@@ -98,9 +98,12 @@ one run with `cmd presence vo onPlayerHit` decides.
 <!-- prettier-ignore -->
 | The owner… | Partner sees today | After | Needs eyes |
 | --- | --- | --- | --- |
-| fires a hitscan weapon | flash, report, shells; no bullet | `Cue` Trace: where the crosshair's ray ended (the game's own look-at query). The partner's game fires a real NPC shot of the puppet's weapon at that point: the weapon's own tracer, impact, decal and sounds. No ammunition, the Vs present are not hit, its hits are dropped | tracer from the muzzle to the right place; decal; nothing takes damage |
+| fires a hitscan weapon | flash, report, shells; no bullet | `Cue` Trace: where the crosshair's ray ended (the game's own look-at query). The partner's game fires a real NPC shot of the puppet's weapon at that point (its impact, decal and sounds; no ammunition, the Vs present are not hit, its hits are dropped) and spawns the weapon's own hitscan trail from the puppet's muzzle to it (`TandemTracers.Trail`: the fx package's NPC trail for its damage type, an effect that hits nothing). `presence-ricochet`; not yet run in game | one tracer from the muzzle to the right place, not two or none (`cmd presence tracer both\|bullet\|trail`); decal; nothing takes damage |
+| fires a round that ricochets | the first leg (above) | `Cue` Ricochet: a hit of the shooter's bullet after a bounce (`GetNumRicochetBounces`, read in `DamageSystem.ProcessPipeline`), at most 8 a second: the fx package's ricochet trail from the shot's end (the bounce) to that hit. A bounce that hits nothing is not told to scripts, so it is not drawn. `presence-ricochet`; not yet run in game | the streak leaves the wall where the first leg ended |
+| charges a tech weapon | the charged shot only | `Cue` Charge, from the weapon's own `ChargeStep`: on the puppet's copy of the weapon, the glow (its `charge` effect, `chargeValue` at the shooter's charge), the NPC charge effects (`EnterCharge`, `charging_tpp`, its sound; `charged` when full), all stopped at release; a discharge (let go too early) adds `discharge_tpp`. `presence-charge`; not yet run in game (`cmd presence charge on\|full\|off` shows one) | the glow builds with the charge and ends with the shot; the hum is heard |
 | fires a smart or lobbed round | flash, report | a smart round locked on what the others know homes on it from the puppet (`Throw` Smart); with no such lock (nothing locked, an NPC the others do not share) it is drawn as a plain round to where it was aimed (`Cue` Trace). A launcher's round and a grenade fly as copies (`Throw`, [`combat-coverage.md`](combat-coverage.md), "Throws"); a grenade's copy is kept on the real one's path (`ThrowPath`) | the guided round's bend; a copy put back on its path with no pause in the air (`combat-throw-bounce`) |
 | (host) an NPC fires | flash, report, shells on the proxy | the same real shot from the proxy's weapon at the target the host already sends in `NpcShot` | as above; an NPC shot at our own V is still the one Shots.reds decides |
+| (host) an NPC's smart gun fires at a guest | a plain round from the proxy | the guided round the host's AI tracks (`NpcShotAt` `kShotAtTracked`): the proxy fires it at the best of the guest's V's targeting components, homing (`smartGunIsProjectileGuided`), as `AIWeapon.Fire` does; the hit stays the guest's game's (`npcs-shoot-guest-smart`; not yet run in game) | the round bends toward V; one meant to miss flies past |
 
 What breaks in the world is told and replayed whatever broke it
 (`devices.md`, "Glass and breakable scenery"); a barrel is a device.
@@ -329,19 +332,24 @@ Scenarios (`tools/scenario.sh NAME`), each checking the game's log:
 | `names-prompt` | the pause menu's Host this game asks for a name while it is V; a bad one asked again; a good one saved, then hosting |
 | `names-duplicate` | two mock players named V and v beside our V: shown as V (2) and v (3), each told its own, markers and HUD entries under those names |
 | `presence-reactions` | as a guest: impact, stagger, knockdown, ragdoll and its end on a proxy |
+| `presence-ricochet` | a partner's shots: the drawn bullet and the weapon's trail from the muzzle, each ricochet's leg on from the shot's end |
+| `presence-charge` | a partner charges a tech rifle: its charge effects and glow on the puppet's weapon, full, released with the shot, never left on |
+| `npcs-shoot-guest-smart` | as a guest: a host NPC's smart gun fires guided rounds from its proxy that home on our V; hits still ours, reported |
 | `presence-reactions-host` | as host: a guest's hits make our NPCs react, and each reaction goes out |
 | `presence-status` | a partner burns, goes camo and heals: each record's visuals on its puppet, Stealth's camo worn for real, an unknown record skipped with its notice; our own V's effect sent; a vanish clears its puppet |
 
 By hand: `tools/game.sh cmd presence report | steps auto|on|off | vo NAME |
 sound NAME | fx NAME | flinch | bullet | hud [at X Y | fov h|v | camera] |
 react TYPE | status apply|remove REC | status block|unblock NAME |
-status report`, `presence swim both|fx|sound`; `coop name` (the name, and whether the menu would ask),
+status report`, `presence swim both|fx|sound`; `presence trail`, `presence tracer
+both|bullet|trail`, `presence charge on|full|off`; `coop name` (the name, and whether the menu would ask),
 `coop name reset` (ask again), `coop name answer TEXT` / `coop name
 cancel` (answer the open name popup), `coop set nameplates
 near|always|off`.
 
 The mock player: `--hold RECORD`, `--holster-at N`, `--shoot N` (now also
-as host, with the bullet's end), `--melee N`, `--hurt N`, `--menu-at N`,
+as host, with the bullet's end; `--ricochet`: each bullet bounces on),
+`--charge N` (a 2.5 s charge, then the shot), `--melee N`, `--hurt N`, `--menu-at N`,
 `--react-npcs N` (host), `--unlink-at N` (breaks its links), `--name NAME`
 (logs `the session shows us as …` when the host renamed it), `--status
 REC@FROM-TO[,…]` (status effects on its V), `--camo N --camo-record REC`.

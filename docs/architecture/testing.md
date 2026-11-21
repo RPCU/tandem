@@ -549,8 +549,10 @@ decline`, `busy KIND|off`, `busy report`, `apartment report`. Scenarios
   its V's right hand (a weapon, so `--shoot` and `--melee` are seen and
   heard), `--holster-at N` puts it away N s after another player is there
   and draws it 5 s later; `--shoot N` also sends where the bullet ended (a
-  `Cue` 6 m past the other V), `--melee N` swings every N s and lands it (a
-  `Cue`); `--hurt N` takes a quarter of its V's health every N s (full
+  `Cue` 6 m past the other V; `--ricochet`: and a ricochet on from there),
+  `--charge N` charges its weapon every N s (`Cue` Charge: charging, ready,
+  full, then the shot and its end), `--melee N` swings every N s and lands
+  it (a `Cue`); `--hurt N` takes a quarter of its V's health every N s (full
   again under 30%), `--menu-at N` is "in a menu" N s in, for 5 s (both as
   `Presence`); `host --react-npcs N` has one of the NPCs it sends play a
   hit reaction every N s (twitch, impact, stagger, knockdown, ragdoll, its
