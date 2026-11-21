@@ -649,6 +649,17 @@ public class TandemComms {
     return this.RegisterAt(at, data);
   }
 
+  // The same on an entity, following it (Devices.reds: a partner's hack of
+  // an enemy's device). Unregistered by its placer.
+  public func MarkerOn(target: ref<GameObject>, icon: CName, label: String, description: String, player: Uint32) -> NewMappinID {
+    let data = new TandemCommsMappinData();
+    data.icon = icon;
+    data.label = label;
+    data.description = description;
+    data.player = player;
+    return this.RegisterOn(target, data);
+  }
+
   private func RegisterAt(at: Vector4, data: ref<TandemCommsMappinData>) -> NewMappinID {
     return GameInstance.GetMappinSystem(this.m_game).RegisterMappin(this.Data(data), at);
   }

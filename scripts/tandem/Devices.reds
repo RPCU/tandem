@@ -84,6 +84,14 @@ public class TandemDevice {
   // interaction (Interact.reds) until then: not said meanwhile.
   public let heldUntil: Float;
   public let heldChanged: Bool;
+  // The player whose doing its state is (0: nobody's we know): a partner's
+  // hack of an enemy's device is marked while it lasts (UpdateMarks).
+  public let hackedBy: Uint32;
+  public let mark: NewMappinID;
+  public let markBy: Uint32;
+  // A camera or turret we made friendly to every V here (KeepFriendly):
+  // undone when the session's word clears it.
+  public let befriended: Bool;
 }
 
 public class TandemDevices extends ScriptableSystem {
@@ -100,6 +108,8 @@ public class TandemDevices extends ScriptableSystem {
   // Guest: when the host began to send its record again (0: not).
   private let m_resetAt: Float;
   private let m_logged: Int32;
+  // When the partners' hacks were last marked (UpdateMarks).
+  private let m_marksAt: Float;
 
   public static func Get(game: GameInstance) -> ref<TandemDevices> {
     return GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemDevices") as TandemDevices;
@@ -192,8 +202,11 @@ public class TandemDevices extends ScriptableSystem {
     if IsDefined(explosive) && explosive.IsExploded() {
       flags += TandemDevices.BitExploded();
     }
+    // A camera or turret turned (Friendly Mode, a breach's daemon, a quest),
+    // or in a player's hands (the takeover): friendly to every V in every
+    // other game while it lasts.
     let sensor = ps as SensorDeviceControllerPS;
-    if IsDefined(sensor) && sensor.IsAttitudeChanged() {
+    if IsDefined(sensor) && (sensor.IsAttitudeChanged() || sensor.IsControlledByPlayer()) {
       flags += TandemDevices.BitFriendly();
     }
     let point = ps as AccessPointControllerPS;
@@ -340,6 +353,7 @@ public class TandemDevices extends ScriptableSystem {
     if this.m_collisions == 0 {
       if first.entity == entity {
         first.attached = false;
+        this.Unmark(first);
         if this.Idle(first) {
           this.Drop(first);
         }
@@ -356,6 +370,7 @@ public class TandemDevices extends ScriptableSystem {
     }
     for device in gone {
       device.attached = false;
+      this.Unmark(device);
       if this.Idle(device) {
         this.Drop(device);
       }
@@ -440,7 +455,7 @@ public class TandemDevices extends ScriptableSystem {
 
   // Not in our world and nothing of the session's: no need to remember it.
   private func Idle(device: ref<TandemDevice>) -> Bool {
-    return !device.attached && !device.known && !device.kept && !device.stale && device.answerAt == 0.0;
+    return !device.attached && !device.known && !device.kept && !device.stale && device.answerAt == 0.0 && !device.befriended;
   }
 
   // ---- the session ----
@@ -465,6 +480,9 @@ public class TandemDevices extends ScriptableSystem {
     device.settleUntil = 0.0;
     device.tries = 0;
     device.nextTry = 0.0;
+    device.hackedBy = 0u;
+    device.befriended = false;
+    this.Unmark(device);
   }
 
   // The session is over. worldStays (we stay in this game) and we were a
@@ -555,6 +573,10 @@ public class TandemDevices extends ScriptableSystem {
         this.Look(device, now, false);
       }
     }
+    if now - this.m_marksAt >= 0.5 || now < this.m_marksAt {
+      this.m_marksAt = now;
+      this.UpdateMarks();
+    }
     // Guest: the host's record came again; what it no longer names goes
     // back to what our own save had.
     if this.m_resetAt > 0.0 && now - this.m_resetAt > 3.0 {
@@ -621,6 +643,7 @@ public class TandemDevices extends ScriptableSystem {
     if !IsDefined(ps) {
       return;
     }
+    this.KeepFriendly(device, ps, false);
     let status = TandemDevices.StatusOf(ps);
     let flags = TandemDevices.FlagsOf(ps);
     let value = TandemDevices.ValueOf(ps);
@@ -691,6 +714,7 @@ public class TandemDevices extends ScriptableSystem {
       if now < device.settleUntil {
         return;
       }
+      device.hackedBy = this.m_you;
       TandemNative.ReportDevice(device.entity, device.cls, status, flags, value, this.m_you);
       this.LogSome(s"devices: \(TandemDevices.Name(device)) is now \(TandemDevices.Describe(status, flags, value))");
       return;
@@ -717,6 +741,7 @@ public class TandemDevices extends ScriptableSystem {
     }
     // Our V's doing (or our game's own: a door closing itself): the host
     // hears what it is here now, and answers for everyone.
+    device.hackedBy = this.m_you;
     TandemNative.UseDevice(device.entity, device.cls, status, flags, value);
     this.LogSome(s"devices: \(TandemDevices.Name(device)) changed here (\(TandemDevices.Describe(status, flags, value))): asked of the host");
   }
@@ -777,6 +802,7 @@ public class TandemDevices extends ScriptableSystem {
     device.wantFlags = event.flags;
     device.wantValue = event.value;
     device.tries = 0;
+    device.hackedBy = event.player;
     let ps = this.StateOf(device);
     if !IsDefined(ps) {
       return; // no state for it here yet: applied when it comes (Look)
@@ -822,6 +848,7 @@ public class TandemDevices extends ScriptableSystem {
   }
 
   private func Drop(device: ref<TandemDevice>) -> Void {
+    this.Unmark(device);
     this.Unindex(device);
     ArrayRemove(this.m_devices, device);
   }
@@ -849,6 +876,7 @@ public class TandemDevices extends ScriptableSystem {
       device.value = TandemDevices.ValueOf(ps);
     }
     device.by = event.player;
+    device.hackedBy = event.player;
     // A guest's quickhack on it: its indicator while we are linked (Comms.reds).
     TandemCommsNative.PartnerDevice(event.entity, event.player, device.flags, event.flags);
     // The game handles the actions on its next frames: answered then. An
@@ -933,16 +961,22 @@ public class TandemDevices extends ScriptableSystem {
         explosive.SetExplodedState(true);
       }
     }
+    // A camera or turret turned: friendly to every V here, the way the
+    // Friendly Mode quickhack makes it (SetDeviceAttitude), or back. Not
+    // streamed in: its state says so, and its entity is turned when it
+    // comes (KeepFriendly). Not while our V holds it (the takeover's own).
     let sensor = ps as SensorDeviceControllerPS;
-    if IsDefined(sensor) && TandemDevices.Differ(flags, has, TandemDevices.BitFriendly()) {
-      let friendly = TandemDevices.Has(flags, TandemDevices.BitFriendly());
-      if loaded {
-        let attitude = sensor.ActionSetDeviceAttitude();
-        attitude.Attitude = friendly ? EAIAttitude.AIA_Friendly : EAIAttitude.AIA_Hostile;
-        attitude.Repeat = false;
-        sensor.ExecutePSAction(attitude, sensor);
+    if IsDefined(sensor) && !sensor.IsControlledByPlayer() && TandemDevices.Differ(flags, has, TandemDevices.BitFriendly()) {
+      if TandemDevices.Has(flags, TandemDevices.BitFriendly()) {
+        sensor.SetIsAttitudeChanged(true);
+        if loaded {
+          this.KeepFriendly(device, ps, true);
+        }
       } else {
-        sensor.SetIsAttitudeChanged(friendly);
+        sensor.SetIsAttitudeChanged(false);
+        if loaded {
+          this.Unbefriend(device);
+        }
       }
     }
     let point = ps as AccessPointControllerPS;
@@ -1080,6 +1114,213 @@ public class TandemDevices extends ScriptableSystem {
     let set = new SetSecuritySystemState();
     set.state = IntEnum<ESecuritySystemState>(state);
     this.Send(security, set);
+  }
+
+  // ---- a camera or turret turned: friendly to every V ----
+
+  // Our V or a partner's puppet (from any thread: it only reads).
+  public static func IsAnyV(game: GameInstance, target: wref<GameObject>) -> Bool {
+    if !IsDefined(target) {
+      return false;
+    }
+    if target.IsPlayer() {
+      return true;
+    }
+    let system = TandemSystem.Of(game);
+    return IsDefined(system) && system.PlayerOfPuppet(target.GetEntityID()) != 0u;
+  }
+
+  // The remote players' bodies here.
+  private func Puppets() -> array<ref<GameObject>> {
+    let bodies: array<ref<GameObject>>;
+    let system = TandemSystem.Of(this.GetGameInstance());
+    if IsDefined(system) {
+      for player in system.PuppetPlayers() {
+        let body = system.PuppetOf(player);
+        if IsDefined(body) {
+          ArrayPush(bodies, body);
+        }
+      }
+    }
+    return bodies;
+  }
+
+  // Whoever turned it (any player, in any game: the session's word is its
+  // state's), a camera or turret in our world is friendly to our V the way
+  // the Friendly Mode quickhack makes it (the game's own SetDeviceAttitude,
+  // once its entity is here: its state alone left it hostile to our V, which
+  // its alarm then called an intruder), and to every puppet as it is to our
+  // V. Each look, so a puppet that comes later, and an entity that streams in
+  // again, are turned too. fresh: the word just came (Apply): our V too
+  // when it is not friendly yet; else only when it is hostile (a Friendly
+  // Mode that ran out leaves it neutral, as in solo). On the tick (Look,
+  // Apply): no hook does this.
+  private func KeepFriendly(device: ref<TandemDevice>, ps: ref<ScriptableDeviceComponentPS>, fresh: Bool) -> Void {
+    let sensor = ps as SensorDeviceControllerPS;
+    if !IsDefined(sensor) || sensor.IsControlledByPlayer() {
+      return;
+    }
+    let body = GameInstance.FindEntityByID(this.GetGameInstance(), device.entity) as SensorDevice;
+    if !IsDefined(body) {
+      return;
+    }
+    if !sensor.IsAttitudeChanged() {
+      if device.befriended {
+        this.Unbefriend(device);
+      }
+      return;
+    }
+    let did = body.TandemKeepFriendly(this.Puppets(), fresh);
+    if did > 0 {
+      let line = s"devices: \(TandemDevices.Name(device)) turned for every V here: \(did == 1 || did == 3 ? "our V (the game's own SetDeviceAttitude)" : "our V already") and \(did >= 2 ? "the puppets" : "no puppet to turn")";
+      // Once a turn in the log; again (an action the game did not take yet,
+      // a puppet that came) in the debug log.
+      if fresh || !device.befriended {
+        TandemNative.Log(line);
+      } else {
+        TandemNative.LogDebug(line);
+      }
+      device.befriended = true;
+    }
+  }
+
+  // The session's word cleared it: hostile again as its own was, for our V
+  // and every puppet.
+  private func Unbefriend(device: ref<TandemDevice>) -> Void {
+    device.befriended = false;
+    let body = GameInstance.FindEntityByID(this.GetGameInstance(), device.entity) as SensorDevice;
+    if IsDefined(body) && !body.GetDevicePS().IsControlledByPlayer() {
+      body.TandemUnbefriend(this.Puppets());
+      TandemNative.Log(s"devices: \(TandemDevices.Name(device)) back to its own attitude for every V here");
+    }
+  }
+
+  // ---- a partner's hack of an enemy's device, marked ----
+
+  // Turned, distracted, or switched off by a quickhack: what an ally's hack
+  // leaves on a device while it lasts.
+  private static func IsHackedState(status: Int32, flags: Int32) -> Bool {
+    return TandemDevices.Has(flags, TandemDevices.BitFriendly()) || TandemDevices.Has(flags, TandemDevices.BitGlitching()) || (status == 0 && TandemDevices.Has(flags, TandemDevices.BitHacked()));
+  }
+
+  // An enemy's: on a security system that is not our V's friend, or a camera
+  // or turret whose own side (before it was turned) is hostile to our V. A
+  // device of ours or a neutral one shows nothing.
+  private func WasEnemy(ps: ref<ScriptableDeviceComponentPS>, body: ref<GameObject>) -> Bool {
+    let player = GetPlayer(this.GetGameInstance());
+    if !IsDefined(player) || !IsDefined(player.GetAttitudeAgent()) {
+      return false;
+    }
+    let ours = player.GetAttitudeAgent().GetAttitudeGroup();
+    let security = ps.GetSecuritySystem();
+    if IsDefined(security) && NotEquals(GameInstance.GetAttitudeSystem(this.GetGameInstance()).GetAttitudeRelation(security.GetSecuritySystemAttitudeGroupName(), ours), EAIAttitude.AIA_Friendly) {
+      return true;
+    }
+    let sensor = body as SensorDevice;
+    return IsDefined(sensor) && sensor.TandemOwnSideHostile(ours);
+  }
+
+  // Twice a second: a marker (world, minimap, map; the hacker's colour,
+  // "Hacked by NAME") on each enemy's device in our world another player's
+  // hack holds; gone when that ends, the device leaves our world, or the
+  // markers are switched off.
+  private func UpdateMarks() -> Void {
+    let game = this.GetGameInstance();
+    let shown = TandemSettings.Markers();
+    for device in this.m_devices {
+      if device.hackedBy != 0u || device.mark.value != 0ul {
+        let want = false;
+        let body: ref<GameObject>;
+        let ps: ref<ScriptableDeviceComponentPS>;
+        if shown && device.attached && device.hackedBy != 0u && device.hackedBy != this.m_you {
+          body = GameInstance.FindEntityByID(game, device.entity) as GameObject;
+          ps = this.StateOf(device);
+          want = IsDefined(body) && IsDefined(ps) && TandemDevices.IsHackedState(TandemDevices.StatusOf(ps), TandemDevices.FlagsOf(ps)) && this.WasEnemy(ps, body);
+        }
+        if !want {
+          this.Unmark(device);
+        } else if device.mark.value == 0ul || device.markBy != device.hackedBy {
+          this.Unmark(device);
+          let comms = TandemComms.Of(game);
+          if IsDefined(comms) {
+            let name = TandemCoop.NameOf(device.hackedBy);
+            device.mark = comms.MarkerOn(body, n"Use", TandemText.F("Devices-HackedBy", name), TandemText.F("Devices-HackedByDescription", name), device.hackedBy);
+            device.markBy = device.hackedBy;
+            TandemNative.Log(s"devices: \(TandemDevices.Name(device)) marked: hacked by player \(device.hackedBy), registered \(device.mark.value != 0ul)");
+          }
+        }
+      }
+    }
+  }
+
+  private func Unmark(device: ref<TandemDevice>) -> Void {
+    if device.mark.value == 0ul {
+      return;
+    }
+    GameInstance.GetMappinSystem(this.GetGameInstance()).UnregisterMappin(device.mark);
+    TandemNative.Log(s"devices: \(TandemDevices.Name(device)) unmarked (player \(device.markBy)'s hack)");
+    let none: NewMappinID;
+    device.mark = none;
+    device.markBy = 0u;
+  }
+
+  // (test) TestQuery.reds, "device KIND WHAT": the nearest device of a kind
+  // within 40 m, read from the game. attitude: its attitude to our V;
+  // puppet: to the first puppet; target: what it follows (none, V, puppet,
+  // other); alarm: its security system's state (none: on none); mark: the
+  // player whose hack is marked on it (0: none).
+  public func Query(kind: String, what: String) -> String {
+    let distance = 40.0;
+    let device = this.Nearest(kind, distance);
+    if !IsDefined(device) {
+      return "none";
+    }
+    let game = this.GetGameInstance();
+    let body = GameInstance.FindEntityByID(game, device.entity) as GameObject;
+    let ps = this.StateOf(device);
+    let player = GetPlayer(game);
+    let puppets = this.Puppets();
+    if Equals(what, "attitude") {
+      return IsDefined(body) && IsDefined(player) ? TandemDevices.AttitudeWord(GameObject.GetAttitudeTowards(body, player)) : "none";
+    }
+    if Equals(what, "puppet") {
+      return IsDefined(body) && ArraySize(puppets) > 0 ? TandemDevices.AttitudeWord(GameObject.GetAttitudeTowards(body, puppets[0])) : "none";
+    }
+    if Equals(what, "target") {
+      let sensor = body as SensorDevice;
+      let target = IsDefined(sensor) ? sensor.GetCurrentlyFollowedTarget() : null;
+      if !IsDefined(target) {
+        return "none";
+      }
+      if target == player {
+        return "V";
+      }
+      for puppet in puppets {
+        if target == puppet {
+          return "puppet";
+        }
+      }
+      return "other";
+    }
+    if Equals(what, "alarm") {
+      let security = IsDefined(ps) ? ps.GetSecuritySystem() : null;
+      return IsDefined(security) ? EnumValueToString("ESecuritySystemState", Cast<Int64>(EnumInt(security.GetSecurityState()))) : "none";
+    }
+    if Equals(what, "mark") {
+      return IntToString(Cast<Int32>(device.markBy));
+    }
+    return "unknown";
+  }
+
+  private static func AttitudeWord(attitude: EAIAttitude) -> String {
+    switch attitude {
+      case EAIAttitude.AIA_Friendly:
+        return "friendly";
+      case EAIAttitude.AIA_Neutral:
+        return "neutral";
+      default:
+        return "hostile";
+    }
   }
 
   // ---- hits ----
@@ -1366,4 +1607,138 @@ public final func TandemDetonate(instigator: ref<GameObject>) -> Void {
 public final func SetExplodedState(state: Bool) -> Void {
   wrappedMethod(state);
   TandemDevices.QueueTouched(this);
+}
+
+// ---- a camera or turret turned, on its entity (TandemDevices.KeepFriendly) ----
+
+// When we last asked the game to turn it for our V (engine time).
+@addField(SensorDevice)
+public let m_tandemBefriendAt: Float;
+
+// Turned (its state says so) yet hostile to our V: the game's own Friendly
+// Mode on it (SetDeviceAttitude, as the quickhack's ForceIgnoreTargets
+// becomes: SensorDevice.SetDeviceFriendly makes it friendly to the local
+// player, its group the player's, its senses off our V); asked again 2 s
+// later at most (fresh: not yet friendly to our V is enough). Each puppet
+// it is hostile to then gets the attitude it has to our V, and its senses
+// drop the puppet (SetDetectionOverwrite, as SetDeviceFriendly does for our
+// V). 1: our V asked, 2: puppets turned, 3: both, 0: nothing to do. On the
+// tick only.
+@addMethod(SensorDevice)
+public func TandemKeepFriendly(puppets: array<ref<GameObject>>, fresh: Bool) -> Int32 {
+  let did = 0;
+  let ps = this.GetDevicePS();
+  let player = GetPlayer(this.GetGame());
+  if !IsDefined(ps) || !IsDefined(player) {
+    return 0;
+  }
+  let toV = GameObject.GetAttitudeTowards(this, player);
+  if Equals(toV, EAIAttitude.AIA_Hostile) || (fresh && NotEquals(toV, EAIAttitude.AIA_Friendly)) {
+    let now = EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGame()));
+    if fresh || this.m_tandemBefriendAt == 0.0 || now - this.m_tandemBefriendAt >= 2.0 || now < this.m_tandemBefriendAt {
+      this.m_tandemBefriendAt = now;
+      let attitude = ps.ActionSetDeviceAttitude();
+      attitude.Attitude = EAIAttitude.AIA_Friendly;
+      attitude.Repeat = false;
+      ps.ExecutePSAction(attitude, ps);
+      did += 1;
+    }
+    toV = EAIAttitude.AIA_Friendly;
+  }
+  let mine = this.GetAttitudeAgent();
+  if !IsDefined(mine) {
+    return did;
+  }
+  let turned = false;
+  for puppet in puppets {
+    let theirs = puppet.GetAttitudeAgent();
+    if IsDefined(theirs) && Equals(mine.GetAttitudeTowards(theirs), EAIAttitude.AIA_Hostile) {
+      mine.SetAttitudeTowards(theirs, toV);
+      if IsDefined(this.m_senseComponent) {
+        this.m_senseComponent.SetDetectionOverwrite(puppet.GetEntityID());
+      }
+      turned = true;
+    }
+  }
+  if turned {
+    // A puppet it followed (a guest's copy had it: Turrets.reds, TandemEngage)
+    // is no target any more.
+    let followed = this.GetCurrentlyFollowedTarget();
+    for puppet in puppets {
+      if IsDefined(followed) && followed == puppet {
+        this.LoseTarget(puppet, true);
+      }
+    }
+    this.ReevaluateTargets();
+    did += 2;
+  }
+  return did;
+}
+
+// Its own side again (the session's word cleared the turn): its security
+// system's group, as the game puts it back when that system is enabled
+// again (SensorDevice.OnSecuritySystemEnabled), else the group it had
+// before it was turned (SetDeviceFriendly cached it); that group's attitude
+// to our V and to each puppet; its senses back on them; its sense preset,
+// aim assist and lights as before it was turned. On the tick only.
+@addMethod(SensorDevice)
+public func TandemUnbefriend(puppets: array<ref<GameObject>>) -> Void {
+  let ps = this.GetDevicePS();
+  let mine = this.GetAttitudeAgent();
+  let player = GetPlayer(this.GetGame());
+  if !IsDefined(ps) || !IsDefined(mine) || !IsDefined(player) || !IsDefined(player.GetAttitudeAgent()) {
+    return;
+  }
+  let security = ps.GetSecuritySystem();
+  if IsDefined(security) {
+    mine.SetAttitudeGroup(security.GetSecuritySystemAttitudeGroupName());
+  } else if IsNameValid(this.m_initialAttitude) && NotEquals(this.m_initialAttitude, n"None") {
+    mine.SetAttitudeGroup(this.m_initialAttitude);
+  }
+  this.m_initialAttitude = n"None";
+  let relation = GameInstance.GetAttitudeSystem(this.GetGame()).GetAttitudeRelation(mine.GetAttitudeGroup(), player.GetAttitudeAgent().GetAttitudeGroup());
+  mine.SetAttitudeTowards(player.GetAttitudeAgent(), relation);
+  for puppet in puppets {
+    let theirs = puppet.GetAttitudeAgent();
+    if IsDefined(theirs) {
+      mine.SetAttitudeTowards(theirs, relation);
+    }
+  }
+  this.KeepHostilityTowardsPlayerHostiles(false);
+  if TDBID.IsValid(this.m_defaultSensePreset) {
+    SenseComponent.RequestPresetChange(this, this.m_defaultSensePreset, true);
+  }
+  this.QueueEvent(new EnableAimAssist());
+  if IsDefined(this.m_senseComponent) {
+    this.m_senseComponent.ReevaluateDetectionOverwrite(player);
+    for puppet in puppets {
+      this.m_senseComponent.ReevaluateDetectionOverwrite(puppet);
+    }
+  }
+  this.ReevaluateTargets();
+  this.DetermineLightAttitudeRefs();
+  this.DetermineLightScanRefs(this.m_lightColors.red);
+}
+
+// Its own side (before it was turned: the group SetDeviceFriendly cached,
+// else its group now) is hostile to group `ours` (our V's).
+@addMethod(SensorDevice)
+public func TandemOwnSideHostile(ours: CName) -> Bool {
+  let group = IsNameValid(this.m_initialAttitude) && NotEquals(this.m_initialAttitude, n"None") ? this.m_initialAttitude : (IsDefined(this.GetAttitudeAgent()) ? this.GetAttitudeAgent().GetAttitudeGroup() : n"None");
+  return IsNameValid(group) && NotEquals(group, n"None") && Equals(GameInstance.GetAttitudeSystem(this.GetGame()).GetAttitudeRelation(group, ours), EAIAttitude.AIA_Hostile);
+}
+
+// A turned camera or turret (its state says so: any player's doing, in any
+// game) takes no V for a target in a session: our own, or a partner's
+// puppet. Its entity is turned on the tick (KeepFriendly); until then (just
+// streamed in) this keeps its alarm quiet. Job thread safe: it only reads.
+@wrapMethod(SensorDevice)
+public func SetAsIntrestingTarget(target: wref<GameObject>) -> Bool {
+  if IsDefined(target) && TandemNative.IsStarted() {
+    let ps = this.GetDevicePS();
+    if IsDefined(ps) && ps.IsAttitudeChanged() && !ps.IsControlledByPlayer() && TandemDevices.IsAnyV(this.GetGame(), target) {
+      return false;
+    }
+  }
+  return wrappedMethod(target);
 }

@@ -23,6 +23,12 @@
 //                         our proxy of it
 //   threat puppet         the largest threat value an NPC we run near our V
 //                         holds on the first remote player's puppet
+//   device KIND WHAT      the nearest device of KIND (camera, turret...)
+//                         within 40 m: attitude (to our V: friendly, neutral,
+//                         hostile), puppet (to the first puppet), target (what
+//                         it follows: none, V, puppet, other), alarm (its
+//                         security system: SAFE, ALERTED, COMBAT; none), mark
+//                         (the player whose hack is marked on it; 0: none)
 public class TandemTestQuery {
   public static func Run(game: GameInstance, system: ref<TandemSystem>, command: String) -> Void {
     let words = StrSplit(command, " ");
@@ -95,11 +101,16 @@ public class TandemTestQuery {
       }
     } else if Equals(what, "threat") && Equals(arg, "puppet") {
       value = TandemThreats.PuppetThreat(game, system);
+    } else if Equals(what, "device") && count > 4 {
+      let devices = TandemDevices.Get(game);
+      if IsDefined(devices) {
+        value = devices.Query(arg, words[4]);
+      }
     } else {
       value = "unknown";
     }
     if Equals(value, "unknown") {
-      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health, threat puppet)");
+      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark)");
       return;
     }
     TandemNative.Log(s"test query: \(asked) = \(value)");
