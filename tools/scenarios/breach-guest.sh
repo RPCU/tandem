@@ -1,12 +1,11 @@
 # A guest's breach of the host's network: run here from its puppet, breached once for everyone
 # shellcheck shell=bash disable=SC2317
-# Where: BREACH_AT ("X Y Z": an access point within 40 m, with cameras and
-# NPCs on its network; V's flat has none, so name one).
+# Where: BREACH_AT (a fixture or "X Y Z": an access point within 40 m, with
+# cameras and NPCs on its network; default h11-basement, testing.md "Fixtures").
 # To look at: the network's cameras go dark and its NPCs show broken ICE
 # (scanner), as if V had breached it; no eddies for V (the guest's).
 ensure host
-cmd teleport "${BREACH_AT:-home}"
-pause 4
+at "${BREACH_AT:-h11-basement}"
 mark
 cmd device near ap
 expect 'devices: nearest ap [0-9a-f]+ AccessPointControllerPS at ' 10

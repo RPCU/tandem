@@ -1,13 +1,12 @@
 # As a host: a turret in the mock guest's hands turns where the guest points it and draws its fire on our copy, which fires nothing of its own; let go, it is our game's again
 # shellcheck shell=bash disable=SC2317
-# Where: TURRET_AT ("X Y Z": V in sight of a security turret within 60 m,
-# as turret-guest; V's flat has none, so name one).
+# Where: TURRET_AT (a fixture or "X Y Z": V in sight of a security turret
+# within 60 m, as turret-guest; default arasaka-park).
 # To look at: the turret turns to V and holds there for 6 s; from 2 s to
 # 4 s in, tracers leave its barrels toward V (they hurt nobody: the guest's
 # game decides its hits); then it goes back to its own sweep.
 ensure host
-cmd teleport "${TURRET_AT:-home}"
-pause 4
+at "${TURRET_AT:-arasaka-park}"
 mark
 cmd device near turret
 expect 'devices: nearest turret [0-9a-f]+ SecurityTurretControllerPS at ' 10

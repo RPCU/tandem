@@ -1,12 +1,12 @@
 # As a host: the mock guest's Ping quickhack reaches a device near V; linked, our copy of the device pulses its network and draws its beams
 # shellcheck shell=bash disable=SC2317
-# Where: COMMS_AT ("X Y Z": a device on a network within 40 m, an access
-# point or a camera; V's flat has none on a network, so name one).
+# Where: COMMS_AT (a fixture or "X Y Z": a device on a network within 40 m,
+# an access point or a camera, COMMS_KIND; default h11-basement, testing.md
+# "Fixtures").
 # To look at: the beams from the device to the devices it is linked with,
 # as after our own Ping quickhack, and the device outlined for 10 s.
 ensure host
-cmd teleport "${COMMS_AT:-home}"
-pause 4
+at "${COMMS_AT:-h11-basement}"
 mark
 cmd device near "${COMMS_KIND:-ap}"
 expect 'devices: nearest [a-z]+ [0-9a-f]+ [A-Za-z]+ at ' 10

@@ -1,7 +1,8 @@
 # A street walk, for the "street" recording: a walk, a jog, a sprint, a
 # stretch crouched, and back to the start. Distances are from where V
-# stands (the test field after a test reset): run survey.pilot first on a
-# new spot and move the waypoints where the ground is open.
+# stands (pilot-street's PILOT_AT, the niwaki-plaza fixture by default:
+# testing.md "Fixtures"): run survey.pilot first on a new spot and move the
+# waypoints where the ground is open.
 limit 240
 needs veh == 0
 calibrate move

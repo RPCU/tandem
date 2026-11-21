@@ -1,14 +1,13 @@
 # A camera the other player hacks: turned friendly here too, and switched off for everyone
 # shellcheck shell=bash disable=SC2317
-# Where: DEVICES_AT ("X Y Z": a place with a surveillance camera within 200 m;
-# V's flat has none in sight, so name one).
+# Where: DEVICES_AT (a fixture or "X Y Z": a surveillance camera within 40 m;
+# default h11-basement, testing.md "Fixtures").
 # To look at: the camera's cone turns from red to green (friendly), then it
 # hangs its head (off); it no longer fills V's detection meter.
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male --device-answer friendly,hacked --device-after 3
 expect 'joined \(player [0-9]+' 20
-cmd teleport "${DEVICES_AT:-home}"
-pause 4
+at "${DEVICES_AT:-h11-basement}"
 cmd device
 expect 'devices: [0-9]+ followed, [1-9][0-9]* in our world' 10
 cmd device near camera

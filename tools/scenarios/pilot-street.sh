@@ -2,6 +2,11 @@
 # needs the pilot
 # shellcheck shell=bash disable=SC2317
 ensure host
+# Open ground for the routine's waypoints (14 m ahead, 8 m aside; at the
+# test field something stands 7 m ahead, 2026-11-21): PILOT_AT, a fixture
+# or "X Y Z [YAW]", default niwaki-plaza (testing.md "Fixtures"). A real
+# street recording moves our V beside its own start instead.
+at "${PILOT_AT:-niwaki-plaza}"
 # A real V walking the streets (recordings/play/street.tplay), else one in front of ours.
 play street --mode front --body female
 expect 'joined \(player [0-9]+' 20
