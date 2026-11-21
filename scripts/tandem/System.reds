@@ -1308,6 +1308,20 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.Log(s"recorder: \(TandemNative.RecorderStatus()), solo senders \(this.m_recordReady)");
     } else if StrBeginsWith(command, "coop") {
       this.CoopCommand(command);
+    } else if Equals(command, "test choice") {
+      // (test) a dialogue's choices on screen: tools/game.sh test-reset
+      // presses ChoiceApply until none (the save may load on a call that
+      // waits for one, its quest holding the save).
+      let count = 0;
+      let board = GameInstance.GetBlackboardSystem(this.GetGameInstance()).Get(GetAllBlackboardDefs().UIInteractions);
+      if IsDefined(board) {
+        let value = board.GetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs);
+        if IsDefined(value) {
+          let hubs = FromVariant<DialogChoiceHubs>(value);
+          count = ArraySize(hubs.choiceHubs);
+        }
+      }
+      TandemNative.Log(s"test choice: \(count) hub(s) up");
     } else if Equals(command, "test reset") && !this.m_inGame {
       // Solo there is nothing of ours to put back (tools/scenario.sh asks).
       TandemNative.Log("test reset: ready (solo: nothing to reset)");
