@@ -62,6 +62,7 @@ MinimapPOIMappinController < BaseMinimapMappinController < BaseMappinBaseControl
 NPCPoiseListener < ScriptStatPoolsListener < IStatPoolsListener < IScriptable
 NPCPuppet < ScriptedPuppet < gamePuppet < gamePuppetBase < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
 NPCStatesComponent < AINetStateComponent < ScriptableComponent < GameComponent < IComponent < IScriptable
+NewHudPhoneGameController < gameuiNewHudPhoneGameController < gameuiGenericNotificationGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 PassengerEvents < VehicleEventsTransition < VehicleTransition < DefaultTransition < StateFunctor < IScriptable
 PauseMenuBackgroundGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 PauseMenuGameController < gameuiMenuItemListGameController < gameuiSaveHandlingController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable

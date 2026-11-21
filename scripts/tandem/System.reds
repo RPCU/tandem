@@ -224,6 +224,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_saves: ref<TandemSaves>;
   // Trade with the player beside us (Trade.reds).
   private let m_trade: ref<TandemTradeTable>;
+  // The other players in the game's phone (PhoneContacts.reds).
+  private let m_phoneContacts: ref<TandemPhoneContacts>;
   // Shops: our own vendor behind a partner's (Vendors.reds).
   private let m_vendors: ref<TandemVendors>;
 
@@ -378,6 +380,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_presence.Start(this.GetGameInstance());
     this.m_trade = new TandemTradeTable();
     this.m_trade.Start(this.GetGameInstance(), this);
+    this.m_phoneContacts = new TandemPhoneContacts();
+    this.m_phoneContacts.Start(this.GetGameInstance(), this);
     this.m_vendors = new TandemVendors();
     this.m_vendors.Start(this.GetGameInstance(), this);
     if TandemNative.IsProbe() {
@@ -477,6 +481,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_trade.End();
     }
     this.m_trade = null;
+    if IsDefined(this.m_phoneContacts) {
+      this.m_phoneContacts.Stop();
+    }
+    this.m_phoneContacts = null;
     if IsDefined(this.m_vendors) {
       this.m_vendors.End();
     }
@@ -812,6 +820,10 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_trade;
   }
 
+  public func PhoneContacts() -> ref<TandemPhoneContacts> {
+    return this.m_phoneContacts;
+  }
+
   public func Vendors() -> ref<TandemVendors> {
     return this.m_vendors;
   }
@@ -1027,6 +1039,10 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_trade) && this.m_playing {
       this.m_trade.Tick(this.Now(), this.m_you);
     }
+    // What a row of the phone asked for, once it has closed.
+    if IsDefined(this.m_phoneContacts) && this.m_playing {
+      this.m_phoneContacts.Tick();
+    }
     // Shops (after the trade's prompt, which comes first).
     if IsDefined(this.m_vendors) && this.m_playing {
       this.m_vendors.Tick(this.Now(), this.m_you);
@@ -1116,6 +1132,16 @@ public class TandemSystem extends ScriptableSystem {
         this.m_trade.Command(command);
       } else {
         TandemNative.Log("trade: not in a session");
+      }
+      return;
+    }
+    // The players in the phone (PhoneContacts.reds): phone [open | close |
+    // pick TEXT | call|trade|join|invite NAME].
+    if Equals(command, "phone") || StrBeginsWith(command, "phone ") {
+      if IsDefined(this.m_phoneContacts) {
+        this.m_phoneContacts.Command(command);
+      } else {
+        TandemNative.Log("phone: not in a session");
       }
       return;
     }

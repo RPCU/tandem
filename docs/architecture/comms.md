@@ -40,10 +40,15 @@ recommendation below as built, and no text chat (6).
    menu's Settings page, applied at once (a new default replaces the
    consents given so far; `coop-menu.md`). The request itself is the game's way:
    aim at the partner's V and press the tag key (asks, accepts their
-   request, or breaks the link); the partner sees the HUD's on-screen
-   message "NAME asks to link: share scans and pings" and an input hint on
-   the phone key, "Link with NAME", as a regroup offer
-   ([`travel.md`](travel.md)), for 15 s. Linked players share their
+   request, or breaks the link), or call them from the game's phone (The
+   phone, below); the partner's game rings as for a call (the game's
+   ringtone, unless one of its own calls is up), with the HUD's on-screen
+   message "NAME is calling: link to share scans and pings" and two input
+   hints, "Link with NAME" on the phone key (a press, as a regroup offer,
+   [`travel.md`](travel.md)) and "Decline" on `PhoneReject` (held, as for
+   a holocall), for 15 s. Declining stops the ring and links nothing; the
+   caller is not told (no message for it: their consent stands, as an
+   unanswered request's does, until they hang up). Linked players share their
    scanner tags (outlined, in the tag list, as one's own) and the Ping
    quickhack's reveals (outlined for the hack's length). Default `auto`:
    two to four friends who join each other want shared
@@ -266,6 +271,91 @@ partners too." Built 2026-11-20, not run in game; engine facts:
 - The mock player: `--reveal-device ENTITY[@S]`; it logs `player N pulsed
 the network from device X`. Scenario `comms-network`.
 
+## The phone: partners in the contact list
+
+"Integrate any interaction we can do directly to another player, like
+trading/selling and linking, via holocall using the vanilla menu and
+selecting the player" (the user, 2026-11-21). Built 2026-11-21, compiled
+against the game's scripts (`task scripts:check`); **not run in game
+yet**. `scripts/tandem/PhoneContacts.reds`.
+
+- **Where.** The game's own contact list (the phone key held: the HUD's
+  `NewHudPhoneGameController` and its `PhoneDialerLogicController`). On its
+  Contacts tab the session's other players come first, above the game's
+  contacts as it sorted them; under each name the link between us: "Not
+  linked", "Calling...", "Calling you", "Linked". The Unread tab is the
+  game's alone.
+- **Selecting a player** (the call key, or the messages key) opens their
+  actions over the list, as a contact's message threads open (`PushList`,
+  the player's name as the title; back or a tab change returns, players
+  first again):
+
+  - **Call / Answer / Cancel the call / Hang up**, by the link's state (0,
+    2, 1, 3): ask to link, accept their request, take ours back, break the
+    link; with `link = off`, "Links are off" (`TandemComms.PhoneCall`,
+    `SetLink`);
+  - **Trade**, only with `trade = on`: the trade request, at any distance
+    ([`trade.md`](trade.md); `TandemTradeTable.AskFromPhone`);
+  - **Join NAME**: fast travel to them, as the world map's regroup action
+    (`TandemTravel.RegroupTo`);
+  - **Ask NAME to join you**: a regroup offer to them alone (reason 1,
+    asked; `TandemTravel.OfferRegroup`).
+
+  A chosen row closes the phone; the action runs on our next tick
+  (`TandemPhoneContacts.Tick`), when the list's modal context and its slowed
+  time are gone. Each row shows its effect under its label ("Ask NAME to
+  link: share scans, pings and health", "Give, swap or sell items and
+  eddies, wherever you both are", "Fast travel to NAME", "NAME is offered
+  a fast travel to you").
+
+- **The other side of a call** is the link request's (decision 2): their
+  game rings with our name, "Link with NAME" answers (the phone key's
+  press), "Decline" (`PhoneReject` held) stops the ring. An answered call
+  is the link: the existing link notice ("Linked with NAME: scans and
+  pings are shared"), the party HUD's entry (presence.md); hanging up from
+  either phone breaks it ("Link with NAME broken").
+- **The game's incoming-call widget and holocall portrait: not used.**
+  They are the `PhoneSystem`'s (`questTriggerCallRequest`, then
+  `UI_ComDevice.PhoneCallInformation` drives `IncomingCallLogicController`
+  and `HoloAudioCallLogicController`): a call is looked up as a journal
+  contact (`GetIncomingContact`: a `JournalContact` by id, for its name and
+  avatar), which a player is not, and its phases write `phonecall_*` facts
+  that quests read and that story sync relays (`Phone.reds`). Using them
+  would mean a fake journal contact, a call no quest should see, and the
+  story mirror told to skip it; first to see in game how the widget takes
+  a missing contact. Today: the ringtone, the notice and the hints.
+- **How, in the game's scripts** (`final.reds:408140`, wrapped, each a
+  `public final func` of the HUD controller, reached from its own input
+  listener on the game thread; none is a cb func or a per-entity class,
+  `tools/scripts-threads.classes` has its ancestry):
+  - `SetScreenType`: after the game fills the Contacts tab, our rows
+    (`ContactData`, `type` Contact, `isCallable`, an id of ours
+    `tandem:PLAYER[:ACTION]`) go first and the list is reset in that order
+    (its sorting is off again by then);
+  - `CallContact` (the call key) and `ExecuteAction` (the messages key, a
+    pushed row): a row of ours is ours to act on, before the game's
+    `isCallable` and `IsCallingEnabled` checks (a quest's call lock does not
+    lock our rows);
+  - `Back`, `SelectOtherTab`: the game's `PopList` sorts the list it kept,
+    so the players are put first again;
+  - `GotoSmsMessenger`, `RefreshSmsMessager`: never on a row of ours (the
+    game opens the messenger for any row of a pushed list).
+- **Nothing new crosses games**: each row is the message its feature sends
+  (`Link`, `Trade`, `Regroup`). No protocol change.
+- Test commands: `tools/game.sh cmd phone` (every player's row and actions,
+  in English), `phone open` (the contact list, as the key's hold), `phone
+close`, `phone pick TEXT` (a row of the open list by its text, chosen as
+  the call key does; never one of the game's contacts), `phone call | trade
+| join | invite NAME` (a row's action without the list); `comms decline`.
+  Scenarios (not run yet): `phone-link` (our call answered, hung up),
+  `phone-ring` (theirs rings here, declined, answered from the phone),
+  `phone-trade` (a trade 40 m apart, as a guest), `phone-regroup` (ask
+  them here, declined; join them).
+- To see in game: the rows' look (the Contact template's preview line, the
+  call hint's glyph, the unknown avatar), that a reset with sorting off
+  keeps our order, `PhoneReject`'s binding while no call is up, the
+  ringtone stopping with the request.
+
 ## Protocol
 
 Four messages, appended after `ShotHit` (no version bump; the `presence`
@@ -310,8 +400,8 @@ it more than 15 m from the position that comes with it, shows the place.
   pings go on our own board too: we see them as the others do.
 - **Script** (`scripts/tandem/Comms.reds`, `TandemComms`, ticked by
   `TandemSystem` in a session):
-  - the key: a listener on `TagButton` (and on `PhoneInteract` while a link
-    request is shown); the kind from what V looks at (a hostile
+  - the key: a listener on `TagButton` (and on `PhoneInteract` and
+    `PhoneReject` while a link request is shown); the kind from what V looks at (a hostile
     `ScriptedPuppet` an enemy, a `VehicleObject`, a `gameLootContainerBase`
     or `gameItemDropObject` loot, a `Device`, else the place);
   - marks: one mappin each, `MappinSystem.RegisterMappinWithObject` on the
@@ -340,7 +430,7 @@ it more than 15 m from the position that comes with it, shows the place.
     pings are shared", "Link with NAME broken", "NAME set a waypoint"),
     none for a player who left (the co-op menu says that).
 - `tools/game.sh cmd comms report | ping | link [NAME] | unlink [NAME] |
-accept | tag`.
+accept | tag`, and `comms decline` (a link request).
 
 ## Consistency
 
