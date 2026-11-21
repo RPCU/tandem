@@ -120,6 +120,14 @@ public class TandemScenes {
   private let m_watchOpen: Bool;
   private let m_pushed: Bool;
 
+  // test reset: whether replay is on, said again (said once at the start;
+  // a scenario after the first of its settings reads it).
+  public func ResayForTests() -> Void {
+    if this.m_mode > 0 {
+      TandemNative.Log(s"scene: replay on\(this.m_mode == 2 ? ", with the actors' bodies" : "")");
+    }
+  }
+
   public func Start(game: GameInstance, story: ref<TandemStorySystem>) -> Void {
     this.m_game = game;
     this.m_story = story;

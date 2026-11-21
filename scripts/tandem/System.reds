@@ -2003,6 +2003,10 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_presence) {
       this.m_presence.ResayForTests();
     }
+    let story = TandemStorySystem.Get(this.GetGameInstance());
+    if IsDefined(story) && IsDefined(story.Scenes()) {
+      story.Scenes().ResayForTests();
+    }
     let shots = TandemShots.Of(this.GetGameInstance());
     if IsDefined(shots) {
       shots.ResayForTests();
