@@ -38,4 +38,6 @@ expect 'session: starting as host' 15
 # To look at: the popup in the game's style (title, the rules, the text
 # field); that a triggered answer closes it (if it stays drawn, the answer
 # command must close it the way Codeware's Close does).
-reject 'watchdog: game thread silent'
+# No reject of the watchdog: the pause menu stays open about 10 s, across
+# the host's start, and a paused game is silent by its definition (a hang
+# fails the next command).
