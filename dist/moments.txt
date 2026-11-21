@@ -1,0 +1,22 @@
+# The moment list (docs/architecture/scripted-moments.md, "The moment list"),
+# read by the host's game at start: scripted moments found broken in game,
+# marked so the guests sharing them watch through the host's eyes (watch),
+# or keep their own eyes in a cutscene that plays well (play). The generic
+# rule needs no entry here; an entry is a moment it got wrong.
+#
+#   watch KEY   # why, and the date it was seen
+#   play KEY    # why
+#
+# KEY: scene:PATH or phase:PATH (a .scene or .questphase resource path, or
+# its hash as the log writes it, 0x...), quest:TEXT (a piece of the host's
+# tracked journal path, lower case). The scene decides before the phase,
+# the phase before the quest. `tools/game.sh cmd story moments` on the host
+# logs its scene, its running phases and its tracked path now; tandem.ini's
+# moment_watch / moment_play add entries without touching this file.
+#
+# Examples (not entries):
+#   watch scene:base\quest\...\NAME.scene  # the guest stood in a wall, 2026-12-01
+#   watch quest:q101_  # every objective of a quest whose ids start q101_
+#   play phase:0x0123456789abcdef  # short cutscenes the replay plays well
+#
+# No entries yet: nothing has been run in game (2026-11-21).

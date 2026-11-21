@@ -4,6 +4,7 @@
 // what the host keeps for late joiners, who took part in a quest (for its
 // rewards), and who answered a call first.
 
+#include "tandem/moments.hpp"
 #include "tandem/protocol.hpp"
 
 #include <array>
@@ -164,18 +165,25 @@ struct MomentSignals {
   bool camera{};       // the quest's camera animation holds the host's view
   bool elsewhere{};    // cyberspace, a braindance, playing as Johnny
   bool test{};         // cmd story spectate on (the host's test moment)
+  // The moment list (tandem/moments.hpp): what its scene, quest phase or
+  // tracked entry is marked, if anything.
+  moments::Verdict listed{};
 };
-inline constexpr std::uint8_t kMomentScene = 1, kMomentRestricted = 2, kMomentMounted = 4,
-                              kMomentMode = 8, kMomentElsewhere = 16, kMomentTest = 32,
-                              kMomentCutscene = 64, kMomentCamera = 128;
+inline constexpr std::uint16_t kMomentScene = 1, kMomentRestricted = 2, kMomentMounted = 4,
+                               kMomentMode = 8, kMomentElsewhere = 16, kMomentTest = 32,
+                               kMomentCutscene = 64, kMomentCamera = 128, kMomentListed = 256;
 // The reasons only the host's view shows (kStoryWatch): a cutscene (tier 5),
-// another world, the quest's camera, the test moment. The others (a scene of
-// tier 2 to 4, restrictions, a quest ride, a body mode) are played.
-inline constexpr std::uint8_t kMomentWatch =
-    kMomentCutscene | kMomentElsewhere | kMomentCamera | kMomentTest;
+// another world, the quest's camera, a moment the list marks watch, the test
+// moment. The others (a scene of tier 2 to 4, restrictions, a quest ride, a
+// body mode) are played.
+inline constexpr std::uint16_t kMomentWatch =
+    kMomentCutscene | kMomentElsewhere | kMomentCamera | kMomentListed | kMomentTest;
 // The reasons the host's V is in a moment now (0: none; always 0 in a
-// private scene). A fight or the player's own driving is none of them.
-std::uint8_t MomentReasons(const MomentSignals &signals);
+// private scene). A fight or the player's own driving is none of them. A
+// moment the list marks watch is one (kMomentListed) whatever else holds;
+// one it marks play has no cutscene nor camera to watch: a tier 5 scene is
+// a scene, the quest's camera a body mode, both played.
+std::uint16_t MomentReasons(const MomentSignals &signals);
 
 // The host's moment, held kMomentHoldUs after its reasons go, so that a
 // scene's sections, a loading screen or a mount between two rides do not
@@ -184,7 +192,7 @@ inline constexpr std::uint64_t kMomentHoldUs = 1'500'000;
 class HostMoment {
 public:
   // True while the moment is on.
-  bool Update(std::uint8_t reasons, std::uint64_t nowUs);
+  bool Update(std::uint16_t reasons, std::uint64_t nowUs);
   bool On() const { return m_on; }
   // A watch reason is on (kStoryWatch).
   bool Watch() const { return m_watch; }
@@ -198,9 +206,17 @@ private:
 
 // How far the host's V may be taken from ours before we cannot follow it
 // from our own body (the NPC links' reach, regions.md); back in reach at
-// kSpectateReachBack.
+// kSpectateReachBack. A moment's ride that leaves without us (no seat, or we
+// did not get in) has taken it once it is kSpectateLeftBehind away: we watch
+// the ride, carried in its copy, rather than stand where it left us.
 inline constexpr float kSpectateReach = 150.f;
 inline constexpr float kSpectateReachBack = 120.f;
+inline constexpr float kSpectateLeftBehind = 30.f;
+// The host's quests have interiors on that our game does not load (quest
+// prefabs: the layout check failed, or quest_prefabs = off): we watch while
+// the host is within kSpectateReach (kSpectateMissingLeave to stop), as its
+// V walks where our world has nothing.
+inline constexpr float kSpectateMissingLeave = 170.f;
 
 struct SpectateInput {
   bool on{};            // tandem.ini spectate, and not turned off for the session
@@ -213,6 +229,7 @@ struct SpectateInput {
   std::uint8_t hostTier{};
   bool hostRiding{}; // the host's V is in a vehicle (its copy here)
   bool inVehicle{};  // our V rides (along with the host, or a car of its own)
+  bool cannotLoad{}; // the host's quests have prefabs on that our game does not load
   bool hostKnown{};
   proto::Vec3 host; // the host's V
   proto::Vec3 guest;
@@ -224,12 +241,22 @@ struct SpectateInput {
 // (the host's kStoryWatch: tier 5, Elsewhere, else d), or (c) the host's V
 // taken beyond our reach (more than kSpectateReach away while we ride
 // nothing; in reach again at kSpectateReachBack; watching while it rides,
-// carried in its copy, it stays (c) until its ride ends). The reason gone,
-// it plays again at once. "Stop watching" declines until the reason ends.
+// carried in its copy, it stays (c) until its ride ends; a ride of the
+// moment that leaves without us takes it at kSpectateLeftBehind). Apart from
+// any moment: (e) the host's V among quest interiors our game does not load,
+// within kSpectateReach. The reason gone, it plays again at once. "Stop
+// watching" declines until the reason ends.
 class Spectator {
 public:
   enum class Change : std::uint8_t { None = 0, Start = 1, Stop = 2 };
-  enum class Why : std::uint8_t { None = 0, Cutscene = 1, Elsewhere = 2, Taken = 3, View = 4 };
+  enum class Why : std::uint8_t {
+    None = 0,
+    Cutscene = 1,
+    Elsewhere = 2,
+    Taken = 3,
+    View = 4,
+    Missing = 5
+  };
   Change Update(const SpectateInput &in);
   // The player pressed "Stop watching".
   Change Leave();
