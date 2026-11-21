@@ -206,9 +206,9 @@ version 5, the host runs 6`, nothing on the guest's screen (a session
   their game has no Phantom Liberty …"). A host whose own game lacks it
   (only possible with `compat = off`) refuses everyone, with the words the
   other way round. Final, like a version refusal.
-- **`kProtocolVersion` is 12** since `StoryState`'s `kStoryNoFastTravel`
-  (2026-11-21; each version's change is listed above it in `protocol.hpp`;
-  9: `NpcHealth` got its `flags`; 8: `NpcShotAt`'s time between hits; 7:
+- **`kProtocolVersion` is 13** since `NpcShotAt`'s `flags` and the cues
+  `Ricochet` and `Charge` (2026-11-21; each version's change is listed above
+  it in `protocol.hpp`; 12: `StoryState`'s `kStoryNoFastTravel`; 9: `NpcHealth` got its `flags`; 8: `NpcShotAt`'s time between hits; 7:
   `Hello`'s `flags`, 2026-11-19): each a change to an existing message. `Install`, appended
   the day of 7, would not have bumped it by the rule; builds of protocol 6
   never left the developers' machines.

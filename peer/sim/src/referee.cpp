@@ -747,7 +747,15 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::NpcShotAt>) {
           timeUs = m.timeUs;
           finite = std::isfinite(m.tbh) && std::isfinite(m.factor);
-          inRange = !finite || (m.factor > 0.f && m.factor <= 1.001f);
+          inRange = (!finite || (m.factor > 0.f && m.factor <= 1.001f)) &&
+                    (m.flags & ~p::kShotAtFlags) == 0;
+        } else if constexpr (std::is_same_v<M, p::Cue>) {
+          // A shot's end, a bounce, a swing's landing: a real place; a
+          // charge: one of its steps, how charged (0..1).
+          finite = Finite(m.at);
+          inRange = m.kind == p::CueKind::Charge
+                        ? m.arg <= p::kChargeMax && (!finite || (m.at.x >= 0.f && m.at.x <= 1.001f))
+                        : (m.arg & ~p::kTraceFlags) == 0;
         } else if constexpr (std::is_same_v<M, p::NpcHit>) {
           finite = std::isfinite(m.damage) && Finite(m.position) && Finite(m.direction);
           inRange = !finite || m.damage >= 0.f;

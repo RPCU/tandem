@@ -27,7 +27,9 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 11: NpcHealth.flags (kNpcProtected); WeakSpotHit and HackTraced appended.
 // 12: StoryState's kStoryNoFastTravel (a game of 11 would let a guest's V
 // respawn out of the host's locked quest area); TurretBusy appended.
-inline constexpr std::uint16_t kProtocolVersion = 12;
+// 13: NpcShotAt.flags (a smart gun's guided round, kShotAtTracked);
+// CueKind::Ricochet and CueKind::Charge (a game of 12 refuses them).
+inline constexpr std::uint16_t kProtocolVersion = 13;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -1184,6 +1186,10 @@ struct NpcSeat {
 // sends it to that guest only and no longer decides the hit itself.
 // Event channel: a lost shot is one never fired, a doubled one two (a
 // one-shot for the consistency layer, in no digest: it is not state).
+inline constexpr std::uint8_t kShotAtSmart =
+    1; // the weapon is a smart one (its record's evolution)
+inline constexpr std::uint8_t kShotAtTracked = 2; // the AI tracks its target: a guided round (v13)
+inline constexpr std::uint8_t kShotAtFlags = kShotAtSmart | kShotAtTracked;
 struct NpcShotAt {
   PlayerId player{};      // the V shot at
   NpcId npc{};            // the shooter, as the host shares it
@@ -1196,6 +1202,9 @@ struct NpcShotAt {
   float tbh{};
   std::uint8_t trigger{}; // gamedataTriggerMode
   float factor{1.f};      // the shooter's time factor (its bubble; 1: none)
+  // kShotAt*: tracked, the guest's game fires it as AIWeapon.Fire does with
+  // shouldTrackTarget (the host's AI: a smart weapon locked on the target).
+  std::uint8_t flags{};
   friend bool operator==(const NpcShotAt &, const NpcShotAt &) = default;
 };
 
@@ -1689,10 +1698,27 @@ enum class CueKind : std::uint8_t {
   Trace = 1,
   // A melee swing landed: `at` where; arg: kTrace* (what it hit).
   MeleeHit = 2,
+  // A ricochet of the last Trace bounced on to `at` (the hit a bounced
+  // bullet made: the shooter's game reports no bounce that hit nothing);
+  // drawn from that Trace's end. arg: kTrace*. (v13)
+  Ricochet = 3,
+  // The weapon in the right hand charges (a tech weapon): arg kCharge*,
+  // `at.x` how charged it is (0..1: its glow), sent on each change and every
+  // 0.25 s while not idle; a receiver ends a charge that stopped being said
+  // (a lost Idle). (v13)
+  Charge = 4,
 };
 inline constexpr std::uint8_t kTraceLeftHand = 1;  // from the left hand's weapon
 inline constexpr std::uint8_t kTraceCharacter = 2; // it ended on a character (flesh, no decal)
 inline constexpr std::uint8_t kTraceNothing = 4;   // it hit nothing: `at` is as far as it flew
+inline constexpr std::uint8_t kTraceFlags = kTraceLeftHand | kTraceCharacter | kTraceNothing;
+// Charge's steps (gamePSMRangedWeaponStates.Charging and the charge pool).
+inline constexpr std::uint8_t kChargeIdle = 0;        // not charging (released or cancelled)
+inline constexpr std::uint8_t kChargeCharging = 1;    // charging, not ready
+inline constexpr std::uint8_t kChargeReady = 2;       // ready to fire (ChargeReadyPercentage)
+inline constexpr std::uint8_t kChargeFull = 3;        // fully charged (the max)
+inline constexpr std::uint8_t kChargeDischarging = 4; // let go before it was ready: it drains
+inline constexpr std::uint8_t kChargeMax = kChargeDischarging;
 struct Cue {
   PlayerId player{};
   std::uint32_t seq{};

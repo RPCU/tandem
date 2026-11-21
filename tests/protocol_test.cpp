@@ -84,6 +84,13 @@ TEST_CASE("every message survives encoding") {
                        .tbh = 0.8f,
                        .trigger = 2,
                        .factor = 0.25f});
+  // A smart gun's guided round (v13).
+  RoundTrips(NpcShotAt{.player = 2,
+                       .npc = 7,
+                       .timeUs = 9,
+                       .weapon = 0x0abcdef012ULL,
+                       .trigger = 4,
+                       .flags = kShotAtSmart | kShotAtTracked});
   RoundTrips(ShotHit{.player = 2, .npc = 7, .position = {1, 2, 3}, .direction = {0, -1, 0}});
   CHECK(std::string(NameOf(NpcShotAt{})) == "NpcShotAt");
   CHECK(std::string(NameOf(ShotHit{})) == "ShotHit");
@@ -1301,6 +1308,13 @@ TEST_CASE("presence, cues and NPC reactions round-trip, on the right channels, a
                  .arg = kTraceLeftHand | kTraceCharacter,
                  .at = {1.5f, -2.5f, 30.f}});
   RoundTrips(Cue{.player = 1, .seq = 1, .kind = CueKind::MeleeHit, .at = {4.f, 5.f, 6.f}});
+  // A ricochet's leg and a charge's step (v13).
+  RoundTrips(Cue{.player = 3,
+                 .seq = 78,
+                 .kind = CueKind::Ricochet,
+                 .arg = kTraceCharacter,
+                 .at = {2.f, -2.f, 31.f}});
+  RoundTrips(Cue{.player = 3, .seq = 79, .kind = CueKind::Charge, .arg = kChargeFull});
   const NpcReaction stagger{.npc = 12,
                             .by = 2,
                             .type = 3,
@@ -1336,7 +1350,11 @@ TEST_CASE("presence, cues and NPC reactions round-trip, on the right channels, a
 
   // Kinds the receiver does not know are refused, not guessed at.
   CHECK_FALSE(Decode(Encode(Cue{.kind = static_cast<CueKind>(0)})).has_value());
-  CHECK_FALSE(Decode(Encode(Cue{.kind = static_cast<CueKind>(3)})).has_value());
+  CHECK_FALSE(Decode(Encode(Cue{.kind = static_cast<CueKind>(5)})).has_value());
+  CHECK(Decode(Encode(Cue{.kind = CueKind::Charge, .arg = kChargeMax})).has_value());
+  CHECK_FALSE(Decode(Encode(Cue{.kind = CueKind::Charge, .arg = kChargeMax + 1})).has_value());
+  CHECK_FALSE(Decode(Encode(Cue{.kind = CueKind::Trace, .arg = 8})).has_value());
+  CHECK(Encode(Cue{.kind = CueKind::Charge}).size() < 32);
   CHECK_FALSE(Decode(Encode(NpcReaction{.type = kReactionMax + 1})).has_value());
   CHECK(std::string_view(NameOf(Presence{})) == "Presence");
   CHECK(std::string_view(NameOf(Cue{})) == "Cue");
