@@ -368,6 +368,11 @@ struct Fractured {
 struct DeviceFired {
   proto::DeviceFire fire;
 };
+// A turret in another player's hands, linked with us: our copy turns where
+// it points and draws its fire (devices.md, "A turret in a player's hands").
+struct TurretHeld {
+  proto::TurretHands hands;
+};
 // Regions (docs/architecture/regions.md). The players our region is linked
 // with changed: we see their NPCs, they see ours.
 struct RegionsChanged {
@@ -620,7 +625,7 @@ using SessionEventVariant = std::variant<
     events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered,
     events::RemoteStatusVisuals, events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom,
     events::TrafficGive, events::TrafficTake, events::TrafficOwnerChanged, events::Fractured,
-    events::DeviceFired>;
+    events::DeviceFired, events::TurretHeld>;
 // Its copies, moves and conversions compiled in session_event.cpp only, as
 // proto::Message's (tandem/closed_variant.hpp).
 using SessionEvent = ClosedVariant<SessionEventVariant>;
@@ -991,6 +996,10 @@ public:
   // it for when it comes), another piece of a known one to the players
   // linked with its teller. Late joiners and a world resync get the record.
   void SendFracture(proto::Fracture fracture);
+  // A turret in our V's hands: where it points, whether it fires, or that
+  // we let go of it (`player` is filled in). To the players linked with
+  // us (a guest's: through the host).
+  void SendTurretHands(proto::TurretHands hands);
   // Host: fractures dropped for coming too fast, or past a full record.
   std::uint64_t FracturesDropped() const { return m_fracturesDropped; }
   // What broke in the session (host: kept; guest: as the host sent it).

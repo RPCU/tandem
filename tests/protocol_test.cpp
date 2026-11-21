@@ -1146,6 +1146,19 @@ TEST_CASE("the world's objects: fractures and a device's fire survive encoding, 
   CHECK_FALSE(Decode(Encode(DeviceFire{.target = {static_cast<TargetKind>(4), 1}})).has_value());
 }
 
+TEST_CASE("a turret in a player's hands survives encoding, small, unreliable, known flags "
+          "only") {
+  RoundTrips(TurretHands{
+      .player = 2, .entity = 0x1122334455667788ULL, .at = {1.f, -2.f, 3.f}, .flags = kHandsFiring});
+  RoundTrips(TurretHands{.entity = 7, .flags = kHandsLetGo});
+  CHECK(Message(TurretHands{}).index() == Message(RigTracks{}).index() + 1); // appended
+  CHECK(std::string(NameOf(TurretHands{})) == "TurretHands");
+  CHECK(ChannelOf(TurretHands{}) == Channel::State);
+  CHECK_FALSE(IsReliable(TurretHands{}));
+  CHECK(Encode(TurretHands{}).size() <= 32);
+  CHECK_FALSE(Decode(Encode(TurretHands{.flags = 4})).has_value());
+}
+
 TEST_CASE("vehicles changing hands: survive encoding, reliable, small") {
   RoundTrips(TrafficOwnership{.id = MakeTrafficId(2, 9), .owner = 3});
   RoundTrips(TrafficHandover{.id = MakeTrafficId(2, 9), .to = 3});

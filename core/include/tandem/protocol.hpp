@@ -2902,6 +2902,31 @@ struct RigTracks {
   friend bool operator==(const RigTracks &, const RigTracks &) = default;
 };
 
+// ---- A turret in a player's hands (docs/architecture/devices.md, "A
+// turret in a player's hands") ----
+//
+// A player took control of a turret (the takeover quickhack, a device's
+// control): its game turns it and fires it, as the game does for one V.
+// The controller's game says where it points (a point along its barrels)
+// and whether it fires, a few times a second while it holds it
+// (kTurretHandsHz), and once that it let go. The host stamps the player and
+// passes it to the players linked with it; every other copy turns there and
+// draws its fire, which hurts nobody: what the controller's shots hit is
+// its game's to decide, as for its own weapon. State channel: the next one
+// says more, and a copy unheard of for kTurretHandsHoldS is its game's again.
+inline constexpr float kTurretHandsHz = 5.f;
+inline constexpr float kTurretHandsHoldS = 1.f;
+inline constexpr std::uint8_t kHandsFiring = 1; // its trigger is held
+inline constexpr std::uint8_t kHandsLetGo = 2;  // the player let go of it
+inline constexpr std::uint8_t kHandsFlags = kHandsFiring | kHandsLetGo;
+struct TurretHands {
+  PlayerId player{};      // whose hands: set by the host from the connection
+  std::uint64_t entity{}; // the turret's static id
+  Vec3 at;                // where it points (world)
+  std::uint8_t flags{};   // kHands*
+  friend bool operator==(const TurretHands &, const TurretHands &) = default;
+};
+
 // A prop of the host's scene that nobody holds (set on a table, dropped,
 // thrown): an item entity the scene brought in, where it is now. Said when
 // it appears, again when it moved (scene::kPlaceMoveMetres, kPlaceTurnRadians;
@@ -2941,7 +2966,8 @@ using MessageVariant = std::variant<
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
     BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
-    SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, ScenePlace>;
+    SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands,
+    ScenePlace>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,

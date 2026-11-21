@@ -381,6 +381,9 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *fire = std::get_if<DeviceFire>(&message);
       fire && (fire->kind > DeviceFireKind::Lost || !target(fire->target)))
     return std::nullopt;
+  if (const auto *hands = std::get_if<TurretHands>(&message);
+      hands && (hands->flags & ~kHandsFlags) != 0)
+    return std::nullopt;
   return read;
 }
 
@@ -431,7 +434,8 @@ Channel ChannelOf(const Message &message) {
                  std::holds_alternative<NpcMotion>(message) ||
                  std::holds_alternative<PlayerMotion>(message) ||
                  std::holds_alternative<VehicleMotion>(message) ||
-                 std::holds_alternative<ThrowPath>(message)
+                 std::holds_alternative<ThrowPath>(message) ||
+                 std::holds_alternative<TurretHands>(message)
              ? Channel::State
              // Everything else is reliable and ordered, the consistency
              // messages too (Digest, ResyncRequest, NpcSet, Epoch): a digest
@@ -631,6 +635,7 @@ const char *NameOfKind(std::size_t kind) {
                                    "NpcPlaced",
                                    "NpcDeath",
                                    "RigTracks",
+                                   "TurretHands",
                                    "ScenePlace"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";

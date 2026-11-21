@@ -196,6 +196,7 @@ TANDEM_SAID_BY(Either, ThrowPath)
 // host (unstamped), the host's to everyone (stamped): Received.
 TANDEM_SAID_BY(Either, NpcPlaced)
 TANDEM_SAID_BY(Either, NpcDeath)
+TANDEM_SAID_BY(Either, TurretHands)
 #undef TANDEM_SAID_BY
 
 // A new message without its SaidBy line above fails here ("incomplete type").
@@ -328,7 +329,8 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::TradeOffer> || std::is_same_v<M, p::Breach> ||
                            std::is_same_v<M, p::StatusVisuals> ||
                            std::is_same_v<M, p::QuestInteract> || std::is_same_v<M, p::Fracture> ||
-                           std::is_same_v<M, p::DeviceFire> || std::is_same_v<M, p::ThrowPath>)
+                           std::is_same_v<M, p::DeviceFire> || std::is_same_v<M, p::ThrowPath> ||
+                           std::is_same_v<M, p::TurretHands>)
           return &m.player;
         else
           return nullptr;
@@ -796,6 +798,9 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           timeUs = m.timeUs;
           // A device is named; a shot is stamped (the host clock).
           inRange = m.entity != 0 && (m.kind != p::DeviceFireKind::Shot || m.timeUs != 0);
+        } else if constexpr (std::is_same_v<M, p::TurretHands>) {
+          finite = Finite(m.at);
+          inRange = m.entity != 0;
         } else if constexpr (std::is_same_v<M, p::ThrowPath>) {
           // Nothing thrown flies faster than a launcher's round.
           finite = Finite(m.position) && Finite(m.velocity);
@@ -863,6 +868,8 @@ void Referee::CheckRate(p::PlayerId from, const p::Message &message, std::size_t
     budget = limits.noiseHz;
   else if (std::holds_alternative<p::ThrowPath>(message))
     budget = limits.throwPathHz;
+  else if (std::holds_alternative<p::TurretHands>(message))
+    budget = limits.turretHandsHz;
   if (budget > 0.f) {
     // A relayed player's states count against that player.
     auto copy = message;
@@ -1133,6 +1140,9 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
           // our own comes back for the session's record, and a late joiner
           // hears breaks by players who left before it came (devices.md,
           // "Glass and breakable scenery").
+        } else if constexpr (std::is_same_v<M, p::TurretHands>) {
+          // A turret in another player's hands; never our own back.
+          notOurs(m.player);
         } else if constexpr (std::is_same_v<M, p::DeviceFire>) {
           // The host's turret's target: a player of the session (an NPC's
           // shot may overtake its spawn on the State channel: not checked).

@@ -429,6 +429,11 @@ struct Options {
   // that guest (--turret-shots each time; 0: it says nothing of it).
   std::uint64_t turretSeen{};
   int turretSeenAtSeconds{5};
+  // A turret in our V's hands (--turret-hands): which, where it points,
+  // when we take it (it fires from 2 s to 4 s in, let go at 6 s).
+  std::uint64_t turretHands{};
+  Vec3 turretHandsAt;
+  int turretHandsAtSeconds{5};
   int turretShots{10};
   // Breach Protocol: what to breach and when (--breach), with which daemons.
   struct BreachOrder {
@@ -782,6 +787,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     logged\n"
          "  --turret-seen E[@S] join: our copy of the turret E (its id in hex) locks our V S\n"
          "                     seconds into the session (5), and loses it 6 s later\n"
+         "  --turret-hands E[:X,Y,Z][@S] our V holds the turret E (its id in hex) S seconds\n"
+         "                     into the session (5), points it at X,Y,Z, fires it from 2 s\n"
+         "                     to 4 s and lets go at 6 s. Turrets in others' hands are logged\n"
          "  --turret-shots N   host: a turret a guest's copy has its V with turns to that V\n"
          "                     and fires N shots at it (10; 0: silent, as for a turret that\n"
          "                     is not in our world). What it hears of turrets is logged\n"
@@ -1345,6 +1353,22 @@ Options Parse(int argc, char **argv) {
                   .ptr != entity.data() + entity.size() ||
           options.turretSeen == 0)
         Usage(std::format("--turret-seen: {} is not an entity id in hex", entity));
+    } else if (flag == "--turret-hands") {
+      std::string_view entity = value;
+      if (const auto at = entity.find('@'); at != std::string_view::npos) {
+        options.turretHandsAtSeconds = Number<int>(entity.substr(at + 1));
+        entity = entity.substr(0, at);
+      }
+      if (const auto colon = entity.find(':'); colon != std::string_view::npos) {
+        options.turretHandsAt = Point("--turret-hands", entity.substr(colon + 1));
+        entity = entity.substr(0, colon);
+      }
+      if (entity.starts_with("0x"))
+        entity.remove_prefix(2);
+      if (std::from_chars(entity.data(), entity.data() + entity.size(), options.turretHands, 16)
+                  .ptr != entity.data() + entity.size() ||
+          options.turretHands == 0)
+        Usage(std::format("--turret-hands: {} is not an entity id in hex", entity));
     } else if (flag == "--turret-shots")
       options.turretShots = Number<int>(value);
     else if (flag == "--fracture")
@@ -4364,6 +4388,11 @@ int main(int argc, char **argv) {
   };
   std::vector<TurretBurst> turretBursts;
   int turretSeenStep = 0;
+  // --turret-hands: when it was last said (0: not yet), whether let go.
+  std::chrono::steady_clock::time_point turretHandsSaid{};
+  bool turretHandsDone = false;
+  // Turrets in others' hands: their flags as last logged.
+  std::map<std::uint64_t, std::uint8_t> turretsHeld;
   // --breach: a won one pays once the host grants it (devices.md).
   tandem::devices::BreachHolds breachHolds;
   const auto breachSettled = [](const tandem::devices::BreachHolds::Decision &decision) {
@@ -5323,6 +5352,20 @@ int main(int argc, char **argv) {
                     f.entity, kKinds[static_cast<int>(f.kind)], static_cast<int>(f.target.kind),
                     f.target.id, f.at.x, f.at.y, f.at.z);
               }
+            } else if constexpr (std::is_same_v<E, tandem::events::TurretHeld>) {
+              const auto &h = e.hands;
+              const auto [it, fresh] = turretsHeld.try_emplace(h.entity, h.flags);
+              if (fresh || it->second != h.flags) {
+                it->second = h.flags;
+                Log("turret {:x}: in player {}'s hands, {} ({:.1f} {:.1f} {:.1f})", h.entity,
+                    h.player,
+                    (h.flags & tandem::proto::kHandsLetGo) != 0    ? "let go"
+                    : (h.flags & tandem::proto::kHandsFiring) != 0 ? "firing at"
+                                                                   : "pointing at",
+                    h.at.x, h.at.y, h.at.z);
+              }
+              if ((h.flags & tandem::proto::kHandsLetGo) != 0)
+                turretsHeld.erase(h.entity);
             } else if constexpr (std::is_same_v<E, tandem::events::Fractured>) {
               const auto &f = e.fracture;
               Log("player {} broke {} at ({:.1f} {:.1f} {:.1f})", f.player,
@@ -6380,6 +6423,27 @@ int main(int argc, char **argv) {
         endpoint->SendDeviceFire(
             {.entity = options.turretSeen, .kind = tandem::proto::DeviceFireKind::Lost});
         Log("turret {:x}: our copy lost our V", options.turretSeen);
+      }
+    }
+    // --turret-hands: five words a second while held, then let go.
+    if (options.turretHands != 0 && !turretHandsDone && devicesFrom) {
+      const auto from = *devicesFrom + std::chrono::seconds(options.turretHandsAtSeconds);
+      if (now >= from + 6s) {
+        turretHandsDone = true;
+        endpoint->SendTurretHands(
+            {.entity = options.turretHands, .flags = tandem::proto::kHandsLetGo});
+        Log("turret {:x}: our V lets go of it (--turret-hands)", options.turretHands);
+      } else if (now >= from && now - turretHandsSaid >= 200ms) {
+        if (turretHandsSaid == std::chrono::steady_clock::time_point{})
+          Log("turret {:x}: in our V's hands, pointing at ({:.1f} {:.1f} {:.1f}) "
+              "(--turret-hands)",
+              options.turretHands, options.turretHandsAt.x, options.turretHandsAt.y,
+              options.turretHandsAt.z);
+        turretHandsSaid = now;
+        const bool firing = now >= from + 2s && now < from + 4s;
+        endpoint->SendTurretHands({.entity = options.turretHands,
+                                   .at = options.turretHandsAt,
+                                   .flags = firing ? tandem::proto::kHandsFiring : std::uint8_t{}});
       }
     }
     // --fracture: each one at its time into the session.
