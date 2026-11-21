@@ -51,6 +51,11 @@ public class TandemTestReset {
     // Story: no test private scene, no test quest freeze.
     TandemStorySystem.Get(this.m_game).Command("story private off");
     TandemStorySystem.Get(this.m_game).Command("quest freeze off");
+    // No test of interiors we cannot load (story spectate missing on).
+    let spectate = TandemStorySystem.Get(this.m_game).Spectate();
+    if IsDefined(spectate) {
+      spectate.ClearTest();
+    }
     // Our V's own god mode from "god on" (Revive.reds keeps its own).
     let gods = GameInstance.GetGodModeSystem(this.m_game);
     gods.RemoveGodMode(player.GetEntityID(), gameGodModeType.Invulnerable, n"Default");
