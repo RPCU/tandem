@@ -448,8 +448,8 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Revive-Done", "Revived");
     this.Text("Tandem-Revive-CarMoving", "Wait for the car to stop");
     this.Text("Tandem-Revive-OutOfCar", "Pulled out of the wreck");
-    this.Text("Tandem-Revive-Ashore", "Pulled out of the water");
-    this.Text("Tandem-Revive-Surfaced", "Brought up to the surface");
+    this.Text("Tandem-Revive-AtViktor", "Vik patched you up");
+    this.Text("Tandem-Revive-AtPoint", "Patched up, back on your feet at {1}");
     this.Text("Tandem-Revive-BackInCar", "Back in {1}'s car");
     // Rides and the NCART.
     this.Text("Tandem-Transit-GotOffAt", "{1} got off the NCART at {2}");
@@ -908,8 +908,8 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Revive-Done", "Réanimation réussie");
     this.Text("Tandem-Revive-CarMoving", "Attendez l'arrêt du véhicule");
     this.Text("Tandem-Revive-OutOfCar", "Sorti(e) de l'épave");
-    this.Text("Tandem-Revive-Ashore", "Sorti(e) de l'eau");
-    this.Text("Tandem-Revive-Surfaced", "Remonté(e) à la surface");
+    this.Text("Tandem-Revive-AtViktor", "Vik vous a rafistolé(e)");
+    this.Text("Tandem-Revive-AtPoint", "Rafistolé(e), de retour sur pied à {1}");
     this.Text("Tandem-Revive-BackInCar", "De retour dans le véhicule de {1}");
     this.Text("Tandem-Transit-GotOffAt", "{1} est descendu(e) du NCART à {2}");
     this.Text("Tandem-Transit-GotOff", "{1} est descendu(e) du NCART");
