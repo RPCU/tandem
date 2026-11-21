@@ -280,4 +280,10 @@ trajectory (`:538565`). So a grenade copy is put on the real one's path by:
 starts from the desired transform or from where the entity was that frame
 is not in scripts. [2.5-untested] [to-see] A grenade's bounces arrive as
 `BaseGrenade.OnCollision(gameprojectileHitEvent)` (`:175816`), a per-entity
-callback (not hooked: the path is sampled on the tick).
+callback: hooked to queue only (`TandemPointKind.ThrowBounce`, the place
+and the engine time), said on the tick. Its `hitInstances` hold
+`position` (the contact), `projectilePosition`, `velocity` (at impact),
+`traceResult.normal` (`gameprojectileHitInstance`, `:177664`); its user is
+`GetUser()` (`m_user`). A rolling grenade's collisions come every frame
+_(inferred: the landed-on-ground branch and the impact-sound cooldown of
+0.2 s)_. [2.5-untested]

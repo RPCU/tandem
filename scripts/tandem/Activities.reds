@@ -908,7 +908,7 @@ public class TandemActivities {
 
   // ---- commands (tools/game.sh cmd) ----
   // skip ask HOURS | skip accept | skip decline | busy KIND|off | busy report
-  // | apartment report | contest duel|race|range|off|report
+  // | apartment report | contest duel|race|range|off|report|races|join|leave
   public func Command(command: String) -> Void {
     if StrBeginsWith(command, "contest") {
       if IsDefined(this.m_contests) {

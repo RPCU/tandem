@@ -337,7 +337,7 @@ unaffected.
   don't (3): 2 with new items (shown as similar vanilla ones), 1 changing
   gameplay_. It never refuses a session for it. Only a number for each
   mod and what it adds leave your PC; its name goes only to a partner who
-  opens **Co-op → Mods** in the pause menu, and only for the mods they do
+  opens **Co-op → Partners' mods** in the pause menu, and only for the mods they do
   not have.
   - Mods that only change looks, sound or the interface are harmless.
   - A weapon, piece of clothing, car or character from a mod the other
@@ -349,7 +349,7 @@ unaffected.
     different fight: the host's rules apply to the enemies you share. A mod
     that changes the weather is overruled by the host's weather; a mod's
     slow motion is shared as a time bubble.
-  - Co-op → Mods lists every comparison and everything shown otherwise.
+  - Co-op → Partners' mods lists every comparison and everything shown otherwise.
     When something looks out of step, try again without the mod before
     reporting a bug.
 

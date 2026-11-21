@@ -45,6 +45,7 @@ addresses, 192.0.2.x / 198.51.100.x / 203.0.113.x, and fake names).
 | `task natives:check`    | each `*Natives.reds` matches its `.cpp` (types, fields)      |
 | `task scripts:check`    | compile `scripts/tandem` as the game does (seconds, no game) |
 | `task strings:check`    | player-facing texts only from `Text.reds`, English + French  |
+| `task menu:check`       | co-op menu: settings rows aligned, texts EN + FR, no dupes   |
 | `task threads:check`    | script hooks that may run on job threads only read and queue |
 | `task refs:check`       | script calls of ours and our TweakDB records exist           |
 | `task scenarios:check`  | scenarios name real peer flags, game commands and helpers    |
@@ -66,8 +67,8 @@ request): `core build (Linux)` and the `core tests` jobs are `task test`,
 of memory); push the branch and read the run (Git, below). Locally, the
 cheap ones: `task relay:test` for `relay/`, `task pilot:test` for
 `tools/pilot/`, `task k8s:check` for `deploy/`,
-`task natives:check`, `task strings:check`, `task threads:check`,
-`task refs:check`, `task scenarios:check` and `task docs:check`;
+`task natives:check`, `task strings:check`, `task menu:check`,
+`task threads:check`, `task refs:check`, `task scenarios:check` and `task docs:check`;
 `task scripts:check` for `scripts/` needs the game machine.
 
 `tools/build.sh TASK…` builds where there is room (Git, below), when a

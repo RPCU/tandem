@@ -94,15 +94,17 @@ guests. The first three are story messages (`proto::IsStory`): one path
 through `Endpoint::SendStory`, kept by `story::Record` for late joiners,
 reliable and ordered.
 
-| Message       | Channel | When                                | Carries                                                                                                                                              |
-| ------------- | ------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SceneState`  | Event   | on every change                     | the scene's resource path hash (0: none), its `play` number, host clock at its time 0, rate (fast-forward), the host's tier, flags, the staging area |
-| `SceneCast`   | Event   | whole, on every change              | `play`, the actors: `NpcId` and flags (ghost, hidden, posed)                                                                                         |
-| `SceneLine`   | Event   | a line begins, or is cut            | `play`, the line's string id, the speaker (`NpcId` or `PlayerId`), host clock when it began, its length, flags (cut, holocall, bark)                 |
-| `ActorPose`   | State   | ≤ 30 Hz per actor, unreliable       | `NpcId`, seq, host-clock time, the body pose (a `PoseState`: 68 rotations of 6 bytes and the hips, 431 bytes)                                        |
-| `SceneCamera` | State   | every frame of a cutscene, paced    | `play`, seq, host-clock time, the active camera's position, orientation (5 bytes), field of view, a cut flag; 39 bytes, never kept                   |
-| `SceneProp`   | Event   | a prop is held, changes hands, goes | `play`, the prop's number in the play, the item's TweakDB id, its holder (`NpcId` or `PlayerId`), flags (gone, left hand); a story message, 26 bytes |
-| `RigTracks`   | State   | with a face's `RigPose`, paced      | `NpcId`, rig part, seq, host-clock time, the hash and count of the rig's float tracks, the tracks that moved (4 bytes each)                          |
+<!-- prettier-ignore -->
+| Message | Channel | When | Carries |
+| --- | --- | --- | --- |
+| `SceneState` | Event | on every change | the scene's resource path hash (0: none), its `play` number, host clock at its time 0, rate (fast-forward), the host's tier, flags, the staging area |
+| `SceneCast` | Event | whole, on every change | `play`, the actors: `NpcId` and flags (ghost, hidden, posed) |
+| `SceneLine` | Event | a line begins, or is cut | `play`, the line's string id, the speaker (`NpcId` or `PlayerId`), host clock when it began, its length, flags (cut, holocall, bark) |
+| `ActorPose` | State | ≤ 30 Hz per actor, unreliable | `NpcId`, seq, host-clock time, the body pose (a `PoseState`: 68 rotations of 6 bytes and the hips, 431 bytes) |
+| `SceneCamera` | State | every frame of a cutscene, paced | `play`, seq, host-clock time, the active camera's position, orientation (5 bytes), field of view, a cut flag; 39 bytes, never kept |
+| `SceneProp` | Event | a prop is held, changes hands, goes | `play`, the prop's number in the play, the item's TweakDB id, its holder (`NpcId` or `PlayerId`), flags (gone, left hand); a story message, 26 bytes |
+| `ScenePlace` | Event | a prop is set down, moves, goes | `play`, the prop's number, its entity template's path hash, its appearance, position, orientation, flags (gone); a story message, 53 bytes |
+| `RigTracks` | State | with a face's `RigPose`, paced | `NpcId`, rig part, seq, host-clock time, the hash and count of the rig's float tracks, the tracks that moved (4 bytes each) |
 
 - `play` counts the host's scenes in a session. A scene played again is
   another play; a cast or a line names its play, so what belongs to a scene
@@ -165,8 +167,16 @@ reliable and ordered.
   only: `TandemStreamKind.Prop`), that the scene system says is in a scene,
   within 1.5 m of an actor or of our V and not already in that body's hand
   slots: held by the nearest, right hand unless only the right is taken.
+  When that body's hand slots can be read (`SlotComponent.GetSlotTransform`,
+  `RightHand` / `LeftHand`), the item must also be within 0.35 m of one.
   `scene::Stage` numbers each (the same number while it changes hands) and
   says what changed; a prop no longer seen is gone.
+- **Props nobody holds** (a glass set on a table, a dropped gun): such an
+  item entity of the scene at no hand is announced where it is
+  (`ScenePlace`: its template, `Entity.GetTemplatePath` of Codeware, as a
+  path hash; its appearance; its transform), said again when it moved 3 cm
+  or 0.05 rad (at most twice a second), gone when it is no longer seen or
+  someone holds it (then it is a `SceneProp`, another number).
 - **Changes only**: the stage says a staging area again only when it moved
   0.75 m and at most twice a second; the cast when it differs; the rest at
   once (fast-forward, a hub holding the scene's time, the tier).
@@ -178,17 +188,20 @@ reliable and ordered.
 The plugin turns the host's messages into cues (`scene::Replay`, tested
 without the game); the script applies them (`Scenes.reds`):
 
-| Cue               | The guest's game                                                                                                                     |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| a scene begins    | notes it (and how long it has played); the watch offer is armed                                                                      |
-| it changed        | staging, tier, flags; a fast-forward stops the voices                                                                                |
-| an NPC acts       | once its proxy is ready, binds the proxy's root graph instance to that NPC's pose stream; a ghost is shown or hidden with its effect |
-| it no longer does | unbinds it: the proxy's own animation again                                                                                          |
-| a line begins     | queues the dialog line event on the speaker (the proxy, the host's puppet, or our own V for a holocall), from the right second       |
-| a line stops      | queues the stop event                                                                                                                |
-| a prop is held    | once the holder's body is there (an actor's proxy, a player's puppet), the item goes in its hand slot (`TandemWeapons.Hold`)         |
-| a prop is gone    | out of that hand, if it is still what the hand holds; every prop goes before the scene's end releases the actors                     |
-| the scene is over | every actor released, the offer closed                                                                                               |
+<!-- prettier-ignore -->
+| Cue | The guest's game |
+| --- | --- |
+| a scene begins | notes it (and how long it has played); the watch offer is armed |
+| it changed | staging, tier, flags; a fast-forward stops the voices |
+| an NPC acts | once its proxy is ready, binds the proxy's root graph instance to that NPC's pose stream; a ghost is shown or hidden with its effect |
+| it no longer does | unbinds it: the proxy's own animation again |
+| a line begins | queues the dialog line event on the speaker (the proxy, the host's puppet, or our own V for a holocall), from the right second |
+| a line stops | queues the stop event |
+| a prop is held | once the holder's body is there (an actor's proxy, a player's puppet), the item goes in its hand slot (`TandemWeapons.Hold`) |
+| a prop is gone | out of that hand, if it is still what the hand holds; every prop goes before the scene's end releases the actors |
+| a prop is set down | spawned from the same template and appearance where the host says (Codeware's dynamic entities); moved there when it moves |
+| it is taken away | that entity deleted; the scene's end deletes every one |
+| the scene is over | every actor released, the offer closed |
 
 - A proxy keeps everything it had: its place still comes from the host's
   NPC states, its animation graph still runs with the host's states and
@@ -377,24 +390,25 @@ him, no scene running) only the first point applies.
 
 ## 8. When things go wrong
 
-| Case                                   | What happens                                                                                                                                                                                                                                         | Tested                                             |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| the host skips (fast-forward)          | `SceneState` with the skipping flag and the rate: voices stop, lines begun while it lasts are not played; the poses keep coming and move as fast as the host's                                                                                       | `scene_test` (replay)                              |
-| a choice is made                       | nothing special: the hub closes as before; while it is up the scene's time is held (flag); what follows arrives as cast, poses and lines                                                                                                             | `scene_test` (stage, replay)                       |
-| the scene is interrupted               | the end comes with the interrupted flag (someone was speaking): voices cut, actors released                                                                                                                                                          | `scene_test`                                       |
-| one scene straight into another        | another play: the guest ends the first (voices, actors) before the second begins, even if the first's end never came                                                                                                                                 | `scene_test`                                       |
-| a guest arrives mid-scene              | the record gives it the state, the cast and the lines being spoken, in that order; it joins at host clock − start, and each line from where it is now                                                                                                | `scene_test` (endpoints: joins 2 s in)             |
-| the host vanishes                      | 5 s of silence end the session; before the script hears of the end it gets the cues: voices stopped, every actor released, the scene over (interrupted); the plugin forgets every actor pose. Even before that, a pose stream silent for 1 s lets go | `scene_test` (endpoints: host destroyed mid-line)  |
-| a private scene                        | never announced: no state, cast, pose or line (§3); one that turns private ends for the guests                                                                                                                                                       | `scene_test` (stage)                               |
-| the scene's end is lost (a bug)        | the story digest hashes the scene and its cast: host and guest differ, the guest asks for the story again, and a resync says "no scene plays" explicitly                                                                                             | `scene_test` (endpoints with a dropped end; ≈ 8 s) |
-| repeats (a resync, a duplicate)        | the record and the replay drop what they have: a line already playing is not played again                                                                                                                                                            | `scene_test`                                       |
-| the host's world is rebuilt (an epoch) | actor poses are numbered with the NPC states: the same fence voids the old world's; a pose for an NPC the guest does not know (it overtook its `NpcGone`) is dropped                                                                                 | `scene_test` (unknown NPC); fence shared with NPCs |
-| an actor's proxy is not there yet      | bound when it is ready; its lines are not voiced until then (logged)                                                                                                                                                                                 | in game                                            |
-| a body the stream does not know        | not read on the host (logged once per skeleton); the proxy keeps its own animation                                                                                                                                                                   | in game                                            |
-| poses lost or late (unreliable)        | the track interpolates between the two around the drawn time and holds past the newest, as for players; older sequence numbers are dropped                                                                                                           | `pose_test` (the track)                            |
-| the camera's views stop, or are lost   | unreliable: a lost view is skipped (the track blends over it); none for 1 s: the guest's own camera, whether or not the scene's end was heard                                                                                                        | `scene_test` (camera track, endpoints)             |
-| the camera body does not spawn         | nothing is activated: the guest keeps its own eyes (logged once if the body has no camera component)                                                                                                                                                 | in game                                            |
-| scene replay off on one side           | a guest with it off ignores the scene messages; a host with it off announces nothing. Both keep today's behaviour                                                                                                                                    | by construction                                    |
+<!-- prettier-ignore -->
+| Case | What happens | Tested |
+| --- | --- | --- |
+| the host skips (fast-forward) | `SceneState` with the skipping flag and the rate: voices stop, lines begun while it lasts are not played; the poses keep coming and move as fast as the host's | `scene_test` (replay) |
+| a choice is made | nothing special: the hub closes as before; while it is up the scene's time is held (flag); what follows arrives as cast, poses and lines | `scene_test` (stage, replay) |
+| the scene is interrupted | the end comes with the interrupted flag (someone was speaking): voices cut, actors released | `scene_test` |
+| one scene straight into another | another play: the guest ends the first (voices, actors) before the second begins, even if the first's end never came | `scene_test` |
+| a guest arrives mid-scene | the record gives it the state, the cast and the lines being spoken, in that order; it joins at host clock − start, and each line from where it is now | `scene_test` (endpoints: joins 2 s in) |
+| the host vanishes | 5 s of silence end the session; before the script hears of the end it gets the cues: voices stopped, every actor released, the scene over (interrupted); the plugin forgets every actor pose. Even before that, a pose stream silent for 1 s lets go | `scene_test` (endpoints: host destroyed mid-line) |
+| a private scene | never announced: no state, cast, pose or line (§3); one that turns private ends for the guests | `scene_test` (stage) |
+| the scene's end is lost (a bug) | the story digest hashes the scene and its cast: host and guest differ, the guest asks for the story again, and a resync says "no scene plays" explicitly | `scene_test` (endpoints with a dropped end; ≈ 8 s) |
+| repeats (a resync, a duplicate) | the record and the replay drop what they have: a line already playing is not played again | `scene_test` |
+| the host's world is rebuilt (an epoch) | actor poses are numbered with the NPC states: the same fence voids the old world's; a pose for an NPC the guest does not know (it overtook its `NpcGone`) is dropped | `scene_test` (unknown NPC); fence shared with NPCs |
+| an actor's proxy is not there yet | bound when it is ready; its lines are not voiced until then (logged) | in game |
+| a body the stream does not know | not read on the host (logged once per skeleton); the proxy keeps its own animation | in game |
+| poses lost or late (unreliable) | the track interpolates between the two around the drawn time and holds past the newest, as for players; older sequence numbers are dropped | `pose_test` (the track) |
+| the camera's views stop, or are lost | unreliable: a lost view is skipped (the track blends over it); none for 1 s: the guest's own camera, whether or not the scene's end was heard | `scene_test` (camera track, endpoints) |
+| the camera body does not spawn | nothing is activated: the guest keeps its own eyes (logged once if the body has no camera component) | in game |
+| scene replay off on one side | a guest with it off ignores the scene messages; a host with it off announces nothing. Both keep today's behaviour | by construction |
 
 Digests: only what lasts and changes rarely is hashed (which scene, which
 play, the cast). The staging area, the rate and the lines are left out:
@@ -437,6 +451,11 @@ they change too often, and a wrong one heals with the next change.
   straight in `Story`'s track, not through the script's queue),
   `TandemStory.SceneCameraSample` / `SceneView`, `Scenes.reds` (`Frame`,
   a per-frame tick only while a cutscene lasts).
+- **Props set down**: `ScenePlace` (appended), `scene::PlaceSample`, the
+  stage's and the replay's `m_placed`, `story::Record` (kept for joiners;
+  the digest hashes which, not where), `TandemStory.ScenePlaced` /
+  `ScenePlaceOf` / `PathHash` / `PathOf`, `Scenes.reds` (`HostPlaced`,
+  `OnPlaced`, `MoveProps`); story events 62 and 63.
 - **Mock player** (`peer/src/main.cpp`): story verbs `scene`, `cast`,
   `prop`, `face`, `camera`, `skip`, `voice`, `cut`; its scene's actors take the pose it sends; as a
   guest it logs what it hears.
@@ -485,7 +504,8 @@ tracks).
   small budget, an ended stream), through endpoints (paced, the host's
   only, the cut flag never lost);
 - props: taken, handed over (the same number), put away, gone with the
-  scene, never in a private one; the guest's cues in order; the record and
+  scene, never in a private one; set down, moved (paced), taken, kept for
+  a joiner and hashed by which, not where; the guest's cues in order; the record and
   its digest; through endpoints (only the host's word, a late joiner gets
   them); the referee (an unknown holder);
 - through real endpoints over loopback UDP: a guest watches; a guest
@@ -534,6 +554,13 @@ Items.FirstAidWhiffV0` says `scene prop: 1 … held by npc N`. In a real
    `scene: prop` appear in the host's log at all (is a scene prop a
    `gameItemObject`, does `IsEntityInScene` say yes for it), with the right
    holder and hand; and does the guest's proxy hold it the right way round.
+   A prop set down (the glass back on the bar): the host's log says
+   `scene: prop N (…) set down at (…)` (`log = debug`), the guest's
+   `scene: prop N set down (template …)`; to see: the glass on the guest's
+   bar where it is on the host's, moved when the host's moves, gone with
+   the scene. Decides it: does a `gameItemObject` template spawn through
+   the dynamic entity system without its item data (nothing shown, a
+   warning, a crash), and does a spawned prop fall or stay where it is put.
 8. The watch camera. **`task scenario -- scene-camera`** (guest of a
    scripted cutscene): `scene: watching through the host's camera`, then
    `our own camera again`. To see: the picture is the view behind the
@@ -581,11 +608,14 @@ scene report`: `face tracks on (R reads, W writes)`, R > 0 on the host,
   language's lipsync sets) stays out of reach: nothing reflected plays it
   outside a scene (research file §4). The face's bones and float tracks are
   copied instead (§5).
-- **Props that nobody holds** (a bottle the scene spawns on a table), and a
-  held prop's exact grip: a held prop sits in the hand's attachment slot,
-  not on the scene's own slot and offset (`scneventsAttachPropToPerformer`
-  names a slot of the performer and an offset; nothing reflected reads
-  them from a running scene). Props the scene finds in the world are there
+- **A held prop's exact grip**: a held prop sits in the hand's attachment
+  slot, not on the scene's own slot and offset
+  (`scneventsAttachPropToPerformer` names a slot of the performer and an
+  offset). Nothing reflected reads them from a running scene (the scene
+  system's 0x10d0 bytes are unknown to the SDK), and nothing in scripts
+  attaches an item with an offset of our choosing: the host could measure
+  the offset (the item's transform against its hand slot's), the guest
+  could not apply it. Props the scene finds in the world are there
   already; whether they move with the scene is to see in game.
 - **The watch camera's depth of field and effects** (a cutscene's blur,
   letterbox, fades): only place, direction and field of view travel.

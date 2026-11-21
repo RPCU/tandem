@@ -24,6 +24,14 @@ public class TandemSettings {
     ];
   }
 
+  // What each one does, shown under the page for the row the cursor is on.
+  private static func Abouts() -> array<String> {
+    return [
+      "Settings-About-Name", "Settings-About-FriendlyFire", "Settings-About-EnemyScaling", "Settings-About-Notices", "Settings-About-Markers", "Settings-About-Nameplates", "Settings-About-PartyHud", "Settings-About-Link", "Settings-About-Pings", "Settings-About-Recorder",
+      "Settings-About-Relay", "Settings-About-Code", "Settings-About-Direct", "Settings-About-Story", "Settings-About-QuestFreeze", "Settings-About-ScenePrivacy", "Settings-About-TimeHost"
+    ];
+  }
+
   private static func Kinds() -> array<Int32> {
     return [2, 0, 0, 1, 0, 1, 0, 1, 0, 0, 2, 1, 1, 0, 0, 0, 1];
   }
@@ -46,7 +54,8 @@ public class TandemSettings {
 
   public static func Kind(key: String) -> Int32 {
     let i = TandemSettings.IndexOf(key);
-    return i < 0 ? -1 : TandemSettings.Kinds()[i];
+    let kinds = TandemSettings.Kinds();
+    return i < 0 ? -1 : kinds[i];
   }
 
   // A choice's values (tandem.ini's words) and their texts.
@@ -137,11 +146,12 @@ public class TandemSettings {
     if i < 0 {
       return key;
     }
-    let label = TandemText.F("Settings-Item", TandemText.Get(TandemSettings.Labels()[i]), TandemSettings.ValueText(key));
+    let label = TandemText.F("Settings-Item", TandemSettings.Title(key), TandemSettings.ValueText(key));
     if TandemSettings.IsHostsRule(key) {
       return TandemText.F("Settings-HostsRule", label);
     }
-    let when = TandemSettings.Whens()[i];
+    let whens = TandemSettings.Whens();
+    let when = whens[i];
     if when == 2 {
       return TandemText.F("Settings-AfterRestart", label);
     }
@@ -151,9 +161,19 @@ public class TandemSettings {
     return label;
   }
 
+  // Each array in a local before it is indexed: a String read straight from
+  // a returned array (Labels()[i]) came out empty in game, so every row
+  // showed ": V" (2026-11-20; tools/menu-check.py refuses it).
   public static func Title(key: String) -> String {
     let i = TandemSettings.IndexOf(key);
-    return i < 0 ? key : TandemText.Get(TandemSettings.Labels()[i]);
+    let labels = TandemSettings.Labels();
+    return i < 0 ? key : TandemText.Get(labels[i]);
+  }
+
+  public static func About(key: String) -> String {
+    let i = TandemSettings.IndexOf(key);
+    let abouts = TandemSettings.Abouts();
+    return i < 0 ? "" : TandemText.Get(abouts[i]);
   }
 
   // What a typed setting's popup says: the name its rules, the others

@@ -28,6 +28,8 @@ python3 "$root/tools/scripts-duplicates.py" "$ours"
 python3 "$root/tools/scripts-uninitialized.py" "$ours"
 # And a player-facing text that is not in Text.reds (docs/architecture/strings.md).
 python3 "$root/tools/check-strings.py" "$ours"
+# And a co-op menu row that shows the wrong text, or a duplicate entry.
+python3 "$root/tools/menu-check.py" "$ours"
 # And a hook that may run on a job thread and changes script state (heap
 # corruption while a save loads).
 python3 "$root/tools/scripts-threads.py" "$ours"

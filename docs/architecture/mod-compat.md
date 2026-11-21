@@ -45,7 +45,7 @@ startup, `main.cpp` `CheckInstallation`):
   as **hashes and categories only** (`kModListed`). Names travel only when
   asked: `kModNamesAsked` carries the hashes one side wants, `kModNames`
   the answer, which holds only the answerer's own mods among those asked. The
-  co-op menu's **Mods** popup asks when it opens. At most 512 mods, names of
+  co-op menu's **Partners' mods** popup asks when it opens. At most 512 mods, names of
   64 characters. No version bump: no existing message changed meaning
   (`Install.mods` stays the fingerprint of the names; release.md).
 - **In words** (`Endpoint` raises `events::RemoteMods` with a
@@ -101,7 +101,7 @@ shown as Items.Preset_Lexington_Default`); the player gets **one notice
   per sender and kind**, after 2 s so a look's pieces come together, with
   the count ("Judy's clothes come from a mod you don't have: shown plain or
   left off (3 pieces)"); a later one of that kind from them is only listed.
-  The co-op menu's **Mods** popup and `tools/game.sh cmd coop mods` list
+  The co-op menu's **Partners' mods** popup and `tools/game.sh cmd coop mods` list
   every replacement this session (whose, which record, shown as what).
   Refusals are notices that always show (`TandemText.Importance` 2); the
   others show unless `notices = minimal`.

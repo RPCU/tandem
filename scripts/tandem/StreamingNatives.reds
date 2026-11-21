@@ -64,4 +64,7 @@ public abstract class TandemPointKind {
   // go of it (value: 0 idle, 1 aim).
   public static func DeviceShot() -> Int32 { return 1; }
   public static func DeviceAim() -> Int32 { return 2; }
+  // A grenade bounced (entity: the grenade; the place of the bounce; value:
+  // the engine time of it, in milliseconds).
+  public static func ThrowBounce() -> Int32 { return 3; }
 }

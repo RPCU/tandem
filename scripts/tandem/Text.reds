@@ -383,7 +383,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Loot-Taken", "Someone already took it");
     this.Text("Tandem-Loot-TakenBy", "{1} picked it up first");
     // Other mods (Mods.reds, docs/architecture/mod-compat.md).
-    this.Text("Tandem-Menu-Mods", "Mods");
+    this.Text("Tandem-Menu-Mods", "Partners' mods");
     this.Text("Tandem-Mods-TheyHave", "{1} has mods you don't ({2})");
     this.Text("Tandem-Mods-YouHave", "You have mods {1} doesn't ({2})");
     this.Text("Tandem-Mods-Same", "{1} has the same mods as you");
@@ -396,7 +396,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Mods-Category-Unknown", "{1} tandem can't sort");
     this.Text("Tandem-Mods-Category-Local", "{1} only changing how the game looks or sounds (fine either way)");
     this.Text("Tandem-Mods-Seen", "{1} sees {2} of your things as vanilla ones: mods they don't have");
-    this.Text("Tandem-Mods-NamesCame", "{1}'s mod names are in Co-op, Mods");
+    this.Text("Tandem-Mods-NamesCame", "{1}'s mod names are in Co-op, Partners' mods");
     this.Text("Tandem-Mods-Names", "{1}'s mods you don't have: {2}");
     this.Text("Tandem-Mods-ReplacedCount", "Shown otherwise this session ({1}):");
     this.Text("Tandem-Mods-Nothing", "nothing");
@@ -485,6 +485,24 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Contest-Other", "{1} is in a contest");
     this.Text("Tandem-Contest-Over", "{1}'s contest is over");
     this.Text("Tandem-Contest-WatchOnly", "This is {1}'s fight: your hits don't count");
+    this.Text("Tandem-Race-Offer", "{1} is lining up for a street race");
+    this.Text("Tandem-Race-Join", "Join {1}'s race");
+    this.Text("Tandem-Race-Joining", "Joining {1}'s race…");
+    this.Text("Tandem-Race-Joined", "{1} joins your race");
+    this.Text("Tandem-Race-Grid", "On the grid: wait for the start");
+    this.Text("Tandem-Race-Ready", "Get ready…");
+    this.Text("Tandem-Race-Go", "Go!");
+    this.Text("Tandem-Race-TooLate", "{1}'s race has started: you watch");
+    this.Text("Tandem-Race-NoCar", "No car for {1}'s race: you watch");
+    this.Text("Tandem-Race-Finished", "You finished #{1}");
+    this.Text("Tandem-Race-Over", "{1}'s race is over");
+    this.Text("Tandem-Race-Abandoned", "{1} left the race: it is over");
+    this.Text("Tandem-Race-Left", "You left {1}'s race");
+    this.Text("Tandem-Race-RacerLeft", "{1} left the race");
+    this.Text("Tandem-Race-Standings", "Race");
+    this.Text("Tandem-Race-Npc", "Racer {1}");
+    this.Text("Tandem-Race-Checkpoint", "Checkpoint {1}");
+    this.Text("Tandem-Race-Out", "out");
     this.Text("Tandem-Activities-CantNow", "{1} can't skip time right now");
     this.Text("Tandem-Activities-Declined", "{1} declined");
     this.Text("Tandem-Activities-NoAnswer", "{1} didn't answer");
@@ -583,7 +601,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Status-Unknown", "{1} shows an effect this game doesn't know (a mod?): not shown.");
     this.Text("Tandem-Travel-Blocked", "You can't fast travel right now");
     // The settings page (Settings.reds).
-    this.Text("Tandem-Menu-Settings", "Settings");
+    this.Text("Tandem-Menu-Settings", "Co-op settings");
     this.Text("Tandem-Settings-Saved", "Saved to tandem.ini as you change them");
     this.Text("Tandem-Settings-Item", "{1}: {2}");
     this.Text("Tandem-Settings-NextSession", "{1} (from the next session)");
@@ -622,6 +640,24 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-TimeHost", "Your Sandevistan (host)");
     this.Text("Tandem-Settings-TimeHost-Full", "slows your whole game");
     this.Text("Tandem-Settings-TimeHost-Bubble", "slows the NPCs around you");
+    // Under the page, the description of the row the cursor is on.
+    this.Text("Tandem-Settings-About-Name", "The name the others see over your V and in their party list");
+    this.Text("Tandem-Settings-About-FriendlyFire", "Host's rule: the Vs' shots, blades and explosions hurt each other");
+    this.Text("Tandem-Settings-About-EnemyScaling", "Host's rule: hostile NPCs get more health for each extra player near them");
+    this.Text("Tandem-Settings-About-Notices", "Which co-op notices show: all, no news, or only questions and problems");
+    this.Text("Tandem-Settings-About-Markers", "A marker for each other player on the HUD, the minimap and the map");
+    this.Text("Tandem-Settings-About-Nameplates", "The name over the other players: close by, at any distance, or none");
+    this.Text("Tandem-Settings-About-PartyHud", "The list under your health bar: each linked partner's name, health and state");
+    this.Text("Tandem-Settings-About-Link", "Who sees your scanner tags and Ping reveals: every partner, those you link with, or nobody");
+    this.Text("Tandem-Settings-About-Pings", "Off: you neither send nor see pings (the tag key outside the scanner)");
+    this.Text("Tandem-Settings-About-Recorder", "Records your play for tandem's tests (recordings/auto); changes nothing in game");
+    this.Text("Tandem-Settings-About-Relay", "The relay that gives a host its join code and links players across the internet");
+    this.Text("Tandem-Settings-About-Code", "Host with a relay token: a new join code each session, or the same one kept");
+    this.Text("Tandem-Settings-About-Direct", "Through the relay, also try a direct link (lower latency); off: the relay only");
+    this.Text("Tandem-Settings-About-Story", "The host's journal, calls, texts, scenes and choices reach the guests");
+    this.Text("Tandem-Settings-About-QuestFreeze", "Guest: your own story waits while you play in the host's");
+    this.Text("Tandem-Settings-About-ScenePrivacy", "Romance and one-to-one scenes are yours alone: the others see you busy");
+    this.Text("Tandem-Settings-About-TimeHost", "Host: your Sandevistan slows your whole game, or only the NPCs around you");
   }
 }
 
@@ -758,7 +794,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Loot-Taken", "Quelqu'un l'a déjà pris");
     this.Text("Tandem-Loot-TakenBy", "{1} l'a ramassé avant vous");
     // Other mods (Mods.reds, docs/architecture/mod-compat.md).
-    this.Text("Tandem-Menu-Mods", "Mods");
+    this.Text("Tandem-Menu-Mods", "Mods des partenaires");
     this.Text("Tandem-Mods-TheyHave", "{1} a des mods que vous n'avez pas ({2})");
     this.Text("Tandem-Mods-YouHave", "Vous avez des mods que {1} n'a pas ({2})");
     this.Text("Tandem-Mods-Same", "{1} a les mêmes mods que vous");
@@ -771,7 +807,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Mods-Category-Unknown", "{1} que tandem ne sait pas classer");
     this.Text("Tandem-Mods-Category-Local", "{1} qui ne changent que l'image ou le son (sans souci)");
     this.Text("Tandem-Mods-Seen", "{1} voit {2} de vos éléments comme ceux d'origine : des mods qu'il n'a pas");
-    this.Text("Tandem-Mods-NamesCame", "Les noms des mods de {1} sont dans Coop, Mods");
+    this.Text("Tandem-Mods-NamesCame", "Les noms des mods de {1} sont dans Coop, Mods des partenaires");
     this.Text("Tandem-Mods-Names", "Les mods de {1} que vous n'avez pas : {2}");
     this.Text("Tandem-Mods-ReplacedCount", "Montrés autrement pendant cette session ({1}) :");
     this.Text("Tandem-Mods-Nothing", "rien");
@@ -858,6 +894,24 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Contest-Other", "{1} participe à une épreuve");
     this.Text("Tandem-Contest-Over", "L'épreuve de {1} est terminée");
     this.Text("Tandem-Contest-WatchOnly", "C'est le combat de {1} : vos coups ne comptent pas");
+    this.Text("Tandem-Race-Offer", "{1} se place pour une course de rue");
+    this.Text("Tandem-Race-Join", "Rejoindre la course de {1}");
+    this.Text("Tandem-Race-Joining", "Vous rejoignez la course de {1}…");
+    this.Text("Tandem-Race-Joined", "{1} rejoint votre course");
+    this.Text("Tandem-Race-Grid", "Sur la grille : attendez le départ");
+    this.Text("Tandem-Race-Ready", "Préparez-vous…");
+    this.Text("Tandem-Race-Go", "Partez !");
+    this.Text("Tandem-Race-TooLate", "La course de {1} a commencé : vous regardez");
+    this.Text("Tandem-Race-NoCar", "Pas de voiture pour la course de {1} : vous regardez");
+    this.Text("Tandem-Race-Finished", "Vous terminez n° {1}");
+    this.Text("Tandem-Race-Over", "La course de {1} est terminée");
+    this.Text("Tandem-Race-Abandoned", "{1} a quitté la course : elle est terminée");
+    this.Text("Tandem-Race-Left", "Vous quittez la course de {1}");
+    this.Text("Tandem-Race-RacerLeft", "{1} a quitté la course");
+    this.Text("Tandem-Race-Standings", "Course");
+    this.Text("Tandem-Race-Npc", "Pilote {1}");
+    this.Text("Tandem-Race-Checkpoint", "Point de passage {1}");
+    this.Text("Tandem-Race-Out", "abandon");
     this.Text("Tandem-Activities-CantNow", "{1} ne peut pas passer le temps pour l'instant");
     this.Text("Tandem-Activities-Declined", "{1} a refusé");
     this.Text("Tandem-Activities-NoAnswer", "{1} n'a pas répondu");
@@ -953,7 +1007,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Time-SlowedOther", "Le ralenti de {1} vous atteint.");
     this.Text("Tandem-Status-Unknown", "{1} porte un effet que ce jeu ne connaît pas (un mod ?) : non affiché.");
     this.Text("Tandem-Travel-Blocked", "Voyage rapide impossible pour l'instant");
-    this.Text("Tandem-Menu-Settings", "Paramètres");
+    this.Text("Tandem-Menu-Settings", "Paramètres coop");
     this.Text("Tandem-Settings-Saved", "Enregistrés dans tandem.ini dès leur modification");
     this.Text("Tandem-Settings-Item", "{1} : {2}");
     this.Text("Tandem-Settings-NextSession", "{1} (à la prochaine session)");
@@ -992,5 +1046,22 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-TimeHost", "Votre Sandevistan (hôte)");
     this.Text("Tandem-Settings-TimeHost-Full", "ralentit tout votre jeu");
     this.Text("Tandem-Settings-TimeHost-Bubble", "ralentit les PNJ autour de vous");
+    this.Text("Tandem-Settings-About-Name", "Le nom que les autres voient au-dessus de votre V et dans leur liste de groupe");
+    this.Text("Tandem-Settings-About-FriendlyFire", "Règle de l'hôte : les tirs, lames et explosions des V se blessent entre eux");
+    this.Text("Tandem-Settings-About-EnemyScaling", "Règle de l'hôte : les PNJ hostiles ont plus de santé pour chaque joueur en plus près d'eux");
+    this.Text("Tandem-Settings-About-Notices", "Les notifications coop affichées : toutes, sans les nouvelles, ou seulement questions et problèmes");
+    this.Text("Tandem-Settings-About-Markers", "Un marqueur pour chaque autre joueur sur l'ATH, la mini-carte et la carte");
+    this.Text("Tandem-Settings-About-Nameplates", "Le nom au-dessus des autres joueurs : de près, à toute distance, ou aucun");
+    this.Text("Tandem-Settings-About-PartyHud", "La liste sous votre barre de santé : nom, santé et état de chaque partenaire lié");
+    this.Text("Tandem-Settings-About-Link", "Qui voit vos marquages d'analyse et révélations Ping : chaque partenaire, ceux avec qui vous vous liez, ou personne");
+    this.Text("Tandem-Settings-About-Pings", "Désactivé : vous n'envoyez ni ne voyez de signaux (la touche de marquage hors analyse)");
+    this.Text("Tandem-Settings-About-Recorder", "Enregistre votre partie pour les tests de tandem (recordings/auto) ; ne change rien en jeu");
+    this.Text("Tandem-Settings-About-Relay", "Le relais qui donne son code d'invitation à l'hôte et relie les joueurs par internet");
+    this.Text("Tandem-Settings-About-Code", "Hôte avec un jeton de relais : un nouveau code à chaque session, ou le même gardé");
+    this.Text("Tandem-Settings-About-Direct", "Via le relais, essayer aussi un lien direct (latence plus faible) ; désactivé : le relais seulement");
+    this.Text("Tandem-Settings-About-Story", "Le journal, les appels, messages, scènes et choix de l'hôte parviennent aux invités");
+    this.Text("Tandem-Settings-About-QuestFreeze", "Invité : votre propre histoire attend pendant que vous jouez dans celle de l'hôte");
+    this.Text("Tandem-Settings-About-ScenePrivacy", "Les romances et scènes en tête-à-tête sont à vous seul : les autres vous voient occupé");
+    this.Text("Tandem-Settings-About-TimeHost", "Hôte : votre Sandevistan ralentit tout votre jeu, ou seulement les PNJ autour de vous");
   }
 }

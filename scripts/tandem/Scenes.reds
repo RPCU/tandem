@@ -49,6 +49,16 @@ public class TandemSceneHeld {
   public let on: EntityID;
 }
 
+// Guest: something the host's scene set down that nobody holds, spawned
+// here from the same template.
+public class TandemScenePlaced {
+  public let prop: Uint32;
+  public let entity: Uint64;
+  public let id: EntityID;
+  public let at: Vector4;
+  public let turn: Quaternion;
+}
+
 // The next frame, while a cutscene's camera is sampled (host) or followed
 // (guest).
 public class TandemSceneFrame extends DelayCallback {
@@ -89,6 +99,7 @@ public class TandemScenes {
   private let m_actors: array<ref<TandemSceneActor>>;
   private let m_voices: array<ref<TandemSceneVoice>>;
   private let m_held: array<ref<TandemSceneHeld>>;
+  private let m_placed: array<ref<TandemScenePlaced>>;
 
   // The watch camera (tandem.ini scene_camera). Host: our tier as last
   // sampled. Guest: the camera body we asked for, whether the picture is
@@ -267,7 +278,9 @@ public class TandemScenes {
   }
 
   // One item entity of the scene: held by the nearest of its actors and our
-  // V, within arm's reach; not what already sits in that body's hand slots.
+  // V, within arm's reach (at a hand, when that body's hands can be read);
+  // not what already sits in that body's hand slots. In nobody's hands: set
+  // down where it is (a glass on a table, a dropped gun).
   private func HostProp(item: ref<ItemObject>, actors: array<Uint32>, bodies: array<ref<GameObject>>, player: ref<PlayerPuppet>) -> Void {
     let transactions = GameInstance.GetTransactionSystem(this.m_game);
     let at = item.GetWorldPosition();
@@ -277,18 +290,19 @@ public class TandemScenes {
     let i = 0;
     while i < ArraySize(actors) {
       let distance = Vector4.Distance(bodies[i].GetWorldPosition(), at);
-      if distance < best {
+      if distance < best && this.AtHand(bodies[i], at) {
         best = distance;
         holder = bodies[i];
         npc = actors[i];
       }
       i += 1;
     }
-    if Vector4.Distance(player.GetWorldPosition(), at) < best {
+    if Vector4.Distance(player.GetWorldPosition(), at) < best && this.AtHand(player, at) {
       holder = player;
       npc = 0u;
     }
     if !IsDefined(holder) {
+      this.HostPlaced(item);
       return;
     }
     let right = transactions.GetItemInSlot(holder, t"AttachmentSlots.WeaponRight");
@@ -301,6 +315,38 @@ public class TandemScenes {
       return;
     }
     TandemStory.SceneProp(EntityID.ToHash(item.GetEntityID()), record, npc, npc == 0u ? TandemStory.You() : 0u, IsDefined(right) && !IsDefined(left));
+  }
+
+  // `at` is within a hand's reach of one of the body's hands, or its hands
+  // cannot be read (then within 1.5 m of it is enough, as before).
+  private func AtHand(body: ref<GameObject>, at: Vector4) -> Bool {
+    let puppet = body as ScriptedPuppet;
+    let slots = IsDefined(puppet) ? puppet.GetSlotComponent() : null;
+    if !IsDefined(slots) {
+      return true;
+    }
+    let read = false;
+    for name in [n"RightHand", n"LeftHand"] {
+      let hand = new WorldTransform();
+      if slots.GetSlotTransform(name, hand) {
+        read = true;
+        if Vector4.Distance(WorldPosition.ToVector4(WorldTransform.GetWorldPosition(hand)), at) < 0.35 {
+          return true;
+        }
+      }
+    }
+    return !read;
+  }
+
+  // An item entity of the scene in nobody's hands: where it is, for the guests.
+  private func HostPlaced(item: ref<ItemObject>) -> Void {
+    let entity = TandemStory.PathHash(item.GetTemplatePath());
+    if entity == 0ul {
+      return;
+    }
+    let at = item.GetWorldPosition();
+    let q = item.GetWorldOrientation();
+    TandemStory.ScenePlaced(EntityID.ToHash(item.GetEntityID()), entity, item.GetCurrentAppearanceName(), at.X, at.Y, at.Z, q.i, q.j, q.k, q.r);
   }
 
   // A line shows on our game (Dialogue.reds, UIGameData.ShowDialogLine): its
@@ -423,6 +469,12 @@ public class TandemScenes {
       case 58:
         this.OnPropGone(event.hash);
         break;
+      case 62:
+        this.OnPlaced(event.hash);
+        break;
+      case 63:
+        this.OnPlacedGone(event.hash);
+        break;
       default:
         break;
     }
@@ -540,6 +592,101 @@ public class TandemScenes {
     }
   }
 
+  // A prop set down by the host's scene: spawned from its template there,
+  // or moved (again on the tick, once the entity is in).
+  private func OnPlaced(prop: Uint32) -> Void {
+    let place = TandemStory.ScenePlaceOf(prop);
+    if !place.on {
+      return;
+    }
+    let known: ref<TandemScenePlaced> = null;
+    for placed in this.m_placed {
+      if placed.prop == prop {
+        known = placed;
+      }
+    }
+    if IsDefined(known) && known.entity != place.entity {
+      this.OnPlacedGone(prop);
+      known = null;
+    }
+    if IsDefined(known) {
+      this.MovePlaced(known, place);
+      return;
+    }
+    if ArraySize(this.m_placed) >= 16 {
+      return;
+    }
+    let spec = new DynamicEntitySpec();
+    spec.templatePath = TandemStory.PathOf(place.entity);
+    if NotEquals(place.appearance, n"None") {
+      spec.appearanceName = place.appearance;
+    }
+    spec.position = new Vector4(place.x, place.y, place.z, 1.0);
+    spec.orientation = new Quaternion(place.i, place.j, place.k, place.r);
+    spec.alwaysSpawned = true;
+    spec.persistState = false;
+    spec.persistSpawn = false;
+    ArrayPush(spec.tags, n"Tandem.SceneProp");
+    let placed = new TandemScenePlaced();
+    placed.prop = prop;
+    placed.entity = place.entity;
+    placed.id = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+    placed.at = spec.position;
+    placed.turn = spec.orientation;
+    ArrayPush(this.m_placed, placed);
+    TandemNative.Log(s"scene: prop \(prop) set down (template \(place.entity))");
+  }
+
+  // Where the host says it is now, if it moved.
+  private func MovePlaced(placed: ref<TandemScenePlaced>, place: TandemScenePlace) -> Void {
+    let at = new Vector4(place.x, place.y, place.z, 1.0);
+    let turn = new Quaternion(place.i, place.j, place.k, place.r);
+    let body = GameInstance.FindEntityByID(this.m_game, placed.id);
+    if !IsDefined(body) {
+      placed.at = at;
+      placed.turn = turn;
+      return;
+    }
+    let shown = body.GetWorldPosition();
+    if Vector4.Distance(shown, at) < 0.01 && Vector4.Distance(placed.at, at) < 0.01 {
+      return;
+    }
+    placed.at = at;
+    placed.turn = turn;
+    let object = body as GameObject;
+    if IsDefined(object) {
+      GameInstance.GetTeleportationFacility(this.m_game).Teleport(object, at, Quaternion.ToEulerAngles(turn));
+    } else {
+      let moved = new WorldTransform();
+      WorldTransform.SetPosition(moved, at);
+      WorldTransform.SetOrientation(moved, turn);
+      body.SetWorldTransform(moved);
+    }
+  }
+
+  private func OnPlacedGone(prop: Uint32) -> Void {
+    let kept: array<ref<TandemScenePlaced>>;
+    for placed in this.m_placed {
+      if placed.prop == prop {
+        GameInstance.GetDynamicEntitySystem().DeleteEntity(placed.id);
+        TandemNative.Log(s"scene: prop \(prop) taken away");
+      } else {
+        ArrayPush(kept, placed);
+      }
+    }
+    this.m_placed = kept;
+  }
+
+  // Each prop set down where the host last said (a spawn that came in late).
+  private func MoveProps() -> Void {
+    for placed in this.m_placed {
+      let place = TandemStory.ScenePlaceOf(placed.prop);
+      if place.on {
+        this.MovePlaced(placed, place);
+      }
+    }
+  }
+
   // Each prop into the hand of its holder's body here (an actor's proxy, a
   // player's puppet), once the body is there; again when it was rebuilt.
   private func PlaceProps() -> Void {
@@ -572,6 +719,10 @@ public class TandemScenes {
       this.Unplace(held);
     }
     ArrayClear(this.m_held);
+    for placed in this.m_placed {
+      GameInstance.GetDynamicEntitySystem().DeleteEntity(placed.id);
+    }
+    ArrayClear(this.m_placed);
     this.ReleaseCamera();
     this.m_cameraOff = false;
     for actor in this.m_actors {
@@ -661,6 +812,7 @@ public class TandemScenes {
       }
     }
     this.PlaceProps();
+    this.MoveProps();
     this.StartFrames();
     this.UpdateWatch();
     this.KeepClear();

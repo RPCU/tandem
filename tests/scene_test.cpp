@@ -828,6 +828,96 @@ TEST_CASE("the story record keeps a scene's props for a joiner and hashes them")
   CHECK(guest.ForJoiner().empty());
 }
 
+TEST_CASE("a prop nobody holds: set down, moved, taken, gone with the scene") {
+  scene::Stage stage;
+  auto sample = Talk();
+  sample.placed = {{.key = 950, .entity = 0xE1, .appearance = 0xA1, .position = {1.f, 2.f, 0.8f}}};
+  auto out = stage.Update(sample, kT0);
+  const auto *set = Find<proto::ScenePlace>(out);
+  REQUIRE(set);
+  CHECK(
+      *set ==
+      proto::ScenePlace{
+          .play = 1, .prop = 1, .entity = 0xE1, .appearance = 0xA1, .position = {1.f, 2.f, 0.8f}});
+  // Still, or moved a little: nothing to say.
+  sample.placed[0].position.x += 0.01f;
+  CHECK(Find<proto::ScenePlace>(stage.Update(sample, kT0 + kSecond)) == nullptr);
+  // Moved, but just said: not yet; then said.
+  sample.placed[0].position.x = 1.5f;
+  CHECK(Find<proto::ScenePlace>(stage.Update(sample, kT0 + kSecond + 100'000)) != nullptr);
+  sample.placed[0].position.x = 2.f;
+  CHECK(Find<proto::ScenePlace>(stage.Update(sample, kT0 + kSecond + 200'000)) == nullptr);
+  out = stage.Update(sample, kT0 + 2 * kSecond);
+  REQUIRE(Find<proto::ScenePlace>(out));
+  CHECK(Find<proto::ScenePlace>(out)->prop == 1);
+  CHECK(Find<proto::ScenePlace>(out)->position.x == 2.f);
+
+  // Someone takes it: it is held (a SceneProp, a number of its own), the
+  // placed one goes.
+  sample.placed.clear();
+  sample.props = {{.key = 950, .record = 0x61, .holder = 7}};
+  out = stage.Update(sample, kT0 + 3 * kSecond);
+  REQUIRE(Find<proto::ScenePlace>(out));
+  CHECK((Find<proto::ScenePlace>(out)->flags & proto::kPropGone) != 0);
+  REQUIRE(Find<proto::SceneProp>(out));
+  CHECK(Find<proto::SceneProp>(out)->prop == 2);
+
+  // The guest: spawned, moved, gone; the scene's end takes what is left.
+  scene::Replay replay;
+  replay.Note(proto::SceneState{.scene = kScene, .play = 3, .startUs = kT0, .tier = 4}, kT0);
+  const proto::ScenePlace bottle{
+      .play = 3, .prop = 1, .entity = 0xE1, .position = {1.f, 2.f, 0.8f}};
+  auto cues = replay.Note(bottle, kT0);
+  REQUIRE(Count(cues, Kind::Place) == 1);
+  REQUIRE(replay.PlaceOf(1));
+  CHECK(*replay.PlaceOf(1) == bottle);
+  CHECK(replay.Note(bottle, kT0).empty()); // a repeat
+  CHECK(replay.Note(proto::ScenePlace{.play = 2, .prop = 1, .entity = 0xE1}, kT0).empty());
+  auto moved = bottle;
+  moved.position.x = 3.f;
+  CHECK(Count(replay.Note(moved, kT0 + kSecond), Kind::Place) == 1);
+  CHECK(replay.PlaceOf(1)->position.x == 3.f);
+  auto gone = moved;
+  gone.flags = proto::kPropGone;
+  CHECK(Count(replay.Note(gone, kT0 + 2 * kSecond), Kind::PlaceGone) == 1);
+  CHECK(replay.Placed() == 0);
+  CHECK(replay.PlaceOf(1) == nullptr);
+  replay.Note(bottle, kT0 + 3 * kSecond);
+  CHECK(Count(replay.Note(proto::SceneState{.play = 3}, kT0 + 4 * kSecond), Kind::PlaceGone) == 1);
+  CHECK(replay.Placed() == 0);
+
+  // The record: kept for a joiner, hashed by which, not where.
+  story::Record host, guest;
+  const proto::SceneState state{.scene = kScene, .play = 2, .startUs = kT0, .tier = 4};
+  auto kept = bottle;
+  kept.play = 2;
+  for (auto *record : {&host, &guest}) {
+    CHECK(record->Note(state));
+    CHECK(record->Note(kept));
+    CHECK_FALSE(record->Note(kept));
+  }
+  const auto joiner = host.ForJoiner();
+  REQUIRE(joiner.size() == 2);
+  CHECK(std::get<proto::ScenePlace>(joiner[1]) == kept);
+  auto there = kept;
+  there.position.y = 9.f;
+  CHECK(host.Note(there));
+  CHECK(host.Digest() == guest.Digest());
+  auto taken = kept;
+  taken.flags = proto::kPropGone;
+  CHECK(host.Note(taken));
+  CHECK(host.Digest() != guest.Digest());
+  CHECK(guest.Note(proto::SceneState{.play = 2}));
+  CHECK(guest.ForJoiner().empty());
+
+  // Nothing of a private scene.
+  scene::Stage own;
+  sample.isPrivate = true;
+  sample.props.clear();
+  sample.placed = {{.key = 950, .entity = 0xE1}};
+  CHECK(own.Update(sample, kT0).empty());
+}
+
 TEST_CASE("a prop through the endpoints: only the host's word, and a joiner gets it") {
   const auto port = NextPort();
   std::string error;

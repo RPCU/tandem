@@ -95,6 +95,7 @@ void Story::Note(const StoryInbound &inbound) {
     m_stage = {};
     m_actors.clear();
     m_props.clear();
+    m_placed.clear();
     m_bodies.clear();
     // The next session's host starts from no restriction. A guest's own
     // (what its V holds) stay for its script's leave (RestrictLift).

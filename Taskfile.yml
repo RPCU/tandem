@@ -107,6 +107,11 @@ tasks:
     cmds:
       - python3 tools/check-strings.py
 
+  menu:check:
+    desc: "Co-op menu: settings arrays aligned, every row's texts in English + French, keys the plugin takes, no duplicate entry (also run by scripts:check)"
+    cmds:
+      - python3 tools/menu-check.py
+
   threads:check:
     desc: "Script hooks that may run on job threads only read, call the wrapped method and enqueue (also run by scripts:check; -- --list for every hook)"
     cmds:
@@ -259,6 +264,7 @@ tasks:
       - task: build:plugin
       - task: natives:check
       - task: strings:check
+      - task: menu:check
       - task: threads:check
       - task: scenarios:check
       - task: scripts:check
