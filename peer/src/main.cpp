@@ -4864,6 +4864,11 @@ int main(int argc, char **argv) {
                     Log("npc {} loses part {}", strike->npc, strike->part);
                   }
                   deadNpcs.insert(strike->npc);
+                  // --remove-corpses: as for a hit (the game's kills come as
+                  // strikes now).
+                  if (options.removeCorpsesSeconds >= 0)
+                    corpses[strike->npc] = std::chrono::steady_clock::now() +
+                                           std::chrono::seconds(options.removeCorpsesSeconds);
                   endpoint->SendNpcGone(
                       {.npc = strike->npc, .reason = 1, .killer = strike->player});
                   Log("npc {} died", strike->npc);
