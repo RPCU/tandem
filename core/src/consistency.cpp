@@ -285,6 +285,7 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<NpcHackState>(message) ||
          std::holds_alternative<PlayerHack>(message) ||
          std::holds_alternative<VehicleHack>(message) ||
+         std::holds_alternative<TrafficHack>(message) ||
          std::holds_alternative<PhoneAction>(message) ||
          std::holds_alternative<PhoneReply>(message) || std::holds_alternative<Subtitle>(message) ||
          std::holds_alternative<ChoiceCursor>(message) ||

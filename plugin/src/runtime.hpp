@@ -63,15 +63,16 @@ struct HackEvent {
     Status = 3,     // guest: a quickhack effect came onto (state 1) or left a host NPC
     PlayerHack = 4, // guest: a host NPC netrunner hacks our V
     Car = 5,        // the driver: someone hacked the car we drive
+    Traffic = 6,    // someone hacked a shared vehicle (npc: its TrafficId; flags 1: ours)
   };
   Kind kind{};
   proto::NpcId npc{};
   proto::PlayerId player{}; // the uploader, the effect's V, the hacker
   std::uint64_t action{};   // ObjectAction record (Status: the status effect record)
-  std::int32_t state{};     // State: proto::HackStep; Status: applied; Car: proto::CarHack
-  std::int32_t flags{};     // Upload: proto::kUpload*; PlayerHack: proto::kPlayerHack*
-  float seconds{};          // upload time; Car: how long it lasts
-  std::uint64_t atUs{};     // when it arrived (steady clock): a PlayerHack goes stale
+  std::int32_t state{};     // State: proto::HackStep; Status: applied; Car, Traffic: proto::CarHack
+  std::int32_t flags{}; // Upload: proto::kUpload*; PlayerHack: proto::kPlayerHack*; Traffic: 1 ours
+  float seconds{};      // upload time; Car: how long it lasts
+  std::uint64_t atUs{}; // when it arrived (steady clock): a PlayerHack goes stale
 };
 
 // Grapples, takedowns, finishers and carried bodies (Takedowns.reds), for

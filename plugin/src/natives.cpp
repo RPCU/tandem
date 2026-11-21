@@ -198,8 +198,8 @@ struct TandemHackEvent {
   std::uint32_t npc{};
   std::uint32_t player{};
   Red::TweakDBID action; // ObjectAction record; 3 status: the status effect record
-  std::int32_t state{};  // 2: proto::HackStep; 3: applied; 5: proto::CarHack
-  std::int32_t flags{};  // 1: proto::kUpload*; 4: proto::kPlayerHack*
+  std::int32_t state{};  // 2: proto::HackStep; 3: applied; 5, 6: proto::CarHack
+  std::int32_t flags{};  // 1: proto::kUpload*; 4: proto::kPlayerHack*; 6: 1 ours
   float seconds{};
 };
 static_assert(alignof(TandemHackEvent) <= 8, "the script VM aligns struct locals to 8");
@@ -1501,6 +1501,14 @@ struct TandemNative : Red::IScriptable {
     Runtime::Get().SubmitHack(proto::VehicleHack{
         .driver = driver, .hack = static_cast<proto::CarHack>(hack), .seconds = seconds});
   }
+  // We hacked shared vehicle `id` (a TrafficId: TandemTraffic.IdOfBody),
+  // proto::CarHack.
+  static void SendTrafficHack(std::uint32_t id, std::int32_t hack, float seconds) {
+    if (hack < 0 || hack > static_cast<std::int32_t>(proto::CarHack::Accelerate))
+      return;
+    Runtime::Get().SubmitHack(proto::TrafficHack{
+        .id = id, .hack = static_cast<proto::CarHack>(hack), .seconds = seconds});
+  }
   static Red::DynArray<TandemHackEvent> TakeHackEvents() {
     Red::DynArray<TandemHackEvent> out;
     for (const auto &event : Runtime::Get().TakeHackEvents())
@@ -2348,6 +2356,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(SendNpcStatus);
   RTTI_METHOD(SendPlayerHack);
   RTTI_METHOD(SendVehicleHack);
+  RTTI_METHOD(SendTrafficHack);
   RTTI_METHOD(TakeHackEvents);
   RTTI_METHOD(NpcPuppetId);
   RTTI_METHOD(SendNpcAction);

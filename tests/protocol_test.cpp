@@ -1233,6 +1233,19 @@ TEST_CASE("a turret's refused claim survives encoding: reliable, small, appended
   CHECK(Encode(TurretBusy{}).size() <= 16);
 }
 
+TEST_CASE("a quickhack on a shared vehicle survives encoding: reliable, small, appended, known "
+          "hacks only") {
+  RoundTrips(
+      TrafficHack{.player = 2, .id = 0x0200'0007, .hack = CarHack::Accelerate, .seconds = 4.5f});
+  CHECK(Message(TrafficHack{}).index() == Message(TurretBusy{}).index() + 1); // appended
+  CHECK(std::string(NameOf(TrafficHack{})) == "TrafficHack");
+  CHECK(ChannelOf(TrafficHack{}) == Channel::Event);
+  CHECK(IsReliable(TrafficHack{}));
+  CHECK_FALSE(IsCombat(TrafficHack{}));
+  CHECK(Encode(TrafficHack{}).size() <= 16);
+  CHECK_FALSE(Decode(Encode(TrafficHack{.hack = static_cast<CarHack>(3)})).has_value());
+}
+
 TEST_CASE("vehicles changing hands: survive encoding, reliable, small") {
   RoundTrips(TrafficOwnership{.id = MakeTrafficId(2, 9), .owner = 3});
   RoundTrips(TrafficHandover{.id = MakeTrafficId(2, 9), .to = 3});

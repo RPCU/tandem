@@ -426,6 +426,13 @@ struct TrafficChanged {
 struct TrafficHitBy {
   proto::TrafficHit hit;
 };
+// Another player quickhacked a shared vehicle (stamped by the host): ours to
+// apply to the real one when `ours`; in every game, marked in the hacker's
+// colour while it lasts (devices.md, "A partner's hack, marked").
+struct TrafficHacked {
+  proto::TrafficHack hack;
+  bool ours{};
+};
 // Hand-over of a shared vehicle (traffic.md, "Who owns an area"). Give: the
 // host asks us to give one of ours to `to` (answer: Endpoint::GiveTraffic,
 // or AnswerTraffic(id, false)). Take: we run it from now on: wake its proxy
@@ -635,7 +642,8 @@ using SessionEventVariant = std::variant<
     events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered,
     events::RemoteStatusVisuals, events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom,
     events::TrafficGive, events::TrafficTake, events::TrafficOwnerChanged, events::Fractured,
-    events::DeviceFired, events::TurretHeld, events::LinkDeclined, events::TurretRefused>;
+    events::DeviceFired, events::TurretHeld, events::LinkDeclined, events::TurretRefused,
+    events::TrafficHacked>;
 // Its copies, moves and conversions compiled in session_event.cpp only, as
 // proto::Message's (tandem/closed_variant.hpp).
 using SessionEvent = ClosedVariant<SessionEventVariant>;
@@ -894,6 +902,9 @@ public:
   void SendTrafficStatus(const proto::TrafficStatus &status);
   // We hit a vehicle another game runs (its proxy here): to its owner.
   void SendTrafficHit(const proto::TrafficHit &hit);
+  // We quickhacked a shared vehicle (its copy here, or one we run): through
+  // the host to every other player; its owner applies it, everyone marks it.
+  void SendTrafficHack(proto::TrafficHack hack);
   // Our V gets into a shared vehicle: the first claim wins (its owner
   // decides) and comes back to every game as TrafficLeft{taken, player}.
   void ClaimTraffic(proto::TrafficId id, std::uint64_t seat);

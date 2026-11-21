@@ -187,6 +187,27 @@ TEST_CASE("referee: a shared vehicle's word is its owner's, wherever it was hand
   CHECK(Rules(guest) == std::vector<std::string>{"authority.not-owner"});
 }
 
+TEST_CASE("referee: a quickhack on a shared vehicle is a player's, passed on, never back") {
+  auto guest = Guest();
+  const auto hosts = proto::MakeTrafficId(1, 1);
+  guest.Received(1,
+                 proto::TrafficHack{
+                     .player = 3, .id = hosts, .hack = proto::CarHack::ForceBrakes, .seconds = 8.f},
+                 kSecond);
+  CHECK(Rules(guest).empty());
+  // Our own back, an unnamed vehicle, a length below nothing.
+  guest.Received(1, proto::TrafficHack{.player = 2, .id = hosts}, kSecond);
+  guest.Received(1, proto::TrafficHack{.player = 3}, kSecond);
+  guest.Received(1, proto::TrafficHack{.player = 3, .id = hosts, .seconds = -1.f}, kSecond);
+  CHECK(Rules(guest) ==
+        std::vector<std::string>{"authority.own-state-back", "value.range", "value.range"});
+  // Host: a guest says it in its own name.
+  auto host = Host();
+  host.Received(2, proto::TrafficHack{.player = 2, .id = hosts, .hack = proto::CarHack::Accelerate},
+                kSecond);
+  CHECK(Rules(host).empty());
+}
+
 TEST_CASE("referee: a device's fire is the host's turret's, what a copy sees a guest's") {
   using Kind = proto::DeviceFireKind;
   auto host = Host();

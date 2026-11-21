@@ -77,6 +77,7 @@ bool AimsAtWorld(const proto::Message &message) {
          std::holds_alternative<proto::NpcAction>(message) ||
          std::holds_alternative<proto::TrafficHit>(message) ||
          std::holds_alternative<proto::TrafficClaim>(message) ||
+         std::holds_alternative<proto::TrafficHack>(message) ||
          std::holds_alternative<proto::Defended>(message) ||
          std::holds_alternative<proto::WeakSpotHit>(message) ||
          std::holds_alternative<proto::HackTraced>(message) ||

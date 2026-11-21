@@ -29,7 +29,8 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // respawn out of the host's locked quest area); TurretBusy appended.
 // 13: NpcShotAt.flags (a smart gun's guided round, kShotAtTracked);
 // CueKind::Ricochet and CueKind::Charge (a game of 12 refuses them).
-inline constexpr std::uint16_t kProtocolVersion = 13;
+// 14: TrafficHack appended (a game of 13 cannot read it).
+inline constexpr std::uint16_t kProtocolVersion = 14;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3158,6 +3159,22 @@ struct TurretBusy {
   friend bool operator==(const TurretBusy &, const TurretBusy &) = default;
 };
 
+// A V quickhacked a shared vehicle no V drives (a traffic, parked or placed
+// car: TrafficSpawn's id), on its copy in the hacker's game. To the host,
+// which stamps the hacker and passes it to every other player: the
+// vehicle's owner applies the hack to the real one (what it does comes back
+// through the vehicle's sync), every game marks the vehicle in the hacker's
+// colour while it lasts (devices.md, "A partner's hack, marked"). The
+// hacker's game applies it itself when it owns the vehicle. Event channel; a
+// one-shot. A car another V drives is VehicleHack's.
+struct TrafficHack {
+  PlayerId player{}; // the hacker: set by the host from the connection
+  TrafficId id{};
+  CarHack hack{};
+  float seconds{}; // how long it lasts (brakes, acceleration), as the hacker's game has it
+  friend bool operator==(const TrafficHack &, const TrafficHack &) = default;
+};
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -3179,7 +3196,8 @@ using MessageVariant = std::variant<
     BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
-    ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy>;
+    ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
+    TrafficHack>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
