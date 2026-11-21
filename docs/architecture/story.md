@@ -292,7 +292,8 @@ lifted`). One notice per moment: none for (a) and (b), `Spectate-Taken`
       `tests/referee_test.cpp` (a moment and
       a moment to watch are the host's word, spectating a guest's),
       `tests/presence_test.cpp`; mock player story verb `moment on [watch]
-[TIER]|off` (with `camera on`); scenarios `spectate-guest` (a tier 2
+[TIER]|off` (with `camera on`, whose views go out in a scene, a moment
+      or neither, as a watched host's); scenarios `spectate-guest` (a tier 2
       walk and talk played, a tier 5 cutscene and a dive watched),
       `spectate-leave`, `spectate-host`, `spectate-ride` (mock host
       `--mode drive --drive-radius 35`: a moment's ride leaving the guest),
