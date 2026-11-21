@@ -34,3 +34,9 @@ expect 'devices: session over, [0-9]+ followed, [1-9][0-9]* put back as our own 
 pause 2
 shot devices-guest-left
 reject 'watchdog: game thread silent'
+# Back as the harness has a guest: joining the laptop again (the next
+# scenario's mock host).
+game_ip=$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')
+here=$(ip -4 -o route get "$game_ip" | awk '{ for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1) }')
+cmd coop join "$here:27450"
+expect 'session: starting as join of' 10
