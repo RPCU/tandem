@@ -72,6 +72,11 @@ struct Copy {
   friend bool operator==(const Copy &, const Copy &) = default;
 };
 
+// A path as UTF-8, and back (the scripts' strings; never the system's code
+// page, which cannot hold every name).
+std::string Utf8(const std::filesystem::path &path);
+std::filesystem::path PathOf(std::string_view utf8);
+
 // A text as a copy keeps it: one line, at most kMaxText bytes (cut at a
 // character boundary), no control characters.
 std::string Clean(std::string_view text);

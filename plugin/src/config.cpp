@@ -250,6 +250,13 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.timeHostFull = true;
     else
       return Bad("time_host is bubble or full");
+  } else if (key == "campaign") {
+    if (value == "on" || value == "true")
+      config.campaign = true;
+    else if (value == "off" || value == "false")
+      config.campaign = false;
+    else
+      return Bad("campaign is on or off");
   } else if (key == "trade") {
     if (value == "on" || value == "true")
       config.trade = true;

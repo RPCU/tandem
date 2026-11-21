@@ -128,6 +128,7 @@
 // tandem-peer traffic FILE...: the bandwidth a recording (.tplay, .tsession
 // or an NPC recording) takes on the wire, legacy and compact.
 
+#include "tandem/campaign.hpp"
 #include "tandem/combat.hpp"
 #include "tandem/comms.hpp"
 #include "tandem/endpoint.hpp"
@@ -359,6 +360,9 @@ struct Options {
   // said), and (host) the power level we say our NPCs have (0: none said).
   int level{0};
   float npcLevel{0.f};
+  // A shared campaign (docs/architecture/campaign.md): the copy we say we
+  // have (campaign 0: none), with its last quest and when it was saved.
+  tandem::campaign::Copy campaignCopy;
   // Garages (docs/architecture/garage.md): who may drive our cars (-1: not
   // said), and (host) a vehicle our quest "gives" while the guests take part.
   int lend{-1};
@@ -836,6 +840,12 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     whole poses and NPC lists (to compare the bandwidth)\n"
          "  --loot-quest REC   5 s after another player is there, \"our V\" loots one REC (a\n"
          "                     quest item): every other player gets it too\n"
+         "  --campaign C:COPY:GEN[:A1,A2...] our copy of a shared campaign (hex ids,\n"
+         "                     its generation, its ancestors parent first): said to the\n"
+         "                     others; theirs and the verdict (same, a fast-forward, a\n"
+         "                     fork) are logged\n"
+         "  --campaign-quest T the last quest done in our copy\n"
+         "  --campaign-saved S when our copy was saved (UTC seconds; default: now)\n"
          "  --level N          our V's level (1-100): the host scales its NPCs to the mean\n"
          "                     of the players' levels and tells everyone (logged)\n"
          "  --npc-level L      host: say every NPC we share has power level L: the guest's\n"
@@ -1417,6 +1427,45 @@ Options Parse(int argc, char **argv) {
     else if (flag == "--scan-at") {
       options.sandevistanAtSeconds = Number<int>(value);
       options.timeAbility = tandem::proto::kTimeScanning;
+    } else if (flag == "--campaign") {
+      // CAMPAIGN:COPY:GENERATION[:ANCESTORS]
+      std::vector<std::uint64_t> words;
+      std::uint64_t generation = 0;
+      std::string_view rest = value;
+      for (int part = 0; !rest.empty(); ++part) {
+        const auto colon = part < 3 ? rest.find(':') : std::string_view::npos;
+        auto field = rest.substr(0, colon);
+        rest.remove_prefix(colon == std::string_view::npos ? rest.size() : colon + 1);
+        if (part == 2) {
+          generation = Number<std::uint64_t>(field);
+          words.push_back(generation);
+          continue;
+        }
+        for (std::string_view ids = field; !ids.empty();) {
+          const auto comma = part == 3 ? ids.find(',') : std::string_view::npos;
+          auto id = ids.substr(0, comma);
+          ids.remove_prefix(comma == std::string_view::npos ? ids.size() : comma + 1);
+          if (id.starts_with("0x"))
+            id.remove_prefix(2);
+          std::uint64_t number = 0;
+          if (std::from_chars(id.data(), id.data() + id.size(), number, 16).ptr !=
+              id.data() + id.size())
+            Usage(std::format("--campaign: {} is not an id in hex", id));
+          words.push_back(number);
+        }
+      }
+      const auto copy = tandem::campaign::Unpack(words);
+      if (!copy)
+        Usage("--campaign is CAMPAIGN:COPY:GENERATION[:ANCESTORS] (hex ids, no more ancestors "
+              "than generations)");
+      options.campaignCopy.campaign = copy->campaign;
+      options.campaignCopy.copy = copy->copy;
+      options.campaignCopy.generation = copy->generation;
+      options.campaignCopy.ancestors = copy->ancestors;
+    } else if (flag == "--campaign-quest") {
+      options.campaignCopy.quest = tandem::campaign::Clean(value);
+    } else if (flag == "--campaign-saved") {
+      options.campaignCopy.savedUnix = Number<std::uint64_t>(value);
     } else if (flag == "--level") {
       options.level = Number<int>(value);
       if (options.level < 1 || options.level > tandem::proto::kMaxLevel)
@@ -4169,6 +4218,11 @@ int main(int argc, char **argv) {
   // said when we share it).
   bool levelSent = false;
   std::set<tandem::proto::NpcId> levelledNpcs;
+  // --campaign: said once (the endpoint keeps it); everyone's copies, for
+  // the verdict we log.
+  bool campaignSent = false;
+  std::map<tandem::proto::PlayerId, tandem::campaign::Member> campaignMembers;
+  tandem::campaign::Verdict campaignVerdict;
   // --lend: said once (the endpoint keeps it); --unlock-vehicle: when, and
   // the guests told.
   bool lendSent = false;
@@ -5595,6 +5649,49 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::CrimeReported>) {
               Log("police: the area's owner saw our V commit a crime (kind {}, npc {})",
                   static_cast<int>(e.crime.kind), e.crime.npc);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteCampaign>) {
+              namespace campaign = tandem::campaign;
+              const auto theirs = campaign::FromWire(e.campaign);
+              Log("campaign: {} (player {}) has copy {:x} of campaign {:x}, generation {}, after "
+                  "\"{}\": ours {}{}",
+                  e.name, e.player, theirs.copy, theirs.campaign, theirs.generation, theirs.quest,
+                  campaign::NameOf(campaign::Relate(options.campaignCopy, theirs)),
+                  e.campaign.chosen != 0 ? std::format("; it goes on from {:x}", e.campaign.chosen)
+                                         : "");
+              if (!theirs.Is())
+                campaignMembers.erase(e.player);
+              else
+                campaignMembers[e.player] = {.player = e.player,
+                                             .name = e.name,
+                                             .copy = theirs,
+                                             .chosen = e.campaign.chosen};
+              std::vector<campaign::Member> members;
+              if (options.campaignCopy.Is())
+                members.push_back({.player = endpoint->You(),
+                                   .name = options.name,
+                                   .copy = options.campaignCopy});
+              for (const auto &[player, member] : campaignMembers)
+                members.push_back(member);
+              const auto verdict =
+                  campaign::Judge(members, endpoint->You(), endpoint->HostPlayer());
+              if (!campaign::SameNews(verdict, campaignVerdict)) {
+                campaignVerdict = verdict;
+                std::string heads;
+                for (const auto &head : verdict.heads)
+                  heads += std::format("{}{} ({:x})", heads.empty() ? "" : ", ", head.name,
+                                       head.copy.copy);
+                Log("campaign: verdict {}{}{}{}",
+                    verdict.kind == campaign::Verdict::Kind::Same          ? "same"
+                    : verdict.kind == campaign::Verdict::Kind::FastForward ? "fast-forward to "
+                    : verdict.kind == campaign::Verdict::Kind::Fork        ? "fork between "
+                                                                           : "none",
+                    verdict.kind == campaign::Verdict::Kind::FastForward ||
+                            verdict.kind == campaign::Verdict::Kind::Fork
+                        ? heads
+                        : "",
+                    verdict.selfBehind ? "; ours is behind" : "",
+                    verdict.hostBehind ? "; the host's is behind" : "");
+              }
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteInstall>) {
               Log("{} (player {}) runs tandem {}", e.name, e.player, e.install.build);
               for (const auto &line : e.differences)
@@ -6859,6 +6956,24 @@ int main(int argc, char **argv) {
         Log("npc {} died", hold.npc);
         hold.step = 0;
       }
+    }
+    // --campaign: our copy (the endpoint says it at the Welcome and keeps it).
+    if (options.campaignCopy.Is() && !campaignSent) {
+      campaignSent = true;
+      auto copy = options.campaignCopy;
+      copy.who = options.name;
+      if (copy.savedUnix == 0)
+        copy.savedUnix =
+            static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+                                           std::chrono::system_clock::now().time_since_epoch())
+                                           .count());
+      options.campaignCopy = copy;
+      auto wire = tandem::campaign::ToWire(copy);
+      if (options.host)
+        wire.flags = tandem::proto::kCampaignPlaying;
+      endpoint->SetCampaign(wire);
+      Log("campaign: our copy {:x} of campaign {:x}, generation {}, after \"{}\"", copy.copy,
+          copy.campaign, copy.generation, copy.quest);
     }
     // --level: our V's (the endpoint keeps it and says it once we are in).
     if (options.level > 0 && !levelSent) {

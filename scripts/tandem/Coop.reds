@@ -49,6 +49,7 @@ enum TandemCoopPage {
   Join = 3,
   Save = 4,
   Settings = 5,
+  Campaign = 6,
 }
 
 enum TandemCoopAction {
@@ -71,6 +72,13 @@ enum TandemCoopAction {
   NewCode = 16,
   JoinAddress = 17,
   Mods = 18,
+  // A shared campaign (Campaign.reds): its page, and its items.
+  CampaignPage = 19,
+  CampaignStart = 20,
+  CampaignExport = 21,
+  CampaignImport = 22,
+  CampaignFolder = 23,
+  CampaignContinue = 24,
 }
 
 // One of our entries in a menu's list: the vanilla item data (its label is
@@ -470,6 +478,9 @@ public class TandemCoopMenu {
     if Equals(page, TandemCoopPage.Settings) {
       return "settings";
     }
+    if Equals(page, TandemCoopPage.Campaign) {
+      return "campaign";
+    }
     return "root";
   }
 
@@ -489,12 +500,15 @@ public class TandemCoopMenu {
     if Equals(name, "settings") {
       return TandemCoopPage.Settings;
     }
+    if Equals(name, "campaign") {
+      return TandemCoopPage.Campaign;
+    }
     return TandemCoopPage.Root;
   }
 
   // The page Back (and Esc) leads to.
   public func Up() -> TandemCoopPage {
-    if Equals(this.page, TandemCoopPage.Host) || Equals(this.page, TandemCoopPage.Join) || Equals(this.page, TandemCoopPage.Settings) {
+    if Equals(this.page, TandemCoopPage.Host) || Equals(this.page, TandemCoopPage.Join) || Equals(this.page, TandemCoopPage.Settings) || Equals(this.page, TandemCoopPage.Campaign) {
       return TandemCoopPage.Coop;
     }
     if Equals(this.page, TandemCoopPage.Save) {
@@ -510,6 +524,13 @@ public class TandemCoopMenu {
     item.action = PauseMenuAction.OpenSubMenu;
     item.coop = action;
     ArrayPush(this.items, item);
+    return item;
+  }
+
+  // An item for another file's page (Campaign.reds).
+  public func AddItem(key: String, action: TandemCoopAction, label: String, target: String) -> ref<TandemMenuItem> {
+    let item = this.Add(key, action, label);
+    item.target = target;
     return item;
   }
 
@@ -535,6 +556,8 @@ public class TandemCoopMenu {
         let item = this.Add("", TandemCoopAction.Setting, TandemSettings.Label(key, inSession || TandemNative.IsStarted()));
         item.target = key;
       }
+    } else if Equals(this.page, TandemCoopPage.Campaign) {
+      TandemCampaign.Build(this, inSession);
     } else if ArraySize(problems) > 0 {
       // Co-op is off: nothing to host or join, only the report.
       this.Add("Menu-Report", TandemCoopAction.Report);
@@ -554,6 +577,9 @@ public class TandemCoopMenu {
         this.Add("Menu-Join", TandemCoopAction.JoinPage);
         this.Add("Menu-JoinAddress", TandemCoopAction.JoinAddress);
       }
+      if TandemCampaignNative.CampaignOn() {
+        this.Add("Menu-Campaign", TandemCoopAction.CampaignPage);
+      }
       this.Add("Menu-Report", TandemCoopAction.Report);
     } else if Equals(this.page, TandemCoopPage.Coop) {
       this.Add("Menu-Host", TandemCoopAction.HostPage);
@@ -561,6 +587,9 @@ public class TandemCoopMenu {
       this.Add("Menu-JoinAddress", TandemCoopAction.JoinAddress);
       if status.fromMenu {
         this.Add("Menu-Solo", TandemCoopAction.Solo);
+      }
+      if TandemCampaignNative.CampaignOn() {
+        this.Add("Menu-Campaign", TandemCoopAction.CampaignPage);
       }
       this.Add("Menu-Report", TandemCoopAction.Report);
     } else {
@@ -762,6 +791,10 @@ public class TandemCoopMenu {
         if StrLen(this.about) > 0 {
           ArrayPush(lines, this.about);
         }
+      } else if Equals(this.page, TandemCoopPage.Campaign) {
+        for line in TandemCampaign.StatusLines(this.inGame) {
+          ArrayPush(lines, line);
+        }
       } else if this.inGame && status.role == 1 && status.state == 3 {
         ArrayPush(lines, TandemCoop.InviteText());
       }
@@ -913,9 +946,12 @@ protected cb func OnTandemTick(proxy: ref<inkAnimProxy>) -> Bool {
   }
   this.TandemTidy();
   this.m_tandem.Refresh();
+  this.TandemCampaignTick();
   let command = TandemNative.TakeCommand();
   if StrBeginsWith(command, "coop") {
     this.TandemCommand(command);
+  } else if StrBeginsWith(command, "campaign") {
+    TandemCampaign.Command(command, null);
   } else if StrLen(command) > 0 {
     TandemNative.Log(s"main menu: not in a game: \(command)");
   }
@@ -940,6 +976,9 @@ private func TandemChoose() -> Bool {
 private func TandemActivate(item: ref<TandemMenuItem>) -> Bool {
   let action = item.coop;
   TandemNative.Log(s"coop: main menu: \(item.label)");
+  if this.TandemCampaignActivate(item) {
+    return true;
+  }
   if Equals(action, TandemCoopAction.OpenCoop) {
     this.TandemGo(TandemCoopPage.Coop);
     let problems = TandemCoop.ProblemsText();
@@ -1402,6 +1441,7 @@ protected cb func OnTandemTick(proxy: ref<inkAnimProxy>) -> Bool {
   }
   this.TandemTidy();
   this.m_tandem.Refresh();
+  this.TandemCampaignTick();
   // The world is paused, and our system's tick with it: its commands too.
   let command = TandemNative.TakeCommand();
   if StrLen(command) == 0 {
@@ -1424,7 +1464,7 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Void {
   let action = item.coop;
   let system = this.CoopSystem();
   TandemNative.Log(s"coop: pause menu: \(item.label)");
-  if !IsDefined(system) {
+  if !IsDefined(system) || this.TandemCampaignActivate(item) {
     return;
   }
   if Equals(action, TandemCoopAction.OpenCoop) {

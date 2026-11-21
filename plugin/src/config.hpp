@@ -104,6 +104,9 @@
 //                        ; moment, leave, save and join again (0: off; ini only)
 //   trade = off          ; on: trade items and eddies with the player beside you
 //                        ; (docs/architecture/trade.md); off: requests are refused
+//   campaign = off       ; on: a shared campaign save (docs/architecture/campaign.md):
+//                        ; its lineage kept, Export and Import campaign in the
+//                        ; co-op menu (ini only)
 //   link = auto          ; who sees your scanner tags and Ping reveals
 //                        ; (docs/architecture/comms.md): auto, every partner
 //                        ; (until you break it); ask, the partners you link with
@@ -241,6 +244,9 @@ struct Config {
   std::uint32_t checkpointMinutes{0};
   // Trade between players (Trade.reds): off until checked in game.
   bool trade{false};
+  // A shared campaign (Campaign.reds, docs/architecture/campaign.md): its
+  // lineage kept, export and import in the co-op menu. Off until checked in game.
+  bool campaign{false};
   // A vehicle a host's quest gave while we took part (Garage.reds): credited
   // in our ledger (false), or unlocked in our own garage too (true).
   bool vehicleRewardsKept{false};

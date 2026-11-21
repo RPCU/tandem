@@ -1,6 +1,7 @@
 #include "net_thread.hpp"
 
 #include "activity.hpp"
+#include "campaign.hpp"
 #include "combat.hpp"
 #include "comms.hpp"
 #include "log.hpp"
@@ -282,6 +283,8 @@ struct NetThread::Impl {
                             .expansion = runtime.Expansion() != compat::Expansion::Disabled &&
                                          runtime.Expansion() != compat::Expansion::Missing};
     ModRecords::Get().Ended();
+    Campaigns::Get().Ended();
+    std::uint64_t campaignSeen = 0; // our campaign copy, as last said (Campaigns::TakeReport)
     runtime.ClearDifferences();
     report::SessionSummary summary{
         .build = runtime.installation.install.build,
@@ -406,6 +409,8 @@ struct NetThread::Impl {
       // `shared`: what the scripts' checks compare with changed.
       bool shared = std::exchange(announced, false);
       bool street = false;
+      if (const auto campaign = Campaigns::Get().TakeReport(campaignSeen))
+        endpoint->SetCampaign(*campaign);
       stall::NetBeat(stall::kUpdate);
       for (const auto &event : endpoint->Update(2ms)) {
         std::visit(
@@ -422,6 +427,7 @@ struct NetThread::Impl {
                 wasIn = true;
                 runtime.NotePlayerName(e.you, config.name);
                 runtime.SetYou(e.you);
+                Campaigns::Get().Joined(e.you, e.host);
                 Recording::Get().Joined(endpoint->IsHost(), e.you, e.host);
                 runtime.PushEvent({ScriptEvent::Kind::InSession, e.you, {}, body});
                 Publish(SessionStatus::State::InSession, {}, endpoint.get());
@@ -450,6 +456,7 @@ struct NetThread::Impl {
                 log::Info("player {} left", e.player);
                 shared = true;
                 runtime.ForgetRemote(e.player);
+                Campaigns::Get().Left(e.player);
                 runtime.PushEvent({ScriptEvent::Kind::PlayerLeft, e.player, {}, {}});
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Left, .player = e.player});
                 Comms::Get().PushInbound({.kind = CommsInbound::Kind::Left, .player = e.player});
@@ -482,6 +489,8 @@ struct NetThread::Impl {
                 ModRecords::Get().OnNames(e);
               } else if constexpr (std::is_same_v<E, events::SubstitutesFrom>) {
                 ModRecords::Get().OnSeen(e);
+              } else if constexpr (std::is_same_v<E, events::RemoteCampaign>) {
+                Campaigns::Get().OnRemote(e);
               } else if constexpr (std::is_same_v<E, events::JoinRefused>) {
                 runtime.NoteDifference(e.notice);
                 summary.notes.push_back(e.notice);

@@ -1243,6 +1243,11 @@ public class TandemSystem extends ScriptableSystem {
   // Also from the pause menu (Coop.reds), which takes the commands while the
   // world, and so our tick, is paused.
   public func RunCommand(command: String) -> Void {
+    // The shared campaign (Campaign.reds): campaign [list | start | export | import N | choose N].
+    if StrBeginsWith(command, "campaign") {
+      TandemCampaign.Command(command, TandemCampaignSystem.Get(this.GetGameInstance()));
+      return;
+    }
     if StrBeginsWith(command, "garage") {
       this.LogLends();
       let story = TandemStorySystem.Get(this.GetGameInstance());

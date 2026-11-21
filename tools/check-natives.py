@@ -35,6 +35,7 @@ CPP = [
     ROOT / "plugin/src/mods_natives.cpp",
     ROOT / "plugin/src/streaming_natives.cpp",
     ROOT / "plugin/src/objects_natives.cpp",
+    ROOT / "plugin/src/campaign_natives.cpp",
 ]
 REDS = [
     ROOT / "scripts/tandem/Natives.reds",
@@ -54,6 +55,7 @@ REDS = [
     ROOT / "scripts/tandem/ModsNatives.reds",
     ROOT / "scripts/tandem/StreamingNatives.reds",
     ROOT / "scripts/tandem/ObjectsNatives.reds",
+    ROOT / "scripts/tandem/CampaignNatives.reds",
 ]
 
 SCALARS = {

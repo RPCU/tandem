@@ -179,13 +179,15 @@ public class TandemText {
       "Saves-NotRestored", "Mods-Replaced-Item", "Trade-Unknown", "Exit-Saving", "Exit-NotSaved",
       "Checkpoint-Saving", "Checkpoint-Failed",
       "Interact-HostOnly", "Interact-Taken", "Interact-TooFar",
-      "Interact-Missing", "Interact-Busy", "Trade-NotNow", "Phone-Unreachable"
+      "Interact-Missing", "Interact-Busy", "Trade-NotNow", "Phone-Unreachable",
+      "Campaign-Newer", "Campaign-HostBehind", "Campaign-Fork", "Campaign-Failed", "Campaign-OlderLoaded",
+      "Campaign-Left"
     ];
     if ArrayContains(asks, key) {
       return 2;
     }
     // A record shown otherwise (Mods.reds): never only in the log.
-    return StrBeginsWith(key, "Session-") || StrBeginsWith(key, "Checkpoint-") || StrBeginsWith(key, "Revive-") || StrBeginsWith(key, "Mods-") || StrBeginsWith(key, "World-") || StrBeginsWith(key, "Time-Mod") ? 1 : 0;
+    return StrBeginsWith(key, "Session-") || StrBeginsWith(key, "Checkpoint-") || StrBeginsWith(key, "Revive-") || StrBeginsWith(key, "Mods-") || StrBeginsWith(key, "World-") || StrBeginsWith(key, "Time-Mod") || StrBeginsWith(key, "Campaign-") ? 1 : 0;
   }
 
   // An input hint in the HUD's hint bar: the game draws the key or button
@@ -717,6 +719,49 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-About-ScenePrivacy", "Romance and one-to-one scenes are yours alone: the others see you busy");
     this.Text("Tandem-Settings-About-TimeHost", "Host: your Sandevistan slows your whole game, or only the NPCs around you");
     this.Text("Tandem-Settings-About-RaceCar", "Joining a partner's street race: you line up in your own car (the one you summon), or in a copy of the starter's; with no car of your own, a copy");
+    // A shared campaign (Campaign.reds).
+    this.Text("Tandem-Menu-Campaign", "Shared campaign");
+    this.Text("Tandem-Menu-CampaignStart", "Make this a shared campaign");
+    this.Text("Tandem-Menu-CampaignExport", "Export campaign");
+    this.Text("Tandem-Menu-CampaignFolder", "Campaign folder");
+    this.Text("Tandem-Campaign-Someone", "someone");
+    this.Text("Tandem-Campaign-SaveOfPlain", "{1}'s save");
+    this.Text("Tandem-Campaign-SaveOf", "{1}'s save ({2})");
+    this.Text("Tandem-Campaign-Details", "{1}, after {2}");
+    this.Text("Tandem-Campaign-After", "after {1}");
+    this.Text("Tandem-Campaign-ImportItem", "Import {1}");
+    this.Text("Tandem-Campaign-ContinueFrom", "Continue from {1}");
+    this.Text("Tandem-Campaign-GoOnFrom", "Go on from {1}");
+    this.Text("Tandem-Campaign-Yours", "your own copy");
+    this.Text("Tandem-Campaign-ThisSave", "This save: a shared campaign, generation {1}");
+    this.Text("Tandem-Campaign-ThisSaveAfter", "This save: a shared campaign, generation {1}, after {2}");
+    this.Text("Tandem-Campaign-NotOne", "This save is not a shared campaign");
+    this.Text("Tandem-Campaign-Saving", "Saving the campaign...");
+    this.Text("Tandem-Campaign-Writing", "Writing the campaign's files...");
+    this.Text("Tandem-Campaign-NoArchive", "No campaign file in the campaign folder yet");
+    this.Text("Tandem-Campaign-AskStart", "Make this save a shared campaign? A new save is made now, the campaign's first; export it to share it with your partners");
+    this.Text("Tandem-Campaign-AskExport", "Export this campaign? A new save is made now, then written with its history to one file in the campaign folder");
+    this.Text("Tandem-Campaign-AskImport", "Install {1} as a new save? No save of yours is replaced");
+    this.Text("Tandem-Campaign-AskImportMods", "Install {1} as a new save? No save of yours is replaced. Its game had mods yours lacks, which the save may need: {2}");
+    this.Text("Tandem-Campaign-AskContinue", "Continue from {1}? Your copy stays a normal save you can still play. {2} exports theirs (Co-op, Shared campaign, Export campaign) and sends you the file to import");
+    this.Text("Tandem-Campaign-AskGoOn", "Go on from {1}? The other copies stay normal saves their owners can still play. {2} exports it for the others to import");
+    this.Text("Tandem-Campaign-AskKeepOurs", "Go on from your own copy? The others' copies stay normal saves they can still play");
+    this.Text("Tandem-Campaign-Busy", "A campaign file is being written, or no save can be made now: try again in a moment");
+    this.Text("Tandem-Campaign-KeptOurs", "You go on from your own copy");
+    this.Text("Tandem-Campaign-Chosen", "You go on from {1}: ask {2} for the exported file");
+    this.Text("Tandem-Campaign-Folder", "Campaign files go in {1}. Export campaign writes one there; put a partner's there to import it");
+    this.Text("Tandem-Campaign-CannotSave", "The campaign cannot be saved now: {1}");
+    this.Text("Tandem-Campaign-Started", "Shared campaign started: saved as {1}");
+    this.Text("Tandem-Campaign-Exported", "Campaign exported to {1}. Send this file to your partners: they put it in their campaign folder and import it");
+    this.Text("Tandem-Campaign-Imported", "Installed as a new save ({1}): load it with Load game");
+    this.Text("Tandem-Campaign-Failed", "Campaign: that did not work ({1})");
+    this.Text("Tandem-Campaign-Newer", "Campaign: {1} is newer than your copy. Co-op menu, Shared campaign, to continue from it");
+    this.Text("Tandem-Campaign-HostBehind", "Campaign: you host an older copy, {1} is newer. Co-op menu, Shared campaign");
+    this.Text("Tandem-Campaign-OursNewer", "Campaign: your copy is the newest; the others are offered yours");
+    this.Text("Tandem-Campaign-Fork", "Campaign: {1} copies went on separately. Co-op menu, Shared campaign, to choose which continues");
+    this.Text("Tandem-Campaign-Same", "Campaign: everyone has the same copy");
+    this.Text("Tandem-Campaign-Left", "This save left the shared campaign: the group went on from another copy");
+    this.Text("Tandem-Campaign-OlderLoaded", "Campaign: this copy is older than {1}. Co-op menu, Shared campaign");
   }
 }
 
@@ -1178,5 +1223,48 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-About-ScenePrivacy", "Les romances et scènes en tête-à-tête sont à vous seul : les autres vous voient occupé");
     this.Text("Tandem-Settings-About-TimeHost", "Hôte : votre Sandevistan ralentit tout votre jeu, ou seulement les PNJ autour de vous");
     this.Text("Tandem-Settings-About-RaceCar", "En rejoignant la course de rue d'un partenaire : vous prenez le départ dans votre propre voiture (celle que vous appelez) ou dans une copie de celle du lanceur ; sans voiture à vous, une copie");
+    // A shared campaign (Campaign.reds).
+    this.Text("Tandem-Menu-Campaign", "Campagne partagée");
+    this.Text("Tandem-Menu-CampaignStart", "Faire de cette partie une campagne partagée");
+    this.Text("Tandem-Menu-CampaignExport", "Exporter la campagne");
+    this.Text("Tandem-Menu-CampaignFolder", "Dossier des campagnes");
+    this.Text("Tandem-Campaign-Someone", "quelqu'un");
+    this.Text("Tandem-Campaign-SaveOfPlain", "la sauvegarde de {1}");
+    this.Text("Tandem-Campaign-SaveOf", "la sauvegarde de {1} ({2})");
+    this.Text("Tandem-Campaign-Details", "{1}, après {2}");
+    this.Text("Tandem-Campaign-After", "après {1}");
+    this.Text("Tandem-Campaign-ImportItem", "Importer {1}");
+    this.Text("Tandem-Campaign-ContinueFrom", "Continuer depuis {1}");
+    this.Text("Tandem-Campaign-GoOnFrom", "Poursuivre depuis {1}");
+    this.Text("Tandem-Campaign-Yours", "votre propre copie");
+    this.Text("Tandem-Campaign-ThisSave", "Cette sauvegarde : une campagne partagée, génération {1}");
+    this.Text("Tandem-Campaign-ThisSaveAfter", "Cette sauvegarde : une campagne partagée, génération {1}, après {2}");
+    this.Text("Tandem-Campaign-NotOne", "Cette sauvegarde n'est pas une campagne partagée");
+    this.Text("Tandem-Campaign-Saving", "Sauvegarde de la campagne...");
+    this.Text("Tandem-Campaign-Writing", "Écriture des fichiers de la campagne...");
+    this.Text("Tandem-Campaign-NoArchive", "Aucun fichier de campagne dans le dossier des campagnes pour l'instant");
+    this.Text("Tandem-Campaign-AskStart", "Faire de cette sauvegarde une campagne partagée ? Une nouvelle sauvegarde est créée maintenant, la première de la campagne ; exportez-la pour la partager avec vos partenaires");
+    this.Text("Tandem-Campaign-AskExport", "Exporter cette campagne ? Une nouvelle sauvegarde est créée maintenant, puis écrite avec son historique dans un fichier du dossier des campagnes");
+    this.Text("Tandem-Campaign-AskImport", "Installer {1} comme nouvelle sauvegarde ? Aucune de vos sauvegardes n'est remplacée");
+    this.Text("Tandem-Campaign-AskImportMods", "Installer {1} comme nouvelle sauvegarde ? Aucune de vos sauvegardes n'est remplacée. Son jeu avait des mods qui manquent au vôtre et dont la sauvegarde peut avoir besoin : {2}");
+    this.Text("Tandem-Campaign-AskContinue", "Continuer depuis {1} ? Votre copie reste une sauvegarde normale que vous pouvez encore jouer. {2} exporte la sienne (Coop, Campagne partagée, Exporter la campagne) et vous envoie le fichier à importer");
+    this.Text("Tandem-Campaign-AskGoOn", "Poursuivre depuis {1} ? Les autres copies restent des sauvegardes normales que leurs propriétaires peuvent encore jouer. {2} l'exporte pour que les autres l'importent");
+    this.Text("Tandem-Campaign-AskKeepOurs", "Poursuivre depuis votre propre copie ? Les copies des autres restent des sauvegardes normales qu'ils peuvent encore jouer");
+    this.Text("Tandem-Campaign-Busy", "Un fichier de campagne est en cours d'écriture, ou aucune sauvegarde n'est possible pour l'instant : réessayez dans un instant");
+    this.Text("Tandem-Campaign-KeptOurs", "Vous poursuivez depuis votre propre copie");
+    this.Text("Tandem-Campaign-Chosen", "Vous poursuivez depuis {1} : demandez le fichier exporté à {2}");
+    this.Text("Tandem-Campaign-Folder", "Les fichiers de campagne vont dans {1}. Exporter la campagne en écrit un ici ; déposez-y celui d'un partenaire pour l'importer");
+    this.Text("Tandem-Campaign-CannotSave", "La campagne ne peut pas être sauvegardée maintenant : {1}");
+    this.Text("Tandem-Campaign-Started", "Campagne partagée commencée : sauvegardée sous {1}");
+    this.Text("Tandem-Campaign-Exported", "Campagne exportée dans {1}. Envoyez ce fichier à vos partenaires : ils le déposent dans leur dossier des campagnes et l'importent");
+    this.Text("Tandem-Campaign-Imported", "Installée comme nouvelle sauvegarde ({1}) : chargez-la avec Charger une partie");
+    this.Text("Tandem-Campaign-Failed", "Campagne : cela n'a pas fonctionné ({1})");
+    this.Text("Tandem-Campaign-Newer", "Campagne : {1} est plus récente que votre copie. Menu coop, Campagne partagée, pour continuer depuis celle-ci");
+    this.Text("Tandem-Campaign-HostBehind", "Campagne : vous hébergez une copie plus ancienne, {1} est plus récente. Menu coop, Campagne partagée");
+    this.Text("Tandem-Campaign-OursNewer", "Campagne : votre copie est la plus récente ; on propose la vôtre aux autres");
+    this.Text("Tandem-Campaign-Fork", "Campagne : {1} copies ont avancé séparément. Menu coop, Campagne partagée, pour choisir laquelle continue");
+    this.Text("Tandem-Campaign-Same", "Campagne : tout le monde a la même copie");
+    this.Text("Tandem-Campaign-Left", "Cette sauvegarde a quitté la campagne partagée : le groupe a poursuivi depuis une autre copie");
+    this.Text("Tandem-Campaign-OlderLoaded", "Campagne : cette copie est plus ancienne que {1}. Menu coop, Campagne partagée");
   }
 }

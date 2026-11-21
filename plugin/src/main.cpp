@@ -1,5 +1,6 @@
 // The RED4ext entry points.
 
+#include "campaign.hpp"
 #include "comms.hpp"
 #include "config.hpp"
 #include "engine/guards.hpp"
@@ -27,6 +28,8 @@
 
 #include <windows.h>
 
+#include <shlobj.h>
+
 #include <array>
 #include <cstring>
 #include <filesystem>
@@ -49,6 +52,28 @@ std::wstring Environment(const char *name) {
   std::wstring value(32767, L'\0');
   value.resize(GetEnvironmentVariableW(wide.c_str(), value.data(), 32767));
   return value;
+}
+
+// The game's saves folder, one folder per slot (docs/architecture/campaign.md):
+// "Saved Games\CD Projekt Red\Cyberpunk 2077" (under Proton, the prefix's
+// user's). Empty: not found.
+std::filesystem::path SavesFolder() {
+  // FOLDERID_SavedGames, spelt out (no uuid.lib needed).
+  static const GUID kSavedGames = {
+      0x4c5c32ff, 0xbb9d, 0x43b0, {0xb5, 0xb4, 0x2d, 0x72, 0xe5, 0x4e, 0xaa, 0xa4}};
+  std::filesystem::path folder;
+  PWSTR known = nullptr;
+  if (SUCCEEDED(SHGetKnownFolderPath(kSavedGames, 0, nullptr, &known)) && known)
+    folder = std::filesystem::path(known);
+  CoTaskMemFree(known);
+  if (folder.empty())
+    if (const auto profile = Environment("USERPROFILE"); !profile.empty())
+      folder = std::filesystem::path(profile) / L"Saved Games";
+  if (folder.empty())
+    return {};
+  folder = folder / L"CD Projekt Red" / L"Cyberpunk 2077";
+  std::error_code ec;
+  return std::filesystem::is_directory(folder, ec) ? folder : std::filesystem::path{};
 }
 
 // Every frame of the running game, on the game thread, also while the world
@@ -139,6 +164,9 @@ void CheckInstallation(tandem::plugin::Runtime &runtime, const std::filesystem::
       sorted += std::format("{}{} {}", sorted.empty() ? "" : ", ", by[i],
                             mods::CategoryName(mods::kCategoryOrder[i]));
   log::Info("other mods by what they add: {} ({})", ours.size(), sorted.empty() ? "none" : sorted);
+  // A shared campaign's archives and records, in our own folder; an export
+  // names the mods its game had.
+  Campaigns::Get().Configure(runtime.config.campaign, plugin / "campaigns", SavesFolder(), ours);
   ModRecords::Get().SetOurs(std::move(ours));
   for (const auto &warning : found.startup.warnings)
     log::Warn("startup check: {}", warning);
@@ -278,6 +306,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
   }
   case RED4ext::v1::EMainReason::Unload:
     stall::Stop();
+    Campaigns::Get().Stop();
     Runtime::Get().Stop();
     Recording::Get().Shutdown();
     engine::RemoveHooks(g_sdk, handle);

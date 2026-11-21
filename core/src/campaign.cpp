@@ -17,6 +17,8 @@ namespace tandem::campaign {
 namespace {
 namespace fs = std::filesystem;
 
+std::string Name(const fs::path &path) { return Utf8(path.filename()); }
+
 bool Contains(std::span<const std::uint64_t> ids, std::uint64_t id) {
   return std::ranges::find(ids, id) != ids.end();
 }
@@ -40,8 +42,9 @@ bool PlainName(std::string_view name) {
 bool PlainFile(std::string_view name) {
   return !name.empty() && name.size() <= 64 && name != "." && name != ".." &&
          std::ranges::all_of(name, [](char c) {
-           return static_cast<unsigned char>(c) >= 0x20 && c != '/' && c != '\\' && c != ':' &&
-                  c != '*' && c != '?' && c != '"' && c != '<' && c != '>' && c != '|' && c != 0x7F;
+           return static_cast<unsigned char>(c) >= 0x20 && static_cast<unsigned char>(c) < 0x7F &&
+                  c != '/' && c != '\\' && c != ':' && c != '*' && c != '?' && c != '"' &&
+                  c != '<' && c != '>' && c != '|';
          });
 }
 
@@ -95,7 +98,7 @@ bool WriteFile(const fs::path &path, std::string_view data, std::string &error) 
     out.write(data.data(), static_cast<std::streamsize>(data.size()));
     out.close();
     if (!out) {
-      error = std::format("cannot write {}", part.filename().string());
+      error = std::format("cannot write {}", Name(part));
       std::error_code ignored;
       fs::remove(part, ignored);
       return false;
@@ -104,7 +107,7 @@ bool WriteFile(const fs::path &path, std::string_view data, std::string &error) 
   std::error_code ec;
   fs::rename(part, path, ec);
   if (ec) {
-    error = std::format("cannot write {}: {}", path.filename().string(), ec.message());
+    error = std::format("cannot write {}: {}", Name(path), ec.message());
     fs::remove(part, ec);
     return false;
   }
@@ -182,6 +185,13 @@ std::tm Utc(std::uint64_t unix) {
   return tm;
 }
 } // namespace
+
+std::string Utf8(const fs::path &path) {
+  const auto text = path.u8string();
+  return std::string(text.begin(), text.end());
+}
+
+fs::path PathOf(std::string_view utf8) { return fs::path(std::u8string(utf8.begin(), utf8.end())); }
 
 std::string Clean(std::string_view text) {
   std::string out;
@@ -499,7 +509,7 @@ bool SaveRecord(const fs::path &folder, const Record &record, std::string &error
   std::error_code ec;
   fs::create_directories(folder, ec);
   if (ec) {
-    error = std::format("cannot make {}: {}", folder.string(), ec.message());
+    error = std::format("cannot make {}: {}", Utf8(folder), ec.message());
     return false;
   }
   return WriteFile(folder /
@@ -624,7 +634,7 @@ std::vector<std::string> Slots(const fs::path &saves) {
   std::error_code ec;
   for (fs::directory_iterator it(saves, ec), end; !ec && it != end; it.increment(ec))
     if (it->is_directory(ec))
-      slots.push_back(it->path().filename().string());
+      slots.push_back(Name(it->path()));
   std::ranges::sort(slots);
   return slots;
 }
@@ -652,7 +662,7 @@ std::string NewestSlot(const fs::path &saves, fs::file_time_type since) {
     const auto written = fs::last_write_time(it->path() / kSaveFile, fileEc);
     if (!fileEc && written >= best) {
       best = written;
-      newest = it->path().filename().string();
+      newest = Name(it->path());
     }
   }
   return newest;
@@ -665,7 +675,7 @@ Exported Export(const fs::path &slot, Record record, const fs::path &folder,
   std::uintmax_t total = 0;
   std::error_code ec;
   for (fs::directory_iterator it(slot, ec), end; !ec && it != end; it.increment(ec)) {
-    const auto name = it->path().filename().string();
+    const auto name = Name(it->path());
     if (!it->is_regular_file(ec) || !PlainFile(name) || name.ends_with(".part"))
       continue;
     auto data = ReadFile(it->path(), kMaxArchiveBytes);
@@ -681,20 +691,19 @@ Exported Export(const fs::path &slot, Record record, const fs::path &folder,
     files.push_back({name, std::move(*data)});
   }
   if (ec) {
-    result.error =
-        std::format("cannot read the save {}: {}", slot.filename().string(), ec.message());
+    result.error = std::format("cannot read the save {}: {}", Name(slot), ec.message());
     return result;
   }
   if (std::ranges::none_of(files, [](const File &f) { return f.name == kSaveFile; })) {
-    result.error = std::format("{} holds no save (sav.dat)", slot.filename().string());
+    result.error = std::format("{} holds no save (sav.dat)", Name(slot));
     return result;
   }
   std::ranges::sort(files, {}, &File::name);
-  record.slot = slot.filename().string();
+  record.slot = Name(slot);
   record.foreign = false;
   fs::create_directories(folder, ec);
   if (ec) {
-    result.error = std::format("cannot make {}: {}", folder.string(), ec.message());
+    result.error = std::format("cannot make {}: {}", Utf8(folder), ec.message());
     return result;
   }
   const auto bytes = MakeArchive(record, files);
@@ -727,8 +736,8 @@ std::vector<Listed> ListArchives(const fs::path &folder) {
       listed.push_back({it->path(), std::move(*record)});
   }
   std::ranges::sort(listed, [](const Listed &a, const Listed &b) {
-    return std::pair(a.record.copy.savedUnix, a.zip.filename().string()) >
-           std::pair(b.record.copy.savedUnix, b.zip.filename().string());
+    return std::pair(a.record.copy.savedUnix, Name(a.zip)) >
+           std::pair(b.record.copy.savedUnix, Name(b.zip));
   });
   return listed;
 }
@@ -749,7 +758,7 @@ Installed Install(const Archive &archive, const fs::path &saves) {
   Installed result;
   std::error_code ec;
   if (!fs::is_directory(saves, ec)) {
-    result.error = std::format("no saves folder at {}", saves.string());
+    result.error = std::format("no saves folder at {}", Utf8(saves));
     return result;
   }
   // A new slot, made here: never one that exists.
@@ -800,7 +809,7 @@ Installed Import(const fs::path &zip, const fs::path &saves) {
   Installed result;
   const auto data = ReadFile(zip, kMaxArchiveBytes);
   if (!data) {
-    result.error = std::format("cannot read {}", zip.filename().string());
+    result.error = std::format("cannot read {}", Name(zip));
     return result;
   }
   const auto bytes = std::as_bytes(std::span(data->data(), data->size()));

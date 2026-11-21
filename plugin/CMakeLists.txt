@@ -43,6 +43,8 @@ add_library(tandem SHARED
   src/comms_natives.cpp
   src/mods.cpp
   src/mods_natives.cpp
+  src/campaign.cpp
+  src/campaign_natives.cpp
   src/streaming_natives.cpp
   src/objects_natives.cpp
   src/threads.cpp
@@ -62,7 +64,7 @@ add_library(tandem SHARED
   src/engine/scenes.cpp
   src/engine/physics.cpp
   src/engine/casts.cpp)
-target_link_libraries(tandem PRIVATE tandem_core RED4ext::SDK iphlpapi version)
+target_link_libraries(tandem PRIVATE tandem_core RED4ext::SDK iphlpapi version shell32 ole32)
 target_include_directories(tandem SYSTEM PRIVATE
   "${CMAKE_BINARY_DIR}/sdk-casefix"
   "${CMAKE_SOURCE_DIR}/vendor/RedLib/include"
