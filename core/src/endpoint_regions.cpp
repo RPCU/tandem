@@ -228,6 +228,7 @@ void Endpoint::ForgetNpc(proto::NpcId npc) {
   m_npcPoise.erase(npc);
   m_npcScale.erase(npc);
   m_npcScaleEarly.erase(npc);
+  m_npcPoiseEarly.erase(npc);
   m_npcVendors.erase(npc);
   m_npcPlaced.erase(npc);
   m_npcOwner.erase(npc);

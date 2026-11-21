@@ -2243,10 +2243,18 @@ void Endpoint::SendNpcSpawn(const proto::NpcSpawn &spawn) {
     return;
   m_corpseOwner.erase(spawn.npc);
   m_npcs[spawn.npc] = spawn;
+  if (m_npcsSaid.size() >= kNpcsSaid)
+    m_npcsSaid.clear();
+  m_npcsSaid.insert(spawn.npc);
   SayNpc(spawn);
   // Its level, if the game said it first (its owner's to say: ours).
   if (const auto early = m_npcLevelsEarly.extract(spawn.npc)) {
     m_npcLevels[spawn.npc] = early.mapped();
+    SayNpc(early.mapped());
+  }
+  // Its poise, the same way.
+  if (const auto early = m_npcPoiseEarly.extract(spawn.npc)) {
+    m_npcPoise[spawn.npc] = early.mapped();
     SayNpc(early.mapped());
   }
   // Its scale, the same way (ours to say: we run it).
@@ -2432,6 +2440,7 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
   m_npcLevels.erase(gone.npc);
   m_npcLevelsEarly.erase(gone.npc);
   m_npcScaleEarly.erase(gone.npc);
+  m_npcPoiseEarly.erase(gone.npc);
   m_npcVendorsEarly.erase(gone.npc);
   if (gone.reason == proto::kGoneAway)
     m_corpseOwner.erase(gone.npc);
@@ -4197,6 +4206,15 @@ bool Endpoint::SendCombat(proto::Message message) {
     return true;
   }
   if (const auto *poise = std::get_if<proto::NpcPoise>(&message)) {
+    // One of our range whose spawn is still on its way from the game
+    // (another queue): kept, and said right after the spawn.
+    if (!m_npcs.contains(poise->npc) && !m_npcsSaid.contains(poise->npc) &&
+        regions::Announcer(poise->npc) == m_you) {
+      if (m_npcPoiseEarly.size() >= 256)
+        m_npcPoiseEarly.clear();
+      m_npcPoiseEarly[poise->npc] = *poise;
+      return false;
+    }
     if (!SpeaksFor(poise->npc))
       return false;
     m_npcPoise[poise->npc] = *poise;

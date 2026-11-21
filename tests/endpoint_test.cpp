@@ -1783,6 +1783,36 @@ TEST_CASE("down and out: up again after down, out and a respawn, a partner leavi
   CHECK(atHost.lost.empty());
 }
 
+TEST_CASE("an NPC's poise said before its spawn goes after it; one never announced, never") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(a, error);
+  REQUIRE(Pump({host.get(), a.get()},
+               [&](std::size_t, const auto &) { return a->Players().size() == 2; }));
+  std::vector<proto::Message> heard;
+  const auto collect = [&](std::size_t i, const std::vector<SessionEvent> &events) {
+    for (const auto &event : events)
+      if (const auto *combat = std::get_if<events::Combat>(&event); combat && i == 1)
+        heard.push_back(combat->message);
+  };
+  // The game's poise of NPC 9 comes before its spawn (another queue); NPC 8
+  // is never announced.
+  CHECK_FALSE(host->SendCombat(proto::NpcPoise{.npc = 9, .poise = 0.25f}));
+  CHECK_FALSE(host->SendCombat(proto::NpcPoise{.npc = 8, .poise = 0.75f}));
+  PumpFor({host.get(), a.get()}, 200ms, collect);
+  CHECK(heard.empty());
+  host->SendNpcSpawn({.npc = 9, .record = 1});
+  PumpFor({host.get(), a.get()}, 300ms, collect);
+  REQUIRE(heard.size() == 1);
+  const auto *poise = std::get_if<proto::NpcPoise>(&heard[0]);
+  REQUIRE(poise);
+  CHECK(poise->npc == 9);
+  CHECK(poise->poise == 0.25f);
+}
+
 TEST_CASE("hit outcomes: strikes to the host, wounds and rules to all, area hits to their V") {
   // NPC 7 is never spawned: only the routing is tested.
   test::ExpectReferee({"ids.unknown-npc"});
@@ -1790,6 +1820,8 @@ TEST_CASE("hit outcomes: strikes to the host, wounds and rules to all, area hits
   std::string error;
   auto host = Endpoint::Host({"host"}, port, error);
   REQUIRE_MESSAGE(host, error);
+  // NPC 7 is the host's (a word on an NPC never announced is nobody's).
+  host->SendNpcSpawn({.npc = 7, .record = 1});
   // Before anyone joined: kept for whoever joins.
   CHECK(host->SendCombat(proto::Difficulty{.level = 2}));
   CHECK(host->SendCombat(proto::NpcPoise{.npc = 7, .poise = 0.5f}));

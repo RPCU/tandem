@@ -1703,6 +1703,11 @@ private:
   // as this game knows it; and ours said before their spawn reached us.
   std::map<proto::NpcId, proto::NpcScale> m_npcScale;
   std::map<proto::NpcId, proto::NpcScale> m_npcScaleEarly;
+  std::map<proto::NpcId, proto::NpcPoise> m_npcPoiseEarly; // ours, said before its spawn
+  // The NPCs of our range we announced (a poise before the first spawn
+  // waits for it; after a removal it is said), at most kNpcsSaid.
+  std::set<proto::NpcId> m_npcsSaid;
+  static constexpr std::size_t kNpcsSaid = 8192;
   void OnGuestCombat(proto::PlayerId player, const proto::Message &message,
                      std::vector<SessionEvent> &out);
   // Levels: ours (kept until we are in the session); host: each player's,
