@@ -317,3 +317,7 @@ jobs:
       # task scenarios:check
       - name: Scenarios name real flags, commands and helpers
         run: python3 tools/scenarios-check.py
+
+      # task scenarios:check
+      - name: Scenarios wait for log lines the game and the mock player write
+        run: python3 tools/scenarios-patterns.py

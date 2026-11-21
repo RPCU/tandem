@@ -123,9 +123,10 @@ tasks:
       - python3 tools/scripts-refs.py
 
   scenarios:check:
-    desc: "Scenarios name mock-player flags, game commands and helpers that exist"
+    desc: "Scenarios name mock-player flags, game commands and helpers that exist, and wait for log lines that can be written"
     cmds:
       - python3 tools/scenarios-check.py
+      - python3 tools/scenarios-patterns.py
 
   scenario:
     desc: "In-game scenarios against the mock player (task scenario -- NAME... | all | list)"
