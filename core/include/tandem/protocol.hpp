@@ -22,8 +22,9 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // forms of the netcode (PoseFrame, NpcMotion, PlayerMotion, VehicleMotion);
 // the record hints of Held, Appearance, Seat and NpcSpawn (mod-compat.md),
 // added before protocol 7 left the developers' machines. 9: a Waypoint may
-// be a tracked quest objective (WaypointKind::Objective).
-inline constexpr std::uint16_t kProtocolVersion = 9;
+// be a tracked quest objective (WaypointKind::Objective). 10: WorldPrefabs
+// and StoryGates appended (a game of 9 cannot read them).
+inline constexpr std::uint16_t kProtocolVersion = 10;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are

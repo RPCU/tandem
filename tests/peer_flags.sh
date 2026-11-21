@@ -23,7 +23,7 @@ declare -A value=(
   ["--fracture"]="a0b1c2d3e4f5:glass:1,2,3@4" ["--turret-seen"]=a0b1c2d3e4f5@3 ["--turret-shots"]=2 ["--turret-hands"]="a0b1c2d3e4f5:1,2,3@4"
   ["--footsteps"]=--check ["--throw-bounce"]=--check
   ["--story"]=x.story ["--answer"]=1 ["--reply"]=12345 ["--suggest"]=0
-  ["--restrict"]=GameplayRestriction.NoCombat ["--restrict-at"]=2 ["--restrict-for"]=5 ["--status"]=BaseStatusEffect.Burning@4-10
+  ["--restrict"]=GameplayRestriction.NoCombat ["--restrict-at"]=2 ["--restrict-for"]=5 ["--prefabs"]="7a3d0c5e9b1f2468,10" ["--gates"]=3 ["--status"]=BaseStatusEffect.Burning@4-10
   ["--shoot-you"]=3 ["--shot-weapon"]=Items.x
   ["--sandevistan-at"]=10 ["--sandevistan-for"]=5 ["--sandevistan-scale"]=0.25 ["--scan-at"]=10
   ["--metro-at"]=5 ["--metro-for"]=40 ["--seat"]=seat_front_right ["--driver-npc"]=Character.x
