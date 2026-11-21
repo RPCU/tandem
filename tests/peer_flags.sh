@@ -19,6 +19,8 @@ declare -A value=(
   ["--strike"]=nonlethal ["--difficulty"]=veryhard ["--area-hit"]=5
   ["--friendly-fire"]=on ["--enemy-scaling"]=on ["--enemy-scaling-health"]=0.8 ["--near-npc"]=--check ["--throw"]=5 ["--throw-item"]=Items.x ["--smart"]=5 ["--defend"]=5
   ["--hit-you-melee"]=on
+  ["--region-placed"]=a0b1c2d3e4f5 ["--region-kill-at"]=10 ["--reveal-device"]=a0b1c2d3e4f5@6 ["--contest"]=duel
+  ["--fracture"]="a0b1c2d3e4f5:glass:1,2,3@4" ["--footsteps"]=--check
   ["--story"]=x.story ["--answer"]=1 ["--reply"]=12345 ["--suggest"]=0
   ["--restrict"]=GameplayRestriction.NoCombat ["--restrict-at"]=2 ["--restrict-for"]=5 ["--status"]=BaseStatusEffect.Burning@4-10
   ["--shoot-you"]=3 ["--shot-weapon"]=Items.x

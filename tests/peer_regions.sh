@@ -119,7 +119,11 @@ wait_for "$hostlog" 'ledger: placed npc b000 died in player 2.s game at \(40[0-9
   fail "ledger: the host never heard of the guest's kill, or not where it fell"
 wait_for "$guestlog" 'ledger: placed npc b000 died in player 2.s game .* death 2 of the session' ||
   fail "ledger: the guest's own kill did not come back stamped"
-if grep -q 'region: linked with player' "$guestlog"; then fail "ledger: the two were linked"; fi
+# A join is linked until both places are known (regions.md: an unknown
+# place covers); after the first "linked with nobody" they never link.
+if awk '/region: linked with nobody/ { known = 1 } known && /region: linked with player/ { found = 1 } END { exit !found }' "$guestlog"; then
+  fail "ledger: the two were linked"
+fi
 latelog="$dir/late-$port.log"
 "$peer" join "127.0.0.1:$port" --name late --mode region --region-npcs 0 --region-far 900 \
   --region-walk-at -1 >"$latelog" 2>&1 &
