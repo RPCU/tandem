@@ -75,7 +75,7 @@ found through this table, each number once.
 | 13.17  | Attitude groups and a puppet's record traits                                            | `npcs.md`           |
 | 13.18  | Fast travel and regroup                                                                 | `travel.md`         |
 | 13.19  | Loot: corpses, dropped items, quest items                                               | `loot.md`           |
-| 13.20  | Down, revive, respawn: the levers                                                       | `revive.md`         |
+| 13.20  | Down, revive, respawn: the levers; seated, in water, spots                              | `revive.md`         |
 | 13.21  | An NPC's animation state, for a brain-off proxy                                         | `npcs.md`           |
 | 13.22  | Every way a V moves: the signals, and NPC bodies in water                               | `puppets.md`        |
 | 13.23  | Scenes: what kind, from the game's data                                                 | `story.md`          |

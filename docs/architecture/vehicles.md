@@ -16,7 +16,9 @@
   had someone seated in it froze the game): a car someone got out of stays
   parked (what crashed, and a guarded deletion to prove in game:
   engine-knowledge §13.101). Puppets leave in steps over several frames (out of the seat, then
-  the body).
+  the body). A V downed in a seat stays in it, is revived from beside the
+  car, and an out V may respawn into a partner's free seat
+  ([`revive.md`](revive.md)).
 - **A partner's car** ([`garage.md`](garage.md), not run in game yet): a
   parked copy remembers whose car it was; a V that takes the wheel of a
   copy is checked against its owner's word (`CarLend`, `tandem.ini`
