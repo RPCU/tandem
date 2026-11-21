@@ -899,7 +899,22 @@ deploy() {
     exec 8>.cache/deploy.lock
     flock 8
   fi
-  if [ -n "${TANDEM_PREBUILT:-}" ]; then GAME_DIR=$dir task deploy:files >/dev/null; else GAME_DIR=$dir task deploy >/dev/null; fi
+  if [ -n "${TANDEM_PREBUILT:-}" ]; then
+    # A DLL built before the last change of its natives (plugin, core, the
+    # *Natives.reds): RED4ext refuses every script it names and closes the
+    # game (a rerun deployed new natives on an old DLL, 2026-11-21).
+    local built changed
+    built=$(stat -c %Y build/windows/plugin/tandem.dll 2>/dev/null || echo 0)
+    changed=$(git log -1 --format=%ct -- plugin core scripts/tandem/*Natives.reds 2>/dev/null || echo 0)
+    if [ "$built" -lt "$changed" ]; then
+      echo "the DLL predates the last change of its natives ($(git log -1 --format='%h %s' -- plugin core scripts/tandem/*Natives.reds | cut -c1-80)): build first" >&2
+      [ -z "${TANDEM_PARALLEL:-}" ] || flock -u 8
+      return 1
+    fi
+    GAME_DIR=$dir task deploy:files >/dev/null
+  else
+    GAME_DIR=$dir task deploy >/dev/null
+  fi
   [ -z "${TANDEM_PARALLEL:-}" ] || flock -u 8
 }
 
