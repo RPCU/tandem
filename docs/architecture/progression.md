@@ -38,7 +38,7 @@ tandem does, with the scenario that checks it in game.
 | Crafting, upgrading, disassembling                                 | each player's own                                                                                        | that player's game                                 | `CraftingSystem` holds one craft book, the local player's (§13.38.5)                                                                                                                                 | nothing needed                                                                                                                                                                                                                                 |
 | Stash                                                              | each player's own                                                                                        | that player's game                                 | a device of the player's own world with its own inventory (§13.38.5)                                                                                                                                 | nothing needed; reachable only in an apartment the player's own save has                                                                                                                                                                       |
 | Owned vehicles (details: [`garage.md`](garage.md))                 | each player's own garage; a partner drives one by its owner's word (`lend`)                              | that player's game                                 | the native `VehicleSystem`, per save (§13.38.5)                                                                                                                                                      | was (a summoned car is its driver's; the others get a copy); built: lending, vehicles earned together credited in the ledger                                                                                                                   |
-| Apartments                                                         | each player's own; the host's door is the host's                                                         | each player's game                                 | a door's lock is persistent state of each game's own door (§13.38.5)                                                                                                                                 | **gap, not built**: a guest cannot follow the host into an apartment it has not bought (see "Doors")                                                                                                                                           |
+| Apartments                                                         | each player's own; the host's door is the host's                                                         | each player's game                                 | a door's lock is persistent state of each game's own door (§13.38.5)                                                                                                                                 | the host's door state reaches the guest (`devices.md`): a guest follows the host in; not run in game (see "Doors")                                                                                                                             |
 | Fast travel points                                                 | each player's own map                                                                                    | that player's game                                 | `FastTravelSystem`'s list is persistent per save, registered locally (§13.38.5)                                                                                                                      | was (a regroup never adds a point: Travel.reds)                                                                                                                                                                                                |
 | Trade between players                                              | items and eddies, both agree, the host arbitrates                                                        | each player's game applies its own side            | [`trade.md`](trade.md)                                                                                                                                                                               | built, off by default (`trade = on`); scenario `trade-peer`                                                                                                                                                                                    |
 | Saves                                                              | below                                                                                                    |                                                    | §13.38.6                                                                                                                                                                                             | below                                                                                                                                                                                                                                          |
@@ -210,16 +210,16 @@ To check in game (scenario `vendor-guest`): the prompt beside the proxy,
 our own vendor's stock and our money on the screen, a purchase and a sale,
 a ripperdoc's tabs, a locked vendor's notice, the dead vendor hidden.
 
-## Doors (a gap)
+## Doors
 
-A door's lock is each game's own persistent state. A guest's door to the
-host's apartment is locked unless the guest's save owns that apartment, and
-tandem syncs no doors or devices. To follow the host inside, the host's
-door actions would be mirrored on the guest's same door (by persistent id:
-`QuestForceUnlock` / the open state) and put back on leaving
-(`research/coop-quests-world.md` §7.2, `coop-quests-design.md` §2.7). It is
-the device sync of the open-problems list, not a progression matter; not
-built here.
+Synced since the devices work (`devices.md`, "What is synced"): every
+door's open, locked and sealed state is the host's, a guest's own copy
+changing first, and a guest's world is put back as it was when it leaves.
+The host's apartment door is one of them: open on the host, it is open on
+the guest, so a guest follows the host into an apartment its own save has
+not bought (each game's lock is its own door's persistent state otherwise,
+§13.38.5). Not yet run in game for an apartment (scenarios `devices-door`,
+`devices-guest`).
 
 ## Saves
 
