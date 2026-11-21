@@ -378,7 +378,7 @@ public class TandemPilot {
       case "exit":
         return this.Exit(player);
       case "summon":
-        return GameInstance.GetVehicleSystem(this.m_game).SpawnActivePlayerVehicle() ? "ok:asked" : "fail:no_vehicle_to_call";
+        return this.Summon();
       case "autodrive":
         return this.Autodrive(player, arg);
       case "device":
@@ -723,7 +723,33 @@ public class TandemPilot {
     if IsDefined(car) && Vector4.Distance(player.GetWorldPosition(), car.GetWorldPosition()) <= 15.0 {
       return car;
     }
+    if IsDefined(car) {
+      let at = car.GetWorldPosition();
+      TandemNative.Log(s"pilot: the called car is at (\(at.X), \(at.Y), \(at.Z)), over 15 m away");
+    } else {
+      TandemNative.Log(s"pilot: no called car in the world (\(EntityID.IsDefined(called) ? "not streamed in" : "none called"))");
+    }
     return null;
+  }
+
+  // summon: V's active car called; when none is chosen (a save copied for
+  // an instance), the first car V owns becomes the active one.
+  private func Summon() -> String {
+    let system = GameInstance.GetVehicleSystem(this.m_game);
+    if system.SpawnActivePlayerVehicle() {
+      return "ok:asked";
+    }
+    let owned: array<PlayerVehicle>;
+    system.GetPlayerUnlockedVehicles(owned);
+    for car in owned {
+      if Equals(car.vehicleType, gamedataVehicleType.Car) {
+        system.TogglePlayerActiveVehicle(Cast<GarageVehicleID>(car.recordID), car.vehicleType, true);
+        system.SpawnPlayerVehicle(car.vehicleType);
+        return "ok:chose";
+      }
+    }
+    TandemNative.Log(s"pilot: summon: \(ArraySize(owned)) vehicle(s) owned, no car");
+    return "fail:no_vehicle_to_call";
   }
 
   // mount [SLOT]: V into the vehicle it looks at (or its called car), the

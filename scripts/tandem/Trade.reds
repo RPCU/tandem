@@ -153,24 +153,34 @@ public class TandemTradeTable {
 
   // ---- the prompt, the request ----
 
-  // Our V may trade now: up, not fighting, not in a scene that holds it.
+  // Our V may trade now: up, not fighting, not in a scene that holds it,
+  // on foot (in a seat the prompt's key is the car's Exit).
   private func Free(player: ref<PlayerPuppet>) -> Bool {
     if !TandemTrade.TradeEnabled() || player.IsInCombat() || PlayerPuppet.GetSceneTier(player) > 2 {
+      return false;
+    }
+    if GameInstance.GetMountingFacility(this.m_game).IsMountedToAnything(player.GetEntityID()) {
       return false;
     }
     let revive = this.m_system.Revive();
     return !IsDefined(revive) || (!revive.IsDown() && !revive.Prompting());
   }
 
-  // The nearest player within reach, 0 if none.
+  // The nearest player within reach that our V faces (70 degrees each
+  // side: as the game's own prompts, none for someone behind us), 0 if none.
   private func Nearest(player: ref<PlayerPuppet>) -> Uint32 {
     let best = 0u;
     let bestAt = TandemTradeTable.StartRange();
+    let at = player.GetWorldPosition();
+    let ahead = player.GetWorldForward();
     for other in this.m_system.PuppetPlayers() {
       let puppet = this.m_system.PuppetOf(other);
       if IsDefined(puppet) && !TandemElsewhere.IsElsewhere(this.m_game, other) {
-        let far = Vector4.Distance(player.GetWorldPosition(), puppet.GetWorldPosition());
-        if far <= bestAt {
+        let there = puppet.GetWorldPosition();
+        let far = Vector4.Distance(at, there);
+        let flat = SqrtF((there.X - at.X) * (there.X - at.X) + (there.Y - at.Y) * (there.Y - at.Y));
+        let facing = flat < 0.3 || ((there.X - at.X) * ahead.X + (there.Y - at.Y) * ahead.Y) / flat >= 0.34;
+        if facing && far <= bestAt {
           best = other;
           bestAt = far;
         }
