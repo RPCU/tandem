@@ -34,7 +34,7 @@
 // NPC whose skeleton lacks one of them is not read, and its proxy keeps its
 // own animation. Not yet verified in game on NPCs.
 //
-// Other rigs (tandem.ini scene_rigs, off by default; never run in game): a
+// Other rigs (tandem.ini scene_rigs, on by default; not yet run in game): a
 // speaking actor's face (the entity's "face_rig" animated component, whose
 // graph instance turns the facial tracks into its ~290 joints) and the body
 // of an actor that is not on the humanoid rig are read and written at the
