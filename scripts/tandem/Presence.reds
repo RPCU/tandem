@@ -802,6 +802,8 @@ public class TandemPresenceSync {
               heard.ricochets += 1;
               if heard.ricochets == 1 || heard.ricochets % 20 == 0 {
                 TandemNative.Log(s"bullet: player \(cue.player)'s ricochet \(heard.ricochets) drawn on to (\(at.X) \(at.Y) \(at.Z)) (flags \(cue.arg))");
+              } else {
+                TandemNative.LogDebug(s"bullet: player \(cue.player)'s ricochet \(heard.ricochets) drawn on to (\(at.X) \(at.Y) \(at.Z)) (flags \(cue.arg))");
               }
             } else {
               this.Once(n"noRicochetTrail", s"bullet: player \(cue.player)'s ricochet not drawn: its weapon has no trail");
