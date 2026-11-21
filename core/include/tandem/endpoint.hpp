@@ -518,6 +518,10 @@ struct RemoteLink {
 struct RemoteWaypoint {
   proto::Waypoint waypoint;
 };
+// A player did not take our link request, and why (only ever ours).
+struct LinkDeclined {
+  proto::LinkDecline decline;
+};
 // Vehicle combat (docs/architecture/vehicle-combat.md). How a vehicle
 // another game owns is damaged now (never one of ours).
 struct RemoteVehicleDamage {
@@ -625,7 +629,7 @@ using SessionEventVariant = std::variant<
     events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered,
     events::RemoteStatusVisuals, events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom,
     events::TrafficGive, events::TrafficTake, events::TrafficOwnerChanged, events::Fractured,
-    events::DeviceFired, events::TurretHeld>;
+    events::DeviceFired, events::TurretHeld, events::LinkDeclined>;
 // Its copies, moves and conversions compiled in session_event.cpp only, as
 // proto::Message's (tandem/closed_variant.hpp).
 using SessionEvent = ClosedVariant<SessionEventVariant>;
@@ -1060,6 +1064,9 @@ public:
   // everyone's to late joiners.
   void SetLocalLink(proto::Link link);
   void SetLocalWaypoint(proto::Waypoint waypoint);
+  // A link request of `decline.to` we did not take, and why (to them only;
+  // `from` is filled in; nothing is kept).
+  void SendLinkDecline(proto::LinkDecline decline);
   // Everyone's consent and waypoint as this game knows them (us included).
   const std::map<proto::PlayerId, proto::Link> &CommsLinks() const { return m_commsLinks; }
   const std::map<proto::PlayerId, proto::Waypoint> &Waypoints() const { return m_waypoints; }

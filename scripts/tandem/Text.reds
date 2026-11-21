@@ -175,7 +175,7 @@ public class TandemText {
       "Travel-FastTravelledTo", "Travel-FastTravelled", "Travel-Labelled", "Travel-Scene",
       "Travel-Taken", "Travel-Asks", "Travel-Blocked", "Revive-Down", "Revive-DownAlone",
       "Revive-Out", "Revive-AllDown", "Revive-WaitHost", "Activities-AsksSleep", "Activities-AsksWait",
-      "Activities-CannotSkip", "Trade-Asks", "Comms-LinkAsked", "Saves-Failed", "Saves-WhenYouCan",
+      "Activities-CannotSkip", "Trade-Asks", "Comms-LinkAsked", "Comms-LinkBusy", "Saves-Failed", "Saves-WhenYouCan",
       "Saves-NotRestored", "Mods-Replaced-Item", "Trade-Unknown", "Exit-Saving", "Exit-NotSaved",
       "Checkpoint-Saving", "Checkpoint-Failed",
       "Interact-HostOnly", "Interact-Taken", "Interact-TooFar",
@@ -609,6 +609,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Comms-LinkSent", "Link request sent to {1}");
     this.Text("Tandem-Comms-LinkAsked", "{1} is calling: link to share scans and pings");
     this.Text("Tandem-Comms-LinkWith", "Link with {1}");
+    this.Text("Tandem-Comms-LinkBusy", "{1} took another link request: call again later");
     this.Text("Tandem-Comms-WaypointOf", "{1}'s waypoint");
     this.Text("Tandem-Comms-PinPlaced", "The map pin {1} placed");
     this.Text("Tandem-Comms-PlaceTracked", "The place {1} tracks");
@@ -1067,6 +1068,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Comms-LinkSent", "Demande de lien envoyée à {1}");
     this.Text("Tandem-Comms-LinkAsked", "{1} vous appelle : se lier pour partager analyses et signaux");
     this.Text("Tandem-Comms-LinkWith", "Se lier à {1}");
+    this.Text("Tandem-Comms-LinkBusy", "{1} a pris une autre demande de lien : rappelez plus tard");
     this.Text("Tandem-Comms-WaypointOf", "Point de passage de {1}");
     this.Text("Tandem-Comms-PinPlaced", "Le repère placé par {1}");
     this.Text("Tandem-Comms-PlaceTracked", "Le lieu que suit {1}");

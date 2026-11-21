@@ -968,6 +968,11 @@ struct NetThread::Impl {
                           e.waypoint.position.x, e.waypoint.position.y, e.waypoint.position.z);
                 Comms::Get().PushInbound(
                     {.kind = CommsInbound::Kind::Message, .message = e.waypoint});
+              } else if constexpr (std::is_same_v<E, events::LinkDeclined>) {
+                log::Info("comms: player {} did not take our link request (reason {})",
+                          e.decline.from, e.decline.reason);
+                Comms::Get().PushInbound(
+                    {.kind = CommsInbound::Kind::Message, .message = e.decline});
               } else if constexpr (std::is_same_v<E, events::Ended>) {
                 Regions::Get().Reset();
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Ended});
@@ -1356,6 +1361,8 @@ struct NetThread::Impl {
           endpoint->SetLocalLink(std::move(*link));
         else if (const auto *waypoint = std::get_if<proto::Waypoint>(&message))
           endpoint->SetLocalWaypoint(*waypoint);
+        else if (const auto *decline = std::get_if<proto::LinkDecline>(&message))
+          endpoint->SendLinkDecline(*decline);
       }
       // Other mods: what our game shows of others' records, names asked for.
       for (const auto &told : ModRecords::Get().TakeTold())

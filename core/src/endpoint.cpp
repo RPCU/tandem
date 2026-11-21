@@ -750,6 +750,14 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                   Deliver(relayed, relayed.to, event.peer))
                 out.push_back(events::RegroupAnswered{relayed});
             },
+            [&](const proto::LinkDecline &decline) {
+              // In the guest's own name, to one asker.
+              auto relayed = decline;
+              relayed.from = player;
+              if (relayed.to != player && relayed.to != proto::kNoPlayer &&
+                  Deliver(relayed, relayed.to, event.peer))
+                out.push_back(events::LinkDeclined{relayed});
+            },
             [&](const proto::WorldItem &item) { AddWorldItem(player, item, out); },
             [&](const proto::WorldItemTaken &taken) {
               // A claim, in the guest's own name only.
@@ -1926,6 +1934,10 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             if (answer.from != m_you && answer.to == m_you)
               out.push_back(events::RegroupAnswered{answer});
           },
+          [&](const proto::LinkDecline &decline) {
+            if (decline.from != m_you && decline.to == m_you)
+              out.push_back(events::LinkDeclined{decline});
+          },
           [&](const proto::WorldItem &item) { out.push_back(events::WorldItemAppeared{item}); },
           [&](const proto::WorldItemTaken &taken) {
             out.push_back(events::WorldItemTakenBy{taken});
@@ -2972,6 +2984,17 @@ void Endpoint::SendRegroupAnswer(proto::RegroupAnswer answer) {
     Deliver(answer, answer.to, 0);
   else
     Send(m_hostPeer, answer);
+}
+
+void Endpoint::SendLinkDecline(proto::LinkDecline decline) {
+  Record(decline);
+  if (!IsJoined() || m_ended || decline.to == proto::kNoPlayer || decline.to == m_you)
+    return;
+  decline.from = m_you;
+  if (IsHost())
+    Deliver(decline, decline.to, 0);
+  else
+    Send(m_hostPeer, decline);
 }
 
 // Host: a guest's ping, tag, link consent or waypoint (comms.hpp), in its

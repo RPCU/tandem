@@ -372,6 +372,12 @@ TEST_CASE("a regroup offer is a reliable event with a bounded label") {
   CHECK_FALSE(Decode(Encode(offer)).has_value());
 }
 
+TEST_CASE("a link request not taken is a reliable event") {
+  RoundTrips(LinkDecline{.from = 3, .to = 2, .reason = kLinkDeclineOther});
+  CHECK(ChannelOf(LinkDecline{}) == Channel::Event);
+  CHECK(std::string_view(NameOf(LinkDecline{})) == "LinkDecline");
+}
+
 TEST_CASE("world items are reliable events, and a bag has a bound") {
   CHECK(ChannelOf(WorldItem{}) == Channel::Event);
   CHECK(IsReliable(WorldItemTaken{}));

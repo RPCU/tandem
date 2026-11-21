@@ -330,6 +330,7 @@ bool KeepsSession(const proto::Message &message) {
                  std::is_same_v<M, proto::ResyncRequest> || std::is_same_v<M, proto::NpcSet> ||
                  std::is_same_v<M, proto::NpcActionReply> ||
                  std::is_same_v<M, proto::RegroupAnswer> || std::is_same_v<M, proto::GameOver> ||
+                 std::is_same_v<M, proto::LinkDecline> ||
                  std::is_same_v<M, proto::WorldItemTaken> ||
                  // Devices: the host's words are kept; the rest is the old
                  // session's bookkeeping.
