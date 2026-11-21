@@ -178,7 +178,7 @@ public class TandemText {
       "Activities-CannotSkip", "Trade-Asks", "Comms-LinkAsked", "Saves-Failed", "Saves-WhenYouCan",
       "Saves-NotRestored", "Mods-Replaced-Item", "Trade-Unknown",
       "Interact-HostOnly", "Interact-Taken", "Interact-TooFar",
-      "Interact-Missing", "Interact-Busy"
+      "Interact-Missing", "Interact-Busy", "Trade-NotNow", "Phone-Unreachable"
     ];
     if ArrayContains(asks, key) {
       return 2;
@@ -586,12 +586,34 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Comms-Linked", "Linked with {1}: scans and pings are shared");
     this.Text("Tandem-Comms-LinkBroken", "Link with {1} broken");
     this.Text("Tandem-Comms-LinkSent", "Link request sent to {1}");
-    this.Text("Tandem-Comms-LinkAsked", "{1} asks to link: share scans and pings");
+    this.Text("Tandem-Comms-LinkAsked", "{1} is calling: link to share scans and pings");
     this.Text("Tandem-Comms-LinkWith", "Link with {1}");
     this.Text("Tandem-Comms-WaypointOf", "{1}'s waypoint");
     this.Text("Tandem-Comms-PinPlaced", "The map pin {1} placed");
     this.Text("Tandem-Comms-PlaceTracked", "The place {1} tracks");
     this.Text("Tandem-Comms-WaypointSet", "{1} set a waypoint");
+    this.Text("Tandem-Comms-Decline", "Decline");
+    // The other players in the game's phone (PhoneContacts.reds).
+    this.Text("Tandem-Phone-NotLinked", "Not linked");
+    this.Text("Tandem-Phone-Calling", "Calling...");
+    this.Text("Tandem-Phone-CallingYou", "Calling you");
+    this.Text("Tandem-Phone-Linked", "Linked");
+    this.Text("Tandem-Phone-Call", "Call");
+    this.Text("Tandem-Phone-CallAbout", "Ask {1} to link: share scans, pings and health");
+    this.Text("Tandem-Phone-Answer", "Answer");
+    this.Text("Tandem-Phone-AnswerAbout", "{1} is calling: link up");
+    this.Text("Tandem-Phone-Cancel", "Cancel the call");
+    this.Text("Tandem-Phone-CancelAbout", "Calling {1}...");
+    this.Text("Tandem-Phone-HangUp", "Hang up");
+    this.Text("Tandem-Phone-HangUpAbout", "Break the link with {1}");
+    this.Text("Tandem-Phone-TradeAbout", "Give, swap or sell items and eddies, wherever you both are");
+    this.Text("Tandem-Phone-JoinAbout", "Fast travel to {1}");
+    this.Text("Tandem-Phone-Invite", "Ask {1} to join you");
+    this.Text("Tandem-Phone-InviteAbout", "{1} is offered a fast travel to you");
+    this.Text("Tandem-Phone-Cancelled", "Call to {1} cancelled");
+    this.Text("Tandem-Phone-Invited", "Asked {1} to join you");
+    this.Text("Tandem-Phone-Unreachable", "{1} can't be reached right now");
+    this.Text("Tandem-Trade-NotNow", "You can't trade right now");
     this.Text("Tandem-Story-RestrictHolstered", "{1}'s scene: weapons away.");
     this.Text("Tandem-Story-RestrictSlow", "{1}'s scene: take it slow.");
     // Another V's slow time reaches ours (Time.reds), once a session.
@@ -1000,12 +1022,33 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Comms-Linked", "Lié à {1} : analyses et signaux partagés");
     this.Text("Tandem-Comms-LinkBroken", "Lien avec {1} rompu");
     this.Text("Tandem-Comms-LinkSent", "Demande de lien envoyée à {1}");
-    this.Text("Tandem-Comms-LinkAsked", "{1} demande un lien : partager analyses et signaux");
+    this.Text("Tandem-Comms-LinkAsked", "{1} vous appelle : se lier pour partager analyses et signaux");
     this.Text("Tandem-Comms-LinkWith", "Se lier à {1}");
     this.Text("Tandem-Comms-WaypointOf", "Point de passage de {1}");
     this.Text("Tandem-Comms-PinPlaced", "Le repère placé par {1}");
     this.Text("Tandem-Comms-PlaceTracked", "Le lieu que suit {1}");
     this.Text("Tandem-Comms-WaypointSet", "{1} a placé un point de passage");
+    this.Text("Tandem-Comms-Decline", "Refuser");
+    this.Text("Tandem-Phone-NotLinked", "Pas de lien");
+    this.Text("Tandem-Phone-Calling", "Appel en cours...");
+    this.Text("Tandem-Phone-CallingYou", "Vous appelle");
+    this.Text("Tandem-Phone-Linked", "Lien actif");
+    this.Text("Tandem-Phone-Call", "Appeler");
+    this.Text("Tandem-Phone-CallAbout", "Demander un lien à {1} : partager analyses, signaux et santé");
+    this.Text("Tandem-Phone-Answer", "Répondre");
+    this.Text("Tandem-Phone-AnswerAbout", "{1} vous appelle : se lier");
+    this.Text("Tandem-Phone-Cancel", "Annuler l'appel");
+    this.Text("Tandem-Phone-CancelAbout", "Appel à {1} en cours...");
+    this.Text("Tandem-Phone-HangUp", "Raccrocher");
+    this.Text("Tandem-Phone-HangUpAbout", "Rompre le lien avec {1}");
+    this.Text("Tandem-Phone-TradeAbout", "Donner, échanger ou vendre objets et eddies, où que vous soyez");
+    this.Text("Tandem-Phone-JoinAbout", "Voyage rapide jusqu'à {1}");
+    this.Text("Tandem-Phone-Invite", "Proposer à {1} de vous rejoindre");
+    this.Text("Tandem-Phone-InviteAbout", "{1} se voit proposer un voyage rapide jusqu'à vous");
+    this.Text("Tandem-Phone-Cancelled", "Appel à {1} annulé");
+    this.Text("Tandem-Phone-Invited", "Proposé à {1} de vous rejoindre");
+    this.Text("Tandem-Phone-Unreachable", "{1} est injoignable pour l'instant");
+    this.Text("Tandem-Trade-NotNow", "Échange impossible pour l'instant");
     this.Text("Tandem-Story-RestrictHolstered", "Scène de {1} : armes rangées.");
     this.Text("Tandem-Story-RestrictSlow", "Scène de {1} : doucement.");
     this.Text("Tandem-Time-SlowedScanner", "Le scanner de {1} vous ralentit.");
