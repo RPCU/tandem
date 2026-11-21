@@ -40,7 +40,10 @@ Every scenario starts from one known state, `tools/game.sh test-reset`
 (`cmd test reset`, `scripts/tandem/TestReset.reds`), run after the last
 scenario's mock player is stopped and after any fresh start: the save
 loads as the player left it and each scenario leaves state behind. It
-takes V out of any vehicle (an instant unmount, then the workspot exit) or
+has the systems say again what a session says once (its rules, comms'
+settings, our level, the party HUD's layout, the throws' once-only lines:
+the host's session outlives scenarios, and a scenario reads its log from
+before the reset unless the game was launched for it); takes V out of any vehicle (an instant unmount, then the workspot exit) or
 workspot; ends the test private scene and quest freeze, test worlds
 (Elsewhere), the test dilation and `god on`; resets revive (`revive
 fresh`: up, no cooldown); heals V and removes bleeding, burning,
