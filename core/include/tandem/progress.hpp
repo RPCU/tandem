@@ -94,9 +94,13 @@ enum class LeaveAction : std::uint8_t {
 };
 
 struct LeaveInput {
-  double now{};         // seconds on any steady clock
-  bool session{};       // we are a guest in a session now
-  bool chosen{};        // the session ended by our choice (the co-op menu's Leave)
+  double now{};   // seconds on any steady clock
+  bool session{}; // we are a guest in a session now
+  bool chosen{};  // the session ended by our choice (the co-op menu's Leave)
+  // A save is wanted whatever the mode, and no load: the pause menu's Exit
+  // (the game quits after it) or a checkpoint (we join again after it). Out
+  // of a session, it asks for the save the last one still owes (Owed).
+  bool save{};
   std::uint32_t left{}; // kLeft*
   bool blocked{};       // the game's own save locks are on
   std::int8_t saved{};  // since Save: 0 no word yet, 1 written, -1 failed
@@ -106,6 +110,8 @@ inline constexpr double kLeaveSettle = 2.0;   // out of a session this long befo
 inline constexpr double kLeaveCleanBy = 20.0; // still not clean then: Dirty
 inline constexpr double kLeaveSaveBy = 120.0; // the game still locked then: GaveUp
 inline constexpr double kLeaveSavedBy = 30.0; // no word of the save then: SaveFailed
+// With `save` (the player waits for it): the game still locked then: GaveUp.
+inline constexpr double kLeaveSaveSoonBy = 15.0;
 
 // A guest's way out of a session, one step per call. It never asks for a
 // load without word that the save was written, and never for a save while
@@ -119,14 +125,22 @@ public:
   // Our save lock: on in a session and until our world is back.
   bool Locked() const;
   LeaveStep Step() const { return m_step; }
+  // A session ended in this world and no save of ours was written since:
+  // what our V earned there is only in the running game.
+  bool Owed() const { return m_owed; }
   // A world was loaded: whatever was left went with the old one.
-  void Reset() { m_step = LeaveStep::Solo; }
+  void Reset() {
+    m_step = LeaveStep::Solo;
+    m_owed = false;
+  }
 
 private:
   LeaveMode m_mode;
   LeaveStep m_step{LeaveStep::Solo};
   double m_since{};
   bool m_chosen{};
+  bool m_save{};
+  bool m_owed{};
 };
 
 const char *NameOf(LeaveMode mode);
