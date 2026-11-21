@@ -21,6 +21,8 @@ cmd device tell barrel
 expect 'devices: told the session of barrel' 5
 expect_peer 'asked the host for device [0-9a-f]+ .*exploded.* \(--device-answer\)' 10
 expect 'devices: player [0-9]+ operated [0-9a-f]+' 10
+# From its puppet: its kills and its crime are the guest's.
+expect 'devices: [0-9a-f]+ [A-Za-z]+ set off by player [0-9]+.s puppet' 5
 pause 2
 shot devices-barrel-blast
 # It went up in our game (its state says so, from its own explosion).
