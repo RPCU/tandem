@@ -39,7 +39,10 @@
   - _Journal, tracker, markers_: the host's journal (snapshot at join,
     changes with their notify flag, so the guest gets the same toasts and
     sounds) and tracked quest; quest pins follow the journal. Shown only on
-    a frozen guest. Entity-bound pins and objective counters: step 2.
+    a frozen guest; any other game sees the host's tracked objective as its
+    shared waypoint, "NAME's objective" (`WaypointKind::Objective`,
+    [`comms.md`](comms.md) decision 4). Entity-bound pins and objective
+    counters: step 2.
   - _Calls and texts_ (`Phone.reds`): the host's `PhoneSystem` phases go to
     every phone; a guest presents them through its own `PhoneSystem`
     (ringtone, incoming widget, audio call with the caller's portrait) with

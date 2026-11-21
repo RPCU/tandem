@@ -58,20 +58,30 @@ recommendation below as built, and no text chat (6).
    on purpose, a tag is information that flows on its own (the link gates
    only the latter). `pings = off` neither sends nor shows them.
 4. **The shared waypoint is the map pin, or the map point a player
-   tracks.** Polled once a second (`MappinSystem.GetManuallyTrackedMappinID`:
-   the world map's custom pin is that mappin, with
-   `CustomPositionVariant`), sent when it changes kind or moves past a
-   metre, shown to the others as "NAME's waypoint" (world label, world map
-   tooltip "The map pin NAME placed" / "The place NAME tracks"). A partner
-   can track it on the world map like any mappin and get the game's GPS
-   route to it; a tracked marker of tandem's is never sent back as our own.
-   **The tracked objective is not sent**: in a session every guest's
-   journal and tracked entry are the host's (story sync, `Tracked`,
-   [`story.md`](story.md)), so the objective and its quest marker are
-   already the same in every game. With `story = off` a guest keeps its
-   own objective; showing it to the others would be a `WaypointKind`
-   appended for it (the quest mappin's position:
-   `MappinSystem.GetQuestMappinPositionsByObjective`): open, low value.
+   tracks; with neither, its tracked objective.** Polled once a second
+   (`MappinSystem.GetManuallyTrackedMappinID`: the world map's custom pin
+   is that mappin, with `CustomPositionVariant`), sent when it changes
+   kind or moves past a metre, shown to the others as "NAME's waypoint"
+   (world label, world map tooltip "The map pin NAME placed" / "The place
+   NAME tracks"). A partner can track it on the world map like any mappin
+   and get the game's GPS route to it; a tracked marker of tandem's is
+   never sent back as our own. **With nothing tracked by hand, the tracked
+   objective is the waypoint** (`WaypointKind::Objective`, protocol 9):
+   `JournalManager.GetTrackedEntry` as a `JournalQuestObjectiveBase`, its
+   quest mappins' positions
+   (`MappinSystem.GetQuestMappinPositionsByObjective`, as the world map's
+   `MenuHubGameController.UpdateTrackedQuest` reads them), the one nearest
+   V; shown as "NAME's objective" ("The objective NAME tracks"), in the
+   player's colour, trackable the same way, with no notice (it comes on
+   its own at each join and quest step). Anyone's objective is shared, the
+   host's or a guest's: story sync (`quest_freeze`) is off by default, and
+   a guest that is not frozen keeps its own journal and sees nothing of
+   the host's quest otherwise. **A frozen guest** (story sync on: its
+   journal and tracked entry are the host's, `Tracked`,
+   [`story.md`](story.md)) sends no Objective of its own (it would be the
+   host's again) and shows none of the host's (its own quest marker is
+   already there; one heard before the freeze began goes at the next
+   poll). Not yet run in game.
 5. **Callouts: the danger ping, no emotes.** The double press is the one
    callout with a clean path: no new input, its own icon and sound, the
    same mark replaced (so no clutter). Emotes: no. V has no emote
@@ -367,7 +377,7 @@ other's, before either ships). All on the Event channel.
 | `Mark`     | one-shot | < 40  | a ping: sender, its id, kind (spot, enemy, device, loot, vehicle, danger, team target; none: taken back), target, position, seconds |
 | `Tag`      | one-shot | < 200 | a scan tag (until off) or a reveal (seconds) of up to 16 targets, on or off                                                         |
 | `Link`     | state    | small | whom a player consents to share tags with: nobody, the listed players, everyone but the listed                                      |
-| `Waypoint` | state    | < 32  | a player's waypoint: none, a map pin, a tracked map point; where                                                                    |
+| `Waypoint` | state    | < 32  | a player's waypoint: none, a map pin, a tracked map point, its tracked objective (protocol 9); where                                |
 
 A target (`TargetRef`) is named the same in every game: a shared NPC by
 its `NpcId` (its proxy on a guest), a placed entity by its static
@@ -430,7 +440,9 @@ it more than 15 m from the position that comes with it, shows the place.
     pings are shared", "Link with NAME broken", "NAME set a waypoint"),
     none for a player who left (the co-op menu says that).
 - `tools/game.sh cmd comms report | ping | link [NAME] | unlink [NAME] |
-accept | tag`, and `comms decline` (a link request).
+accept | tag`, `comms decline` (a link request) and `comms objective`
+  (the tracked objective we would share, and whether a waypoint tracked
+  by hand takes its place).
 
 ## Consistency
 
@@ -471,12 +483,16 @@ The audit's rows ([`consistency.md`](consistency.md)), in short:
   handed to a late joiner, and a guest that vanishes leaving nothing.
 - `tests/protocol_test.cpp`: round trips, channels, sizes, refusals.
 - The mock player: `--link auto|ask|off`, `--link-at N`, `--ping N`,
-  `--tag N`, `--reveal N`, `--waypoint X,Y,Z`, `--waypoint-clear N`; it logs
-  every mark, tag, link and waypoint it hears.
+  `--tag N`, `--reveal N`, `--waypoint X,Y,Z`,
+  `--waypoint-kind pin|point|objective`, `--waypoint-clear N`; it logs
+  every mark, tag, link and waypoint it hears ("player N's waypoint:
+  objective at …").
 - Scenarios (not run yet): `comms-pings` (its spot, danger, withdrawal;
   ours; it vanishes), `comms-enemy` (as a guest: an enemy ping on our
   proxy, reveals outlined), `comms-link` (link = ask on the other side:
-  accepted, broken, again), `comms-waypoint`.
+  accepted, broken, again), `comms-waypoint`, `comms-objective` (the
+  host's tracked objective heard by the mock player; the mock's shown as
+  "tandem-peer's objective").
 
 ## Open
 
