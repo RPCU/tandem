@@ -7,7 +7,7 @@ peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')"
 expect 'joined \(player [0-9]+' 20
 expect_peer 'hit npc [0-9]+ \(plain\): 35 health' 30
 expect 'outcomes: [0-9]+ struck by player [0-9]+' 15
-expect 'reaction: npc [0-9]+ plays (twitch|impact|stagger|pain|knockdown|ragdoll|death) \(sent to the guests' 20
+expect 'reaction: npc [0-9]+ plays (twitch|impact|stagger|pain|knockdown|ragdoll|death) \(sent to the games linked with us' 20
 # Three hits of 35 kill it: its death animation or ragdoll goes out too.
 expect 'npcs: [0-9]+ died' 60
 expect_peer 'npc [0-9]+ reacts: type [2-7]' 20
