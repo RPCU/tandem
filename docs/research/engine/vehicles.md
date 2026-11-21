@@ -478,3 +478,59 @@ request, callback)` queues a request (0xE0-byte entries at +0x48, under
   ours); oldest first once more than a few are parked. To prove it: a
   scenario that seats a puppet, unmounts it, waits T in {0.3, 1, 2, 5} s
   and runs `vehicle clear`, `tools/game.sh bt` on a freeze. [2.5-untested]
+
+### 13.140 A dynamic entity deleted before its stub exists: freed under the population system (2026-11-21, game 2.50, exe and Codeware source read)
+
+The guest of the first two-game session crashed 23 ms after its first
+playing tick (26 street proxies spawned in it, after 2.6 s of queued street
+events): `0xC0000005` at `+0x22CA442`, a read of a non-canonical address
+that was text (`rcx` `0x6544203043394605`, "4E9C0 De" as the pointer).
+
+- **The stack, named**: thread proc, job runner `0x1402732D0`, the job
+  `0x140D32E84` scheduled by `0x140C6C7B0` under the name
+  `PopulationSystem/UpdatePooling`, its body `0x1404F6B5C` (hash
+  3030128083; `this` is the population system, the update's time step in
+  `rdx`), `0x1404F5C18` (hash 4106949370), `0x14046986C`, `0x140469888`
+  (hash 3274775909), `0x141FFADA0`, `0x1422CA420` (hash 1301483273: a
+  shared spin lock taken for reading). [2.5-static]
+- **`0x1404F5C18`** takes two lists of the population system: the ids
+  removed since (u32, +0x78 under the lock +0x70), then the registrations
+  made since (0x38-byte entries, +0x60 under the lock +0x58: the spawn
+  definition, the u32 id at +0x28, flags). For each registration it asks
+  the stub system (+0x1FC0, slot +0x1D0 `FindStub`) for the stub and reads
+  its place without a null check: `0x140469888` takes `[stub + 0x30]`,
+  locks its byte +0xD1 and reads +0x80..+0x88 (or the attached entity's
+  transform, +0xA8, state byte +0x156 = 4). The fault is that lock:
+  `[stub + 0x30]` was text, so the stub's memory had been freed and
+  reused. [2.5-static]
+- **`RegisterEntity`** (`0x140465F50`) appends that entry when the stub's
+  record resolves to something to spawn; **`RemoveEntity`**
+  (`0x1402FCAFC`) takes a registration still in that list out again and
+  adds the id to the removed list. Both call `FindStub` and read
+  `[stub + 0x30]` unchecked: each needs a live stub. `DeleteStub`
+  (`0x1402FD588`) moves the stub to the list the stub system destroys
+  later. In order, a spawn then a deletion of a body whose stub exists is
+  safe. [2.5-static]
+- **What frees a stub outside that order** (Codeware 1.21,
+  `DynamicEntitySystem.cpp`, MIT): `CreateEntity` queues `CreateStub`
+  with a callback that holds the entity's state; `DeleteEntity` before the
+  callback ran finds no stub in the state and only forgets the state. The
+  callback then runs all the same: the state takes the stub
+  (`UniquePtr<EntityStub>`), `RegisterEntity` queues the registration, and
+  the callback's reference, the last one, goes: the stub is freed, still
+  in the stub system's map and with its registration queued. The next
+  pooling update reads it. While the freed memory is not reused the read
+  succeeds and an orphan spawns; this is also §13.101's "created after its
+  deletion". [2.5-static]
+- **Cause of the crash: not proven**, the likeliest by far: the guest
+  logged no removal (they are silent) and ran at `log = info`; the host's
+  street has cars leaving the shared range every second, and a join's first
+  tick takes every event queued since the session began in one batch, so a
+  spawn and its removal met in one tick. Against the mock player the tick
+  runs every frame and few vehicles move. [2.5-untested]
+- **tandem deletes a body only once it exists** (`TandemEntities.Delete`,
+  `scripts/tandem/Entities.reds`): at once when
+  `DynamicEntitySystem.IsSpawned`, else at the first tick it is (or after
+  10 s: its stub is long there). The first held deletion of a game is
+  logged at `info` (`entities: body … deleted before it exists`).
+  `tools/game.sh bt` names this crash site. [2.5-untested]

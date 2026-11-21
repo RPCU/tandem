@@ -154,6 +154,10 @@ build slots) and copies the DLL, `.pdb` and `tandem-peer` back; then
   and Codeware names before using them (NCO's working 2.5 scripts and
   Codeware's `scripts/` are good references): a name that compiles can
   still be the wrong one.
+- **Delete a body Codeware spawned with `TandemEntities.Delete`**
+  (`Entities.reds`), never `DynamicEntitySystem.DeleteEntity`: deleted
+  before its stub exists, it is freed under the population system
+  (`docs/research/engine/vehicles.md` §13.140).
 - **No script method defined twice** (look after every merge): redscript
   compiles a class with two definitions of one method silently, and the game
   then dies in the script VM (frozen after the loading screen) at its first
