@@ -61,6 +61,7 @@ TANDEM_SAID_BY(Host, TradeCommit)
 TANDEM_SAID_BY(Host, TimeSkipResult)
 TANDEM_SAID_BY(Host, VehicleUnlock)
 TANDEM_SAID_BY(Host, StoryRestrictions)
+TANDEM_SAID_BY(Host, WorldPrefabs)
 TANDEM_SAID_BY(Host, NpcMotion)
 TANDEM_SAID_BY(Host, BreachResult)
 
@@ -198,6 +199,8 @@ TANDEM_SAID_BY(Either, ThrowPath)
 TANDEM_SAID_BY(Either, NpcPlaced)
 TANDEM_SAID_BY(Either, NpcDeath)
 TANDEM_SAID_BY(Either, TurretHands)
+// A player's story gates: its own word about its own story (stamped).
+TANDEM_SAID_BY(Either, StoryGates)
 // A street race: a player's word in its own name; what describes the race,
 // seats, orders and pays is its starter's alone (CheckValues).
 TANDEM_SAID_BY(Either, Race)
@@ -334,7 +337,8 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::StatusVisuals> ||
                            std::is_same_v<M, p::QuestInteract> || std::is_same_v<M, p::Fracture> ||
                            std::is_same_v<M, p::DeviceFire> || std::is_same_v<M, p::ThrowPath> ||
-                           std::is_same_v<M, p::TurretHands> || std::is_same_v<M, p::Race>)
+                           std::is_same_v<M, p::TurretHands> || std::is_same_v<M, p::Race> ||
+                           std::is_same_v<M, p::StoryGates>)
           return &m.player;
         else
           return nullptr;
@@ -751,6 +755,10 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           inRange = m.action >= p::kPhoneAnswer && m.action <= p::kPhoneDial;
         } else if constexpr (std::is_same_v<M, p::StoryState>) {
           inRange = m.tier <= 5;
+        } else if constexpr (std::is_same_v<M, p::StoryGates>) {
+          inRange = (m.flags & ~p::kGateFlags) == 0;
+        } else if constexpr (std::is_same_v<M, p::WorldPrefabs>) {
+          inRange = m.prefabs.size() <= p::kMaxWorldPrefabs;
         } else if constexpr (std::is_same_v<M, p::SceneState>) {
           finite = std::isfinite(m.rate) && Finite(m.anchor) && std::isfinite(m.yaw) &&
                    std::isfinite(m.radius);
@@ -1206,6 +1214,15 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
                              std::is_same_v<M, p::VehicleRadio> || std::is_same_v<M, p::Stealth> ||
                              std::is_same_v<M, p::Transit> || std::is_same_v<M, p::ChoiceCursor>) {
           notOurs(m.player);
+        } else if constexpr (std::is_same_v<M, p::StoryGates>) {
+          // Every player's own word, passed on: never ours sent back.
+          notOurs(m.player);
+        } else if constexpr (std::is_same_v<M, p::WorldPrefabs>) {
+          // The host's world: what its own quests loaded.
+          if (m.player != m_hostPlayer)
+            Add("authority.host-only",
+                std::format("world prefabs said to be player {}'s: only the host's world has them",
+                            m.player));
         } else if constexpr (std::is_same_v<M, p::StoryState>) {
           notOurs(m.player);
           // A moment is the host's V's; a spectator is a guest watching it.

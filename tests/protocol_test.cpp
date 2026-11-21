@@ -751,6 +751,30 @@ TEST_CASE("story restrictions survive encoding, are a story message, and say one
   CHECK(Decode(Encode(many)).has_value());
 }
 
+TEST_CASE("world prefabs and story gates survive encoding and are story messages") {
+  RoundTrips(WorldPrefabs{.player = 1, .prefabs = {0x10, 0x8f3a5c2e11d04b77ULL}});
+  RoundTrips(WorldPrefabs{.player = 1});
+  CHECK(IsStory(WorldPrefabs{}));
+  CHECK(ChannelOf(WorldPrefabs{}) == Channel::Event);
+  CHECK(std::string(NameOf(WorldPrefabs{})) == "WorldPrefabs");
+  // Unsorted, repeated, a node 0 or too many: refused.
+  CHECK_FALSE(Decode(Encode(WorldPrefabs{.prefabs = {2, 1}})).has_value());
+  CHECK_FALSE(Decode(Encode(WorldPrefabs{.prefabs = {1, 1}})).has_value());
+  CHECK_FALSE(Decode(Encode(WorldPrefabs{.prefabs = {0, 1}})).has_value());
+  WorldPrefabs many;
+  for (std::uint64_t i = 0; i <= kMaxWorldPrefabs; ++i)
+    many.prefabs.push_back(i + 1);
+  CHECK_FALSE(Decode(Encode(many)).has_value());
+  many.prefabs.pop_back();
+  CHECK(Decode(Encode(many)).has_value());
+
+  RoundTrips(StoryGates{.player = 2, .flags = kGateWatsonOpen | kGateInDogtown});
+  CHECK(IsStory(StoryGates{}));
+  CHECK(ChannelOf(StoryGates{}) == Channel::Event);
+  CHECK(std::string(NameOf(StoryGates{})) == "StoryGates");
+  CHECK_FALSE(Decode(Encode(StoryGates{.flags = 0x10})).has_value());
+}
+
 TEST_CASE("a quest interaction survives encoding, is a story message, and is small") {
   RoundTrips(QuestInteract{.target = 0x1122334455667788ULL,
                            .choice = 0xAABB,

@@ -27,12 +27,13 @@ public:
   // The story domain's hash for digests (tandem/consistency.hpp): the
   // journal and the tracked entry, what lasts and what a resync (ForJoiner)
   // sends whole, the scene that plays with its cast (a lost end would hold
-  // a guest's proxies for good), and the host's story restrictions (a lost
-  // lift would keep a guest's weapons away for good). Calls, hubs, effects and lines are
-  // short-lived and sent again on every change; StoryStates are left out (a
-  // guest is never sent its own).
+  // a guest's proxies for good), the host's story restrictions (a lost
+  // lift would keep a guest's weapons away for good) and its world prefabs
+  // (a lost change would keep an interior loaded, or missing, for good). Calls, hubs, effects and
+  // lines are short-lived and sent again on every change; StoryStates and StoryGates are left out
+  // (a guest is never sent its own).
   std::uint32_t Digest() const;
-  // A player left: its StoryState goes.
+  // A player left: its StoryState and StoryGates go.
   void Forget(proto::PlayerId player);
   // What to send a newcomer, in order: the journal snapshot first. With the
   // host's clock, not the lines that are over (a bark of minutes ago names
@@ -43,6 +44,11 @@ public:
   bool SceneOn() const { return m_scene.has_value(); }
   // The host's V has story restrictions on now.
   bool RestrictionsOn() const { return !m_restrictions.effects.empty(); }
+  // The host's quests have prefabs loaded now (WorldPrefabs).
+  bool PrefabsOn() const { return !m_prefabs.prefabs.empty(); }
+  const proto::WorldPrefabs &Prefabs() const { return m_prefabs; }
+  // A player's story gates as last said (none: never said).
+  std::optional<proto::StoryGates> GatesOf(proto::PlayerId player) const;
 
 private:
   std::map<std::uint32_t, proto::JournalChange> m_journal;
@@ -54,10 +60,12 @@ private:
   std::map<std::uint64_t, proto::StoryEffect> m_effects; // on now
   std::optional<proto::SceneState> m_scene;              // playing now
   std::optional<proto::SceneCast> m_cast;
-  std::map<std::uint32_t, proto::SceneProp> m_props;   // held in the play, by prop number
-  std::map<std::uint32_t, proto::ScenePlace> m_placed; // set down in the play, by prop number
-  std::vector<proto::SceneLine> m_lines;               // begun and not cut, newest last
-  proto::StoryRestrictions m_restrictions;             // on the host's V now (empty: none)
+  std::map<std::uint32_t, proto::SceneProp> m_props;    // held in the play, by prop number
+  std::map<std::uint32_t, proto::ScenePlace> m_placed;  // set down in the play, by prop number
+  std::vector<proto::SceneLine> m_lines;                // begun and not cut, newest last
+  proto::StoryRestrictions m_restrictions;              // on the host's V now (empty: none)
+  proto::WorldPrefabs m_prefabs;                        // the host's quests' now (empty: none)
+  std::map<proto::PlayerId, proto::StoryGates> m_gates; // every player's, as said
 };
 // How many begun lines the record keeps (ForJoiner leaves out the ones that
 // are over, and a joiner drops those it gets too late: scene::Replay).

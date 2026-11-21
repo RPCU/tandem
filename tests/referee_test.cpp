@@ -314,6 +314,26 @@ TEST_CASE("referee: a link request not taken goes to its asker only, in its decl
   CHECK(Rules(host) == std::vector<std::string>{"authority.not-yours"});
 }
 
+TEST_CASE("referee: world prefabs are the host's world, story gates each player's own") {
+  // A guest may not speak for the host's world.
+  auto host = Host();
+  host.Received(2, proto::WorldPrefabs{.player = 2, .prefabs = {0x10}}, kSecond);
+  CHECK(Broke(host, "authority.host-only"));
+  host.Received(2, proto::StoryGates{.player = 2, .flags = proto::kGateInWatson}, kSecond);
+  CHECK(Rules(host).empty());
+
+  auto guest = Guest();
+  guest.Received(1, proto::WorldPrefabs{.player = 1, .prefabs = {0x10, 0x20}}, kSecond);
+  guest.Received(1, proto::StoryGates{.player = 1, .flags = proto::kGateWatsonOpen}, kSecond);
+  guest.Received(1, proto::StoryGates{.player = 3, .flags = proto::kGateInDogtown}, kSecond);
+  CHECK(Rules(guest).empty());
+  // Said to be another player's world; our own gates sent back to us.
+  guest.Received(1, proto::WorldPrefabs{.player = 3, .prefabs = {0x10}}, kSecond);
+  CHECK(Broke(guest, "authority.host-only"));
+  guest.Received(1, proto::StoryGates{.player = 2, .flags = 0}, kSecond);
+  CHECK(Broke(guest, "authority.own-state-back"));
+}
+
 TEST_CASE("referee: the host may not say what only a guest asks") {
   auto referee = Guest();
   referee.Received(1, proto::ResyncRequest{1}, kSecond);

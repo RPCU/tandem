@@ -67,6 +67,18 @@ bool Record::Note(const proto::Message &message) {
     m_restrictions = *restrictions;
     return changed;
   }
+  if (const auto *prefabs = std::get_if<proto::WorldPrefabs>(&message)) {
+    // The whole set each time, as the restrictions: a repeat changes nothing.
+    const bool changed = prefabs->prefabs != m_prefabs.prefabs;
+    m_prefabs = *prefabs;
+    return changed;
+  }
+  if (const auto *gates = std::get_if<proto::StoryGates>(&message)) {
+    const auto it = m_gates.find(gates->player);
+    const bool changed = it == m_gates.end() || it->second != *gates;
+    m_gates[gates->player] = *gates;
+    return changed;
+  }
   if (const auto *scene = std::get_if<proto::SceneState>(&message)) {
     std::optional<proto::SceneState> next;
     if (scene->scene != 0)
@@ -159,10 +171,25 @@ std::uint32_t Record::Digest() const {
   hash.Add(std::uint64_t{m_restrictions.effects.size()});
   for (const auto effect : m_restrictions.effects)
     hash.Add(effect);
+  // The host's world prefabs: a change lost would keep an interior loaded
+  // in a guest's world, or missing, for good.
+  hash.Add(std::uint64_t{m_prefabs.prefabs.size()} | std::uint64_t{1} << 40);
+  for (const auto prefab : m_prefabs.prefabs)
+    hash.Add(prefab);
   return hash.Value();
 }
 
-void Record::Forget(proto::PlayerId player) { m_states.erase(player); }
+void Record::Forget(proto::PlayerId player) {
+  m_states.erase(player);
+  m_gates.erase(player);
+}
+
+std::optional<proto::StoryGates> Record::GatesOf(proto::PlayerId player) const {
+  const auto it = m_gates.find(player);
+  if (it == m_gates.end())
+    return std::nullopt;
+  return it->second;
+}
 
 std::vector<proto::Message> Record::ForJoiner(std::uint64_t hostNowUs) const {
   std::vector<proto::Message> out;
@@ -187,6 +214,10 @@ std::vector<proto::Message> Record::ForJoiner(std::uint64_t hostNowUs) const {
     out.push_back(effect);
   if (RestrictionsOn())
     out.push_back(m_restrictions);
+  if (PrefabsOn())
+    out.push_back(m_prefabs);
+  for (const auto &[player, gates] : m_gates)
+    out.push_back(gates);
   if (m_scene) {
     out.push_back(*m_scene);
     if (m_cast)
