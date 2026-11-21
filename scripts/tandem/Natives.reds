@@ -349,6 +349,11 @@ public native class TandemNative extends IScriptable {
   public static native func ParseAddress(text: String) -> TandemHost
   public static native func AddressProblem(text: String) -> String
   public static native func Leave()
+  // The co-op menu's join arrives beside the host at the first welcome
+  // (Travel.reds): chosen after Join / JoinByCode, read, taken once.
+  public static native func ChooseArrival()
+  public static native func Arriving() -> Bool
+  public static native func TakeArrival() -> Bool
   public static native func ResetChoice()
   public static native func SessionStatus() -> TandemStatus
   public static native func SessionPlayers() -> array<TandemPlayer>

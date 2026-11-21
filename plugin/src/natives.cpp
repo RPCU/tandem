@@ -398,6 +398,13 @@ struct TandemNative : Red::IScriptable {
   // No session (until the next choice, or tandem.ini's at the main menu).
   static void Leave() { Runtime::Get().Choose({.role = Config::Role::Off, .fromMenu = true}); }
 
+  // The co-op menu's join (after Join / JoinByCode): our V goes beside the
+  // host at the first welcome, without a prompt (Travel.reds); Arriving
+  // reads it, TakeArrival takes it once (the welcome, game thread).
+  static void ChooseArrival() { Runtime::Get().ChooseArrival(); }
+  static bool Arriving() { return Runtime::Get().Arriving(); }
+  static bool TakeArrival() { return Runtime::Get().TakeArrival(); }
+
   // tandem.ini's choice again (the main menu: a menu choice was for the game left).
   static void ResetChoice() {
     if (Runtime::Get().Choice().fromMenu)
@@ -2252,6 +2259,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(ParseAddress);
   RTTI_METHOD(AddressProblem);
   RTTI_METHOD(Leave);
+  RTTI_METHOD(ChooseArrival);
+  RTTI_METHOD(Arriving);
+  RTTI_METHOD(TakeArrival);
   RTTI_METHOD(ResetChoice);
   RTTI_METHOD(SessionStatus);
   RTTI_METHOD(SessionPlayers);

@@ -168,6 +168,24 @@ SessionChoice Runtime::Choice() const {
   return m_choice;
 }
 
+void Runtime::ChooseArrival() {
+  std::lock_guard _(m_lock);
+  if (m_choice.role != Config::Role::Join)
+    return;
+  m_choice.arrive = true;
+  log::Info("session: the join arrives beside the host");
+}
+
+bool Runtime::Arriving() const {
+  std::lock_guard _(m_lock);
+  return m_choice.arrive;
+}
+
+bool Runtime::TakeArrival() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_choice.arrive, false);
+}
+
 Config::Role Runtime::ChosenRole() const {
   std::lock_guard _(m_lock);
   return m_choice.role;
