@@ -361,6 +361,9 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Pause-By", "{1} paused the game");
     this.Text("Tandem-Phone-Declined", "{1} declined the call");
     this.Text("Tandem-Phone-Answered", "{1} answered the call");
+    this.Text("Tandem-Phone-HostOnly", "Only {1} can answer this contact: it is theirs alone");
+    this.Text("Tandem-Phone-Away", "Too far from {1}: you can only answer calls that leave no choice");
+    this.Text("Tandem-Phone-AwayReply", "Too far from {1} to reply for them");
     this.Text("Tandem-Dialogue-Suggests", "{1} suggests: {2}");
     this.Text("Tandem-Dialogue-Suggested", "Suggested: {1}");
     // Story.
@@ -802,6 +805,9 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Pause-By", "{1} a mis le jeu en pause");
     this.Text("Tandem-Phone-Declined", "{1} a refusé l'appel");
     this.Text("Tandem-Phone-Answered", "{1} a répondu à l'appel");
+    this.Text("Tandem-Phone-HostOnly", "Seul(e) {1} peut répondre à ce contact : il lui est réservé");
+    this.Text("Tandem-Phone-Away", "Trop loin de {1} : vous ne pouvez répondre qu'aux appels qui ne laissent pas de choix");
+    this.Text("Tandem-Phone-AwayReply", "Trop loin de {1} pour répondre à sa place");
     this.Text("Tandem-Dialogue-Suggests", "{1} suggère : {2}");
     this.Text("Tandem-Dialogue-Suggested", "Suggéré : {1}");
     this.Text("Tandem-Story-NotRestored", "Coop : votre histoire n'a pas pu être restaurée à l'identique. Chargez votre dernière sauvegarde");

@@ -142,6 +142,69 @@ public class TandemPhone {
     return this.m_phase == 1 || this.m_phase == 2;
   }
 
+  // ---- who may answer or reply for the host (docs/architecture/story.md,
+  // "Calls and texts") ----
+
+  // A contact whose calls and texts are the host's alone: romance is
+  // private (story.md, story decisions). The game marks none (no contact
+  // type, record or fact says romance or lifepath: research/engine/story.md
+  // §13.23), so this is a list of contact ids (a journal contact's last path
+  // segment, as calls name it), matched on their start: the romance
+  // partners of the scenes' own list (tandem.ini private_actors' default).
+  // Lifepath contacts: none named yet (each call's contact is in the log).
+  public static func HostOnly(contact: String) -> Bool {
+    let id = StrLower(contact);
+    for partner in ["judy", "panam", "river", "kerry", "meredith"] {
+      if StrBeginsWith(id, partner) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // The contact a text's reply belongs to (its conversation's contact; ""
+  // when none is found).
+  public static func ContactOf(journal: wref<JournalManager>, entry: wref<JournalEntry>) -> String {
+    let at = entry;
+    let steps = 0;
+    while IsDefined(at) && steps < 6 {
+      if IsDefined(at as JournalContact) {
+        return at.GetId();
+      }
+      at = journal.GetParentEntry(at);
+      steps += 1;
+    }
+    return "";
+  }
+
+  // Guest: why we may not answer, reject or reply for the host ("": we
+  // may). Its contact is the host's alone; or we are apart from the host
+  // and the act is a choice (a call that may be declined, a text's reply):
+  // apart, not grouped for quests (Story.reds SetApart) or not linked with
+  // the host (regions.md: beyond 150 m, 190 m to leave).
+  public static func Refusal(story: ref<TandemStorySystem>, contact: String, choice: Bool) -> String {
+    if TandemPhone.HostOnly(contact) {
+      return "Phone-HostOnly";
+    }
+    if choice && (!story.Grouped() || !TandemRegions.IsLinked(TandemStory.HostId())) {
+      return "Phone-Away";
+    }
+    return "";
+  }
+
+  // Host: the same rule for a guest's act that reached us (a guest's game
+  // refuses it first, with the reason on its screen; this is the host's
+  // word). Linked with us is the host's view of "not apart".
+  private func RefusedFor(player: Uint32, contact: String, choice: Bool) -> String {
+    if TandemPhone.HostOnly(contact) {
+      return "the host's alone";
+    }
+    if choice && !TandemRegions.IsLinked(player) {
+      return "a choice, and they are apart from us";
+    }
+    return "";
+  }
+
   // ---- host: a guest's answer, dial or reply ----
 
   private func OnGuestAction(event: TandemStoryEvent) -> Void {
@@ -155,6 +218,15 @@ public class TandemPhone {
       return;
     }
     let reject = event.index == 2;
+    let why = this.RefusedFor(event.player, NameToString(event.contact), IsDefined(phone) && phone.TandemCallHasChoice());
+    if StrLen(why) > 0 {
+      // Our endpoint already told every phone it was answered: it rings on.
+      if IsDefined(phone) {
+        phone.TandemRing();
+      }
+      TandemNative.Log(s"phone: player \(event.player)'s \(reject ? "reject" : "answer") refused (\(NameToString(event.contact)): \(why)), it rings on");
+      return;
+    }
     if IsDefined(phone) && phone.TandemAnswerFor(event.contact, reject) {
       TandemNative.Log(s"phone: \(reject ? "rejected" : "answered") by player \(event.player)");
       this.m_story.Notice(reject ? "Phone-Declined" : "Phone-Answered", this.m_story.NameOf(event.player));
@@ -174,6 +246,12 @@ public class TandemPhone {
     let entry = journal.GetEntry(event.hash);
     if !IsDefined(entry) || !Equals(journal.GetEntryState(entry), gameJournalEntryState.Active) {
       TandemNative.Log(s"phone: reply \(event.hash) from player \(event.player) dropped (no longer open)");
+      return;
+    }
+    let contact = TandemPhone.ContactOf(journal, entry);
+    let why = this.RefusedFor(event.player, contact, true);
+    if StrLen(why) > 0 {
+      TandemNative.Log(s"phone: reply \(event.hash) from player \(event.player) refused (\(contact): \(why))");
       return;
     }
     let group = journal.GetParentEntry(entry);
@@ -250,6 +328,36 @@ public final func TandemAnswerFor(contact: CName, reject: Bool) -> Bool {
   return true;
 }
 
+// Host: the ringing call may be declined (a choice: answer or decline).
+@addMethod(PhoneSystem)
+public final func TandemCallHasChoice() -> Bool {
+  return this.m_LastCallInformation.isRejectable;
+}
+
+// Host: a guest's answer we refused: every phone shows our call ringing
+// again, answered by nobody (our endpoint had marked it answered).
+@addMethod(PhoneSystem)
+public final func TandemRing() -> Void {
+  let info = this.m_LastCallInformation;
+  if NotEquals(info.callPhase, questPhoneCallPhase.IncomingCall) {
+    return;
+  }
+  let flags = 0;
+  if info.isRejectable {
+    flags += 1;
+  }
+  if info.showAvatar {
+    flags += 2;
+  }
+  if info.isPlayerCalling {
+    flags += 4;
+  }
+  if info.isPlayerTriggered {
+    flags += 8;
+  }
+  TandemStory.SendCall(info.contactName, EnumInt(info.callPhase), EnumInt(info.callMode), EnumInt(info.visuals), flags, 0u);
+}
+
 // A call of our own (not the host's mirrored one) is ringing or talking.
 @addMethod(PhoneSystem)
 public final func TandemOwnCallUp() -> Bool {
@@ -304,6 +412,13 @@ private final func OnTriggerCall(request: ref<questTriggerCallRequest>) {
 private final func OnPickupPhone(request: ref<PickupPhoneRequest>) {
   let story = TandemStorySystem.Get(this.GetGameInstance());
   if IsDefined(story) && story.IsGuest() && this.m_tandemMirror {
+    // Not ours to answer: the call rings on, the reason on our screen.
+    let why = TandemPhone.Refusal(story, NameToString(request.CallInformation.contactName), request.CallInformation.isRejectable);
+    if StrLen(why) > 0 {
+      story.Notice(why, story.NameOf(TandemStory.HostId()));
+      TandemNative.Log(s"phone: our \(request.shouldBeRejected ? "reject" : "answer") not sent (\(why))");
+      return;
+    }
     let audio = GameInstance.GetAudioSystem(this.GetGameInstance());
     audio.Play(n"ui_phone_initiation_call_stop");
     audio.Play(n"ui_phone_incoming_call_stop");
@@ -344,6 +459,12 @@ private final func ActivateReply(target: ref<ListItemController>) {
   if IsDefined(story) && story.Mirroring() {
     let data = target.GetData() as JournalEntryListItemData;
     if IsDefined(data) && IsDefined(data.m_entry) {
+      let why = TandemPhone.Refusal(story, TandemPhone.ContactOf(this.m_journalManager, data.m_entry), true);
+      if StrLen(why) > 0 {
+        story.Notice(Equals(why, "Phone-Away") ? "Phone-AwayReply" : why, story.NameOf(TandemStory.HostId()));
+        TandemNative.Log(s"phone: our reply not sent (\(why))");
+        return;
+      }
       TandemStory.SendReply(Cast<Uint32>(this.m_journalManager.GetEntryHash(data.m_entry)));
       TandemNative.Log("phone: our reply sent to the host");
       return;
