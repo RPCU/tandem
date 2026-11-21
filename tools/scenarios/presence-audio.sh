@@ -5,7 +5,9 @@ peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')"
   --hold Items.Preset_Lexington_Default --shoot 3 --hurt 4 --holster-at 14
 expect 'joined \(player [0-9]+' 20
 expect 'controller handed to the engine' 20
-expect 'presence: our V.s health [0-9]+ % and flags [0-9]+ sent' 10
+# Our V's health reaches it (the game says "sent" once a game: a
+# session after a test reset gets the same presence, unchanged).
+expect_peer 'player [0-9]+ presence: health [0-9]+ %' 10
 # Footsteps: the body's own locomotion clip raises them, or ours are planted.
 expect 'audio: player [0-9]+ footstep (1 \(foot planted|from its own animation)' 20
 # The shot: the weapon's effects, then its bullet to where the mock player
