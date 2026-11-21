@@ -163,7 +163,7 @@ the first group session.
   `PredictKill`, `Reconcile`): a guest's hit that takes the last of a
   proxy's health kills it there at once (on-kill perks, loot, XP), ahead of
   the owner's word. The owner says with the NPC's health whether its game
-  can kill it now (`NpcHealth` `kNpcProtected`, protocol 9: god mode
+  can kill it now (`NpcHealth` `kNpcProtected`, protocol 11: god mode
   Immortal or Invulnerable, `GetImmortality`, or its `IsInvulnerable`
   stat; `TandemNpcs.Protected`, read every round): a protected NPC is never
   killed ahead (a quest's immortal, a boss between phases). A kill seen
@@ -172,7 +172,7 @@ the first group session.
   spawned again where it fell. Scenario `npcs-protected`; not yet run in
   game.
 - **What a proxy cannot do, its owner does** (`WeakSpotHit`, `HackTraced`,
-  protocol 9; combat path, to the NPC's owner as `NpcStrike`, one-shots): a
+  protocol 11; combat path, to the NPC's owner as `NpcStrike`, one-shots): a
   proxy's brain, senses and squad are off, so what the game runs on them
   happens on the owner's game. A boss's weak spot (`WeakspotObject`) a
   guest's fire damages breaks on its screen as alone, and the share of its
