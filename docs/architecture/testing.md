@@ -700,7 +700,10 @@ same), then pass on a rerun. Since 2026-11-19:
   priority, and copies `build/windows/plugin/tandem.{dll,pdb}` (and, after
   `build`, `build:linux` or `test`, `build/linux/peer/tandem-peer`) back.
   Then `TANDEM_PREBUILT=1 tools/scenario.sh …` deploys that DLL as is
-  (`task deploy:files`) instead of rebuilding it here.
+  (`task deploy:files`) instead of rebuilding it here, and refuses a DLL
+  older than the last commit to `plugin/`, `core/` or a `*Natives.reds`
+  (RED4ext would refuse every script naming a native it lacks and close
+  the game).
   It refuses while the game runs on anya (our own scenario runs set
   `TANDEM_REMOTE_WHILE_PLAYING=1` if they must build);
   `tools/build.sh TASK…` picks: anya when nobody plays there, else here
