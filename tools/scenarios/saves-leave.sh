@@ -9,6 +9,8 @@ expect 'world: weather to the host.s 24h_weather_rain' 30
 cmd progress
 expect 'saves: leave = stay, step session, our lock true' 10
 # The host goes (no goodbye needed): everything is put back, then the verdict.
+# (Only what comes after: the previous session's end said the same lines.)
+mark
 pkill -x tandem-peer
 expect 'session ended' 60
 expect 'save: leave session -> cleaning' 10
