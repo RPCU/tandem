@@ -711,6 +711,21 @@ Resolved Resolver::Resolve(Kind kind, std::uint64_t record, const proto::RecordH
   return found->second;
 }
 
+Resolved Resolver::Resolve(Kind kind, std::uint64_t record, const proto::RecordHint &hint,
+                           proto::PlayerId from, std::string_view who, std::uint64_t nowUs,
+                           const Resolved &decided) {
+  if (record == 0)
+    return {};
+  const auto found = m_memo.try_emplace(MemoKey{kind, record, hint.type, hint.size}, decided).first;
+  if (found->second.outcome != Outcome::Same)
+    Add(kind, record, found->second, from, who, nowUs);
+  return found->second;
+}
+
+bool Resolver::Memoized(Kind kind, std::uint64_t record, const proto::RecordHint &hint) const {
+  return record == 0 || m_memo.contains(MemoKey{kind, record, hint.type, hint.size});
+}
+
 void Resolver::Note(Kind kind, std::uint64_t record, Resolved to, proto::PlayerId from,
                     std::string_view who, std::uint64_t nowUs) {
   if (to.outcome != Outcome::Same)

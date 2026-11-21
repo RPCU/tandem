@@ -12,6 +12,7 @@
 #include "tandem/mods.hpp"
 #include "tandem/protocol.hpp"
 
+#include <atomic>
 #include <map>
 #include <mutex>
 #include <string>
@@ -73,8 +74,11 @@ public:
   std::vector<std::string> Report();
 
 private:
+  // The game's checks (engine calls): made outside m_mutex.
   bool Known(mods::Kind kind, std::uint64_t record);
 
+  // Everything below but m_depot. The net thread takes it every pass: no
+  // engine call and no log line under it.
   std::mutex m_mutex;
   mods::Resolver m_resolver{
       [this](mods::Kind kind, std::uint64_t record) { return Known(kind, record); }};
@@ -88,6 +92,7 @@ private:
   std::vector<ModNotice> m_notices; // from the net thread, for the scripts
   std::vector<proto::PlayerId> m_nameAsks;
   // The depot's answer is trusted (CheckDepot): unknown until our own look.
-  enum class Depot { Unchecked, Trusted, Ignored } m_depot{Depot::Unchecked};
+  enum class Depot { Unchecked, Trusted, Ignored };
+  std::atomic<Depot> m_depot{Depot::Unchecked};
 };
 } // namespace tandem::plugin

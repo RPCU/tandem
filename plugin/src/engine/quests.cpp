@@ -40,7 +40,7 @@
 // the context's phase stack (ExecuteGraph pushes each phase it runs).
 //
 // The hook may run on a job thread: it only reads engine memory (guarded)
-// and touches its own state under a mutex.
+// and touches its own state under a mutex, and logs after releasing it.
 
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
@@ -65,8 +65,10 @@
 #include <map>
 #include <mutex>
 #include <set>
+#include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 namespace tandem::plugin::engine {
 namespace {
@@ -211,8 +213,10 @@ std::uint32_t HashOf(const Path &path) {
 
 // Under g_lock. What the phase is: by its own resource, an ancestor's on
 // the context's phase stack, or a known phase's node path it extends. The
-// open world wins over a gig list entry.
-Owner OwnerOf(std::uintptr_t phase, const Path &path, std::uintptr_t context) {
+// open world wins over a gig list entry. A phase met for the first time
+// adds its line to `lines`, logged by the caller once g_lock is released.
+Owner OwnerOf(std::uintptr_t phase, const Path &path, std::uintptr_t context,
+              std::vector<std::string> &lines) {
   if (path.empty())
     return Owner::World; // the root graph: it only starts phases
   const auto hash = HashOf(path);
@@ -230,9 +234,9 @@ Owner OwnerOf(std::uintptr_t phase, const Path &path, std::uintptr_t context) {
     if (std::ranges::find(prefixes, candidatePath) == prefixes.end()) {
       prefixes.push_back(candidatePath);
       g_byPhase.clear(); // earlier verdicts may have been its children
-      log::Debug("quest: {} phase {:#x} (resource {:#x})",
-                 isOpen ? "open-world phase keeps running:" : "gig", HashOf(candidatePath),
-                 resource);
+      lines.push_back(std::format("quest: {} phase {:#x} (resource {:#x})",
+                                  isOpen ? "open-world phase keeps running:" : "gig",
+                                  HashOf(candidatePath), resource));
     }
     (isOpen ? open : gig) = true;
   };
@@ -353,41 +357,51 @@ std::uint8_t Detour(void *phase, void *node, void *context, const void *socket, 
     return g_original(phase, node, context, socket, outputs);
 
   // Decided under the lock, run outside it: nodes run nested graphs, which
-  // come back here on the same thread.
+  // come back here on the same thread. Nothing is logged under the lock
+  // either: every quest node of every thread waits on it, and a log line
+  // is a file write (and the logger's own lock).
   bool allowed = false, gig = false;
+  std::vector<std::string> lines;
   {
     std::lock_guard _(g_lock);
-    const auto owner = OwnerOf(phaseAddress, path, reinterpret_cast<std::uintptr_t>(context));
+    const auto owner =
+        OwnerOf(phaseAddress, path, reinterpret_cast<std::uintptr_t>(context), lines);
     gig = owner == Owner::Gig;
     // Ours to run: the open world, and our gigs while we are apart.
     allowed = owner == Owner::World || (gig && !g_grouped.load(std::memory_order_relaxed));
     if (allowed)
       ++g_passed;
   }
+  for (const auto &line : lines)
+    log::Debug("{}", line);
   if (allowed)
     return g_original(phase, node, context, socket, outputs);
+  const auto hash = HashOf(path);
+  const auto depth = path.size();
+  bool firstOfPhase = false, overflowed = false;
   {
     std::lock_guard _(g_lock);
     ++g_refused;
-    if (g_frozenPhases.insert(HashOf(path)).second)
-      log::Debug("quest: freezing {} phase {:#x} (resource {:#x}, depth {})", gig ? "gig" : "story",
-                 HashOf(path), ResourceOf(phaseAddress), path.size());
+    firstOfPhase = g_frozenPhases.insert(hash).second;
     // Kept once per signal: the engine wakes some nodes (scenes, phones)
     // again and again while they wait.
     auto key = std::make_tuple(path, nodeId, socketName);
     if (g_heldKeys.contains(key)) {
       ++g_repeats;
     } else if (g_held.size() >= kMaxHeld) {
-      if (!g_overflow)
-        log::Error("quest: more than {} signals held: the guest's own story lost some, its "
-                   "leave must reload its last save",
-                   kMaxHeld);
-      g_overflow = true;
+      overflowed = !std::exchange(g_overflow, true);
     } else {
       g_heldKeys.insert(key);
       g_held.push_back({std::move(path), nodeId, socketName, gig});
     }
   }
+  if (firstOfPhase)
+    log::Debug("quest: freezing {} phase {:#x} (resource {:#x}, depth {})", gig ? "gig" : "story",
+               hash, ResourceOf(phaseAddress), depth);
+  if (overflowed)
+    log::Error("quest: more than {} signals held: the guest's own story lost some, its leave "
+               "must reload its last save",
+               kMaxHeld);
   return kRefused;
 }
 

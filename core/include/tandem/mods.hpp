@@ -218,6 +218,15 @@ public:
   // named `who`, at `nowUs` (any steady clock). 0 stays 0, never noticed.
   Resolved Resolve(Kind kind, std::uint64_t record, const proto::RecordHint &hint,
                    proto::PlayerId from, std::string_view who, std::uint64_t nowUs);
+  // The same with the game's checks made by the caller, outside the lock it
+  // keeps this resolver under: `decided` is mods::Resolve(kind, record, hint,
+  // known). The memo's answer wins over it when there is one (another thread
+  // resolved the record meanwhile). The known callback is not called.
+  Resolved Resolve(Kind kind, std::uint64_t record, const proto::RecordHint &hint,
+                   proto::PlayerId from, std::string_view who, std::uint64_t nowUs,
+                   const Resolved &decided);
+  // `record` (of `kind`, with `hint`) has its answer already: Resolve makes no check.
+  bool Memoized(Kind kind, std::uint64_t record, const proto::RecordHint &hint) const;
   // A replacement decided elsewhere (a check only the game can make, such
   // as an NPC's appearance): kept and told like the others.
   void Note(Kind kind, std::uint64_t record, Resolved to, proto::PlayerId from,
