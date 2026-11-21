@@ -33,6 +33,9 @@ public class TandemCurtain {
   private let m_closedSince: Float;
   private let m_last: Float;
   private let m_running: Bool;
+  // It went black since it last lifted ("curtain: black", then "lifted":
+  // one pair per switch, what a scenario reads; "built" comes once a game).
+  private let m_shown: Bool;
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
@@ -75,6 +78,7 @@ public class TandemCurtain {
     this.m_opacity = 0.0;
     this.m_openAt = 0.0;
     this.m_closedSince = 0.0;
+    this.m_shown = false;
     if IsDefined(this.m_widget) {
       this.m_widget.SetOpacity(0.0);
       this.m_widget.SetVisible(false);
@@ -141,7 +145,12 @@ public class TandemCurtain {
       this.m_closedSince = 0.0;
     }
     if this.m_opacity < this.m_target {
+      let was = this.m_opacity;
       this.m_opacity = MinF(this.m_target, this.m_opacity + this.m_speed * step);
+      if was < 0.99 && this.m_opacity >= 0.99 {
+        this.m_shown = true;
+        TandemNative.Log("curtain: black");
+      }
     } else if this.m_opacity > this.m_target {
       this.m_opacity = MaxF(this.m_target, this.m_opacity - this.m_speed * step);
     }
@@ -152,6 +161,10 @@ public class TandemCurtain {
     // Clear and nothing asked: stop. Black: go on, to lift it in time.
     if this.m_opacity <= 0.0 && this.m_target <= 0.0 && this.m_openAt <= 0.0 {
       this.m_running = false;
+      if this.m_shown {
+        this.m_shown = false;
+        TandemNative.Log("curtain: lifted");
+      }
       return;
     }
     this.Schedule();

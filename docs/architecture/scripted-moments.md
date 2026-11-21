@@ -302,8 +302,9 @@ shows.
       `(a) a cutscene`, the hint shows, the guest's V cannot move, its body
       is out of the picture, nobody shoots it; back on its own V as soon as
       the cutscene ends, the scene going on.
-- [ ] Each switch is a short black (`curtain: built on the HUD layer` once),
-      never a camera sweep; no `curtain: black too long`.
+- [ ] Each switch is a short black (`curtain: built on the HUD layer` once
+      a game, `curtain: black` then `curtain: lifted` each time), never a
+      camera sweep; no `curtain: black too long`.
 - [ ] A quest ride (the Delamain to Konpeki): ridden along, not watched.
       A full one (Dex's car, Panam and V): `(c)` once it is 30 m away, the
       log says `our V carried along in the host's vehicle` (and whether
