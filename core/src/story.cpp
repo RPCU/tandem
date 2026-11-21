@@ -164,7 +164,7 @@ std::uint32_t Record::Digest() const {
 
 void Record::Forget(proto::PlayerId player) { m_states.erase(player); }
 
-std::vector<proto::Message> Record::ForJoiner() const {
+std::vector<proto::Message> Record::ForJoiner(std::uint64_t hostNowUs) const {
   std::vector<proto::Message> out;
   // No snapshot from the host's game yet: nothing to say (an empty one
   // would empty the joiner's journal).
