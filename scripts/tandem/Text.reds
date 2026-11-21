@@ -640,6 +640,9 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-TimeHost", "Your Sandevistan (host)");
     this.Text("Tandem-Settings-TimeHost-Full", "slows your whole game");
     this.Text("Tandem-Settings-TimeHost-Bubble", "slows the NPCs around you");
+    this.Text("Tandem-Settings-RaceCar", "Your car in a partner's race");
+    this.Text("Tandem-Settings-RaceCar-Own", "your own");
+    this.Text("Tandem-Settings-RaceCar-Copy", "a copy of theirs");
     // Under the page, the description of the row the cursor is on.
     this.Text("Tandem-Settings-About-Name", "The name the others see over your V and in their party list");
     this.Text("Tandem-Settings-About-FriendlyFire", "Host's rule: the Vs' shots, blades and explosions hurt each other");
@@ -658,6 +661,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-About-QuestFreeze", "Guest: your own story waits while you play in the host's");
     this.Text("Tandem-Settings-About-ScenePrivacy", "Romance and one-to-one scenes are yours alone: the others see you busy");
     this.Text("Tandem-Settings-About-TimeHost", "Host: your Sandevistan slows your whole game, or only the NPCs around you");
+    this.Text("Tandem-Settings-About-RaceCar", "Joining a partner's street race: you line up in your own car (the one you summon), or in a copy of the starter's; with no car of your own, a copy");
   }
 }
 
@@ -1046,6 +1050,9 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-TimeHost", "Votre Sandevistan (hôte)");
     this.Text("Tandem-Settings-TimeHost-Full", "ralentit tout votre jeu");
     this.Text("Tandem-Settings-TimeHost-Bubble", "ralentit les PNJ autour de vous");
+    this.Text("Tandem-Settings-RaceCar", "Votre voiture dans la course d'un partenaire");
+    this.Text("Tandem-Settings-RaceCar-Own", "la vôtre");
+    this.Text("Tandem-Settings-RaceCar-Copy", "une copie de la sienne");
     this.Text("Tandem-Settings-About-Name", "Le nom que les autres voient au-dessus de votre V et dans leur liste de groupe");
     this.Text("Tandem-Settings-About-FriendlyFire", "Règle de l'hôte : les tirs, lames et explosions des V se blessent entre eux");
     this.Text("Tandem-Settings-About-EnemyScaling", "Règle de l'hôte : les PNJ hostiles ont plus de santé pour chaque joueur en plus près d'eux");
@@ -1063,5 +1070,6 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-About-QuestFreeze", "Invité : votre propre histoire attend pendant que vous jouez dans celle de l'hôte");
     this.Text("Tandem-Settings-About-ScenePrivacy", "Les romances et scènes en tête-à-tête sont à vous seul : les autres vous voient occupé");
     this.Text("Tandem-Settings-About-TimeHost", "Hôte : votre Sandevistan ralentit tout votre jeu, ou seulement les PNJ autour de vous");
+    this.Text("Tandem-Settings-About-RaceCar", "En rejoignant la course de rue d'un partenaire : vous prenez le départ dans votre propre voiture (celle que vous appelez) ou dans une copie de celle du lanceur ; sans voiture à vous, une copie");
   }
 }

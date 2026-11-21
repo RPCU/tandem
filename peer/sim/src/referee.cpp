@@ -817,10 +817,14 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
                    std::ranges::all_of(m.points, [](const p::Vec3 &v) { return Finite(v); });
           // The race's description, its seats, order and rewards: its starter's word.
           const bool starters = m.kind == p::RaceKind::Info || m.kind == p::RaceKind::Seat ||
-                                m.kind == p::RaceKind::Standings || m.kind == p::RaceKind::Reward;
+                                m.kind == p::RaceKind::Standings || m.kind == p::RaceKind::Reward ||
+                                m.kind == p::RaceKind::Route;
           inRange = !finite || (m.metres >= 0.f && m.starter != p::kNoPlayer &&
                                 (!starters || m.player == m.starter) &&
-                                (m.kind != p::RaceKind::Join || m.player != m.starter));
+                                (m.kind != p::RaceKind::Join || m.player != m.starter) &&
+                                // A route is whole or none.
+                                (m.kind != p::RaceKind::Route || m.points.empty() ||
+                                 m.points.size() == m.checkpoints));
         }
       },
       message);

@@ -667,6 +667,24 @@ Competition_scope`, `:71882`). [2.5-untested]
   along a spline (`:294569`). A car's engine can be held by the quest's own
   `VehicleQuestToggleEngineEvent` (`toggle`, `lockState` Lock 1 / Unlock 2;
   `:94690`). [2.5-untested]
+- **A race's route and rewards, for joiners** (2026-11-21, read in final.reds
+  and the game's `tools/redmod/tweaks`, not run): the racing system shows no
+  checkpoint list to scripts (`RacingSystem` has only the two calls above;
+  its native layout is opaque, `unk48[0x130-0x48]`); the AI racers follow a
+  `worldRaceSplineNode` named by the quest (`questvehicleRacingParams.
+splineRef`). Script-side, a quest's map pins are journal entries
+  (`JournalQuestMapPinBase`, children of an objective), placed by
+  `MappinSystem.GetQuestMappinPosition(pinHash)`, the quest menu's own read
+  of an objective's pins (`:360688`); `GetQuestMappinPositionsByObjective`
+  gives an objective's (`:358454`). Whether a race's objective holds a pin
+  per checkpoint is not known. The checkpoint holograms are LCD screens
+  (`RaceCheckpoint_Record`, `RaceCheckpointSelector`, `:324769`). The Beast
+  in Me's races pay `QuestRewards.sq024_finish_<race>_race` (XP: 486, the
+  big race 728) and `sq024_win_<race>_race` (eddies: the badlands 3860),
+  `<race>` badlands, big, city, santo_domingo
+  (`quest_rewards/side_quests.tweak`); mq056's races (racing map pins
+  `Mappins.mq056_*_poi`, `mappins_racing.tweak`) have no reward record.
+  [2.5-untested]
 - So a contest is told with no list of quests: the restriction (or tag) on
   our V, or the racing system's word. Arcade machines are minigames, a
   cyberpsycho is a fight like any other, rides are workspots or vehicle

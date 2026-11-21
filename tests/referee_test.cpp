@@ -814,6 +814,40 @@ TEST_CASE("referee: a street race is described, seated, ordered and paid by its 
       1, proto::Race{.player = 1, .starter = 1, .kind = proto::RaceKind::Progress, .metres = -1.f},
       kSecond);
   CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  // The route: the starter's, whole or none.
+  guest.Received(1,
+                 proto::Race{.player = 1,
+                             .starter = 1,
+                             .race = 1,
+                             .kind = proto::RaceKind::Route,
+                             .arg = proto::kRaceRewardsBadlands,
+                             .checkpoints = 2,
+                             .points = {{1.f, 2.f, 3.f}, {4.f, 5.f, 6.f}}},
+                 kSecond);
+  guest.Received(
+      1,
+      proto::Race{
+          .player = 1, .starter = 1, .race = 1, .kind = proto::RaceKind::Route, .checkpoints = 4},
+      kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1,
+                 proto::Race{.player = 3,
+                             .starter = 1,
+                             .race = 1,
+                             .kind = proto::RaceKind::Route,
+                             .checkpoints = 1,
+                             .points = {{1.f, 2.f, 3.f}}},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1,
+                 proto::Race{.player = 1,
+                             .starter = 1,
+                             .race = 1,
+                             .kind = proto::RaceKind::Route,
+                             .checkpoints = 3,
+                             .points = {{1.f, 2.f, 3.f}}},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
 
   // The host hears a guest join its race, in the guest's own name.
   auto host = Host();

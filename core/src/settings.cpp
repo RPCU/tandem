@@ -16,11 +16,12 @@ std::string_view Trim(std::string_view text) {
 bool IsEditable(std::string_view key) {
   // (code_salt: not on the page, saved by its "new code" action;
   // last_address: by the co-op menu's Join by address.)
-  static constexpr std::array<std::string_view, 20> kKeys{
+  static constexpr std::array<std::string_view, 21> kKeys{
       "name",    "recorder",     "friendly_fire", "enemy_scaling", "notices",
       "markers", "nameplates",   "party_hud",     "relay",         "relay_token",
       "story",   "quest_freeze", "scene_privacy", "time_host",     "direct",
-      "code",    "code_salt",    "link",          "pings",         "last_address"};
+      "code",    "code_salt",    "link",          "pings",         "last_address",
+      "race_car"};
   for (const auto k : kKeys)
     if (k == key)
       return true;

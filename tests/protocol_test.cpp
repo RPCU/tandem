@@ -1514,6 +1514,13 @@ TEST_CASE("street races: Race survives encoding, is reliable, kinds and lists ch
                   {.who = kRacerNpc | 1, .checkpoint = 7, .place = 2}}});
   RoundTrips(Race{
       .player = 2, .starter = 2, .to = 3, .kind = RaceKind::Reward, .arg = 1, .record = 0x42ull});
+  RoundTrips(Race{.player = 2,
+                  .starter = 2,
+                  .race = 3,
+                  .kind = RaceKind::Route,
+                  .arg = kRaceRewardsCity,
+                  .checkpoints = 2,
+                  .points = {{1.f, 2.f, 3.f}, {4.f, 5.f, 6.f}}});
   CHECK(std::string(NameOf(Race{})) == "Race");
   CHECK(Message(Race{}).index() == Message(TurretHands{}).index() + 1);
   CHECK(IsCombat(Race{}));
@@ -1522,7 +1529,9 @@ TEST_CASE("street races: Race survives encoding, is reliable, kinds and lists ch
   CHECK(Encode(Race{.kind = RaceKind::Progress}).size() < 96);
   // Kinds and phases this version does not know, lists past their caps: refused.
   CHECK_FALSE(Decode(Encode(Race{})).has_value());
-  CHECK_FALSE(Decode(Encode(Race{.kind = static_cast<RaceKind>(7)})).has_value());
+  CHECK_FALSE(Decode(Encode(Race{.kind = static_cast<RaceKind>(8)})).has_value());
+  CHECK_FALSE(Decode(Encode(Race{.kind = RaceKind::Route, .arg = kRaceRewardsSantoDomingo + 1}))
+                  .has_value());
   CHECK_FALSE(Decode(Encode(Race{.kind = RaceKind::Info})).has_value());
   CHECK_FALSE(Decode(Encode(Race{.kind = RaceKind::Info, .arg = kRaceAbandoned + 1})).has_value());
   CHECK_FALSE(Decode(Encode(Race{.kind = RaceKind::Info,

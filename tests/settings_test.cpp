@@ -51,6 +51,7 @@ TEST_CASE("the page changes its own keys, never the session's") {
   CHECK(settings::IsEditable("direct"));
   CHECK(settings::IsEditable("link"));
   CHECK(settings::IsEditable("pings"));
+  CHECK(settings::IsEditable("race_car"));
   // Saved by Join by address, not shown on the page.
   CHECK(settings::IsEditable("last_address"));
   CHECK_FALSE(settings::IsEditable("role"));

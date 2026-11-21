@@ -78,7 +78,7 @@
   `Labels`, `Abouts`, `Kinds`, `Whens`) have one entry per setting in the
   page's order: name, friendly_fire, enemy_scaling, notices, markers,
   nameplates, party_hud, link, pings, recorder, relay, code, direct, story,
-  quest_freeze, scene_privacy, time_host. `tools/menu-check.py`
+  quest_freeze, scene_privacy, time_host, race_car. `tools/menu-check.py`
   (`task menu:check`, run by `scripts:check` and CI) checks them aligned,
   each key taken by `ApplySetting` and `settings::IsEditable`, every label,
   description and choice text in English and French, no two entries
@@ -95,7 +95,7 @@
   `#` is refused) through a file written aside, and applies it.
   `TandemNative.Setting(key)` reads one back.
 - **When it applies**: at once for `recorder`, `friendly_fire`, `enemy_scaling`, `notices`,
-  `markers`, `nameplates`, `party_hud` (the scripts read them as they need
+  `markers`, `nameplates`, `party_hud`, `race_car` (the scripts read them as they need
   them; the nameplates and the party list every frame), `link` and `pings`
   (`Comms::Configure`: in a session a new link default replaces our
   consents and is sent at once; pings off stops new pings, a team target

@@ -2952,11 +2952,21 @@ enum class RaceKind : std::uint8_t {
   Progress = 4,  // a racer: `checkpoint` passed at `timeUs`, `metres` to the next; `arg` 1 finished
   Standings = 5, // starter: everyone's place, `entries`
   Reward = 6,    // starter to `to`: `record`, a reward its race paid, for the place `arg`
+  // Starter: the whole route from its race quest's data, said on the grid
+  // (again when a joiner is seated or the route changes): `points` every
+  // checkpoint in order, as many as `checkpoints` (none: no route known, the
+  // joiners follow Info's), `arg` the race's own rewards (kRaceRewards*; 0
+  // none known).
+  Route = 7,
 };
 inline constexpr std::uint8_t kRaceGrid = 1, kRaceRunning = 2, kRaceOver = 3,
                               kRaceAbandoned = 4;                // Info's phases (`arg`)
 inline constexpr std::uint8_t kRacerFinished = 1, kRacerOut = 2; // RaceEntry::flags
 inline constexpr std::uint32_t kRacerNpc = 0x80000000u; // RaceEntry::who: the starter's NPC racer
+// Route's `arg`: which race of The Beast in Me (QuestRewards.sq024_win_*_race,
+// sq024_finish_*_race), each joiner paying its own from its own TweakDB.
+inline constexpr std::uint8_t kRaceRewardsBadlands = 1, kRaceRewardsBig = 2, kRaceRewardsCity = 3,
+                              kRaceRewardsSantoDomingo = 4;
 inline constexpr std::size_t kMaxRacePoints = 64, kMaxRacers = 16;
 struct RaceEntry {
   std::uint32_t who{};        // a player, or kRacerNpc | the racer's number

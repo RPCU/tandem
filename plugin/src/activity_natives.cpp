@@ -323,7 +323,7 @@ struct TandemActivity : Red::IScriptable {
     auto points = std::exchange(staged.points, {});
     auto entries = std::exchange(staged.entries, {});
     if (kind < static_cast<std::int32_t>(proto::RaceKind::Info) ||
-        kind > static_cast<std::int32_t>(proto::RaceKind::Reward))
+        kind > static_cast<std::int32_t>(proto::RaceKind::Route))
       return;
     const auto now = Runtime::Get().HostNowUs();
     proto::Race message{.starter = starter,

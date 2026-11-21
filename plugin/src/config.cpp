@@ -338,6 +338,11 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.nameplates = presence::Nameplates::Off;
     else
       return Bad("nameplates is near, always or off");
+  } else if (key == "race_car") {
+    if (value == "own" || value == "copy")
+      config.raceCar = value;
+    else
+      return Bad("race_car is own or copy");
   } else if (key == "notices") {
     if (value == "all" || value == "important" || value == "minimal")
       config.notices = value;
@@ -371,6 +376,8 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return std::format("{:.2f}", config.enemyScalingHealth);
   if (key == "notices")
     return config.notices;
+  if (key == "race_car")
+    return config.raceCar;
   if (key == "markers")
     return OnOff(config.markers);
   if (key == "party_hud")
