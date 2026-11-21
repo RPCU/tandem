@@ -146,9 +146,10 @@ struct TandemCommsNative : Red::IScriptable {
   }
   static bool PingsOn() { return Comms::Get().PingsOn(); }
 
-  // Our waypoint (kind 0 none, 1 a map pin, 2 a tracked map point).
+  // Our waypoint (kind 0 none, 1 a map pin, 2 a tracked map point, 3 the
+  // tracked quest objective).
   static void SetWaypoint(std::int32_t kind, Red::Vector4 position) {
-    Comms::Get().SetWaypoint(static_cast<proto::WaypointKind>(std::clamp(kind, 0, 2)),
+    Comms::Get().SetWaypoint(static_cast<proto::WaypointKind>(std::clamp(kind, 0, 3)),
                              {position.X, position.Y, position.Z});
   }
 
