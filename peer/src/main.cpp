@@ -2303,8 +2303,11 @@ private:
 //                                the views, scene or not)
 //   camera on [FOV]|cut|off      the host is in a cutscene: its camera's view
 //                                (behind and above the mock player) is sent
-//                                every frame (SceneCamera); cut: the next
-//                                view is another shot; off: no more views
+//                                every frame (SceneCamera), in a scene, a
+//                                moment or neither (a real host's view while
+//                                a guest watches it: spectate-missing); cut:
+//                                the next view is another shot; off: no more
+//                                views
 //   skip on|off                  the host fast-forwards the scene
 //   voice ID SPEAKER [SECONDS] [call]  a voiced line begins (ID: its string
 //                                id; SPEAKER: host, an NPC id or own)
@@ -5910,9 +5913,10 @@ int main(int argc, char **argv) {
           endpoint->SendRigPose(npc, tandem::proto::kRigFace, rigHash, reference, face);
       }
       // camera on: the host's view of its cutscene, from behind and above
-      // its V, on one side or the other.
-      if (options.host && (sceneScript.stage.On() || sceneScript.moment) && sceneScript.camera &&
-          state) {
+      // its V, on one side or the other. Out of a scene and a moment too: a
+      // real host sends its view while a guest watches through its eyes
+      // (Spectate.reds, view wanted), as with interiors the guest lacks.
+      if (options.host && sceneScript.camera && state) {
         const float side = sceneScript.cameraSide ? -2.f : 2.f;
         const tandem::scene::CameraView view{
             {state->position.x + side, state->position.y - 3.f, state->position.z + 1.8f},
