@@ -47,6 +47,8 @@ public class TandemVendors {
   // streams in again is a new one).
   private let m_buried: array<EntityID>;
   private let m_buriedBodies: array<wref<GameObject>>;
+  private let m_ownOf: EntityID;
+  private let m_own: wref<ScriptedPuppet>;
   private let m_lastWatch: Float;
   // The shop we opened last: on which entity, when, how many so far.
   private let m_opened: EntityID;
@@ -92,16 +94,21 @@ public class TandemVendors {
   // One of our NPCs, just announced: a vendor placed in the world says its
   // entity (a spawned NPC of a vendor record is nobody's shop).
   public static func Announce(npc: Uint32, body: ref<ScriptedPuppet>) -> Void {
-    let id = body.GetEntityID();
-    if body.IsVendor() && EntityID.IsStatic(id) {
-      TandemProgress.SendVendor(npc, id);
+    if body.IsVendor() {
+      let id = TandemPlaced.IdOf(body);
+      if EntityID.IsDefined(id) {
+        TandemProgress.SendVendor(npc, id);
+      }
     }
   }
 
   // A new NPC of ours that is the copy of a vendor the session says died.
   public static func IsBuried(body: ref<ScriptedPuppet>) -> Bool {
-    let id = body.GetEntityID();
-    return EntityID.IsStatic(id) && TandemProgress.VendorDead(id) && body.IsVendor();
+    if !body.IsVendor() {
+      return false;
+    }
+    let id = TandemPlaced.IdOf(body);
+    return EntityID.IsDefined(id) && TandemProgress.VendorDead(id);
   }
 
   // A body of ours that is a copy of another game's NPC (a proxy), never a
@@ -229,7 +236,46 @@ public class TandemVendors {
     if !EntityID.IsDefined(entity) {
       return null;
     }
-    return GameInstance.FindEntityByID(this.m_game, entity) as ScriptedPuppet;
+    return this.FindOwn(entity);
+  }
+
+  // Our own world's vendor of that placed id (TandemPlaced.IdOf: a
+  // community's vendor has an entity id of its own in each game), the last
+  // one found while it is there.
+  private func FindOwn(entity: EntityID) -> ref<ScriptedPuppet> {
+    if EntityID.IsStatic(entity) {
+      let placed = GameInstance.FindEntityByID(this.m_game, entity) as ScriptedPuppet;
+      if IsDefined(placed) {
+        return placed;
+      }
+    }
+    if this.m_ownOf == entity && IsDefined(this.m_own) {
+      return this.m_own;
+    }
+    let player = GetPlayer(this.m_game);
+    if !IsDefined(player) {
+      return null;
+    }
+    let npcs = this.m_system.Npcs();
+    for body in player.GetNPCsAroundObject(100.0) {
+      if IsDefined(body) && body.IsVendor() && !(IsDefined(npcs) && npcs.IsProxyEntity(body.GetEntityID())) && TandemPlaced.IdOf(body) == entity {
+        this.m_ownOf = entity;
+        this.m_own = body;
+        return body;
+      }
+    }
+    // Ours gave way to its owner's (hidden: the area query may skip it).
+    if IsDefined(npcs) {
+      for id in npcs.HiddenIds() {
+        let hidden = GameInstance.FindEntityByID(this.m_game, id) as ScriptedPuppet;
+        if IsDefined(hidden) && hidden.IsVendor() && TandemPlaced.IdOf(hidden) == entity {
+          this.m_ownOf = entity;
+          this.m_own = hidden;
+          return hidden;
+        }
+      }
+    }
+    return null;
   }
 
   // May our V trade with that vendor now (vendors::Shop, core/vendors.hpp).
@@ -362,7 +408,7 @@ public class TandemVendors {
     this.m_opened = own.GetEntityID();
     this.m_openedAt = this.m_now;
     this.m_opens += 1;
-    TandemNative.Log(s"vendor: shop open: \(name) (npc \(npc), type \(EnumInt(own.GetVendorType()))), our own vendor \(TandemNative.EntityHex(own.GetEntityID())) \(TDBID.ToStringDEBUG(MarketSystem.GetVendorID(own)))");
+    TandemNative.Log(s"vendor: shop open: \(name) (npc \(npc), type \(EnumInt(own.GetVendorType()))), our own vendor \(TandemNative.EntityHex(TandemPlaced.IdOf(own))) \(TDBID.ToStringDEBUG(MarketSystem.GetVendorID(own)))");
     return true;
   }
 
@@ -408,9 +454,10 @@ public class TandemVendors {
       return;
     }
     let npcs = this.m_system.Npcs();
-    let hidden = IsDefined(npcs) && npcs.Bury(entity);
+    let own = this.FindOwn(entity);
+    let hidden = IsDefined(npcs) && IsDefined(own) && npcs.Bury(own.GetEntityID());
     ArrayPush(this.m_buried, entity);
-    ArrayPush(this.m_buriedBodies, GameInstance.FindEntityByID(this.m_game, entity) as GameObject);
+    ArrayPush(this.m_buriedBodies, own);
     TandemNative.Log(s"vendor: \(TandemNative.EntityHex(entity)) died in the session: our own copy \(hidden ? "hidden" : "is not here, or is the dead one")");
   }
 
@@ -419,10 +466,10 @@ public class TandemVendors {
     let npcs = this.m_system.Npcs();
     let i = 0;
     while i < ArraySize(this.m_buried) {
-      let body = GameInstance.FindEntityByID(this.m_game, this.m_buried[i]) as GameObject;
+      let body = this.FindOwn(this.m_buried[i]);
       if IsDefined(body) && body != this.m_buriedBodies[i] {
         this.m_buriedBodies[i] = body;
-        if IsDefined(npcs) && npcs.Bury(this.m_buried[i]) {
+        if IsDefined(npcs) && npcs.Bury(body.GetEntityID()) {
           TandemNative.Log(s"vendor: \(TandemNative.EntityHex(this.m_buried[i])) streamed in again: hidden (it died in the session)");
         }
       }
@@ -455,7 +502,7 @@ public class TandemVendors {
         to.W = 1.0;
         GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, to, Vector4.ToRotation(at - to));
       }
-      TandemNative.Log(s"vendor: near \(TandemVendors.NameOf(own)) record \(TDBID.ToStringDEBUG(own.GetRecordID())) entity \(TandemNative.EntityHex(own.GetEntityID())) at \(at.X) \(at.Y) \(at.Z) (\(Vector4.Distance(player.GetWorldPosition(), at)) m, vendor \(TDBID.ToStringDEBUG(MarketSystem.GetVendorID(own))), accessible \(MarketSystem.IsAccessible(player, MarketSystem.GetVendorID(own))))");
+      TandemNative.Log(s"vendor: near \(TandemVendors.NameOf(own)) record \(TDBID.ToStringDEBUG(own.GetRecordID())) entity \(TandemNative.EntityHex(TandemPlaced.IdOf(own))) at \(at.X) \(at.Y) \(at.Z) (\(Vector4.Distance(player.GetWorldPosition(), at)) m, \(TandemPlaced.Why(own)), vendor \(TDBID.ToStringDEBUG(MarketSystem.GetVendorID(own))), accessible \(MarketSystem.IsAccessible(player, MarketSystem.GetVendorID(own))))");
       return;
     }
     if Equals(verb, "open") {
@@ -534,7 +581,7 @@ public class TandemVendors {
     let bestAt = reach;
     for body in player.GetNPCsAroundObject(reach) {
       let id = IsDefined(body) ? body.GetEntityID() : EntityID.FromHash(0ul);
-      if IsDefined(body) && EntityID.IsStatic(id) && body.IsVendor() && !body.IsDead() && !(IsDefined(npcs) && npcs.IsProxyEntity(id)) {
+      if IsDefined(body) && body.IsVendor() && !body.IsDead() && !(IsDefined(npcs) && npcs.IsProxyEntity(id)) && EntityID.IsDefined(TandemPlaced.IdOf(body)) {
         let far = Vector4.Distance(player.GetWorldPosition(), body.GetWorldPosition());
         if far <= bestAt {
           best = body;

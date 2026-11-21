@@ -677,6 +677,11 @@ public class TandemNpcs {
   // An NPC of ours that we do not add to the shared world: brain off and out
   // of sight for good (a new spawn inside a higher-ranked player's region,
   // or the twin of an NPC that player runs).
+  // Our own NPCs we hide (Vendors.reds: our vendor behind its owner's proxy).
+  public func HiddenIds() -> array<EntityID> {
+    return this.m_hiddenIds;
+  }
+
   private func Suppress(npc: ref<ScriptedPuppet>) -> Void {
     let id = npc.GetEntityID();
     if ArrayContains(this.m_hiddenIds, id) {
@@ -736,7 +741,7 @@ public class TandemNpcs {
           ArrayPush(bodies, own);
           ArrayPush(ourRecords, own.GetRecordID());
           ArrayPush(ourPlaces, own.GetWorldPosition());
-          ArrayPush(ourEntities, EntityID.IsStatic(known.id) ? known.id : none);
+          ArrayPush(ourEntities, TandemPlaced.IdOf(own));
           ArrayPush(ourBusy, TandemRegionRules.Engaged(this.m_game, own));
         }
       }
@@ -764,7 +769,7 @@ public class TandemNpcs {
   // that entity is shown here as a proxy (alive or dead). One owner per NPC:
   // ours is not added to the shared world.
   private func IsTwinOfProxy(id: EntityID) -> Bool {
-    if !EntityID.IsStatic(id) {
+    if !EntityID.IsDefined(id) {
       return false;
     }
     for proxy in this.m_proxies {
@@ -857,7 +862,8 @@ public class TandemNpcs {
       // kept out of our world. Not one lying here, nor one of ours in a fight.
       if ledger && !npc.IsDead() && !ScriptedPuppet.IsUnconscious(npc) && !ScriptedPuppet.IsDefeated(npc) && (!IsDefined(known) || !NPCPuppet.IsInCombat(npc)) && this.m_ledger.Buries(npc) {
         if this.Bury(id) {
-          this.m_ledger.NoteBuried(id, TandemRegions.DiedBy(id));
+          let died = TandemPlaced.IdOf(npc);
+          this.m_ledger.NoteBuried(died, id, TandemRegions.DiedBy(died));
         }
         known = this.Find(id);
       }
@@ -881,7 +887,7 @@ public class TandemNpcs {
         } else if TandemVendors.IsBuried(npc) {
           // Our copy of a vendor the session says died (Vendors.reds).
           this.Suppress(npc);
-        } else if hides && this.IsTwinOfProxy(id) {
+        } else if hides && this.IsTwinOfProxy(TandemPlaced.IdOf(npc)) {
           // Another game runs this placed NPC already (its proxy is here).
           this.Suppress(npc);
           TandemNative.Log(s"regions: our own \(EntityID.ToDebugString(id)) is a placed NPC another game runs: held back");
@@ -898,11 +904,12 @@ public class TandemNpcs {
           // A vendor placed in the world says its entity: a partner whose
           // game shows it opens its own vendor of it (Vendors.reds).
           TandemVendors.Announce(known.npc, npc);
-          // Placed in the world (never the random crowd): the same entity
-          // in every game. Its twin there is known by it, and its death is
-          // the session's to remember (Ledger.reds).
-          if EntityID.IsStatic(id) && !npc.IsCrowd() {
-            TandemRegions.Placed(known.npc, id);
+          // Placed in the world (never the random crowd): the same id in
+          // every game (TandemPlaced). Its twin there is known by it, and
+          // its death is the session's to remember (Ledger.reds).
+          let placed = TandemPlaced.IdOf(npc);
+          if EntityID.IsDefined(placed) {
+            TandemRegions.Placed(known.npc, placed);
           }
           // A quest or story NPC, a police unit: ours for good.
           if TandemRegionRules.Pinned(npc) {
