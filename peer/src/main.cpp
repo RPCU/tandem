@@ -4754,7 +4754,10 @@ int main(int argc, char **argv) {
               Log("player {} holds {:#x} / {:#x}", e.held.player, e.held.right, e.held.left);
               resolve(tandem::mods::Kind::Weapon, e.held.right, e.held.rightHint, e.held.player);
               resolve(tandem::mods::Kind::Weapon, e.held.left, e.held.leftHint, e.held.player);
-              if (options.mode == Mode::Mirror || options.mode == Mode::Front)
+              // Echoed, unless we hold our own (--hold, --held-record, --strike
+              // blade): the host's empty hands, heard at the join, replaced it.
+              if ((options.mode == Mode::Mirror || options.mode == Mode::Front) &&
+                  options.holdRecord.empty() && options.strike != "blade")
                 endpoint->SetLocalHeld(e.held);
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcSpawn>) {
               liveNpcs.insert(e.spawn.npc);
