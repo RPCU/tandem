@@ -674,7 +674,8 @@ public class TandemPartyHud {
       let head = where;
       head.Z += 2.0;
       let point = TandemPresence.Project(camera, forward, right, half, this.m_fovVertical, this.m_aspect, head);
-      let seen = point.visible || TandemPresence.Project(camera, forward, right, half, this.m_fovVertical, this.m_aspect, chest).visible;
+      let atChest = TandemPresence.Project(camera, forward, right, half, this.m_fovVertical, this.m_aspect, chest);
+      let seen = point.visible || atChest.visible;
       let off = !seen || hiddenBody;
       entry.where.SetVisible(linked && off && !this.m_compact);
       let metres = TandemPresence.RoundedMetres(bearing.distance);
