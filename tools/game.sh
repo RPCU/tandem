@@ -15,8 +15,8 @@
 #   tools/game.sh threads      the thread probe (docs/architecture/testing.md):
 #                              the newest log's "threads:" lines (asked of a
 #                              running game first, cmd threads); fails when a
-#                              script hook ran off the game thread (not once
-#                              the script tick moved between threads)
+#                              script hook ran off the game thread (not when
+#                              the script tick runs on the job workers)
 #   tools/game.sh shot NAME    screenshot to .cache/shots/NAME.png
 #   tools/game.sh key CODE...  press keys (Linux input codes: 57 Space, 28 Enter, 1 Esc)
 #   tools/game.sh hold SECONDS CODE...  hold keys down together, then release
@@ -250,10 +250,11 @@ launches() {
       [ "$res" = crash ] && [ -n "$rg" ] && grep -m3 "\[crash\]" "$rg" | cut -c1-200
       tl=$(find . -name "tandem-*.log" -newermt "@$t0" | head -1)
       [ -n "$tl" ] && sed -n "s/.*threads: hook \([^ ]*\) ran off the game thread.*/off the game thread: \1/p" "$tl"
-      [ -n "$tl" ] && grep -q "threads: the script tick moved from thread" "$tl" && echo "tick moved"
+      [ -n "$tl" ] && grep -qE "threads: the script tick (moved from thread|runs on thread [0-9]+, the frame update on [0-9]+: not the same)" "$tl" && echo "tick moved"
       true')
     echo "launch $i: $result"
-    # The tick moved between threads: no thread is the game's, nothing judged.
+    # The tick on the job workers (moved, or off the frame's thread): no
+    # thread is the game's, nothing judged.
     grep -qx 'tick moved' <<<"$result" ||
       off+=$(sed -n 's/^off the game thread: / /p' <<<"$result" | tr -d '\n')
     case $result in
@@ -286,7 +287,7 @@ threads() {
     return 1
   fi
   echo "$lines"
-  grep -q 'the script tick moved from thread' <<<"$lines" && return 0
+  grep -qE 'the script tick (moved from thread|runs on thread [0-9]+, the frame update on [0-9]+: not the same)' <<<"$lines" && return 0
   ! grep -q 'ran off the game thread' <<<"$lines"
 }
 

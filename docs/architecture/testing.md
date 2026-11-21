@@ -78,9 +78,10 @@ but first in a function of that name). The game thread is the script tick's
 - `threads: hook NAME ran off the game thread (thread A, the game thread is
 B)`: a warning, once per hook and launch, written from that thread at
   once. `tools/game.sh launches`, `threads` and every scenario fail on it,
-  unless the launch's log says the tick moved (below): then they only list
-  it. On anya (2026-11-21) the tick runs on the job workers and moves within
-  a minute of a load, so the probe judges nothing there: telling a hook that
+  unless the launch's log says the tick moved or runs off the frame's thread
+  (`: not the same`, below): then they only list it. On anya (2026-11-21)
+  the tick runs on the job workers from its first call and moves at any
+  time, so the probe judges nothing there: telling a hook that
   runs beside the tick from one that runs between its frames needs the
   tick's start and end, not its thread.
 - `threads: N hooks off-thread: A×12, B×3` (calls so far): every 60 s when
