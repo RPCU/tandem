@@ -317,6 +317,13 @@ For private scenes (`plugin/src/engine/scenes.cpp`,
   tag and the actors are the only data. Romance state lives in quest
   facts the scripts do not name. [2.5-verified offline: final.reds has no
   match]
+- Phone contacts carry no such mark either: a `JournalContact`
+  (final.reds:196998) has a name, an avatar, `IsKnown`, `IsCallable` and
+  `GetType()`, which is `gameContactType` `Caller` or `Texter` only
+  (:7037); a call names its contact by journal id (the contact's last path
+  segment, `judy` in `story-guest`). A contact list is the only way to tell
+  a romance partner's calls (`Phone.reds` `HostOnly`). [2.5-verified
+  offline]
 - A loaded resource by path: `ResourceLoader::FindToken` (address hash
   0xC86F39B7 = `res::ResourceLoader::TryAcquireResourceToken_NoLock` at
   0x14027d834 on 2.50; the SDK takes the loader's token lock around it).

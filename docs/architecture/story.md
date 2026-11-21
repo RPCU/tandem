@@ -47,6 +47,22 @@
     (`story::CallArbiter` on the host's endpoint) and picks up the host's
     phone. Texts come through the journal; a guest's reply goes to the host,
     which applies it if the option is still open (first reply wins).
+    Who may answer for the host (2026-11-21, not yet run in game; scenario
+    `story-private-calls`): a romance partner's calls and texts are the
+    host's alone (`TandemPhone.HostOnly`: contact ids starting with the
+    `private_actors` default, judy, panam, river, kerry, meredith; the game
+    marks no contact as romance or lifepath, engine-knowledge §13.23;
+    lifepath contacts: none named yet), Judy's or Panam's main-story calls
+    included. A guest apart from the host (not grouped for quests, or not
+    linked with it: beyond 150 m, 190 m to leave) may only answer a call
+    that leaves no choice (not declinable) and never replies to a text.
+    The guest's game refuses first, the call ringing on and the reason on
+    its screen ("Only NAME can answer this contact: it is theirs alone",
+    "Too far from NAME: you can only answer calls that leave no choice",
+    "Too far from NAME to reply for them": `Phone-HostOnly`, `Phone-Away`,
+    `Phone-AwayReply`); the host refuses the same acts again (its link to
+    that guest), and a refused answer, which its endpoint had already
+    marked, rings on every phone again (`TandemRing`).
   - _Dialogue_ (`Dialogue.reds`): the host's subtitles and its active choice
     hub reach guests within 25 m (holocall lines and phone hubs: everyone),
     drawn by the guest's own subtitle and hub widgets (a stand-in hub). A
@@ -406,7 +422,7 @@ report` (state: the host's reasons and whether to watch, whether we
       `interact-apart-own-gig`; `tools/game.sh cmd story interact` (counts),
       `story interact look [device]`, `story interact use [device]`.
   - Not yet verified in game: scenarios `story-guest`, `story-host`, `story-johnny`,
-    `story-private`, `story-private-host`, `story-session-items`,
+    `story-private`, `story-private-host`, `story-private-calls`, `story-session-items`,
     `story-gigs-apart`, `story-restrict-guest`, `story-restrict-host`,
     `spectate-guest`, `spectate-leave`, `spectate-host`,
     `interact-guest-pickup`, `interact-guest-hostonly`, `interact-apart-own-gig`.
