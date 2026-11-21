@@ -75,7 +75,9 @@ mark() {
   read -r mark_file mark_line < <(remote "cd '$dir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); echo \"\$f \$(wc -l < \"\$f\")\"")
   peer_mark=$(wc -l <.cache/peer.log 2>/dev/null || echo 0)
 }
-since() { remote "cd '$dir'; tail -n +$((mark_line + 1)) '$mark_file'"; }
+# (Not the test reset's own lines: "test reset: ready (on foot, …)" would
+# answer a scenario's 'on foot'.)
+since() { remote "cd '$dir'; tail -n +$((mark_line + 1)) '$mark_file'" | { grep -av '] \[script\] test reset: ' || true; }; }
 
 out=''
 fail() {
