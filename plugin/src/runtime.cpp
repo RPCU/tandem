@@ -417,6 +417,8 @@ void Runtime::Stop() {
     m_deviceInbox.clear();
     m_breachOutbox.clear();
     m_breachInbox.clear();
+    m_objectOutbox.clear();
+    m_objectInbox.clear();
     m_npcAnimsIn.clear();
     m_npcShotsIn.clear();
     m_localPaused.reset();
@@ -1579,6 +1581,8 @@ void Runtime::ResetSession() {
     m_deviceInbox.clear();
     m_breachOutbox.clear();
     m_breachInbox.clear();
+    m_objectOutbox.clear();
+    m_objectInbox.clear();
     m_localRevives.clear();
     m_revives.clear();
     m_regroupOutbox.clear();
