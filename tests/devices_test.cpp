@@ -592,9 +592,15 @@ TEST_CASE("glass: what broke before a player joined is broken for it, and every 
   s.b = Endpoint::Join({"b"}, "127.0.0.1", s.host->LocalPort(), error, kQuick);
   REQUIRE(s.b);
   REQUIRE(heard.Run(s.All(), [&] { return heard.broke[2].size() == 2; }));
-  CHECK(heard.broke[2][0].player == s.a->You());
-  CHECK(heard.broke[2][0].entity == 0x77);
-  CHECK(heard.broke[2][1].player == s.host->You());
+  // In any order (the record is a set): a's part, and the host's pane.
+  const auto &late = heard.broke[2];
+  const bool aFirst = late[0].entity == 0x77;
+  const auto &part = late[aFirst ? 0 : 1];
+  const auto &pane = late[aFirst ? 1 : 0];
+  CHECK(part.player == s.a->You());
+  CHECK(part.entity == 0x77);
+  CHECK(pane.player == s.host->You());
+  CHECK(pane.entity == 0);
   heard.Run(s.All(), [] { return false; }, 400ms);
   CHECK(heard.broke[2].size() == 2);
   CHECK(s.a->Fractures().Digest() == s.host->Fractures().Digest());
