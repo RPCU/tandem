@@ -80,7 +80,7 @@ Counts at the end. Evidence names a scenario, a code path or a dated check.
 <!-- prettier-ignore -->
 | Attack | On the host's V | On a guest's V | Seen on the other game |
 | --- | --- | --- | --- |
-| Gunfire | W vanilla | U fired from the proxy and decided on the guest's game (`npcs-shoot-guest`); **was B**: those hits were dropped as a proxy's own (`IsProxyComputed`), fixed here (`TandemShots.IsSimulatedHit`) | U the shot on the proxy (`NpcShot`) |
+| Gunfire | W vanilla | U fired from the proxy and applied on the guest's game, whether it may land the host's time between hits on the puppet (`npcs-shoot-guest`; **was B** too: every shot missed, the proxy's line of sight reads 0); **was B**: those hits were dropped as a proxy's own (`IsProxyComputed`), fixed here (`TandemShots.IsSimulatedHit`) | U the shot on the proxy (`NpcShot`) |
 | Smart weapons | W vanilla | D the proxy fires plain rounds (no lock), the hit is still the guest's | U |
 | Melee | W vanilla | U the host's hit is held until the proxy's swing lands on the guest's screen, then run on its V (`TandemFight.MeleeHold`, `combat-melee-guest`) | U the NPC's animation (`NpcAnims`) |
 | Blocking an NPC's melee | W vanilla | U on the guest's game (`ProcessDefensiveState`), and the host's NPC recoils (`Defended`, `combat-defend`) | U |

@@ -339,7 +339,13 @@ slow-motion cue on (…)`, `time: the slow-motion cue off`. Tested in
     the guest dodges against the host's timeline. Melee, explosions and
     NPCs the guest has no proxy of stay the host's (`PlayerHit`). Cheating
     is out of scope (co-op among friends: a guest's game could ignore
-    hits). Scenario `npcs-shoot-guest`; not yet run in game;
+    hits). Whether a shot may land is the host's: the game's own time
+    between hits, run on the host on the guest's puppet from the NPC's
+    real line of sight (`HandleBeingShot`), sent as `tbh` 0 (v8; any other
+    value: aimed to miss). The guest's proxy has its senses off, its line
+    of sight reads 0 and the guest's own decision missed every shot
+    (2026-11-21: 0 of 10). Scenario `npcs-shoot-guest` (the mock host lets
+    every other one land); not yet passed in game;
   - a guest's lethal hit kills the proxy at once, so kill extensions fire
     as in single player; the host's word reconciles;
   - an enemy answering with its own Sandevistan is left out of bubbles

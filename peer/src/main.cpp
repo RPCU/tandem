@@ -7121,15 +7121,19 @@ int main(int argc, char **argv) {
             Log("npc {} draws {} to fire", npc, options.shotWeapon);
             break;
           }
+      // The host's game decides whether a shot may land (tbh 0, the time
+      // between hits passed on its puppet); here every other one does.
+      static unsigned shotsAtYou = 0;
+      const bool lands = shooter && ++shotsAtYou % 2 == 0;
       for (const auto &[id, info] : endpoint->Players())
         if (shooter && id != endpoint->You() &&
             endpoint->SendNpcShotAt({.player = id,
                                      .npc = shooter,
                                      .weapon = npcWeapons[shooter],
-                                     .tbh = 1.f,
+                                     .tbh = lands ? 0.f : 1.f,
                                      .trigger = 4, // SemiAuto
                                      .factor = 1.f}))
-          Log("npc {} fires at player {}", shooter, id);
+          Log("npc {} fires at player {}{}", shooter, id, lands ? " (may land)" : "");
     }
     // Seconds since another player was first in the session with us.
     if (!sharedSince && endpoint->IsJoined() && endpoint->Players().size() > 1)

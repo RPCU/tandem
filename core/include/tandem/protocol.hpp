@@ -22,7 +22,7 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // forms of the netcode (PoseFrame, NpcMotion, PlayerMotion, VehicleMotion);
 // the record hints of Held, Appearance, Seat and NpcSpawn (mod-compat.md),
 // added before protocol 7 left the developers' machines.
-inline constexpr std::uint16_t kProtocolVersion = 7;
+inline constexpr std::uint16_t kProtocolVersion = 8;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -1174,7 +1174,10 @@ struct NpcShotAt {
   std::uint64_t timeUs{}; // host clock when it fired
   std::uint64_t attack{}; // TweakDB id of the ranged attack asked for (0: the weapon's)
   std::uint64_t weapon{}; // TweakDB id of the shooter's weapon item
-  float tbh{};            // the AI's time-between-hits coefficient for this shot
+  // The AI's time-between-hits coefficient for this shot, 0 when the
+  // host's game lets it land (its time between hits on the target's
+  // puppet, from the NPC's own line of sight; v8).
+  float tbh{};
   std::uint8_t trigger{}; // gamedataTriggerMode
   float factor{1.f};      // the shooter's time factor (its bubble; 1: none)
   friend bool operator==(const NpcShotAt &, const NpcShotAt &) = default;

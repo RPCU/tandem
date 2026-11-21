@@ -1266,13 +1266,6 @@ public class TandemSystem extends ScriptableSystem {
     } else if Equals(command, "street count") {
       // (test) the world vehicles shared in the session, as we have them.
       TandemNative.Log(s"street \(IsDefined(this.m_traffic) ? this.m_traffic.Report() : "count: no vehicles")");
-    } else if StrBeginsWith(command, "shots proxy senses ") {
-      // (test) a proxy firing at us with its senses on: does its line of
-      // sight let the time between hits land one (Shots.reds)?
-      let shots = TandemShots.Of(this.GetGameInstance());
-      if IsDefined(shots) {
-        shots.SensesTest(Equals(command, "shots proxy senses on"));
-      }
     } else if StrBeginsWith(command, "police") {
       // (test) "police report", "police heat N" (our V wanted at N stars,
       // the quests' own way), "police calm".

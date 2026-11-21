@@ -46,9 +46,8 @@ public class TandemShots {
   private let m_waitingFor: String;
   private let m_fired: Int32;
   // Of those, the ones our game's time between hits let land (the rest
-  // are aimed to miss), and the test switch: proxies' senses on.
+  // are aimed to miss).
   private let m_decidedHits: Int32;
-  private let m_sensesOn: Bool;
   // Guest: the proxies that fired at us lately, and when: their bullets'
   // hits on our V are ours to apply (IsSimulatedHit), whatever flight time.
   private let m_recentBy: array<EntityID>;
@@ -121,7 +120,24 @@ public class TandemShots {
     if factor < 0.0 {
       factor = 1.0;
     }
-    TandemNative.SendShotAt(guest, npc, attack, ItemID.GetTDBID(weapon.GetItemID()), tbh, EnumInt(trigger), factor);
+    // Whether it may land: the game's own time between hits, here on the
+    // puppet, from the NPC's real line of sight (the guest's proxy has no
+    // senses: there it reads 0, and every shot missed). 0 lets it land on
+    // the guest's game, any other value has it aimed to miss there.
+    let decided = MaxF(tbh, 1.0);
+    let component = target.GetTargetShootComponent();
+    if IsDefined(component) {
+      let aim = target.GetWorldPosition();
+      aim.Z += 1.45;
+      let miss = false;
+      component.HandleBeingShot(owner, weapon, aim, 0.0, tbh, miss);
+      if !miss {
+        decided = 0.0;
+      }
+    } else {
+      this.Once(n"noTbh", s"shots: player \(guest)'s puppet has no target shoot component: its game aims every shot to miss");
+    }
+    TandemNative.SendShotAt(guest, npc, attack, ItemID.GetTDBID(weapon.GetItemID()), decided, EnumInt(trigger), factor);
     ArrayPush(this.m_announcedBy, owner.GetEntityID());
     ArrayPush(this.m_announcedAt, guest);
     ArrayPush(this.m_announcedTime, this.Now());
@@ -307,13 +323,6 @@ public class TandemShots {
     let target = player.GetTargetShootComponent();
     let miss = false;
     if IsDefined(target) {
-      if this.m_sensesOn {
-        let senses = proxy.GetSensesComponent();
-        if IsDefined(senses) && !senses.IsEnabled() {
-          senses.ToggleComponent(true);
-          TandemNative.Log(s"shots: npc \(shot.npc)'s proxy: senses on (test)");
-        }
-      }
       offset = target.HandleBeingShot(proxy, weapon, aim, maxSpread, shot.tbh, miss);
     }
     if !miss {
@@ -458,11 +467,6 @@ public class TandemShots {
       TandemNative.SendShotHit(npc, hitEvent.hitPosition, hitEvent.hitDirection);
       this.Once(n"hit", s"shots: npc \(npc)'s shot hit our V (our game's decision), reported to the host");
     }
-  }
-
-  public func SensesTest(on: Bool) -> Void {
-    this.m_sensesOn = on;
-    TandemNative.Log(s"shots: proxies' senses \(on ? "on" : "left off") while they fire at us (test)");
   }
 
   public func End() -> Void {
