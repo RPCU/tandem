@@ -30,7 +30,7 @@ of it is shared. "Busy" is the `Activity` a player's game sends
 | Hub menus: inventory, map, perks, crafting, journal | the player's game | busy (a menu); while its game stands still (those menus still pause it, `time.md`) its puppet idles on its own graph | nothing pauses for the others | built |
 | Photo mode | the photographer's game alone | "NAME is in photo mode", the puppet held and idling; "NAME is back" | the others keep playing; out of it, the photographer's game starts a new epoch, so a guest is checked at once (digest, resync) and drops NPC states it froze over; the host's photo mode stands its world still for everyone (it is the world) | built |
 | Contests: fist fights (boxing duels), street races, shooting competitions | the player who starts it (its world, as a gig: `quest-carryover.md`) | "NAME is in a fist fight: you can only watch" (a shooting contest), "NAME's contest is over"; its puppet moves on as ever (nothing held) | the others watch with what they carry (a contest's restriction is never lent to a guest); a hit on a fist fight's opponent counts only from a V that is in a fist fight itself, anyone else's is dropped ("This is NAME's fight: your hits don't count"); a range is that player's alone; a cyberpsycho is a fight like any other | built, not run ("Contests", `contest-duel`) |
-| Street races | the starter's game (its race quest) | "NAME is lining up for a street race", a hint on the phone key to join while it is on its grid; then the race's NPC racers as traffic proxies and everyone's standings | joiners race the starter's checkpoints in their own game, in a copy of its car; the starter's game orders everyone and passes its quest's rewards on, once each | built, not run ("Races") |
+| Street races | the starter's game (its race quest) | "NAME is lining up for a street race", a hint on the phone key to join while it is on its grid; then the race's NPC racers as traffic proxies and everyone's standings | joiners race the route in their own game, in their own car (or a copy of the starter's), each finishing on its own; the starter's game orders everyone; each joiner is paid the race's own rewards by its own game, once | built, not run ("Races") |
 | Clubs (dance floors, bars) | the host (its NPCs) | the club's crowd and dancers as proxies | nothing special: the bar stool is a workspot | was |
 | Braindance clubs | the player in the chair | its body seated in the rig (a workspot), it is in a braindance (`elsewhere.md`) | its body stays visible, settled | was |
 | Joytoys | the player who pays | its private scene: the others see it busy where the scene began, their puppets near it fade (`story.md`, private scenes) | none | to verify: that a joytoy's scene classifies as private (its category tag) |
@@ -296,6 +296,20 @@ racers.
   `sq024_current_race_checkpoint_fact_add` is one, where our V is then.
   The race quest's key is the tracked objective's quest (journal hash),
   else one made from the start line.
+- **The route** (`ReadRoute`): on the grid the starter's game reads its race
+  quest's map pins: the tracked objective's children that are
+  `JournalQuestMapPinBase` (every state, journal order), each at
+  `MappinSystem.GetQuestMappinPosition` (the quest menu's own read); else
+  the pins of every objective of the tracked phase; else
+  `GetQuestMappinPositionsByObjective`. Kept only when they make the HUD's
+  `maxCheckpoints`: as many, one more within 50 m of the start line
+  (dropped), or a lap repeated (count a multiple); the first within 3 km of
+  the start. Looked for again every 2 s until our first checkpoint. Each of
+  our checkpoints is checked against it: one over 80 m from the route's
+  drops the route for everyone (back to the checkpoints named one by one).
+  Which race of The Beast in Me it is (`kRaceRewards*`) comes from the
+  tracked entries' journal ids (`sq024` and badlands, big, city,
+  santo/domingo), or from a reward our V is paid that names one.
 - **Wire**: `proto::Race` (appended, no version bump; Event channel; the
   host stamps `player` and relays it to every other game; a one-shot for
   the fault layer). Kinds: `Info` (the starter's, every 2 s and on change:
@@ -304,9 +318,12 @@ racers.
   `Join` (in or out), `Seat` (the slot, 0 refused), `Progress` (a racer's
   checkpoints passed, at what host time, metres to the next, finished;
   every 2 s while racing), `Standings` (the starter's order: up to 16
-  entries, a player or `kRacerNpc | n`), `Reward`. The referee holds `Info`,
-  `Seat`, `Standings` and `Reward` to the starter (`player == starter`), a
-  `Join` to anyone else. Plugin: `activity_natives.cpp` (`SendRace`,
+  entries, a player or `kRacerNpc | n`), `Reward`, `Route` (the starter's,
+  on the grid, again for each seat and each change: every checkpoint in
+  order, as many as `checkpoints`, or none; `arg` the race's rewards). The
+  referee holds `Info`, `Seat`, `Standings`, `Reward` and `Route` to the
+  starter (`player == starter`), a route to whole or none, a `Join` to
+  anyone else. Plugin: `activity_natives.cpp` (`SendRace`,
   `TakeRaces`, `QueueRaceUi`, `QueueRaceReward`), the notes queued in
   `activity.hpp` (`RaceNote`), heard from `events::Combat` (`IsCombat`'s
   path, `net_thread.cpp`). Times reach scripts as `ago` (seconds before
@@ -317,18 +334,26 @@ racers.
   while a regroup offer has the key. Joins are taken on the grid only (up
   to 7); once the race starts a join is refused ("NAME's race has started:
   you watch"). Seated, the joiner's V gets out of any car, is put beside
-  its slot (two abreast, 10 m behind the start line and 7 m per row), a
-  copy of the starter's car is spawned there (`Tandem.RaceCar`), our V gets
+  its slot (two abreast, 10 m behind the start line and 7 m per row), its
+  race car is spawned there (`Tandem.RaceCar`): with tandem.ini
+  `race_car = own` (the default, on the settings page) its garage's active
+  car (`VehicleSystem.GetActivePlayerVehicle(Car)`, a spawned copy of that
+  record: its own tuning is not carried), with `copy` or no car of its own
+  a copy of the starter's; our V gets
   in (the entry animation) and its engine is held
   (`VehicleQuestToggleEngineEvent` Lock) until the starter's start
   (Unlock, "Go!"). 20 s without getting in: we watch ("No car…").
 - **Racing.** Each game follows a track of its racer (four samples a
   second): a checkpoint is passed when the track goes within 25 m of it, at
-  the time it did (interpolated on the segment), in order. Checkpoints the
+  the time it did (interpolated on the segment), in order, through the
+  route when there is one: each joiner then has its next checkpoint ahead
+  of the starter and finishes on its own. Without a route, checkpoints the
   starter's game names later (a joiner ahead of the starter) are credited
-  back from the track. The next known checkpoint is a marker (Comms'
-  ping marker, the racing icon, the starter's colour). The starter's game
-  follows its NPC racers the same way (the cars `IsAIVehicleRegistered`).
+  back from the track. A route dropped or heard late counts the track
+  again from its start. The next checkpoint is a marker (Comms' ping
+  marker, the racing icon, the starter's colour). The starter's game
+  follows its NPC racers the same way (the cars `IsAIVehicleRegistered`),
+  through the route when there is one.
 - **Standings.** The starter's game orders everyone: finished first by
   finish time, then by checkpoints passed, then by who reached its last one
   first (each report's own host-clock time: a laggy report counts when it
@@ -351,9 +376,19 @@ racers.
   (`TandemStorySystem.PayRace`: `CarryPay(race quest, reward)`): once per
   character, not when that race was done alone, and the joiner's own copy
   of the quest is not touched (no fact, no journal). A host paid so does not
-  pass it on as its own quest's reward (`PaidForRace`). Bounded: no reward
-  when the starter's quest pays none (the starter lost to its NPCs), only
-  `RewardEvent` records (money a quest gives otherwise is not seen).
+  pass it on as its own quest's reward (`PaidForRace`).
+  Whatever the starter's result, a joiner that finished is paid by its own
+  game the race's own records from its own TweakDB (`PayOwn`; records in
+  `quest_rewards/side_quests.tweak`, `../research/engine/story.md` §13.92):
+  `QuestRewards.sq024_finish_<race>_race` (XP), and
+  `sq024_win_<race>_race` (eddies) when the starter's standings put it
+  ahead of every NPC racer (first overall when the starter saw none). Paid
+  5 s after the standings first say it finished (the order settles), or when
+  the race ends for it, through the same ledger key (`PayRace`): not twice
+  (a record the starter passed on too is paid once), not when that quest
+  was done alone. Bounded: other races (mq056's) have no reward records;
+  a race of The Beast in Me the journal ids do not name pays only through
+  the starter's; `RewardEvent` records only.
 - **Leaving.** A joiner out of its race car for 10 s while racing, or by
   `contest leave`, leaves ("You left NAME's race"); a joiner the starter
   has not heard for 15 s while racing is out ("NAME left the race"). The
@@ -361,43 +396,54 @@ racers.
   without a word ("NAME left the race: it is over"). Over: every joiner
   finished or out, or 60 s after the starter's finish. A joiner's race car
   goes 5 s after its V got out of it once the race is over for it.
-- **Not built, and why**: the next checkpoint ahead of the starter (the
-  quest's objective mappins, `GetQuestMappinPositionsByObjective`, were not
-  tried: a joiner ahead sees no marker and is credited when the starter
-  passes it, and cannot finish before the starter's game has named the
-  finish); a joiner's own summoned car (a copy of the race's car keeps the
-  class fair); extra entries in the vanilla HUD (above); NPC drivers beyond
+- **Not built, and why**: a route the quest's pins do not hold (a quest
+  that moves one pin along: then as before, the checkpoints named one by
+  one; the race's spline, `questvehicleRacingParams.splineRef`, and the
+  checkpoint signs, `RaceCheckpointSelector`, are other sources, not
+  read); extra entries in the vanilla HUD (above); NPC drivers beyond
   60 m (an empty seat behind a windscreen); a mock player that races
   (`tandem-peer` has no race flag: the checks below need two games).
 - **Testing**: `tests/protocol_test.cpp` (round trips, caps),
   `endpoint_test.cpp` (relayed, stamped), `referee_test.cpp` (the
   starter's word), `consistency_test.cpp`; in game `tools/game.sh cmd
-  contest races|join|leave` (the report: phase, checkpoints known,
-  partners, NPC racers, rewards, standings); scenario `race-watch` (a
+contest races|join|leave` (the report: phase, checkpoints passed and
+  named, the route, the race's rewards, partners, NPC racers, rewards,
+  standings); scenario `race-watch` (a
   host's race heard as an Activity: watched, nothing to join).
 - **To check in game** (two games: instances, `two-instances.md`):
   1. Starter at a street race's start: `races: our race N begins (on its
-     grid…)` with the right checkpoint count; the partner within 400 m gets
+grid…)` with the right checkpoint count; the partner within 400 m gets
      the notice and the hint.
-  2. The partner presses the phone key: seated, its V beside the slot, the
-     car spawned and entered, its engine held until the countdown ends,
-     "Go!" with the start.
-  3. Every checkpoint of the starter adds a point (`races: we passed
-     checkpoint k/N`); the joiner's marker moves on and its log says each
-     one; `contest races` on both shows the same standings.
-  4. The race's NPC racers show on the joiner's game as cars driving the
+  2. The route: `races: our race's route: N checkpoint(s)` on the starter
+     (or "not known", and which sources it read: then note how many pins
+     each had); `races: our race's journal …: rewards K` names the race
+     (K 1 to 4 on The Beast in Me's); on the joiner `races: player P's
+route: N checkpoint(s)`. No `the route is dropped` during the race.
+  3. The partner presses the phone key: seated, its V beside the slot, its
+     own active car spawned (`race_car = copy`: the starter's) and entered,
+     its engine held until the countdown ends, "Go!" with the start.
+  4. With a route: the joiner, driving ahead of the starter, has its next
+     checkpoint marked and passes them (`races: we passed checkpoint k/N`)
+     before the starter, and finishes before it. Without: every checkpoint
+     of the starter adds a point and the joiner's marker moves on.
+     `contest races` on both shows the same standings.
+  5. The race's NPC racers show on the joiner's game as cars driving the
      route (drivers near).
-  5. The standings list on both HUDs, in a plausible order; the finish
+  6. The standings list on both HUDs, in a plausible order; the finish
      times.
-  6. The starter wins: its reward is logged (`races: our race paid …`),
+  7. The starter wins: its reward is logged (`races: our race paid …`),
      the joiner that beat every NPC gets it once (`races: reward given …`);
      a second race of the same quest pays nothing again.
-  7. A late join after the start: refused, "you watch". The joiner leaving
+  8. The starter loses, the joiner wins: the joiner's own `races: we
+finished … ahead of every NPC racer: our own rewards`, then `reward
+given QuestRewards.sq024_finish_…` and `…_win_…`; behind an NPC: the
+     finish reward only. A second time: `not paid again`.
+  9. A late join after the start: refused, "you watch". The joiner leaving
      its car for 10 s: out on both. The starter quitting the race or the
      session: "NAME left the race: it is over" on the joiner, its car gone
      after it gets out.
-  8. `tools/game.sh launches 6` (a new wrap of `hudCarRaceController`, a
-     new call in `PlayerPuppet.OnRewardEvent`).
+  10. `tools/game.sh launches 6` (a new wrap of `hudCarRaceController`, a
+      new call in `PlayerPuppet.OnRewardEvent`).
 
 ## Decisions
 

@@ -8,22 +8,30 @@
 //   the grid, started, ended; the quest fact the HUD counts checkpoints
 //   with (sq024_current_race_checkpoint_fact_add, every race's) says when
 //   our V passed one: where our V is then is that checkpoint, for everyone.
+//   The whole route, when its race quest's data has it (the objectives' map
+//   pins, ReadRoute), is said on the grid (Route): every racer then counts
+//   its own checkpoints and finishes on its own.
 //   Its NPC racers are the cars the racing system has registered
 //   (RacingSystem.IsAIVehicleRegistered); they are shared like any traffic
 //   (Traffic.reds, a wider range while joiners race). It orders everyone,
 //   players and NPC racers, by checkpoints passed and when (host clock
 //   times: what a laggy report says counts at the time it says), and pays.
-// - A joiner's game: a copy of the starter's car on the grid, our V in it,
-//   its engine held until the start; each checkpoint the starter's game
-//   names is passed when our V's track goes through it (within 25 m, at
-//   the time it did, also for one named after we passed it).
+// - A joiner's game: its own car (tandem.ini race_car = own: its garage's
+//   active car) or a copy of the starter's (copy, or no car of its own) on
+//   the grid, our V in it, its engine held until the start; each checkpoint
+//   of the route (else each one the starter's game names) is passed when
+//   our V's track goes through it (within 25 m, at the time it did, also
+//   for one named after we passed it).
 // - Everyone: the standings in a small list on the HUD (the vanilla race
 //   HUD has one number for a place: it stays the starter's, among its NPCs).
 // - Rewards: what the starter's quest pays its V during the race or 30 s
 //   after it goes to each joiner that finished ahead of every NPC racer,
 //   paid once by its own game through the co-op ledger (Story.reds PayRace,
-//   keyed by the race quest). A joiner's own copy of that quest is not
-//   touched.
+//   keyed by the race quest). And whatever the starter's result, a joiner
+//   that finished is paid by its own game the race's own rewards from its
+//   own TweakDB (PayOwn: The Beast in Me's finish reward, and its win
+//   reward when ahead of every NPC racer), through the same ledger. A
+//   joiner's own copy of that quest is not touched.
 
 public class TandemRacer {
   // A player, or 0x80000000 | an NPC racer's number (proto::kRacerNpc).
@@ -61,6 +69,11 @@ public class TandemRaces {
   private let m_quest: Uint32;
   private let m_countdown: Bool;
   private let m_points: array<Vector4>;
+  // The whole route from the race quest's data (none: not known), the
+  // race's rewards (proto kRaceRewards*), when it was last looked for.
+  private let m_route: array<Vector4>;
+  private let m_rewardsOf: Int32;
+  private let m_routeAt: Float;
   private let m_racers: array<ref<TandemRacer>>;
   private let m_joiners: array<Uint32>;
   private let m_npcs: Int32;
@@ -84,6 +97,11 @@ public class TandemRaces {
   private let m_theirCar: TweakDBID;
   private let m_theirQuest: Uint32;
   private let m_theirPoints: array<Vector4>;
+  private let m_theirRoute: array<Vector4>;
+  private let m_theirRewards: Int32;
+  // Our own rewards (PayOwn): when the standings first said we finished.
+  private let m_ownFinishAt: Float;
+  private let m_paidOwn: Bool;
   private let m_theirCountdown: Bool;
   private let m_heardAt: Float;
   private let m_theirGoAt: Float;
@@ -229,6 +247,9 @@ public class TandemRaces {
       case 6:
         this.HeardReward(head);
         break;
+      case 7:
+        this.HeardRoute(head, points);
+        break;
       default:
         break;
     }
@@ -271,8 +292,9 @@ public class TandemRaces {
       return;
     }
     if this.m_phase == 1 || this.m_phase == 2 {
-      if count > 0 {
+      if count > 0 && count != this.m_count {
         this.m_count = count;
+        this.ReadRoute(true);
       }
       return;
     }
@@ -303,11 +325,14 @@ public class TandemRaces {
       this.m_car = TDBID.None();
     }
     this.m_quest = this.TrackedQuest();
+    this.m_rewardsOf = this.RewardsOf();
+    ArrayClear(this.m_route);
     let us = new TandemRacer();
     us.who = this.m_you;
     ArrayPush(this.m_racers, us);
-    TandemNative.Log(s"races: our race \(this.m_race) begins (\(phase == 1 ? "on its grid: partners may join" : "already running")), \(count) checkpoint(s), car \(TDBID.ToStringDEBUG(this.m_car)), quest \(this.m_quest)");
+    TandemNative.Log(s"races: our race \(this.m_race) begins (\(phase == 1 ? "on its grid: partners may join" : "already running")), \(count) checkpoint(s), car \(TDBID.ToStringDEBUG(this.m_car)), quest \(this.m_quest), rewards \(this.m_rewardsOf)");
     this.SayInfo();
+    this.ReadRoute(true);
   }
 
   private func Go() -> Void {
@@ -393,12 +418,18 @@ public class TandemRaces {
       us.checkpoint = ArraySize(this.m_points);
       us.at = this.m_now;
       TandemNative.Log(s"races: we passed checkpoint \(us.checkpoint)/\(this.m_count) (fact \(fact))");
+      this.CheckRoute();
       if this.m_count > 0 && us.checkpoint >= this.m_count {
         this.OursFinished();
       }
       this.SayInfo();
     }
     this.m_fact = fact;
+    // The route, looked for again while on the grid (the quest may place
+    // its pins a moment after the HUD's grid) and until our first checkpoint.
+    if ArraySize(this.m_route) == 0 && ArraySize(this.m_points) == 0 && this.m_now - this.m_routeAt >= 2.0 {
+      this.ReadRoute(false);
+    }
     // Our NPC racers: the racing system's cars, followed through its
     // checkpoints.
     if this.m_phase == 2 {
@@ -458,7 +489,7 @@ public class TandemRaces {
         let car = GameInstance.FindEntityByID(this.m_game, racer.body) as VehicleObject;
         if IsDefined(car) {
           this.Sample(racer, car.GetWorldPosition());
-          this.Credit(racer, this.m_points, this.m_count);
+          this.Credit(racer, ArraySize(this.m_route) > 0 ? this.m_route : this.m_points, this.m_count);
         }
       }
     }
@@ -514,6 +545,9 @@ public class TandemRaces {
     }
     TandemNative.Log(s"races: player \(player) asks to join our race \(this.m_race): slot \(slot)");
     this.Say(3, player, slot, 0, 0.0, -1.0, TDBID.None());
+    if slot > 0 {
+      this.SayRoute();
+    }
   }
 
   private func HeardProgress(head: TandemRaceEvent) -> Void {
@@ -653,6 +687,11 @@ public class TandemRaces {
     }
     ArrayPush(this.m_rewards, reward);
     TandemNative.Log(s"races: our race paid \(TDBID.ToStringDEBUG(reward))");
+    let which = this.RewardsFrom(reward);
+    if which > 0 && which != this.m_rewardsOf {
+      this.m_rewardsOf = which;
+      this.SayRoute();
+    }
     if this.m_phase == 3 {
       this.PayJoiners();
     }
@@ -697,6 +736,228 @@ public class TandemRaces {
       i += 1;
     }
     return IsDefined(entry) ? Cast<Uint32>(journal.GetEntryHash(entry)) : 0u;
+  }
+
+  // ---- ours: the route from the race quest's data ----
+
+  // The whole route: the map pins of the tracked objective, else of every
+  // objective of its phase, in the journal's order (each pin where the
+  // mappin system has it, as the quest menu reads them, final.reds:360688),
+  // else the tracked objective's mappin positions. Kept only when it makes
+  // the HUD's count: as many, one more by the start line (dropped), or a lap
+  // repeated. Said when it changed, or when `say`.
+  private func ReadRoute(say: Bool) -> Void {
+    this.m_routeAt = this.m_now;
+    let before = this.m_route;
+    let route: array<Vector4>;
+    let found = "no objective tracked";
+    let journal = GameInstance.GetJournalManager(this.m_game);
+    let tracked = journal.GetTrackedEntry();
+    if this.m_count > 0 && IsDefined(tracked) {
+      let pins = this.PinsOf(tracked);
+      route = this.Fit(pins);
+      found = s"the objective's pins \(ArraySize(pins))";
+      if ArraySize(route) == 0 {
+        let all: array<Vector4>;
+        let phase = journal.GetParentEntry(tracked);
+        if IsDefined(phase as JournalQuestPhase) {
+          let objectives = this.ChildrenOf(phase);
+          for objective in objectives {
+            let theirs = this.PinsOf(objective);
+            for pin in theirs {
+              TandemRaces.AddPoint(all, pin);
+            }
+          }
+        }
+        route = this.Fit(all);
+        found += s", the phase's pins \(ArraySize(all))";
+      }
+      if ArraySize(route) == 0 {
+        let positions: array<Vector3>;
+        let marked: array<Vector4>;
+        if GameInstance.GetMappinSystem(this.m_game).GetQuestMappinPositionsByObjective(Cast<Uint32>(journal.GetEntryHash(tracked)), positions) {
+          for at in positions {
+            TandemRaces.AddPoint(marked, new Vector4(at.X, at.Y, at.Z, 1.0));
+          }
+        }
+        route = this.Fit(marked);
+        found += s", the objective's mappins \(ArraySize(marked))";
+      }
+    }
+    let changed = ArraySize(route) != ArraySize(before);
+    let i = 0;
+    while !changed && i < ArraySize(route) {
+      changed = Vector4.Distance(route[i], before[i]) > 1.0;
+      i += 1;
+    }
+    this.m_route = route;
+    if changed || say {
+      TandemNative.Log(s"races: our race's route: \(ArraySize(route) > 0 ? s"\(ArraySize(route)) checkpoint(s)" : "not known") (\(this.m_count) on the HUD; \(found))");
+      this.SayRoute();
+    }
+  }
+
+  // The positions of an entry's map pins (every state), in journal order.
+  private func PinsOf(entry: wref<JournalEntry>) -> array<Vector4> {
+    let out: array<Vector4>;
+    let journal = GameInstance.GetJournalManager(this.m_game);
+    let mappins = GameInstance.GetMappinSystem(this.m_game);
+    let children = this.ChildrenOf(entry);
+    for child in children {
+      if IsDefined(child as JournalQuestMapPinBase) {
+        let at = new Vector3(0.0, 0.0, 0.0);
+        if mappins.GetQuestMappinPosition(Cast<Uint32>(journal.GetEntryHash(child)), at) {
+          TandemRaces.AddPoint(out, new Vector4(at.X, at.Y, at.Z, 1.0));
+        }
+      }
+    }
+    return out;
+  }
+
+  private func ChildrenOf(entry: wref<JournalEntry>) -> array<wref<JournalEntry>> {
+    let children: array<wref<JournalEntry>>;
+    let filter: JournalRequestStateFilter;
+    filter.inactive = true;
+    filter.active = true;
+    filter.succeeded = true;
+    filter.failed = true;
+    if IsDefined(entry) {
+      GameInstance.GetJournalManager(this.m_game).GetChildren(entry, filter, children);
+    }
+    return children;
+  }
+
+  // A point once (a pin within 5 m of another is the same checkpoint).
+  private static func AddPoint(out points: array<Vector4>, at: Vector4) -> Void {
+    if at.X == 0.0 && at.Y == 0.0 && at.Z == 0.0 {
+      return;
+    }
+    for point in points {
+      if Vector4.Distance(point, at) < 5.0 {
+        return;
+      }
+    }
+    ArrayPush(points, at);
+  }
+
+  // Pins as the route of our HUD's count, or none.
+  private func Fit(pins: array<Vector4>) -> array<Vector4> {
+    let out: array<Vector4>;
+    let points = pins;
+    let count = this.m_count;
+    if ArraySize(points) == 0 || count <= 0 || count > 64 {
+      return out;
+    }
+    if ArraySize(points) == count + 1 {
+      let nearest = -1;
+      let best = 50.0;
+      let i = 0;
+      while i < ArraySize(points) {
+        let distance = Vector4.Distance(points[i], this.m_start);
+        if distance < best {
+          best = distance;
+          nearest = i;
+        }
+        i += 1;
+      }
+      if nearest >= 0 {
+        ArrayErase(points, nearest);
+      }
+    }
+    let n = ArraySize(points);
+    if n == 0 || Vector4.Distance(points[0], this.m_start) > 3000.0 {
+      return out;
+    }
+    if n == count {
+      return points;
+    }
+    // Laps: the same checkpoints again.
+    if n >= 2 && n < count && count % n == 0 {
+      let k = 0;
+      while k < count {
+        ArrayPush(out, points[k % n]);
+        k += 1;
+      }
+    }
+    return out;
+  }
+
+  // Our checkpoint against the route's: one far from it (a wrong order, pins
+  // that were not the checkpoints) drops the route for everyone.
+  private func CheckRoute() -> Void {
+    let k = ArraySize(this.m_points);
+    if k == 0 || ArraySize(this.m_route) < k {
+      return;
+    }
+    let off = Vector4.Distance(this.m_points[k - 1], this.m_route[k - 1]);
+    if off <= 80.0 {
+      return;
+    }
+    TandemNative.Log(s"races: our checkpoint \(k) is \(off) m from the route's: the route is dropped");
+    ArrayClear(this.m_route);
+    for racer in this.m_racers {
+      if EntityID.IsDefined(racer.body) {
+        TandemRaces.ResetCredit(racer);
+      }
+    }
+    this.SayRoute();
+  }
+
+  private func SayRoute() -> Void {
+    if this.m_phase == 0 || this.m_phase == 4 || this.m_you == 0u {
+      return;
+    }
+    TandemActivity.StageRacePoints(this.m_route);
+    TandemActivity.SendRace(7, this.m_you, 0u, this.m_race, this.m_rewardsOf, 0, this.m_count, 0.0, this.m_heading, -1.0, TDBID.None(), this.m_quest, this.m_start);
+  }
+
+  // Which race of The Beast in Me (sq024) this is, from the tracked entry's
+  // journal ids (proto kRaceRewards*; 0: another race, or not told).
+  private func RewardsOf() -> Int32 {
+    let journal = GameInstance.GetJournalManager(this.m_game);
+    let entry = journal.GetTrackedEntry();
+    let ids = "";
+    let i = 0;
+    while IsDefined(entry) && i < 6 {
+      ids += StrLower(entry.GetId()) + "/";
+      entry = journal.GetParentEntry(entry);
+      i += 1;
+    }
+    let which = 0;
+    if StrContains(ids, "sq024") {
+      if StrContains(ids, "badlands") {
+        which = 1;
+      } else if StrContains(ids, "santo") || StrContains(ids, "domingo") {
+        which = 4;
+      } else if StrContains(ids, "big") {
+        which = 2;
+      } else if StrContains(ids, "city") {
+        which = 3;
+      }
+    }
+    TandemNative.Log(s"races: our race's journal \(ids): rewards \(which)");
+    return which;
+  }
+
+  // The race's own reward records (QuestRewards, quest_rewards/side_quests.tweak).
+  public static func RewardRecord(which: Int32, win: Bool) -> TweakDBID {
+    let names = ["", "badlands", "big", "city", "santo_domingo"];
+    if which < 1 || which >= ArraySize(names) {
+      return TDBID.None();
+    }
+    return TDBID.Create(s"QuestRewards.sq024_\(win ? "win" : "finish")_\(names[which])_race");
+  }
+
+  // A reward our V got that names its race: what we tell the joiners.
+  private func RewardsFrom(reward: TweakDBID) -> Int32 {
+    let which = 1;
+    while which <= 4 {
+      if reward == TandemRaces.RewardRecord(which, true) || reward == TandemRaces.RewardRecord(which, false) {
+        return which;
+      }
+      which += 1;
+    }
+    return 0;
   }
 
   // ---- theirs: a partner's race ----
@@ -795,6 +1056,9 @@ public class TandemRaces {
         this.m_finishedSaid = true;
         this.NoticeText("Race-Finished", IntToString(racer.place));
       }
+      if racer.who == this.m_you && racer.finished && this.m_ownFinishAt == 0.0 {
+        this.m_ownFinishAt = this.m_now;
+      }
     }
     this.m_standings = board;
     this.m_standingsAt = this.m_now;
@@ -814,6 +1078,92 @@ public class TandemRaces {
       return;
     }
     story.PayRace(head.record, head.questHash);
+  }
+
+  // The starter's route: every checkpoint in order (none: not known, we
+  // follow those it names), and which race's rewards are ours to pay.
+  private func HeardRoute(head: TandemRaceEvent, points: array<Vector4>) -> Void {
+    if head.starter != this.m_starter || head.race != this.m_theirRace {
+      return;
+    }
+    this.m_theirRewards = head.arg;
+    let whole = ArraySize(points) > 0 && ArraySize(points) == head.checkpoints;
+    let before = ArraySize(this.m_theirRoute);
+    if whole {
+      this.m_theirRoute = points;
+    } else {
+      ArrayClear(this.m_theirRoute);
+    }
+    if before != ArraySize(this.m_theirRoute) {
+      TandemNative.Log(s"races: player \(this.m_starter)'s route: \(whole ? s"\(ArraySize(points)) checkpoint(s)" : "not known"), rewards \(head.arg)");
+      // Our checkpoints counted again against the other list.
+      if IsDefined(this.m_me) && !this.m_me.finished {
+        TandemRaces.ResetCredit(this.m_me);
+      }
+      this.Unmark();
+    }
+  }
+
+  // The checkpoints we race: the whole route, else those the starter named.
+  private func TheirList() -> array<Vector4> {
+    return ArraySize(this.m_theirRoute) > 0 ? this.m_theirRoute : this.m_theirPoints;
+  }
+
+  private static func ResetCredit(racer: ref<TandemRacer>) -> Void {
+    racer.checkpoint = 0;
+    racer.finished = false;
+    racer.scanned = 1;
+    racer.from = 1;
+    racer.known = -1;
+  }
+
+  // Our own reward for the starter's race, whatever the starter's result,
+  // once: the race's finish reward when we finished, its win reward when the
+  // starter's standings put us ahead of every NPC racer (first, when it saw
+  // none), from our own TweakDB, through the ledger (PayRace: not twice, not
+  // when that quest was done alone; our quest state untouched).
+  private func PayOwn() -> Void {
+    if this.m_paidOwn || !IsDefined(this.m_me) || (this.m_joined != 3 && this.m_joined != 4) {
+      return;
+    }
+    let mine: ref<TandemRacer>;
+    let npcFirst = 1000;
+    for racer in this.m_standings {
+      if racer.who == this.m_you {
+        mine = racer;
+      } else if (racer.who & TandemRaces.NpcBit()) != 0u && racer.place < npcFirst {
+        npcFirst = racer.place;
+      }
+    }
+    let finished = this.m_me.finished || (IsDefined(mine) && mine.finished);
+    if !finished {
+      return;
+    }
+    this.m_paidOwn = true;
+    if this.m_theirRewards <= 0 {
+      TandemNative.Log(s"races: no rewards of our own known for player \(this.m_starter)'s race");
+      return;
+    }
+    let won = IsDefined(mine) && mine.finished && (npcFirst < 1000 ? mine.place < npcFirst : mine.place == 1);
+    let story = TandemStorySystem.Get(this.m_game);
+    if !IsDefined(story) {
+      TandemNative.Log("races: our own race rewards not paid: no story system");
+      return;
+    }
+    let key = this.m_theirQuest != 0u ? this.m_theirQuest : TandemRaces.PlaceKey(this.m_theirStart);
+    let records: array<TweakDBID>;
+    ArrayPush(records, TandemRaces.RewardRecord(this.m_theirRewards, false));
+    if won {
+      ArrayPush(records, TandemRaces.RewardRecord(this.m_theirRewards, true));
+    }
+    TandemNative.Log(s"races: we finished player \(this.m_starter)'s race \(won ? "ahead of every NPC racer" : "behind an NPC racer"): our own rewards");
+    for record in records {
+      if IsDefined(TweakDBInterface.GetRewardBaseRecord(record)) {
+        story.PayRace(record, key);
+      } else {
+        TandemNative.Log(s"races: reward \(TDBID.ToStringDEBUG(record)) is not in our TweakDB");
+      }
+    }
   }
 
   private static func PlaceKey(at: Vector4) -> Uint32 {
@@ -839,10 +1189,13 @@ public class TandemRaces {
     if this.m_joined == 3 {
       this.Drive();
     }
+    if this.m_ownFinishAt > 0.0 && this.m_now - this.m_ownFinishAt >= 5.0 {
+      this.PayOwn();
+    }
   }
 
-  // Seated: our V out of any car, at the grid; a copy of the race's car in
-  // our slot; our V in it, its engine held until the start.
+  // Seated: our V out of any car, at the grid; our race car in our slot
+  // (RaceCar); our V in it, its engine held until the start.
   private func Place() -> Void {
     let player = GetPlayer(this.m_game);
     if !IsDefined(player) {
@@ -856,7 +1209,8 @@ public class TandemRaces {
     }
     let facility = GameInstance.GetMountingFacility(this.m_game);
     if this.m_placing == 0 {
-      if !TDBID.IsValid(this.m_theirCar) || !IsDefined(TweakDBInterface.GetVehicleRecord(this.m_theirCar)) {
+      let record = this.RaceCar();
+      if !TDBID.IsValid(record) {
         TandemNative.Log(s"races: the race's car \(TDBID.ToStringDEBUG(this.m_theirCar)) is no vehicle we can spawn");
         this.Notice("Race-NoCar", this.m_starter);
         this.Leave();
@@ -876,7 +1230,7 @@ public class TandemRaces {
       let stand = new Vector4(spot.X + side.X * 3.0, spot.Y + side.Y * 3.0, spot.Z + 0.5, 1.0);
       GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, stand, TandemYawAngles(this.m_theirHeading));
       let spec = new DynamicEntitySpec();
-      spec.recordID = this.m_theirCar;
+      spec.recordID = record;
       spec.position = new Vector4(spot.X, spot.Y, spot.Z + 0.3, 1.0);
       spec.orientation = EulerAngles.ToQuat(TandemYawAngles(this.m_theirHeading));
       spec.alwaysSpawned = true;
@@ -887,7 +1241,7 @@ public class TandemRaces {
       ArrayPush(spec.tags, n"Tandem.RaceCar");
       this.m_ourCar = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
       this.m_placing = 1;
-      TandemNative.Log(s"races: our race car \(TDBID.ToStringDEBUG(this.m_theirCar)) spawning in slot \(this.m_slot)");
+      TandemNative.Log(s"races: our race car \(TDBID.ToStringDEBUG(record)) spawning in slot \(this.m_slot)");
       return;
     }
     let car = GameInstance.FindEntityByID(this.m_game, this.m_ourCar) as VehicleObject;
@@ -915,6 +1269,22 @@ public class TandemRaces {
         this.Notice("Race-Grid", this.m_starter);
       }
     }
+  }
+
+  // tandem.ini race_car: own (default), our garage's active car, as a
+  // spawned copy of its record; copy, or no car of our own: the starter's.
+  // None: neither is a vehicle we can spawn.
+  private func RaceCar() -> TweakDBID {
+    let theirs = TDBID.IsValid(this.m_theirCar) && IsDefined(TweakDBInterface.GetVehicleRecord(this.m_theirCar)) ? this.m_theirCar : TDBID.None();
+    if Equals(TandemNative.Setting("race_car"), "copy") {
+      return theirs;
+    }
+    let own = GameInstance.GetVehicleSystem(this.m_game).GetActivePlayerVehicle(gamedataVehicleType.Car).recordID;
+    if TDBID.IsValid(own) && IsDefined(TweakDBInterface.GetVehicleRecord(own)) {
+      return own;
+    }
+    TandemNative.Log("races: no car of our own (race_car own): a copy of the race's");
+    return theirs;
   }
 
   // Where slot `slot` is: behind the start line, two abreast.
@@ -999,13 +1369,14 @@ public class TandemRaces {
     }
     let before = this.m_me.checkpoint;
     let wasDone = this.m_me.finished;
+    let list = this.TheirList();
     this.Sample(this.m_me, player.GetWorldPosition());
-    this.Credit(this.m_me, this.m_theirPoints, this.m_theirCount);
+    this.Credit(this.m_me, list, this.m_theirCount);
     let metres = 0.0;
-    if this.m_me.checkpoint < ArraySize(this.m_theirPoints) {
-      metres = Vector4.Distance(player.GetWorldPosition(), this.m_theirPoints[this.m_me.checkpoint]);
+    if this.m_me.checkpoint < ArraySize(list) {
+      metres = Vector4.Distance(player.GetWorldPosition(), list[this.m_me.checkpoint]);
     }
-    this.Mark();
+    this.Mark(list);
     if this.m_me.checkpoint != before || NotEquals(this.m_me.finished, wasDone) || this.m_now - this.m_lastProgress >= 2.0 {
       this.m_lastProgress = this.m_now;
       if this.m_me.checkpoint != before {
@@ -1016,8 +1387,8 @@ public class TandemRaces {
   }
 
   // The next checkpoint we know of, as a marker on our map and HUD.
-  private func Mark() -> Void {
-    let next = IsDefined(this.m_me) && !this.m_me.finished && this.m_me.checkpoint < ArraySize(this.m_theirPoints) ? this.m_me.checkpoint : -1;
+  private func Mark(list: array<Vector4>) -> Void {
+    let next = IsDefined(this.m_me) && !this.m_me.finished && this.m_me.checkpoint < ArraySize(list) ? this.m_me.checkpoint : -1;
     if next == this.m_markFor {
       return;
     }
@@ -1025,7 +1396,7 @@ public class TandemRaces {
     this.m_markFor = next;
     let comms = TandemComms.Of(this.m_game);
     if next >= 0 && IsDefined(comms) {
-      this.m_mark = comms.PlaceMarker(this.m_theirPoints[next], n"racing", TandemText.F("Race-Checkpoint", IntToString(next + 1)), this.m_starter);
+      this.m_mark = comms.PlaceMarker(list[next], n"racing", TandemText.F("Race-Checkpoint", IntToString(next + 1)), this.m_starter);
     }
   }
 
@@ -1049,6 +1420,7 @@ public class TandemRaces {
   }
 
   private func EndTheirs() -> Void {
+    this.PayOwn();
     if this.m_joined == 1 || this.m_joined == 2 || this.m_joined == 3 {
       this.Release(true);
       this.m_carDropAt = this.m_now;
@@ -1062,6 +1434,10 @@ public class TandemRaces {
     this.m_joined = 0;
     this.m_me = null;
     ArrayClear(this.m_theirPoints);
+    ArrayClear(this.m_theirRoute);
+    this.m_theirRewards = 0;
+    this.m_ownFinishAt = 0.0;
+    this.m_paidOwn = false;
   }
 
   // Our race car goes once the race is over for us and our V is out of it.
@@ -1389,7 +1765,7 @@ public class TandemRaces {
     for racer in this.m_standings {
       racers += s" \(racer.place):\(racer.who) cp \(racer.checkpoint)\(racer.finished ? " finished" : "")\(racer.out ? " out" : "")";
     }
-    TandemNative.Log(s"races: ours phase \(this.m_phase) race \(this.m_race) (\(ArraySize(this.m_points))/\(this.m_count) checkpoint(s) known, \(ArraySize(this.m_joiners)) partner(s), \(this.m_npcs) npc racer(s), \(ArraySize(this.m_rewards)) reward(s)); theirs: player \(this.m_starter) race \(this.m_theirRace) phase \(this.m_theirPhase), joined \(this.m_joined) slot \(this.m_slot), \(ArraySize(this.m_theirPoints))/\(this.m_theirCount) checkpoint(s) known, ours \(IsDefined(this.m_me) ? this.m_me.checkpoint : -1); standings:\(StrLen(racers) > 0 ? racers : " none")");
+    TandemNative.Log(s"races: ours phase \(this.m_phase) race \(this.m_race) (\(ArraySize(this.m_points))/\(this.m_count) checkpoint(s) passed, route \(ArraySize(this.m_route)), rewards \(this.m_rewardsOf), \(ArraySize(this.m_joiners)) partner(s), \(this.m_npcs) npc racer(s), \(ArraySize(this.m_rewards)) reward(s)); theirs: player \(this.m_starter) race \(this.m_theirRace) phase \(this.m_theirPhase), joined \(this.m_joined) slot \(this.m_slot), \(ArraySize(this.m_theirPoints))/\(this.m_theirCount) checkpoint(s) named, route \(ArraySize(this.m_theirRoute)), rewards \(this.m_theirRewards)\(this.m_paidOwn ? " paid" : ""), ours \(IsDefined(this.m_me) ? this.m_me.checkpoint : -1); standings:\(StrLen(racers) > 0 ? racers : " none")");
   }
 }
 

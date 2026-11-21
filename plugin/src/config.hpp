@@ -79,6 +79,9 @@
 //                        ; 20 m), always (any distance in view, smaller and fainter
 //                        ; far away), off (on: near)
 //   party_hud = on       ; off: no party list (linked partners' health) on the HUD
+//   race_car = own       ; a partner's street race: own, your garage's active car
+//                        ; on the grid; copy, a copy of the starter's (also when
+//                        ; you have no car)
 //   overlap = density    ; our own crowd and traffic where a higher-ranked linked
 //                        ; player's region covers ours: density (thinned by how much
 //                        ; is covered), area (a crowd null area over that region:
@@ -202,6 +205,9 @@ struct Config {
   bool enemyScaling{true};
   float enemyScalingHealth{scaling::kHealthPerPlayer};
   std::string notices{"all"};
+  // A partner's street race (scripts/tandem/Races.reds): "own", our garage's
+  // active car on the grid; "copy", a copy of the starter's.
+  std::string raceCar{"own"};
   bool markers{true};
   presence::Nameplates nameplates{presence::Nameplates::Near};
   bool partyHud{true};

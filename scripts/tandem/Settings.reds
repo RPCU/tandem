@@ -13,14 +13,14 @@ public class TandemSettings {
   public static func Keys() -> array<String> {
     return [
       "name", "friendly_fire", "enemy_scaling", "notices", "markers", "nameplates", "party_hud", "link", "pings", "recorder",
-      "relay", "code", "direct", "story", "quest_freeze", "scene_privacy", "time_host"
+      "relay", "code", "direct", "story", "quest_freeze", "scene_privacy", "time_host", "race_car"
     ];
   }
 
   private static func Labels() -> array<String> {
     return [
       "Settings-Name", "Settings-FriendlyFire", "Settings-EnemyScaling", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-PartyHud", "Settings-Link", "Settings-Pings", "Settings-Recorder",
-      "Settings-Relay", "Settings-Code", "Settings-Direct", "Settings-Story", "Settings-QuestFreeze", "Settings-ScenePrivacy", "Settings-TimeHost"
+      "Settings-Relay", "Settings-Code", "Settings-Direct", "Settings-Story", "Settings-QuestFreeze", "Settings-ScenePrivacy", "Settings-TimeHost", "Settings-RaceCar"
     ];
   }
 
@@ -28,16 +28,16 @@ public class TandemSettings {
   private static func Abouts() -> array<String> {
     return [
       "Settings-About-Name", "Settings-About-FriendlyFire", "Settings-About-EnemyScaling", "Settings-About-Notices", "Settings-About-Markers", "Settings-About-Nameplates", "Settings-About-PartyHud", "Settings-About-Link", "Settings-About-Pings", "Settings-About-Recorder",
-      "Settings-About-Relay", "Settings-About-Code", "Settings-About-Direct", "Settings-About-Story", "Settings-About-QuestFreeze", "Settings-About-ScenePrivacy", "Settings-About-TimeHost"
+      "Settings-About-Relay", "Settings-About-Code", "Settings-About-Direct", "Settings-About-Story", "Settings-About-QuestFreeze", "Settings-About-ScenePrivacy", "Settings-About-TimeHost", "Settings-About-RaceCar"
     ];
   }
 
   private static func Kinds() -> array<Int32> {
-    return [2, 0, 0, 1, 0, 1, 0, 1, 0, 0, 2, 1, 1, 0, 0, 0, 1];
+    return [2, 0, 0, 1, 0, 1, 0, 1, 0, 0, 2, 1, 1, 0, 0, 0, 1, 1];
   }
 
   private static func Whens() -> array<Int32> {
-    return [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 2, 2, 1];
+    return [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 2, 2, 1, 0];
   }
 
   private static func IndexOf(key: String) -> Int32 {
@@ -66,6 +66,9 @@ public class TandemSettings {
     if Equals(key, "time_host") {
       return ["full", "bubble"];
     }
+    if Equals(key, "race_car") {
+      return ["own", "copy"];
+    }
     if Equals(key, "nameplates") {
       return ["near", "always", "off"];
     }
@@ -87,6 +90,9 @@ public class TandemSettings {
     }
     if Equals(key, "time_host") {
       return ["Settings-TimeHost-Full", "Settings-TimeHost-Bubble"];
+    }
+    if Equals(key, "race_car") {
+      return ["Settings-RaceCar-Own", "Settings-RaceCar-Copy"];
     }
     if Equals(key, "nameplates") {
       return ["Settings-Nameplates-Near", "Settings-Nameplates-Always", "Common-Off"];

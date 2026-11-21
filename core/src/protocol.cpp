@@ -334,7 +334,8 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   // A race: a kind and a phase the receiver knows, its lists within their caps.
   if (const auto *race = std::get_if<Race>(&message);
       race &&
-      (race->kind < RaceKind::Info || race->kind > RaceKind::Reward ||
+      (race->kind < RaceKind::Info || race->kind > RaceKind::Route ||
+       (race->kind == RaceKind::Route && race->arg > kRaceRewardsSantoDomingo) ||
        (race->kind == RaceKind::Info && (race->arg < kRaceGrid || race->arg > kRaceAbandoned)) ||
        race->points.size() > kMaxRacePoints || race->entries.size() > kMaxRacers))
     return std::nullopt;
