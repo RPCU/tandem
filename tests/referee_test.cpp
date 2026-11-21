@@ -293,6 +293,21 @@ TEST_CASE("referee: a scripted moment is the host's V's, spectating a guest's") 
   CHECK(Rules(told) == std::vector<std::string>{"authority.host-only"});
 }
 
+TEST_CASE("referee: fast travel blocked by the quest is the host's word") {
+  auto guest = Guest();
+  guest.Received(1, proto::StoryState{.player = 1, .tier = 1, .flags = proto::kStoryNoFastTravel},
+                 kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1, proto::StoryState{.player = 3, .tier = 1, .flags = proto::kStoryNoFastTravel},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.host-only"});
+
+  auto host = Host();
+  host.Received(2, proto::StoryState{.player = 2, .tier = 1, .flags = proto::kStoryNoFastTravel},
+                kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.host-only"});
+}
+
 TEST_CASE("referee: a link request not taken goes to its asker only, in its decliner's name") {
   auto guest = Guest();
   guest.Received(1, proto::LinkDecline{.from = 3, .to = 2, .reason = proto::kLinkDeclineOther},

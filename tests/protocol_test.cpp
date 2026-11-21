@@ -694,6 +694,9 @@ TEST_CASE("story messages survive encoding") {
   RoundTrips(StoryState{.player = 1, .tier = 2, .flags = kStoryMoment | kStoryReplacer});
   RoundTrips(StoryState{.player = 2, .tier = 1, .flags = kStorySpectating});
   RoundTrips(StoryState{.player = 1, .tier = 5, .flags = kStoryMoment | kStoryWatch});
+  // The host's quest blocks fast travel: the top bit, with others.
+  RoundTrips(StoryState{.player = 1, .tier = 1, .flags = kStoryNoFastTravel});
+  RoundTrips(StoryState{.player = 1, .tier = 3, .flags = kStoryNoFastTravel | kStoryMoment});
   RoundTrips(QuestReward{.reward = 0x15e213846eULL, .quest = 0x77});
 }
 
