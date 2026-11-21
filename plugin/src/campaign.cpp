@@ -443,8 +443,8 @@ void Campaigns::Work(std::stop_token stop) {
   while (!stop.stop_requested()) {
     const auto job = m_job.load();
     const bool busy = job == CampaignJob::Saving || job == CampaignJob::Writing;
-    m_wake.wait_for(lock, stop, std::chrono::milliseconds(busy ? 500 : 5000),
-                    [&] { return m_kick.load(); });
+    (void)m_wake.wait_for(lock, stop, std::chrono::milliseconds(busy ? 500 : 5000),
+                          [&] { return m_kick.load(); });
     m_kick.store(false);
     if (stop.stop_requested())
       break;

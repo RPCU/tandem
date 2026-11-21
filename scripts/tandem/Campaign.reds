@@ -285,11 +285,17 @@ public class TandemCampaign {
     } else if job == 2 {
       ArrayPush(lines, TandemText.Get("Campaign-Writing"));
     }
+    return lines;
+  }
+
+  // Where the files go (and that none is there yet).
+  public static func FolderText() -> String {
+    let text = TandemText.F("Campaign-Folder", TandemCampaignNative.CampaignFolder());
     let archives = TandemCampaignNative.CampaignArchives();
     if ArraySize(archives) == 0 {
-      ArrayPush(lines, TandemText.Get("Campaign-NoArchive"));
+      text += "\n" + TandemText.Get("Campaign-NoArchive");
     }
-    return lines;
+    return text;
   }
 
   // The question before an item's action (Yes does it): "" for none.
@@ -427,7 +433,7 @@ private func TandemCampaignActivate(item: ref<TandemMenuItem>) -> Bool {
     return true;
   }
   if Equals(action, TandemCoopAction.CampaignFolder) {
-    GenericMessageNotification.Show(this, TandemText.Get("Menu-Campaign"), TandemText.F("Campaign-Folder", TandemCampaignNative.CampaignFolder()), GenericMessageNotificationType.OK);
+    GenericMessageNotification.Show(this, TandemText.Get("Menu-Campaign"), TandemCampaign.FolderText(), GenericMessageNotificationType.OK);
     return true;
   }
   if NotEquals(action, TandemCoopAction.CampaignStart) && NotEquals(action, TandemCoopAction.CampaignExport) && NotEquals(action, TandemCoopAction.CampaignImport) && NotEquals(action, TandemCoopAction.CampaignContinue) {
@@ -509,7 +515,7 @@ private func TandemCampaignActivate(item: ref<TandemMenuItem>) -> Bool {
     return true;
   }
   if Equals(action, TandemCoopAction.CampaignFolder) {
-    GenericMessageNotification.Show(this, TandemText.Get("Menu-Campaign"), TandemText.F("Campaign-Folder", TandemCampaignNative.CampaignFolder()), GenericMessageNotificationType.OK);
+    GenericMessageNotification.Show(this, TandemText.Get("Menu-Campaign"), TandemCampaign.FolderText(), GenericMessageNotificationType.OK);
     return true;
   }
   if NotEquals(action, TandemCoopAction.CampaignImport) {
