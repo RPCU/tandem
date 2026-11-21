@@ -99,6 +99,9 @@ public class TandemPolice {
   // Owner: each remote player's level as last acted on.
   private let m_heatPlayers: array<Uint32>;
   private let m_heatStages: array<Int32>;
+  // Owner: when a remote V was last wanted in our area, or units or cars of
+  // ours were out for one (Answering).
+  private let m_answeredAt: Float;
 
   public static func Of(game: GameInstance) -> ref<TandemPolice> {
     let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
@@ -117,6 +120,7 @@ public class TandemPolice {
     this.m_game = game;
     this.m_sentStage = -1;
     this.m_sentState = -1;
+    this.m_answeredAt = -1000.0;
   }
 
   private func Prevention() -> ref<PreventionSystem> {
@@ -161,6 +165,7 @@ public class TandemPolice {
     this.m_pointsFor = 0u;
     this.m_sentStage = -1;
     this.m_sentState = -1;
+    this.m_answeredAt = -1000.0;
   }
 
   // (test, tools/game.sh cmd police ...)
@@ -239,6 +244,11 @@ public class TandemPolice {
       victim = GameInstance.GetDynamicEntitySystem().GetEntity(system.ProxyOfNpc(event.npc)) as GameObject;
     }
     TandemNative.Log(s"police: crime seen by the area's owner: kind \(event.reason), npc \(event.npc), flags \(event.flags)");
+    // Ours, whoever else is chased here (PreventionSystem.TandemNotOurs).
+    let prevention = GameInstance.GetScriptableSystemsContainer(game).Get(n"PreventionSystem") as PreventionSystem;
+    if IsDefined(prevention) {
+      prevention.TandemOwnAct();
+    }
     if event.reason == 1 {
       PreventionSystem.CrimeWitnessRequestToPreventionSystem(game, player.GetWorldPosition());
     } else if event.reason == 2 {
@@ -433,6 +443,7 @@ public class TandemPolice {
     }
     this.m_wasChased = chased;
     let carsWanted = false;
+    let answering = ArraySize(this.m_units) > 0 || ArraySize(this.m_cars) > 0 || ArraySize(this.m_tickets) > 0;
     // In a local: ArrayContains on the array a call returns reads some
     // other array (tools/scripts-temporaries.py), so every level was
     // forgotten on the tick it was learnt.
@@ -451,6 +462,9 @@ public class TandemPolice {
         }
         if stage < 5 {
           ArrayRemove(this.m_avFor, player);
+        }
+        if stage > 0 {
+          answering = true;
         }
         if IsDefined(puppet) {
           this.Face(player, puppet, stage, system);
@@ -474,6 +488,9 @@ public class TandemPolice {
     if !carsWanted {
       this.Roads(false);
     }
+    if answering {
+      this.m_answeredAt = this.m_now;
+    }
     // A player that left takes its heat with it.
     let i = 0;
     while i < ArraySize(this.m_heatPlayers) {
@@ -486,6 +503,14 @@ public class TandemPolice {
         i += 1;
       }
     }
+  }
+
+  // Our game answers another player's heat: one is wanted in our area, or
+  // was within 10 s, or units or cars of ours are still out for one. What
+  // the game's prevention system hears then is mostly their chase, not our
+  // V's doing (PreventionSystem.TandemNotOurs). Reads only.
+  public func Answering() -> Bool {
+    return this.m_you != 0u && this.m_now - this.m_answeredAt < 10.0;
   }
 
   // Everything out for that player stands down: units, cars, the AV.
@@ -1397,6 +1422,132 @@ public final func TandemHeatTable(stage: Int32) -> wref<PreventionHeatTable_Reco
     return null;
   }
   return this.GetDataTableForHeat(IntEnum<EPreventionHeatStage>(stage));
+}
+
+// ---- another player's chase is not our V's heat ----
+//
+// Vanilla's prevention system knows one culprit, "the player". Around a
+// chase our game runs for another V it hears inputs that name nobody (a
+// witness of the fight calling it in: CallPolice and the native
+// CrowdCallingPoliceEvent name the local V; a prevention turret opening on
+// whatever it follows; the native stolen-vehicle request), and each raises
+// a V at no star to one (OnCrimeWitnessRequest, OnCombatStartedRequest,
+// OnVehicleStolenRequest: final.reds:141470-141500). Seen in game: units
+// and MaxTac out for a guest's puppet 3 m from the host's V, and "our
+// wanted level 1" for a V that did nothing (police-host-cars, 2026-11-21;
+// which input it was is not in that log: every first star is logged with
+// its reason since).
+//
+// While our game answers another player's heat (TandemPolice.Answering)
+// and our V has no star, a first star needs our V to have done something:
+// an input vanilla attributes by the hit's instigator (damage, a kill, an
+// officer hit, a car it blew up: these mark it, TandemOwnAct), a crime the
+// area's owner saw (TandemPolice.OnCrime), or damage it dealt in the last
+// 10 s (PlayerPuppet.GetLastDamageInflictedTime: what a witness would have
+// seen). A quest's level (SetWantedLevel) always counts. With a star,
+// vanilla's rules: the fight is our V's too.
+
+// When our V last did what the prevention system scores (simulation time).
+@addField(PreventionSystem)
+private let m_tandemOwnActAt: Float;
+
+@addField(PreventionSystem)
+private let m_tandemOwnAct: Bool;
+
+@addMethod(PreventionSystem)
+public final func TandemOwnAct() -> Void {
+  this.m_tandemOwnAct = true;
+  this.m_tandemOwnActAt = EngineTime.ToFloat(GameInstance.GetSimTime(this.GetGameInstance()));
+}
+
+// A first star for this reason would be another player's chase heard as
+// our V's crime. Reads only.
+@addMethod(PreventionSystem)
+public final func TandemNotOurs(reason: String) -> Bool {
+  let game = this.GetGameInstance();
+  if NotEquals(this.m_heatStage, EPreventionHeatStage.Heat_0) || Equals(reason, "QuestEvent") || Equals(reason, "DEBUG") || Equals(reason, "KillPrevention") {
+    return false;
+  }
+  let police = TandemPolice.Of(game);
+  if !IsDefined(police) || !police.Answering() {
+    return false;
+  }
+  let now = EngineTime.ToFloat(GameInstance.GetSimTime(game));
+  if this.m_tandemOwnAct && now - this.m_tandemOwnActAt < 10.0 {
+    return false;
+  }
+  let player = GetPlayer(game);
+  if IsDefined(player) {
+    let dealt = EngineTime.ToFloat(player.GetLastDamageInflictedTime());
+    if dealt > 0.0 && now - dealt < 10.0 {
+      return false;
+    }
+  }
+  return true;
+}
+
+// The one place the level changes: nothing of another player's chase gets
+// our V its first star, whatever path it came by.
+@wrapMethod(PreventionSystem)
+private final func ChangeHeatStage(newHeatStage: EPreventionHeatStage, heatChangeReason: String) -> Void {
+  if EnumInt(newHeatStage) > 0 && Equals(this.m_heatStage, EPreventionHeatStage.Heat_0) && TandemNative.IsStarted() {
+    if this.TandemNotOurs(heatChangeReason) {
+      TandemNative.Log(s"police: heat refused for our V (\(heatChangeReason)): it did nothing, the police here are after another player");
+      return;
+    }
+    TandemNative.Log(s"police: our V gets heat (\(heatChangeReason))");
+  }
+  wrappedMethod(newHeatStage, heatChangeReason);
+}
+
+// Damage and kills, sent when the instigator is our V: its own.
+@wrapMethod(PreventionSystem)
+protected final func OnPreventionDamage(evt: ref<PreventionDamage>) -> Void {
+  this.TandemOwnAct();
+  wrappedMethod(evt);
+}
+
+// A car our V shot that blows up (VehicleComponent.OnDeath, m_hitByPlayer).
+@wrapMethod(PreventionSystem)
+private final func OnVehicleExplosion() -> Void {
+  this.TandemOwnAct();
+  wrappedMethod();
+}
+
+// An officer our V hit (sent by the hit's instigator), or a prevention
+// turret opening on its target: the turret names nobody.
+@wrapMethod(PreventionSystem)
+protected final func OnCombatStartedRequest(request: ref<PreventionCombatStartedRequest>) -> Void {
+  if !IsDefined(request.requester as SensorDevice) {
+    this.TandemOwnAct();
+  } else if this.TandemNotOurs("EnterCombat") {
+    TandemNative.Log("police: a turret's fight not counted against our V: it did nothing, the police here are after another player");
+    return;
+  }
+  wrappedMethod(request);
+}
+
+// A witness's call names the local V whoever it saw.
+@wrapMethod(PreventionSystem)
+protected final func OnCrimeWitnessRequest(request: ref<PreventionCrimeWitnessRequest>) -> Void {
+  if this.TandemNotOurs("CrimeWitness") {
+    TandemNative.Log("police: a witness's call not counted against our V: it did nothing, the police here are after another player");
+    return;
+  }
+  wrappedMethod(request);
+}
+
+// A police vehicle taken: ours when our V sits in one.
+@wrapMethod(PreventionSystem)
+protected final func OnVehicleStolenRequest(request: ref<PreventionVehicleStolenRequest>) -> Void {
+  let game = this.GetGameInstance();
+  if VehicleComponent.IsMountedToVehicle(game, GetPlayer(game)) {
+    this.TandemOwnAct();
+  } else if this.TandemNotOurs("PlayerStoleVehicle") {
+    TandemNative.Log("police: a stolen police vehicle not counted against our V: it sits in none, the police here are after another player");
+    return;
+  }
+  wrappedMethod(request);
 }
 
 // A game that follows spawns no police of its own: the area's owner does.

@@ -31,6 +31,8 @@
 //                         (the player whose hack is marked on it; 0: none)
 //   car marks             the shared vehicles another player's quickhack is
 //                         marked on now (their traffic ids), or none
+//   wanted                our V's wanted level, 0..5 (the prevention
+//                         system's own)
 //   upload                the upload running on our V (an NPC's hack or
 //                         trace), percent: its QuickHackUpload pool
 public class TandemTestQuery {
@@ -115,6 +117,11 @@ public class TandemTestQuery {
       if IsDefined(devices) {
         value = devices.Query(arg, words[4]);
       }
+    } else if Equals(what, "wanted") {
+      let prevention = GameInstance.GetScriptableSystemsContainer(game).Get(n"PreventionSystem") as PreventionSystem;
+      if IsDefined(prevention) {
+        value = IntToString(Cast<Int32>(prevention.GetHeatStageAsInt()));
+      }
     } else if Equals(what, "upload") {
       let pools = GameInstance.GetStatPoolsSystem(game);
       if IsDefined(player) && pools.IsStatPoolAdded(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.QuickHackUpload) {
@@ -124,7 +131,7 @@ public class TandemTestQuery {
       value = "unknown";
     }
     if Equals(value, "unknown") {
-      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks, upload)");
+      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks, wanted, upload)");
       return;
     }
     TandemNative.Log(s"test query: \(asked) = \(value)");

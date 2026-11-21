@@ -26,6 +26,8 @@ shot police-host-car
 # Our own V is still clean.
 pause 15
 reject 'police: our wanted level [1-5] '
+query wanted wanted
+expect_value "$wanted" = 0
 shot police-host-car-arrived
 # The guest's stars go: the car drives off and is taken away.
 expect 'player [0-9]+: wanted level 0 ' 90
@@ -41,6 +43,8 @@ shot police-host-av
 expect 'player [0-9]+: wanted level 0 ' 90
 expect 'police: AV (for player [0-9]+ stands down|[^ ]+ for player [0-9]+ gone)' 10
 reject 'police: our wanted level [1-5] '
+query wanted wanted
+expect_value "$wanted" = 0
 # Units, cars and MaxTac hunted the guest: not one hit on our V.
 query low health low
 expect_changed "$before" "$low" same
