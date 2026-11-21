@@ -22,7 +22,11 @@ expect_peer 'asked the host for device [0-9a-f]+ .*friendly.* \(--device-answer\
 expect 'devices: player [0-9]+ operated [0-9a-f]+' 10
 expect "devices: [0-9a-f]+ SurveillanceCameraControllerPS after player [0-9]+'s request: [a-z]+, [a-z+]*hacked\+friendly" 10
 shot devices-camera-friendly
-# V switches it off: the other player's copy goes off too.
+# V switches it off: the other player's copy goes off too. (On first: a
+# save may hold it off already, as h11's is, and off would change nothing.)
+cmd device on camera
+expect 'devices: on [0-9a-f]+ SurveillanceCameraControllerPS at ' 10
+pause 2
 cmd device off camera
 expect 'devices: [0-9a-f]+ SurveillanceCameraControllerPS is now off, ' 10
 expect_peer 'device [0-9a-f]+ \(0x[0-9a-f]+\): off, [a-z+]+, value -?[0-9]+ by player 1, played' 10

@@ -275,7 +275,8 @@ public class TandemTurrets extends ScriptableSystem {
     if !IsDefined(turret) || !IsDefined(puppet) || !TandemTurrets.Follows(turret) {
       // Not in our world: the guest's game runs its own copy (it hears
       // nothing from us about it).
-      TandemNative.Log(s"turrets: player \(player)'s copy of \(TandemNative.EntityHex(entity)) \(seen ? "has" : "lost") its V; no such turret or puppet here");
+      let why = !IsDefined(turret) ? "no such turret in our world" : (!IsDefined(puppet) ? "no puppet of that player yet" : "a turret we do not follow (a player's or the police's)");
+      TandemNative.Log(s"turrets: player \(player)'s copy of \(TandemNative.EntityHex(entity)) \(seen ? "has" : "lost") its V; \(why)");
       return;
     }
     if seen {

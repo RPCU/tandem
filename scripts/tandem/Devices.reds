@@ -1252,7 +1252,9 @@ public class TandemDevices extends ScriptableSystem {
       kind = "door";
     }
     let what = Equals(kind, "") ? "device" : kind;
-    let distance = Equals(verb, "near") || Equals(verb, "goto") ? 200.0 : 40.0;
+    // tell names the same device near found (devices-barrel: near found one
+    // 42 m away, tell then none within 40 m).
+    let distance = Equals(verb, "near") || Equals(verb, "goto") || Equals(verb, "tell") ? 200.0 : 40.0;
     let range = distance;
     let device = this.Nearest(kind, distance);
     if !IsDefined(device) {

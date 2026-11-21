@@ -1,13 +1,14 @@
 # An elevator ride together: V sends the lift to another floor with the other player aboard; they send it back
 # shellcheck shell=bash disable=SC2317
-# Where: DEVICES_AT (a fixture or "X Y Z": a lift within 200 m; default h10,
-# the megabuilding's, testing.md "Fixtures").
+# Where: DEVICES_AT (a fixture or "X Y Z": a lift within 200 m; default h11-basement,
+# the lift 64 m from H11's basement, testing.md "Fixtures").
 # To look at: the other player stands in the cabin for the whole ride (no
 # sliding, no falling through), the doors open for both at the end.
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male --device-answer floor=0 --device-after 25
 expect 'joined \(player [0-9]+' 20
-at "${DEVICES_AT:-h10}"
+# (h10's lift is disabled in the test save; h11's, 64 m from its basement, runs.)
+at "${DEVICES_AT:-h11-basement}"
 cmd device
 expect 'devices: [0-9]+ followed, [1-9][0-9]* in our world' 10
 cmd device goto lift

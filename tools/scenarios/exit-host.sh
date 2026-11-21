@@ -1,5 +1,5 @@
 # The host's Exit to the main menu (real: a host owes no save, nothing is written): its guest hears the session's end at once, by the host's goodbye, not a timeout. The game is left in the main menu (the next scenario starts it again)
-# shellcheck shell=bash disable=SC2317
+# shellcheck shell=bash disable=SC2317,SC2154
 ensure host
 game_ip=$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')
 pause 4
@@ -16,3 +16,5 @@ expect 'left the game' 30
 expect_peer 'session ended: left the session' 15
 reject 'save: back from co-op: quick save asked'
 reject 'watchdog: game thread silent'
+# Left in the main menu: a fresh game for the next one (the sweep orders it last).
+$game stop >/dev/null

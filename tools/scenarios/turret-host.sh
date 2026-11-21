@@ -12,6 +12,9 @@ cmd device near turret
 expect 'devices: nearest turret [0-9a-f]+ SecurityTurretControllerPS at ' 10
 turret=$(since | grep -oE 'devices: nearest turret [0-9a-f]+' | tail -1 | awk '{ print $4 }')
 note "turret $turret"
+# On: a save may hold it off (the survey found every fixture's turret off).
+cmd device on turret
+expect 'devices: on [0-9a-f]+ SecurityTurretControllerPS at ' 10
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male \
   --turret-seen "$turret@8"
 expect 'joined \(player [0-9]+' 30
