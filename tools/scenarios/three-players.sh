@@ -17,7 +17,10 @@ expect 'markers: player [0-9]+ \(peer-a\) on the puppet at ' 10
 expect 'markers: player [0-9]+ \(peer-b\) on the puppet at ' 10
 # Two markers, two colours (by id): look at the screenshot.
 shot three-players
-# peer-b goes; peer-a stays in the session, its marker with it.
+# peer-b goes; peer-a stays in the session, its marker with it. (Counted
+# from here: a mock player may join under the id of an earlier one that
+# was killed, and the host remakes that one's puppet and marker first.)
+mark
 pkill -f -- 'tandem-peer .*--name peer-b' || true
 expect 'player [0-9]+ left' 45
 expect_peer '^.*- player [0-9]+$' 20
