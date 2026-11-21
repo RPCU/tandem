@@ -14,6 +14,8 @@ cmd story private on
 expect 'spectate: our moment is over' 5
 cmd story private off
 expect 'spectate: our V is in a scripted moment' 5
+# (Not the end seen above: this one's, a moment later.)
+mark
 cmd story spectate off
 expect 'spectate: our moment is over' 5
 cmd story spectate report
