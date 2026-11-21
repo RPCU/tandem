@@ -55,7 +55,23 @@ public class TandemLedger {
     if by == 0u {
       return false;
     }
-    return by == 1u || !npc.IsQuest();
+    return by == 1u || !TandemLedger.QuestNpc(npc);
+  }
+
+  // A quest's NPC: its record's quest affiliation (a gig's, a side job's,
+  // the story's), there from the start, or the runtime mark (IsQuest: a
+  // quest's SetAsQuestImportantEvent, which can come after the NPC first
+  // streams in, when it would be buried already).
+  public static func QuestNpc(npc: ref<ScriptedPuppet>) -> Bool {
+    if npc.IsQuest() {
+      return true;
+    }
+    let record = TweakDBInterface.GetCharacterRecord(npc.GetRecordID());
+    if !IsDefined(record) || !IsDefined(record.Quest()) {
+      return false;
+    }
+    let affiliation = record.Quest().Type();
+    return NotEquals(affiliation, gamedataNPCQuestAffiliation.General) && NotEquals(affiliation, gamedataNPCQuestAffiliation.Invalid) && NotEquals(affiliation, gamedataNPCQuestAffiliation.Count);
   }
 
   public func NoteBuried(id: EntityID, by: Uint32) -> Void {

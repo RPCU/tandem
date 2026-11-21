@@ -18,9 +18,11 @@
   important items are every player's for the session** (decided by the
   user 2026-11-18: no quest may break; narrowed 2026-11-19: a guest gives
   the host's quest props back when it leaves, see below): an item tagged `Quest` (quest items, their keys
-  and shards), a keycard (`Gen_Keycard`) or an iconic item (the
-  `IsItemIconic` stat) that comes into a V's inventory, not bought at a
-  vendor, goes into every other V's too (`SharedItem`), by the game's own
+  and shards) or a keycard (`Gen_Keycard`), wherever it came from, or an
+  iconic item (the `IsItemIconic` stat) not bought at a vendor
+  (`ItemPurchasedAtVendor`; until 2026-11-21 that exempted a quest item
+  bought at a shop too; not yet run in game), that comes into a V's
+  inventory goes into every other V's too (`SharedItem`), by the game's own
   item-add path and its pickup notification, unless that V has one
   already. A guest's goes through the host, which gives it to its own V
   first, so the host's quests see it whoever looted it. The important

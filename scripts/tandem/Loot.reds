@@ -657,13 +657,18 @@ public class TandemLoot extends ScriptableSystem {
 
   // ---- quest and important items: every player's ----
 
-  // Quest items (tag Quest: quest items, their keys and shards), keycards,
-  // and iconic items (the IsItemIconic stat) not bought at a vendor.
+  // Quest items (tag Quest: quest items, their keys and shards) and
+  // keycards, wherever they came from (a quest's item bought at a shop is
+  // still the quest's, as QuestProp says), and iconic items (the
+  // IsItemIconic stat) not bought at a vendor.
   public static func Important(data: wref<gameItemData>) -> Bool {
-    if !IsDefined(data) || data.HasStatData(gamedataStatType.ItemPurchasedAtVendor) {
+    if !IsDefined(data) {
       return false;
     }
-    return data.HasTag(n"Quest") || Equals(RPGManager.GetItemType(data.GetID()), gamedataItemType.Gen_Keycard) || RPGManager.IsItemIconic(data);
+    if data.HasTag(n"Quest") || Equals(RPGManager.GetItemType(data.GetID()), gamedataItemType.Gen_Keycard) {
+      return true;
+    }
+    return RPGManager.IsItemIconic(data) && !data.HasStatData(gamedataStatType.ItemPurchasedAtVendor);
   }
 
   // Something came into our V's inventory (PlayerPuppet wrap below).
