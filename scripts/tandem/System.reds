@@ -1960,6 +1960,21 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_pilot) {
       this.m_pilot.Off("test reset");
     }
+    // What a session says once (its rules, comms, our level, the party
+    // HUD's layout) is said again: each scenario reads it after its reset,
+    // in a session an earlier one began.
+    if IsDefined(this.m_outcomes) {
+      this.m_outcomes.ResayForTests();
+    }
+    if IsDefined(this.m_comms) && this.m_you != 0u {
+      this.m_comms.ResayForTests();
+    }
+    if IsDefined(this.m_npcs) && IsDefined(this.m_npcs.Levels()) {
+      this.m_npcs.Levels().ResayForTests();
+    }
+    if IsDefined(this.m_presence) && IsDefined(this.m_presence.Hud()) {
+      this.m_presence.Hud().ResayForTests();
+    }
     let entities = GameInstance.GetDynamicEntitySystem();
     if IsDefined(this.m_time) {
       this.m_time.ResetTest();

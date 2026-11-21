@@ -579,6 +579,15 @@ public class TandemPartyHud {
     this.m_plates.SetVisible(show);
   }
 
+  // test reset: the layout, the list's state and the game's modules are
+  // said again (scenarios read them, a session keeps them).
+  public func ResayForTests() -> Void {
+    this.m_layout = "";
+    this.m_listWhy = "-";
+    this.m_modulesLogged = -1;
+    this.m_why = "-";
+  }
+
   public func Tick(now: Float, system: ref<TandemSystem>, you: Uint32) -> Void {
     this.m_now = now;
     let players = system.PuppetPlayers();

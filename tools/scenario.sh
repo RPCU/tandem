@@ -116,9 +116,16 @@ ensure() {
     exit 3
   fi
   [ "$status" = 0 ] || fail "the game is not running this build as $1"
-  mark
-  # A fresh start: everything in the new log belongs to this scenario.
-  if grep -q '^launched' <<<"$output"; then mark_line=0; fi
+  # A fresh start: everything in the new log belongs to this scenario. Else
+  # the mark before the test reset stays: what the reset has the game say
+  # again (a session's rules, comms, our level, the HUD's layout) is the
+  # scenario's to read.
+  if grep -q '^launched' <<<"$output"; then
+    mark
+    mark_line=0
+  elif [ -z "$mark_file" ]; then
+    mark
+  fi
 }
 peer() {
   $game peer "$@" | sed 's/^/  /'

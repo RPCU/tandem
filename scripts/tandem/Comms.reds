@@ -300,6 +300,11 @@ public class TandemComms {
     }
   }
 
+  // test reset: the settings said again (scenarios read them).
+  public func ResayForTests() -> Void {
+    TandemNative.Log(s"comms: on (link \(TandemComms.LinkWord(TandemCommsNative.LinkSetting())), pings \(TandemCommsNative.PingsOn()))");
+  }
+
   public func Start(game: GameInstance, system: ref<TandemSystem>) -> Void {
     this.m_game = game;
     this.m_system = system;

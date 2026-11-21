@@ -54,6 +54,11 @@ public class TandemLevels {
     return GameInstance.GetStatsSystem(game).GetStatValue(Cast<StatsObjectID>(id), gamedataStatType.PowerLevel);
   }
 
+  // test reset: our V's level said and sent again.
+  public func ResayForTests() -> Void {
+    this.m_sent = 0;
+  }
+
   // Our V's level, to the host: when it changes, at each session's start,
   // and every half minute (a repeat changes nothing there).
   public func Tick(now: Float) -> Void {

@@ -767,6 +767,11 @@ public class TandemThrows {
     }
   }
 
+  // test reset: each once-only line may be said again.
+  public func ResayForTests() -> Void {
+    ArrayClear(this.m_logged);
+  }
+
   public func End() -> Void {
     ArrayClear(this.m_ours);
     ArrayClear(this.m_ourIds);

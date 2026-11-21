@@ -189,6 +189,16 @@ public class TandemOutcomes {
     return this.m_haveOwn;
   }
 
+  // test reset: the difficulty and the rules are sent and said again, the
+  // throws' once-only lines too (scenarios read them, a session keeps them).
+  public func ResayForTests() -> Void {
+    this.m_sentLevel = -1;
+    this.m_sentRules = -1;
+    if IsDefined(this.m_throws) {
+      this.m_throws.ResayForTests();
+    }
+  }
+
   // The session is over: our own difficulty back.
   public func End() -> Void {
     if this.m_haveOwn {
