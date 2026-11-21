@@ -424,7 +424,9 @@ they change too often, and a wrong one heals with the next change.
 - **Core** (`core/include/tandem/scene.hpp`, `core/src/scene.cpp`):
   `scene::Stage` (host), `scene::Replay` (guest), `scene::WatchSpot`,
   `scene::KeepOut`. `story::Record` keeps the scene, its cast and the
-  lines being spoken for joiners and hashes scene and cast. `Endpoint`:
+  lines being spoken for joiners (not those over: a bark of minutes ago
+  named an NPC a joiner was never told of, the referee's `ids.unknown-npc`,
+  2026-11-21) and hashes scene and cast. `Endpoint`:
   the three story messages through the story path, `SendActorPose` /
   `events::HostActorPose`, the explicit "no scene" in a story resync.
 - **Plugin**: `engine/posestream.cpp` (actor sources and actor bindings on
