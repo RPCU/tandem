@@ -3024,6 +3024,44 @@ struct ScenePlace {
   friend bool operator==(const ScenePlace &, const ScenePlace &) = default;
 };
 
+// ---- The host's world prefabs (docs/architecture/story.md, "Quest prefabs") ----
+//
+// The quest prefabs the host's quests have loaded now (the interiors and
+// props a quest phase streams in: Konpeki Plaza, the All Foods plant): their
+// world node refs (GlobalNodeRef hashes, the same in every game of the same
+// world data), as the host's questQuestPrefabsHandler lists them in
+// ForceLoad (engine-knowledge §13.103). Host to guests, the whole set on
+// every change (sorted; empty: none), a story message: kept for late
+// joiners, in the story digest, an explicit "none" in a story resync. A
+// guest grouped with the host loads the same ones in its own world while
+// they last, and puts back what it loaded when it goes apart or leaves.
+inline constexpr std::size_t kMaxWorldPrefabs = 256;
+struct WorldPrefabs {
+  PlayerId player{}; // whose world (the host): set by the host's endpoint
+  std::vector<std::uint64_t> prefabs;
+  friend bool operator==(const WorldPrefabs &, const WorldPrefabs &) = default;
+};
+
+// ---- A player's story gates (docs/architecture/story.md, "Story gates") ----
+//
+// Where its own story lets its V go: the Watson lockdown lifted (fact
+// q101_done), Dogtown's gate open (fact ep1_side_content), and which side
+// of each its V stands on now. Every player's own word about its game, on
+// every change; the host stamps a guest's and passes it on, and keeps each
+// player's for late joiners (a story message, as StoryState). A gate open in
+// one story and closed in another is told in words at the join, and when a
+// guest meets the closed side while the host is past it.
+inline constexpr std::uint8_t kGateWatsonOpen = 1;  // the Watson lockdown is lifted
+inline constexpr std::uint8_t kGateDogtownOpen = 2; // Dogtown's gate is open
+inline constexpr std::uint8_t kGateInWatson = 4;    // its V is in Watson now
+inline constexpr std::uint8_t kGateInDogtown = 8;   // its V is in Dogtown now
+inline constexpr std::uint8_t kGateFlags = 15;
+struct StoryGates {
+  PlayerId player{}; // whose story (the host stamps a guest's)
+  std::uint8_t flags{};
+  friend bool operator==(const StoryGates &, const StoryGates &) = default;
+};
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -3045,7 +3083,7 @@ using MessageVariant = std::variant<
     BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
-    ScenePlace>;
+    ScenePlace, WorldPrefabs, StoryGates>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
@@ -3054,7 +3092,8 @@ using Message = ClosedVariant<MessageVariant>;
 bool operator==(const Message &a, const Message &b);
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
-// VehicleUnlock, StoryRestrictions, QuestInteract, SceneProp):
+// VehicleUnlock, StoryRestrictions, QuestInteract, SceneProp, ScenePlace,
+// WorldPrefabs, StoryGates):
 // endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit, Throw … Defended, ThrowPath),

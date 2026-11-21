@@ -1315,6 +1315,9 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
     // And no restriction is on (a guest that missed the lift frees its V).
     if (resync && !m_story.RestrictionsOn())
       Send(peer, proto::StoryRestrictions{.player = m_you});
+    // Nor any world prefab (a guest that missed the last change unloads).
+    if (resync && !m_story.PrefabsOn())
+      Send(peer, proto::WorldPrefabs{.player = m_you});
   }
 }
 
@@ -1387,6 +1390,9 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
       return;
     if (const auto *cursor = std::get_if<proto::ChoiceCursor>(&message);
         cursor && cursor->player == m_you)
+      return;
+    if (const auto *gates = std::get_if<proto::StoryGates>(&message);
+        gates && gates->player == m_you)
       return;
     // The host's verdict on one of our questions (never an ask, never
     // another's): kept for the session, then our game hears it.
@@ -3221,6 +3227,16 @@ void Endpoint::OnGuestStory(net::PeerId peer, proto::PlayerId player, const prot
     m_story.Note(relayed);
     Broadcast(relayed, peer);
     out.push_back(events::Story{relayed});
+  } else if (const auto *gates = std::get_if<proto::StoryGates>(&message)) {
+    // A guest's own story gates: stamped, kept for late joiners, passed on
+    // when they changed.
+    auto relayed = *gates;
+    relayed.player = player;
+    relayed.flags &= proto::kGateFlags;
+    if (!m_story.Note(relayed))
+      return;
+    Broadcast(relayed, peer);
+    out.push_back(events::Story{relayed});
   } else if (const auto *ask = std::get_if<proto::QuestInteract>(&message)) {
     OnGuestInteract(peer, player, *ask, out);
   }
@@ -3274,6 +3290,8 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
       cursor->player = m_you;
     else if (auto *state = std::get_if<proto::StoryState>(&message))
       state->player = m_you;
+    else if (auto *gates = std::get_if<proto::StoryGates>(&message))
+      gates->player = m_you;
     else if (auto *ask = std::get_if<proto::QuestInteract>(&message)) {
       if (ask->verdict != proto::kInteractAsk)
         return;
@@ -3324,6 +3342,28 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
     if (effects.size() > proto::kMaxStoryRestrictions)
       effects.resize(proto::kMaxStoryRestrictions);
     // A repeat of the set the guests have is not sent again.
+    if (!m_story.Note(message))
+      return;
+    Broadcast(message);
+    return;
+  }
+  if (auto *prefabs = std::get_if<proto::WorldPrefabs>(&message)) {
+    prefabs->player = m_you;
+    // One set, said one way, as the restrictions (no node is 0).
+    auto &set = prefabs->prefabs;
+    std::erase(set, std::uint64_t{0});
+    std::ranges::sort(set);
+    set.erase(std::unique(set.begin(), set.end()), set.end());
+    if (set.size() > proto::kMaxWorldPrefabs)
+      set.resize(proto::kMaxWorldPrefabs);
+    if (!m_story.Note(message))
+      return;
+    Broadcast(message);
+    return;
+  }
+  if (auto *gates = std::get_if<proto::StoryGates>(&message)) {
+    gates->player = m_you;
+    gates->flags &= proto::kGateFlags;
     if (!m_story.Note(message))
       return;
     Broadcast(message);

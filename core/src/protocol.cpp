@@ -380,6 +380,15 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
                        std::ranges::adjacent_find(restrictions->effects, std::greater_equal<>{}) !=
                            restrictions->effects.end()))
     return std::nullopt;
+  if (const auto *prefabs = std::get_if<WorldPrefabs>(&message);
+      prefabs && (prefabs->prefabs.size() > kMaxWorldPrefabs ||
+                  std::ranges::adjacent_find(prefabs->prefabs, std::greater_equal<>{}) !=
+                      prefabs->prefabs.end() ||
+                  std::ranges::find(prefabs->prefabs, std::uint64_t{0}) != prefabs->prefabs.end()))
+    return std::nullopt;
+  if (const auto *gates = std::get_if<StoryGates>(&message);
+      gates && (gates->flags & ~kGateFlags) != 0)
+    return std::nullopt;
   if (const auto *visuals = std::get_if<StatusVisuals>(&message);
       visuals && (visuals->records.size() > kMaxStatusVisuals ||
                   std::ranges::adjacent_find(visuals->records, std::greater_equal<>{}) !=
@@ -458,6 +467,8 @@ bool IsStory(const Message &message) {
          std::holds_alternative<QuestInteract>(message) ||
          std::holds_alternative<SceneProp>(message) ||
          std::holds_alternative<ScenePlace>(message) ||
+         std::holds_alternative<WorldPrefabs>(message) ||
+         std::holds_alternative<StoryGates>(message) ||
          (message.index() >= kId<SceneState> && message.index() <= kId<SceneLine>) ||
          std::holds_alternative<VehicleUnlock>(message);
 }
@@ -646,7 +657,9 @@ const char *NameOfKind(std::size_t kind) {
                                    "RigTracks",
                                    "TurretHands",
                                    "Race",
-                                   "ScenePlace"};
+                                   "ScenePlace",
+                                   "WorldPrefabs",
+                                   "StoryGates"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }
