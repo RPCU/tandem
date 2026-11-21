@@ -983,3 +983,31 @@ TEST_CASE("referee: a street race is described, seated, ordered and paid by its 
                 kSecond);
   CHECK(Rules(host) == std::vector<std::string>{"value.range"});
 }
+
+TEST_CASE("referee: a campaign copy is its player's own word, never passed back to it") {
+  auto host = Host();
+  host.Received(2, proto::Campaign{.campaign = 1, .copy = 2, .generation = 1, .ancestors = {3}},
+                kSecond);
+  CHECK(Rules(host).empty());
+  // In another player's name.
+  host.Received(
+      2, proto::Campaign{.player = 3, .campaign = 1, .copy = 4, .generation = 1, .ancestors = {3}},
+      kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.not-yours"});
+  // Its own ancestor; more ancestors than generations.
+  host.Received(2, proto::Campaign{.campaign = 1, .copy = 2, .generation = 1, .ancestors = {2}},
+                kSecond);
+  host.Received(3, proto::Campaign{.campaign = 1, .copy = 5, .ancestors = {3}}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>(2, "value.range"));
+
+  auto guest = Guest();
+  // The host's, and another guest's passed on: fine.
+  guest.Received(1, proto::Campaign{.player = 1, .campaign = 1, .copy = 3}, kSecond);
+  guest.Received(
+      1, proto::Campaign{.player = 3, .campaign = 1, .copy = 4, .generation = 1, .ancestors = {3}},
+      kSecond);
+  CHECK(Rules(guest).empty());
+  // Ours, back from the host.
+  guest.Received(1, proto::Campaign{.player = 2, .campaign = 1, .copy = 6}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.misdelivered"});
+}

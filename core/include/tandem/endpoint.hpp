@@ -483,6 +483,15 @@ struct SubstitutesFrom {
   proto::Substitutes substitutes;
   std::string name; // the seer's
 };
+// A shared campaign (docs/architecture/campaign.md): another player's copy
+// of a campaign, as it said it (campaign 0: it has none, or no longer).
+// Host: a guest's; guest: the host's or another guest's, passed on by the
+// host. A repeat is not reported.
+struct RemoteCampaign {
+  proto::PlayerId player{};
+  std::string name;
+  proto::Campaign campaign;
+};
 // Another player started, changed or ended what it is busy with (kind None),
 // or left while busy (docs/architecture/activities.md). Never our own.
 struct RemoteActivity {
@@ -630,7 +639,8 @@ using SessionEventVariant = std::variant<
     events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered,
     events::RemoteStatusVisuals, events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom,
     events::TrafficGive, events::TrafficTake, events::TrafficOwnerChanged, events::Fractured,
-    events::DeviceFired, events::TurretHeld, events::LinkDeclined>;
+    events::DeviceFired, events::TurretHeld, events::LinkDeclined,
+    events::RemoteCampaign>;
 // Its copies, moves and conversions compiled in session_event.cpp only, as
 // proto::Message's (tandem/closed_variant.hpp).
 using SessionEvent = ClosedVariant<SessionEventVariant>;
@@ -749,6 +759,10 @@ public:
   // `substitutes.owner`'s records (through the host, to that player only).
   void AskModNames(proto::PlayerId player);
   void SendSubstitutes(proto::Substitutes substitutes);
+  // A shared campaign (endpoint_campaign.cpp): our copy, said now and at
+  // every Welcome, kept until changed (campaign 0: none). Host: to every
+  // guest; guest: to the host, which passes it on.
+  void SetCampaign(proto::Campaign ours);
   // Host only: who holds an NPC now (kept for late joiners until released,
   // gone, or the holder leaves).
   void SendNpcHold(const proto::NpcHold &hold);
@@ -1364,6 +1378,13 @@ private:
                      std::vector<SessionEvent> &out);
   void SendModsTo(net::PeerId peer);
   std::map<proto::PlayerId, std::vector<proto::ModEntry>> m_theirMods;
+  // A shared campaign: a Campaign from `player` (host: a guest; guest: the
+  // host, or a guest's through it); ours and everyone's to a new guest.
+  void OnCampaign(proto::PlayerId player, proto::Campaign campaign, std::vector<SessionEvent> &out);
+  void SendCampaignsTo(net::PeerId peer, proto::PlayerId to);
+  std::optional<proto::Campaign> m_campaign;
+  // Host: each guest's (late joiners hear them); guest: what we heard.
+  std::map<proto::PlayerId, proto::Campaign> m_campaigns;
   // Host: delivers a message meant for `to` (kNoPlayer: everyone but
   // `except`) and tells whether it is for us too.
   template <class M> bool Deliver(const M &message, proto::PlayerId to, net::PeerId except);

@@ -32,6 +32,9 @@ std::string RedactIni(std::string_view ini, const std::filesystem::path &game);
 // The last `lines` lines of a text (all of it when shorter).
 std::string TailLines(std::string_view text, std::size_t lines);
 
+// The zip format's CRC-32 (also campaign.hpp's archives).
+std::uint32_t Crc32(std::string_view data);
+
 // A zip with stored (uncompressed) files: every unzip reads it.
 struct Entry {
   std::string name;

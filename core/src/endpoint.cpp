@@ -712,6 +712,7 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
             },
             [&](const proto::ModList &list) { OnModList(player, list, out); },
             [&](const proto::Substitutes &substitutes) { OnSubstitutes(player, substitutes, out); },
+            [&](const proto::Campaign &campaign) { OnCampaign(player, campaign, out); },
             [&](const proto::Pause &pause) {
               // A guest only pauses in its own name.
               const proto::Pause relayed{player, pause.paused};
@@ -945,6 +946,7 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   m_stealth.erase(player);
   m_presences.erase(player);
   m_statusVisuals.erase(player);
+  m_campaigns.erase(player);
   m_transits.erase(player);
   // Our NPCs seated in its vehicle: out (its copy stays parked elsewhere).
   for (auto it = m_npcSeats.begin(); it != m_npcSeats.end();) {
@@ -1105,6 +1107,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
     BroadcastRoster();
     Send(peer, m_identity.install);
     SendModsTo(peer);
+    SendCampaignsTo(peer, player);
     SendSessionTo(peer);
     return;
   }
@@ -1130,6 +1133,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
   // After the roster: the guest names us when it says what differs.
   Send(peer, m_identity.install);
   SendModsTo(peer);
+  SendCampaignsTo(peer, player);
   SendSessionTo(peer);
   CheckLost(out); // a V up again
 }
@@ -1559,6 +1563,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             out.push_back(events::Joined{m_you, m_host});
             Send(m_hostPeer, m_identity.install);
             SendModsTo(m_hostPeer);
+            SendCampaignsTo(m_hostPeer, m_host);
             SendLocalAppearanceNow();
             SendLocalHeldNow();
             SendLocalSeatNow();
@@ -1598,6 +1603,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
           },
           [&](const proto::ModList &list) { OnModList(m_host, list, out); },
           [&](const proto::Substitutes &substitutes) { OnSubstitutes(m_host, substitutes, out); },
+          [&](const proto::Campaign &campaign) { OnCampaign(campaign.player, campaign, out); },
           [&](const proto::Pong &pong) {
             const auto now = net::NowUs();
             const auto rtt = now - pong.pingSentUs;
@@ -1655,6 +1661,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 m_story.Forget(id);
                 m_commsLinks.erase(id);
                 m_waypoints.erase(id);
+                m_campaigns.erase(id);
                 ForgetStreams(id);
                 out.push_back(events::PlayerLeft{id});
               }

@@ -1598,3 +1598,42 @@ TEST_CASE("street races: Race survives encoding, is reliable, kinds and lists ch
                                  .entries = std::vector<RaceEntry>(kMaxRacers + 1)}))
                   .has_value());
 }
+
+TEST_CASE("a shared campaign's copy: on the wire, checked") {
+  const Campaign copy{.player = 2,
+                      .campaign = 0xC0FFEE,
+                      .copy = 0xB2,
+                      .generation = 3,
+                      .ancestors = {0xB1, 0xB0},
+                      .savedUnix = 1'795'000'000,
+                      .who = "Judy",
+                      .quest = "The Heist",
+                      .flags = kCampaignPlaying,
+                      .chosen = 0xB1};
+  RoundTrips(copy);
+  RoundTrips(Campaign{}); // none: ours taken back
+  CHECK(std::string(NameOf(Campaign{})) == "Campaign");
+  CHECK(ChannelOf(copy) == Channel::Event);
+  CHECK(IsReliable(copy));
+  auto bad = copy;
+  bad.ancestors.push_back(0xB2); // its own ancestor
+  CHECK_FALSE(Decode(Encode(bad)).has_value());
+  bad = copy;
+  bad.generation = 1; // two ancestors in one generation
+  CHECK_FALSE(Decode(Encode(bad)).has_value());
+  bad = copy;
+  bad.copy = 0;
+  CHECK_FALSE(Decode(Encode(bad)).has_value());
+  bad = copy;
+  bad.who = std::string(kMaxCampaignText + 1, 'x');
+  CHECK_FALSE(Decode(Encode(bad)).has_value());
+  bad = copy;
+  bad.flags = 0x80;
+  CHECK_FALSE(Decode(Encode(bad)).has_value());
+  bad = copy;
+  bad.ancestors.assign(kMaxCampaignAncestors + 1, 7);
+  bad.generation = 100;
+  CHECK_FALSE(Decode(Encode(bad)).has_value());
+  // None is none: no copy, no generation.
+  CHECK_FALSE(Decode(Encode(Campaign{.copy = 5})).has_value());
+}

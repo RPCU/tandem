@@ -25,7 +25,8 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // be a tracked quest objective (WaypointKind::Objective). 10: WorldPrefabs
 // and StoryGates appended (a game of 9 cannot read them).
 // 11: NpcHealth.flags (kNpcProtected); WeakSpotHit and HackTraced appended.
-inline constexpr std::uint16_t kProtocolVersion = 11;
+// 12: Campaign appended (a shared campaign's copies).
+inline constexpr std::uint16_t kProtocolVersion = 12;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3112,6 +3113,36 @@ struct HackTraced {
   friend bool operator==(const HackTraced &, const HackTraced &) = default;
 };
 
+// ---- A shared campaign (docs/architecture/campaign.md) ----
+//
+// One player's copy of a shared campaign save, by its lineage
+// (tandem/campaign.hpp): the campaign, this copy, its generation, the copies
+// it came from (parent first), when its newest save was written, who played
+// it last and the last quest done in it. Said by each game to the host at
+// its Welcome and again when it changes (the host: the copy it plays; a
+// guest: its own copy of the host's campaign, its newest one, once it heard
+// the host's); the host stamps `player`, keeps everyone's for late joiners
+// and passes each to the others. A copy with `campaign` 0 takes ours back
+// (none). `chosen`: the copy the sender chose to go on from after a fork or
+// a newer copy (0: no choice). Event channel; a repeat changes nothing.
+inline constexpr std::size_t kMaxCampaignAncestors = 32;
+inline constexpr std::size_t kMaxCampaignText = 64;
+inline constexpr std::uint8_t kCampaignPlaying = 1; // the copy the sender's game plays now
+inline constexpr std::uint8_t kCampaignFlags = kCampaignPlaying;
+struct Campaign {
+  PlayerId player{}; // whose copy: set by the host from the connection
+  std::uint64_t campaign{};
+  std::uint64_t copy{};
+  std::uint32_t generation{};
+  std::vector<std::uint64_t> ancestors; // parent first, at most kMaxCampaignAncestors
+  std::uint64_t savedUnix{};            // its newest save (UTC seconds; 0: none yet)
+  std::string who;                      // who played it last (at most kMaxCampaignText)
+  std::string quest;                    // the last quest done in it (at most kMaxCampaignText)
+  std::uint8_t flags{};                 // kCampaign*
+  std::uint64_t chosen{};
+  friend bool operator==(const Campaign &, const Campaign &) = default;
+};
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -3133,7 +3164,8 @@ using MessageVariant = std::variant<
     BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
-    ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced>;
+    ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced,
+    Campaign>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,

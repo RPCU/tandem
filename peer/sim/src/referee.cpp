@@ -207,6 +207,9 @@ TANDEM_SAID_BY(Either, Race)
 // What a proxy cannot do, asked of the NPC's owner (AsksOwner).
 TANDEM_SAID_BY(Either, WeakSpotHit)
 TANDEM_SAID_BY(Either, HackTraced)
+// A player's copy of a shared campaign: its own word, the host stamps it
+// and passes it on (never back to its owner: FromHost).
+TANDEM_SAID_BY(Either, Campaign)
 #undef TANDEM_SAID_BY
 
 // A new message without its SaidBy line above fails here ("incomplete type").
@@ -342,7 +345,8 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::DeviceFire> || std::is_same_v<M, p::ThrowPath> ||
                            std::is_same_v<M, p::TurretHands> || std::is_same_v<M, p::Race> ||
                            std::is_same_v<M, p::StoryGates> ||
-                           std::is_same_v<M, p::WeakSpotHit> || std::is_same_v<M, p::HackTraced>)
+                           std::is_same_v<M, p::WeakSpotHit> || std::is_same_v<M, p::HackTraced> ||
+                           std::is_same_v<M, p::Campaign>)
           return &m.player;
         else
           return nullptr;
@@ -683,6 +687,11 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
     Add("authority.misdelivered", std::format("the host gave us the state of vehicle {:#x}, which "
                                               "goes to player {}",
                                               given->id, given->to));
+  // Our own copy of the campaign is ours to say, never the host's to pass back.
+  if (const auto *campaign = std::get_if<p::Campaign>(&message);
+      campaign && m_self != p::kNoPlayer && campaign->player == m_self)
+    Add("authority.misdelivered",
+        std::format("the host passed us our own campaign copy {:#x}", campaign->copy));
   if (const auto *crime = std::get_if<p::Crime>(&message); crime && crime->player != m_self)
     Add("authority.misdelivered",
         std::format("a crime of player {} came to us (player {})", crime->player, m_self));
@@ -793,6 +802,13 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           inRange = !finite || (m.fov > 0.f && m.fov <= 180.f);
         } else if constexpr (std::is_same_v<M, p::SceneProp>) {
           inRange = m.prop != 0 && (m.flags & ~p::kPropFlags) == 0;
+        } else if constexpr (std::is_same_v<M, p::Campaign>) {
+          // A copy: none, or one with a generation for each ancestor, never
+          // its own ancestor.
+          inRange = m.campaign == 0
+                        ? m.copy == 0 && m.ancestors.empty()
+                        : m.copy != 0 && m.ancestors.size() <= m.generation &&
+                              std::ranges::find(m.ancestors, m.copy) == m.ancestors.end();
         } else if constexpr (std::is_same_v<M, p::ScenePlace>) {
           finite = Finite(m.position) && Finite(m.orientation);
           inRange = !finite || (m.prop != 0 && (m.flags & ~p::kPropGone) == 0);

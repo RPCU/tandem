@@ -277,6 +277,18 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
                std::ranges::any_of(
                    mods->mods, [](const ModEntry &mod) { return mod.name.size() > kMaxModName; })))
     return std::nullopt;
+  // A campaign copy: none at all, or a copy with no more ancestors than
+  // generations, never its own ancestor, short words.
+  if (const auto *copy = std::get_if<Campaign>(&message);
+      copy &&
+      (copy->ancestors.size() > kMaxCampaignAncestors || copy->who.size() > kMaxCampaignText ||
+       copy->quest.size() > kMaxCampaignText || (copy->flags & ~kCampaignFlags) != 0 ||
+       (copy->campaign == 0
+            ? copy->copy != 0 || copy->generation != 0 || !copy->ancestors.empty() ||
+                  copy->flags != 0
+            : copy->copy == 0 || copy->ancestors.size() > copy->generation ||
+                  std::ranges::find(copy->ancestors, copy->copy) != copy->ancestors.end())))
+    return std::nullopt;
   if (const auto *thrown = std::get_if<Throw>(&message); thrown && thrown->kind > ThrowKind::Smart)
     return std::nullopt;
   if (const auto *end = std::get_if<ThrowEnd>(&message); end && end->how > ThrowEndKind::Gone)
@@ -666,7 +678,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "WorldPrefabs",
                                    "StoryGates",
                                    "WeakSpotHit",
-                                   "HackTraced"};
+                                   "HackTraced",
+                                   "Campaign"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

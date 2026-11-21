@@ -154,6 +154,8 @@ std::vector<std::filesystem::path> Newest(const std::filesystem::path &folder,
   return out;
 }
 
+} // namespace
+
 std::uint32_t Crc32(std::string_view data) {
   static const auto table = [] {
     std::array<std::uint32_t, 256> t{};
@@ -170,6 +172,8 @@ std::uint32_t Crc32(std::string_view data) {
     crc = table[(crc ^ static_cast<unsigned char>(c)) & 0xFF] ^ (crc >> 8);
   return crc ^ 0xFFFFFFFFu;
 }
+
+namespace {
 
 void Put16(std::vector<std::byte> &out, std::uint32_t value) {
   out.push_back(static_cast<std::byte>(value & 0xFF));
