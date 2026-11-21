@@ -425,11 +425,77 @@ report` (state: the host's reasons and whether to watch, whether we
       `interact-guest-pickup`, `interact-guest-hostonly`,
       `interact-apart-own-gig`; `tools/game.sh cmd story interact` (counts),
       `story interact look [device]`, `story interact use [device]`.
+  - _Quest prefabs_ (`scripts/tandem/StoryWorld.reds`,
+    `plugin/src/engine/prefabs.cpp`, `core/include/tandem/prefabs.hpp`;
+    engine facts §13.111; built 2026-11-21, nothing run in game). The
+    interiors and props a quest phase streams in (The Pickup's All Foods
+    plant, The Heist's Konpeki Plaza) exist only in a game whose quest runs
+    that phase: a guest's own quests never do, so the host walked into
+    geometry the guest's world lacked.
+    - _The host_ reads once a second which prefabs its quests have on (the
+      quests system's prefab handler: mode ForceLoad) and sends the set
+      when it changes, as `WorldPrefabs` (appended; their world node refs,
+      sorted, 256 at most; a story message: kept for late joiners, in the
+      story digest, an explicit "none" in a story resync). Its own copy is
+      never changed.
+    - _A guest grouped with the host_ (`TandemStorySystem.Grouped()`) turns
+      the same ones on in its own world, the engine's way (the handler's
+      `SetMode`, under its lock, as a phase does), and remembers which it
+      turned on (`prefabs::Mirror`). It turns off only those: when the
+      host's set drops one, when it goes apart, when the session ends or the
+      host vanishes (`GuestLeave`, before its journal goes back; "Saves").
+      One already on (its own quest's) is never touched; one its own quest
+      asked for meanwhile is left on and no longer ours; one its own quest
+      turned off while the host still has it is put on again. The devices
+      inside are placed ones (static ids): the host's word reaches them as
+      they stream in and the leave puts them back (`devices.md`); its NPCs
+      are the host's quest spawns, shown as proxies.
+    - _The layout check_ (once: RTTI sizes of the quests system, the
+      handler, its entry and the streaming system; the classes of the
+      objects at the measured places): on a mismatch nothing is read or
+      set, the log says why, and a guest near the host (150 m) while the
+      host's quests have prefabs on is told once per set that its game
+      cannot load them ("follow them, or watch through their eyes when the
+      story allows": `Prefabs-Missing`).
+    - `tandem.ini` `quest_prefabs = off`: a guest loads none (the host
+      sends them anyway).
+    - Tests: `tests/prefabs_test.cpp` (the mirror, the record, both
+      messages over loopback), `tests/protocol_test.cpp`,
+      `tests/referee_test.cpp` (the host's world only); mock player
+      `--prefabs REF[,REF]` and the story verb `prefabs`; scenarios
+      `prefabs-guest`, `prefabs-host`; `tools/game.sh cmd story prefabs`.
+  - _Story gates_ (`StoryWorld.reds`, `core/include/tandem/prefabs.hpp`
+    `gates::`; engine facts §13.112; built 2026-11-21, not run in game). A
+    guest earlier in the story than the host is kept where the host walks:
+    the Watson lockdown (Act 1 and Playing for Time: fact `q101_done`) and
+    Dogtown's gate (fact `ep1_side_content`). Each game sends its own gates
+    and which side its V is on (its district: in Watson, in Dogtown) as
+    `StoryGates` (appended; on every change; the host stamps a guest's,
+    passes it on and keeps every player's for late joiners).
+    - _At the join_ (`gates::Behind`), both players are told in words what
+      the host's story has open and the guest's keeps closed, the lockdown
+      first: the guest "… has lifted the Watson lockdown, yours has not …
+      ride in NAME's car", the host "… is still in the Watson lockdown …
+      pick them up in your car" (`Gates-WatsonBehind`,
+      `Gates-WatsonBehindHost`, `Gates-DogtownBehind`,
+      `Gates-DogtownBehindHost`).
+    - _In play_ (`gates::Watcher`): a guest grouped with the host, on the
+      closed side (in Watson under its lockdown; outside Dogtown with its
+      gate shut) while the host is past it and within 250 m (it just
+      crossed where the guest stands), is told once per crossing to ride in
+      the host's car (`Gates-WatsonMet`, `Gates-DogtownMet`): the guest's
+      seat in the host's copy carries it across, as any ride does. Never a
+      teleport through. Spectating across a gate is not offered: the host
+      sends its view only in a scripted moment, and the spectator's carry
+      would leave its V past the barrier.
+    - Tests: `tests/prefabs_test.cpp`; mock player `--gates N`; scenario
+      `gates-guest`; `tools/game.sh cmd story gates`.
   - Not yet verified in game: scenarios `story-guest`, `story-host`, `story-johnny`,
     `story-private`, `story-private-host`, `story-private-calls`, `story-session-items`,
     `story-gigs-apart`, `story-restrict-guest`, `story-restrict-host`,
     `spectate-guest`, `spectate-leave`, `spectate-host`,
-    `interact-guest-pickup`, `interact-guest-hostonly`, `interact-apart-own-gig`.
+    `interact-guest-pickup`, `interact-guest-hostonly`, `interact-apart-own-gig`,
+    `prefabs-guest`, `prefabs-host`, `gates-guest`.
 
 ## Open problems
 

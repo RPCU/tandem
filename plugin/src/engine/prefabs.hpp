@@ -1,6 +1,6 @@
 #pragma once
 // Quest prefabs (docs/architecture/story.md, "Quest prefabs";
-// engine-knowledge §13.103, read offline on the 2.50 exe): the interiors and
+// engine-knowledge §13.111, read offline on the 2.50 exe): the interiors and
 // props a quest phase streams in. The quests system's prefab handler keeps
 // one mode per prefab (ForceLoad or Disable) and hands each change to the
 // world streaming system. The host reads which are on; a guest turns the

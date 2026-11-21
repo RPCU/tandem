@@ -445,11 +445,11 @@ candidate 2), so both can scan; clues stay host facts.
   (`questQuestsSystemReplicatedState.replicatedQuestPrefabs`, `QW §1`); the
   engine side is `questQuestPrefabsHandler` (size 0xf0, a
   `worldIQuestPrefabStateListener`) and `worldRuntimeSystemPrefabInstancing`
-  [R]; no script API. Step 4: RE how a phase asks for its prefabs, then
-  load the host's list on the guest. Until then: when the host's V
-  enters such an interior the guest gets a regroup offer only once the
-  host is out again, and a HUD line; never a teleport into missing
-  geometry (test T9 lists which places are affected).
+  [R]; no script API. Step 4 is built (2026-11-21, not run in game): the
+  handler's `SetMode` loads the host's list on a grouped guest
+  (engine-knowledge §13.111; `docs/architecture/story.md`, "Quest
+  prefabs"); a game whose layout check fails tells the guest it cannot
+  see inside instead (test T9 lists which places are affected).
 
 ### 2.8 NPCs that must talk to "V"
 
