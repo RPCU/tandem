@@ -11,7 +11,7 @@ expect 'hacks: npc [0-9]+ (hacks our V with AIQuickHack.HackRevealPosition \(tra
 # Our V quickhacks the nearest proxy (needs the hack in the deck and the RAM).
 cmd hack npc QuickHack.OverheatLvl1Hack
 expect 'hack npc: QuickHack.OverheatLvl1Hack on [0-9]+' 10
-expect 'hacks: our upload of QuickHack.OverheatLvl1Hack on proxy [0-9]+ sent to the host' 10
+expect 'hacks: our upload of QuickHack.OverheatLvl1Hack on proxy [0-9]+ sent to (the host|its owner)' 10
 expect_peer 'player [0-9]+ uploads 0x[0-9a-f]+ on npc [0-9]+' 10
 expect 'hacks: the host runs our upload of QuickHack.OverheatLvl1Hack on npc [0-9]+' 10
 reject 'watchdog: game thread silent'

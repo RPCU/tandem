@@ -11,7 +11,7 @@ expect_peer 'npc [0-9]+ struck by player [0-9]+: [1-9][0-9]* health' 10
 expect_peer 'npc [0-9]+ health [0-9]+%' 5
 # A hit that sets it on fire: the effect goes to the host too.
 cmd npc punch burn
-expect 'combat: status effect [A-Za-z_.]+ on proxy [0-9]+ sent to the host' 10
+expect 'combat: status effect [A-Za-z_.]+ on proxy [0-9]+ sent to (the host|its owner)' 10
 expect_peer 'npc [0-9]+ gets effect 0x[0-9a-f]+ from player [0-9]+' 10
 # An instant kill, credited to our V.
 cmd npc punch
