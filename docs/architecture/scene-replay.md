@@ -261,9 +261,8 @@ without the game); the script applies them (`Scenes.reds`):
 
 ### Faces, and bodies on other rigs
 
-`scene_rigs = on`, the default (not yet run in game; it adds work on the
-animation job threads; `off` turns it off, and a layout or rig mismatch
-turns it off by itself, logged).
+`scene_rigs = on` (off by default: never run in game, and it adds work on
+the animation job threads).
 
 - **What is copied**: the pose a graph instance hands over at its commit,
   whole rig, local space, by bone index. For a face that is the entity's
@@ -459,7 +458,7 @@ they change too often, and a wrong one heals with the next change.
 - **Mock player** (`peer/src/main.cpp`): story verbs `scene`, `cast`,
   `prop`, `face`, `camera`, `skip`, `voice`, `cut`; its scene's actors take the pose it sends; as a
   guest it logs what it hears.
-- **Config** (`tandem.ini`): `scene_replay = on | noposes | off` (on by default);
+- **Config** (`tandem.ini`): `scene_replay = off | on | noposes`;
   `scene_camera = on | off` (the watch camera); `scene_rigs = off | on`
   (faces, bodies on other rigs); `scene_kbps` (host: what a
   scene's streams may take on a guest's link, 22 by default, 8 to 2000);
@@ -637,9 +636,7 @@ scene report`: `face tracks on (R reads, W writes)`, R > 0 on the host,
   the phantom system may hide Johnny's proxy whatever we do. Each has a
   check in §11 and a fallback in the design: no voice (today's subtitles
   stay), no pose (the proxy's own animation), the cast's ghost flags. That
-  is why each part can be turned off (`scene_replay = noposes | off`,
-  `scene_rigs = off`, `scene_camera = off`); it ships on so the first
-  test sessions exercise it (2026-11-21).
+  is why it ships off by default. On by default (2026-11-21), the host crashed in the animation jobs (an access violation at Cyberpunk2077.exe+0xd38a7c, job thread) 0.2 s after reading a mount scene's NPC actor's rig (`ride` scenario): back to off until fixed.
 - **The pose hooks run for more entities.** They were bound to the local
   V and up to 64 puppets; a host now reads up to 16 NPCs and a guest
   writes up to 16 proxies, on animation job threads. The reads are guarded
