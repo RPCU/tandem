@@ -132,6 +132,8 @@ public native struct TandemShotAt {
   native let factor: Float;
   native let boost: Float;
   native let boostSeconds: Float;
+  // 1 a smart weapon's, 2 the AI tracks its target: a guided round
+  native let flags: Int32;
 }
 
 // Host: a guest's game says a shot it simulated hit its V (Shots.reds).
@@ -421,7 +423,7 @@ public native class TandemNative extends IScriptable {
   public static native func SendNpcEffect(npc: Uint32, effects: array<TweakDBID>)
   public static native func SendPlayerHit(player: Uint32, npc: Uint32, physical: Float, thermal: Float, electric: Float, chemical: Float, attackType: Int32, flags: Int32, pierce: Float, position: Vector4, direction: Vector4, attack: TweakDBID, weapon: TweakDBID)
   public static native func TakePlayerHits() -> array<TandemPlayerHit>
-  public static native func SendShotAt(player: Uint32, npc: Uint32, attack: TweakDBID, weapon: TweakDBID, tbh: Float, trigger: Int32, factor: Float)
+  public static native func SendShotAt(player: Uint32, npc: Uint32, attack: TweakDBID, weapon: TweakDBID, tbh: Float, trigger: Int32, factor: Float, flags: Int32)
   public static native func TakeShotsAt() -> array<TandemShotAt>
   public static native func SendShotHit(npc: Uint32, position: Vector4, direction: Vector4)
   public static native func TakeShotHits() -> array<TandemShotHit>
