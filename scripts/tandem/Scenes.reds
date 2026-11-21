@@ -708,6 +708,8 @@ public class TandemScenes {
     data.seekTime = event.duration;
     let voice = new DialogLineEvent();
     voice.data = data;
+    // A V's line in the recording of that V's body, not of ours.
+    let gendered = data.isPlayer && TandemStory.VoiceGender(voice, this.BodyOf(event.player));
     speaker.QueueEvent(voice);
     let spoken = new TandemSceneVoice();
     spoken.line = event.line;
@@ -716,7 +718,17 @@ public class TandemScenes {
     if ArraySize(this.m_voices) > 16 {
       ArrayErase(this.m_voices, 0);
     }
-    TandemNative.Log(s"scene: line voiced (npc \(event.npc), player \(event.player), from \(event.duration) s\(holocall ? ", holocall" : "")\(ghost ? ", inner voice" : ""))");
+    TandemNative.Log(s"scene: line voiced (npc \(event.npc), player \(event.player), from \(event.duration) s\(holocall ? ", holocall" : "")\(ghost ? ", inner voice" : "")\(gendered ? ", their V's voice" : ""))");
+  }
+
+  // A player's body in the session: 1 female, 2 male, 0 unknown.
+  private func BodyOf(player: Uint32) -> Int32 {
+    for info in TandemSync.Players() {
+      if info.player == player {
+        return info.body;
+      }
+    }
+    return 0;
   }
 
   private func StopVoice(voice: ref<TandemSceneVoice>) -> Void {
@@ -1034,22 +1046,34 @@ public class TandemScenes {
       this.m_lastSample = 0.0;
       TandemNative.Log(s"scene: test prop \(name)");
     } else if StrBeginsWith(command, "story scene voice ") {
-      // (test) story scene voice STRINGID: that line's voice-over on the
-      // nearest shared NPC or proxy (or our V), as a guest would play it.
+      // (test) story scene voice STRINGID [female|male]: that line's
+      // voice-over on the nearest shared NPC or proxy (or our V), as a guest
+      // would play it; with a body, as a V's line in that body's voice.
       let player = GetPlayer(this.m_game);
+      let args = StrAfterFirst(command, "voice ");
+      let body = 0;
+      if StrEndsWith(args, " female") {
+        body = 1;
+        args = StrBeforeFirst(args, " ");
+      } else if StrEndsWith(args, " male") {
+        body = 2;
+        args = StrBeforeFirst(args, " ");
+      }
       let npcs = this.Npcs();
       let speaker: ref<GameObject> = IsDefined(npcs) ? npcs.NearestProxy(player.GetWorldPosition()) : null;
       if !IsDefined(speaker) {
         speaker = player;
       }
       let data: audioDialogLineEventData;
-      data.stringId = TandemStory.LineId(StringToUint64(StrAfterFirst(command, "voice ")));
+      data.stringId = TandemStory.LineId(StringToUint64(args));
       data.context = locVoiceoverContext.Vo_Context_Quest;
       data.expression = locVoiceoverExpression.Vo_Expression_Spoken;
+      data.isPlayer = body != 0;
       let voice = new DialogLineEvent();
       voice.data = data;
+      let gendered = body != 0 && TandemStory.VoiceGender(voice, body);
       speaker.QueueEvent(voice);
-      TandemNative.Log(s"scene: test line \(StrAfterFirst(command, "voice ")) queued on \(EntityID.ToDebugString(speaker.GetEntityID()))");
+      TandemNative.Log(s"scene: test line \(args) queued on \(EntityID.ToDebugString(speaker.GetEntityID()))\(gendered ? s", body \(body)" : "")");
     } else {
       TandemNative.Log(s"unknown command: \(command)");
     }

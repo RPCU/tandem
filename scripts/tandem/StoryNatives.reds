@@ -191,5 +191,6 @@ public native class TandemStory extends IScriptable {
   public static native func SceneReport() -> String;
   public static native func LineId(line: Uint64) -> CRUID;
   public static native func LineValue(id: CRUID) -> Uint64;
+  public static native func VoiceGender(event: ref<IScriptable>, body: Int32) -> Bool;
   public static native func StandInLine(line: Uint64) -> Uint64;
 }

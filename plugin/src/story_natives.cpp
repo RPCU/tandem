@@ -991,6 +991,35 @@ struct TandemStory : Red::IScriptable {
     return id;
   }
   static std::uint64_t LineValue(Red::CRUID id) { return static_cast<std::uint64_t>(id.unk00); }
+  // Which recording a V's line plays: the speaking V's body (1 female, 2
+  // male) written into the event's `data.gender`, the Int32 Codeware adds
+  // to the RTTI of audioDialogLineEventData (not in its script import), by
+  // name and type. False: not written (scene_voice_gender = off, no such
+  // field, an unknown body): the game picks.
+  static bool VoiceGender(Red::Handle<Red::IScriptable> event, std::int32_t body) {
+    const auto mode = Runtime::Get().config.sceneVoiceGender;
+    if (!event || mode == 0 || (body != 1 && body != 2))
+      return false;
+    static bool warned = false;
+    auto *data = event->GetType()->GetProperty("data");
+    auto *dataType = data && data->type && data->type->GetType() == Red::rtti::ERTTIType::Class
+                         ? static_cast<Red::CClass *>(data->type)
+                         : nullptr;
+    const auto *field = dataType ? dataType->GetProperty("gender") : nullptr;
+    if (!field || !field->type || field->type->GetName() != Red::CName("Int32") ||
+        field->valueOffset + sizeof(std::int32_t) > dataType->GetSize()) {
+      if (!std::exchange(warned, true))
+        log::Warn("scene: {} has no Int32 data.gender (Codeware's): V's voice is the game's pick",
+                  event->GetType()->GetName().ToString());
+      return false;
+    }
+    // locVoiceTagGender: Male 1, Female 2 [inferred]; swapped: the other way.
+    const bool male = body == 2;
+    const std::int32_t value = (mode == 1) == male ? 1 : 2;
+    *reinterpret_cast<std::int32_t *>(reinterpret_cast<std::uint8_t *>(event.GetPtr()) +
+                                      data->valueOffset + field->valueOffset) = value;
+    return true;
+  }
   // The id a guest shows the host's line under (never 0, never the line's
   // own: the game may show that one itself, Dialogue.reds).
   static std::uint64_t StandInLine(std::uint64_t line) {
@@ -1132,5 +1161,6 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(SceneReport);
   RTTI_METHOD(LineId);
   RTTI_METHOD(LineValue);
+  RTTI_METHOD(VoiceGender);
   RTTI_METHOD(StandInLine);
 });
