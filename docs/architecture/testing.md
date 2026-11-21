@@ -182,6 +182,7 @@ read):
 | `position` | our V's X Y Z |
 | `mounted [player N \| puppet]` | `RECORD SLOT ENTITYHASH` of the vehicle our V (player N's puppet, the first remote player's) is mounted in (`MountingFacility`) |
 | `npc ID health` | a shared NPC's health, percent: our own NPC or our proxy |
+| `threat puppet` | the largest threat value an NPC we run near our V holds on the first remote player's puppet (`TargetTrackerComponent`) |
 
 In a scenario: `query VAR WHAT [ARGS]` asks, waits 10 s for this answer
 and sets VAR; `expect_value V OP W` (OP `=`, `!=`, `~` an ERE, `<`, `<=`,
