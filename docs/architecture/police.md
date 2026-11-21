@@ -100,9 +100,10 @@ it does not (a proxy that does not count as a civilian there, research §13.34 q
    cars that could not come.
 4. **Cars from two stars** (one, two from four), **off by default** until
    proven in game (`police cars on|off`, a test command; `police-host-cars`
-   turns it on): a game asking roads for them crashed a job thread
-   (`Cyberpunk2077.exe+0x44eff3`) 30 ms after its "roads checked" line
-   (2026-11-21, police-host); the AV of item 5 is behind the same switch.
+   turns it on): asking roads for three strategies of seven crashed a job
+   thread (2026-11-21, police-host; all seven now, as the game does:
+   [`§13.102`](../research/engine/traffic-police.md)); the AV of item 5 is
+   behind the same switch.
    The owner finds a place on
    the roads around the puppet (`FindPursuitPointsRangeAsync` with
    `NavGenAgentSize` 1, vehicle, at the level's vehicle spawn range) and

@@ -769,26 +769,46 @@ public class TandemPolice {
       return;
     }
     let table = this.TableFor(stage);
+    // All seven, as the game asks: the checker queues every strategy's slot
+    // and calls its callback, and a slot never set has none (three asked:
+    // a job thread crashed 30 ms later, engine/traffic-police.md §13.102).
     let requests: array<ref<BaseStrategyRequest>>;
-    ArrayPush(requests, TandemPolice.StrategyRequest(table, vehiclePoliceStrategy.GetToPlayerFromAnywhere));
-    ArrayPush(requests, TandemPolice.StrategyRequest(table, vehiclePoliceStrategy.SearchFromAnywhere));
-    ArrayPush(requests, TandemPolice.StrategyRequest(table, vehiclePoliceStrategy.DriveTowardsPlayer));
+    let strategy = 1;
+    while strategy <= 7 {
+      ArrayPush(requests, TandemPolice.StrategyRequest(table, IntEnum<vehiclePoliceStrategy>(strategy)));
+      strategy += 1;
+    }
     spawner.SetStrategyPreCheckRequests(requests);
     this.m_roads = true;
     TandemNative.Log(s"police: roads checked for police cars (level \(stage))");
   }
 
   // As the prevention system makes them (CreateStrategyRequest), from a
-  // level's table.
+  // level's table: strategy N reads StrategyN.
   private static func StrategyRequest(table: wref<PreventionHeatTable_Record>, strategy: vehiclePoliceStrategy) -> ref<BaseStrategyRequest> {
     let data: wref<StrategyData_Record>;
     if IsDefined(table) {
-      if Equals(strategy, vehiclePoliceStrategy.DriveTowardsPlayer) {
-        data = table.Strategy1();
-      } else if Equals(strategy, vehiclePoliceStrategy.GetToPlayerFromAnywhere) {
-        data = table.Strategy5();
-      } else {
-        data = table.Strategy7();
+      switch strategy {
+        case vehiclePoliceStrategy.DriveTowardsPlayer:
+          data = table.Strategy1();
+          break;
+        case vehiclePoliceStrategy.DriveAwayFromPlayer:
+          data = table.Strategy2();
+          break;
+        case vehiclePoliceStrategy.PatrolNearby:
+          data = table.Strategy3();
+          break;
+        case vehiclePoliceStrategy.InterceptAtNextIntersection:
+          data = table.Strategy4();
+          break;
+        case vehiclePoliceStrategy.GetToPlayerFromAnywhere:
+          data = table.Strategy5();
+          break;
+        case vehiclePoliceStrategy.InitialSearch:
+          data = table.Strategy6();
+          break;
+        default:
+          data = table.Strategy7();
       }
     }
     let range = new Vector2(80.0, 200.0);
@@ -799,13 +819,22 @@ public class TandemPolice {
       angles = data.VehicleSpawnAngleRange();
       direct = data.MinDirectDistance();
     }
-    if Equals(strategy, vehiclePoliceStrategy.DriveTowardsPlayer) {
-      return DriveTowardsPlayerStrategyRequest.Create(range, direct);
+    switch strategy {
+      case vehiclePoliceStrategy.DriveTowardsPlayer:
+        return DriveTowardsPlayerStrategyRequest.Create(range, direct);
+      case vehiclePoliceStrategy.DriveAwayFromPlayer:
+        return DriveAwayFromPlayerStrategyRequest.Create(range, direct);
+      case vehiclePoliceStrategy.PatrolNearby:
+        return PatrolNearbyStrategyRequest.Create(range, angles);
+      case vehiclePoliceStrategy.InterceptAtNextIntersection:
+        return InterceptAtNextIntersectionStrategyRequest.Create(range, direct);
+      case vehiclePoliceStrategy.GetToPlayerFromAnywhere:
+        return GetToPlayerFromAnywhereStrategyRequest.Create(range, direct);
+      case vehiclePoliceStrategy.InitialSearch:
+        return InitialSearchStrategyRequest.Create(range, direct);
+      default:
+        return SearchFromAnywhereStrategyRequest.Create(range, angles);
     }
-    if Equals(strategy, vehiclePoliceStrategy.GetToPlayerFromAnywhere) {
-      return GetToPlayerFromAnywhereStrategyRequest.Create(range, direct);
-    }
-    return SearchFromAnywhereStrategyRequest.Create(range, angles);
   }
 
   // A police car from the level's pool, drawn by weight as the game does

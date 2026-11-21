@@ -324,6 +324,23 @@ forcedStartSpeed}` with the local V as target (`ChasePlayer`, `:142449`);
   game's screen may not see a remote V: its sensor stays where it spawned,
   its skeleton not being updated off screen. [2.5-untested]
 
+### 13.102 The strategy pre-check needs all seven strategies (2026-11-21, game 2.50, exe read)
+
+`SetStrategyPreCheckRequests` (`0x1408fcf28`, then `0x1408fd010`) stores
+each request in a fixed slot by strategy, (strategy − 1) × 0x1d8 from +0x2d8
+of the checker at system+0x40, gives it a callback (`0x1408fd118`) and turns
+the checker on (+0xfd8 = 1). Its timed updater (`0x14044dc98`) queues all
+seven slots, set or not, and the job (`0x14044e0a4`, hash 1848187983) reads
+the strategy byte at req+0 and calls the slot's callback (req+0x28, its
+implementation at req+0xa8) through a thunk (`0x14044efec`, hashes
+1034173256 and 1856516452: `mov rax,[rcx+0x80]; jmp [rax]`). A slot never
+set has no callback: a null call at `Cyberpunk2077.exe+0x44eff3`. `ClearStrategyPreCheckRequests`
+(`0x1408fdea8`) leaves the slots filled, so the crash needs slots vanilla
+has not filled yet (a fresh load, our V never chased). Vanilla always sets
+all seven (`UpdateStrategyPreCheckRequests`, final.reds :141167); a set of
+three (strategies 1, 5, 7) crashed a job thread 30 ms later (`police-host`,
+2026-11-21). `Police.reds` now asks all seven. [broken-on-2.5]
+
 ## 13.34 Traffic and police: open questions (need the game)
 
 1. Does `ChangeDensityModifier(0.0)` remove the crowd's **parked** cars,
