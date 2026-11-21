@@ -126,7 +126,25 @@ instigator or this, this, …)`, flag source `ExplosiveDevice`).
   `Attitude`, `Repeat`; factory `ActionSetDeviceAttitude()`, 33755) is what
   the friendly quickhack sends; `SensorDevice.OnSetDeviceAttitude` (152428)
   does the work on the entity (`SetDeviceFriendly`) and the state only
-  remembers `SetIsAttitudeChanged`. A destroyed device is
+  remembers `SetIsAttitudeChanged`. A camera's Friendly Mode is
+  `ForceIgnoreTargets` (154015: `Repeat` true, `Attitude` left at
+  `AIA_Friendly`, 0) turned into `SetDeviceAttitude` by
+  `OnForceIgnoreTargets` (153837); a turret's is `SetDeviceAttitude` itself
+  (172228). `SetDeviceFriendly` (152479) works on the **local** player only:
+  its agent friendly to `GetLocalPlayerMainGameObject()`'s, its group that
+  player's (`SetAttitudeGroup` when the action is completed, a duration of
+  0; `SetAttitudeGroupUnsavable` during a timed hack), its senses off that
+  player (`SetDetectionOverwrite`), the group it had cached
+  (`CacheInitialAttitude`). A hostile `SetDeviceAttitude` reaches only
+  `Device.OnSetDeviceAttitude` (101641), which undoes nothing (the flag
+  stays set); the game's own undo is a re-enabled security system
+  (`SecuritySystemEnabled`: the state clears the flag, 153633; the entity
+  takes the system's group back, 151809). A turned device judges a
+  sighting by its own attitude (`SetAsIntrestingTarget`, 151254); the
+  security system does not ask who reported (`ProcessInput`, 114902). The
+  camera's warning `LocKey#53158` (`SurveillanceCamera.OnCurrentTargetAppears`, 166161) is shown when its target is the local player and it is not
+  friendly to the player _(inferred: the "intruder detected" line)_.
+  A destroyed device is
   `ForceDisableDevice()` from `Device.OnDeath` (98530): its status goes
   DISABLED.
 - Detection is written around the local player: `OnOnDetectedEvent` (151512)
@@ -185,7 +203,10 @@ isTilted}` (`: gameDeviceReplicatedState`). Nothing drives them, but they
 5. `ForceDetonate` damage on the host's NPCs, and that the wrap in
    `Combat.reds` keeps a device's hit off a guest's puppet.
 6. `SetDeviceAttitude` with no executor (the friendly look, and that the
-   camera stops filling the meter).
+   camera stops filling the meter); a puppet kept out of a turned camera's
+   senses by `SetAttitudeTowards` and `SetDetectionOverwrite`; the undo
+   (`TandemUnbefriend`) leaving it hostile again (scenarios
+   `devices-camera-friendly`, `turret-friendly`).
 7. `Device.OnGameAttached` / `OnDetach` wrap cost while driving through the
    city (hundreds of attaches a minute), and the 32-a-frame look.
 

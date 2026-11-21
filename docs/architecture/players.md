@@ -98,7 +98,9 @@
   violet, red, sky blue (`0.55, 0.75, 1.0`); white only for no player. It
   tints a player's marker, nameplate and
   party entry ([`presence.md`](presence.md)), pings, waypoint, team target
-  and quickhack indicators ([`comms.md`](comms.md)). One definition
+  and quickhack indicators ([`comms.md`](comms.md)), and the "Hacked by
+  NAME" marker on an enemy's device a partner's hack holds
+  ([`devices.md`](devices.md), "A partner's hack, marked"). One definition
   (`Markers.reds`; the `polish` and comms branches each had one, merged
   into it: `tools/scripts-duplicates.py` refuses a second). To check in game: readability against the game's own
   reds and cyans, and colour-blind pairs. Red/green (ids 3 and 7) and

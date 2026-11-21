@@ -128,9 +128,9 @@ until the survey has run in game.
 | `v-door` | -1389.66 1271.12 123.08 0 | journal `#q101_mp_leave_v_room` ("Leave the apartment"; the pin's z 124.59, the floor h10's) | V's door; V's computer 3.6 m (`#q101_mp_v_room_computer`); the scenarios `device goto door` | `interact-guest-pickup`, `interact-guest-hostonly`, `interact-apart-own-gig` |
 | `kabuki-market` | -1158.78 2014.22 12.06 0 | `wat_kab_dataterm_01` (tracker) | market stalls: vendors, NPCs at stalls (a workspot); shop panes a guess (no data) | `ledger-guest`, `npcs-anims-host`, `glass-guest`, `glass-latecomer` |
 | `vik-clinic` | -1546.73 1227.39 11.52 0 | §13.110 (Viktor's clinic, revive.md) | Viktor, a vendor (ripperdoc): the survey found no vendor at the market | `vendor-guest` |
-| `h11-basement` | -1390.79 1963.74 -25.02 0 | journal `#lch_01_tr_main_computer_room_001` (gig "Catch a Tyger's Toe"); walkthroughs (Fandom, Fextralife, GameClubz) | Tyger Claws server room, floor -05: 2–4 cameras, a laptop with network access, the lift; hostile unless the gig is done | `breach-guest`, `breach-host`, `comms-network`, `devices-camera` |
+| `h11-basement` | -1390.79 1963.74 -25.02 0 | journal `#lch_01_tr_main_computer_room_001` (gig "Catch a Tyger's Toe"); walkthroughs (Fandom, Fextralife, GameClubz) | Tyger Claws server room, floor -05: 2–4 cameras, a laptop with network access, the lift; hostile unless the gig is done | `breach-guest`, `breach-host`, `comms-network`, `devices-camera`, `devices-camera-friendly` |
 | `arasaka-park` | -209.26 -1454.22 7.60 0 | journal `#q112_mp_truck_drive_inside` ("Drive into Arasaka Industrial Park"); players' reports (perimeter turrets, cameras; hostile, empty after "Gimme Danger") | hostile turrets that are on | `turret-guest`, `turret-hands`, `turret-hands-busy`, `turret-host` |
-| `drake-ave` | -1608.11 1772.70 18.38 0 | `wat_lch_dataterm_02` (tracker) | an avenue with traffic for police pursuit points (the test field found 0) | `police-host-cars` |
+| `drake-ave` | -1608.11 1772.70 18.38 0 | `wat_lch_dataterm_02` (tracker) | an avenue with traffic for police pursuit points (the test field found 0) | `police-host-cars`, `turret-friendly` |
 | `niwaki-plaza` | -230.49 306.01 29.55 0 | `wbr_hil_dataterm_01`, Gold Niwaki Plaza (tracker) | open plaza ground for `street.pilot` (14 m ahead, 8 m aside) | `pilot-street` |
 
 Sources: the journal's quest map pins (`journal-quest-data.json`, the RED
@@ -242,6 +242,7 @@ read):
 | `mounted [player N \| puppet]` | `RECORD SLOT ENTITYHASH` of the vehicle our V (player N's puppet, the first remote player's) is mounted in (`MountingFacility`) |
 | `npc ID health` | a shared NPC's health, percent: our own NPC or our proxy |
 | `threat puppet` | the largest threat value an NPC we run near our V holds on the first remote player's puppet (`TargetTrackerComponent`) |
+| `device KIND WHAT` | the nearest device of KIND within 40 m: `attitude` (to our V: `friendly`, `neutral`, `hostile`), `puppet` (to the first puppet), `target` (what it follows: `none`, `V`, `puppet`, `other`), `alarm` (its security system: `SAFE`, `ALERTED`, `COMBAT`), `mark` (the player whose hack is marked on it; 0: none) |
 
 In a scenario: `query VAR WHAT [ARGS]` asks, waits 10 s for this answer
 and sets VAR; `expect_value V OP W` (OP `=`, `!=`, `~` an ERE, `<`, `<=`,

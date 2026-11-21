@@ -55,7 +55,7 @@ their state (on, off, friendly, destroyed, the alarm) is the host's.
 | --- | --- | --- |
 | Doors, gates, shutters (`DoorControllerPS`) | open, locked, sealed; status | host; a guest's own copy changes first |
 | Elevators (`LiftControllerPS`) | the floor it is at or going to (every game's cabin leaves together); status | host. Who rides: each V is carried by its own game's cabin, puppets are placed by their player's stream (the "in a moving elevator" placement) |
-| Cameras, turrets (`SurveillanceCameraControllerPS`, `SecurityTurretControllerPS`) | on, off, unpowered, disabled (destroyed), friendly, hacked | host. Seeing and shooting a V: that V's own game's copy. Seeing a V: that V's own game's copy. A turret's aim and shots: the host's turret ("A device's fire") |
+| Cameras, turrets (`SurveillanceCameraControllerPS`, `SecurityTurretControllerPS`) | on, off, unpowered, disabled (destroyed), friendly (turned, or in a player's hands), hacked | host. Seeing and shooting a V: that V's own game's copy; a friendly one sees no V in any game ("A camera or turret turned"). A turret's aim and shots: the host's turret ("A device's fire") |
 | The alarm (`SecuritySystemControllerPS`) | safe, alerted, combat | host. Raised by whichever game's device saw its V (on the host: as that V's puppet, where it stands, so the NPCs go there); called off by the host only |
 | Access points (`AccessPointControllerPS`), their networks | breached; each device's "quickhacks open" bit; what the breach's daemons did to each device (their own state) | host. Breached once for everyone; the datamine's money and shards go to who breached (rolled by that game, as corpses and containers are) |
 | Computers, terminals (`ComputerControllerPS`, `TerminalControllerPS`) | status, hacked; what they did to the devices they command (those devices' own state) | host. Reading mails and files: each player in their own game; a quest fact a read sets follows the story rules |
@@ -248,6 +248,81 @@ succeeded `AccessPointMiniGameStatus` with the programs). Engine facts:
   on one runs `RefreshSlaves` (the local blackboard's last daemons and the
   money), so `TandemDevices.Apply` never sends it there.
 
+## A camera or turret turned
+
+"An allied hacked camera (or turret) is no enemy any more", in every game,
+whoever turned it. Built 2026-11-21, **not yet run in game**. Code:
+`Devices.reds` (`KeepFriendly`, `Unbefriend`, `SensorDevice.TandemKeepFriendly`,
+`TandemUnbefriend`, the `SetAsIntrestingTarget` wrap), `Turrets.reds`.
+
+- **Vanilla's friendly** (2.50 scripts): Friendly Mode on a camera is
+  `ForceIgnoreTargets`, on a turret `SetDeviceAttitude`; both end in
+  `SensorDevice.OnSetDeviceAttitude` → `SetDeviceFriendly`, on the entity:
+  its attitude agent friendly to the **local** player and in the local
+  player's group, its senses off the local player
+  (`SetDetectionOverwrite`), `KeepHostilityTowardsPlayerHostiles`, the
+  friendly sense preset (a turret), green lights. The state only carries
+  `m_isAttitudeChanged`. A turned device's sightings are judged by its own
+  attitude (`SetAsIntrestingTarget`), so the security system never hears of
+  a V it is friendly to; nothing in vanilla calms a security system already
+  alerted when a camera is turned (`SendReprimandInstructionToSecuritySystem`
+  only ends a reprimand), so neither do we.
+- **What was missing**: a copy's `friendly` was the state's flag alone when
+  the device was not streamed in (its entity came hostile to that game's V,
+  which its camera then called an intruder, and its alarm went to every
+  game), friendly to the local V only (the puppets, in groups of their own,
+  stayed targets), and "not friendly" was a `SetDeviceAttitude` hostile,
+  which vanilla does not undo (the flag stayed set).
+- **Now, in every game** (`friendly` = the state's flag, or the device in a
+  player's hands: the takeover turns it for the others too): the word's
+  arrival runs the game's own `SetDeviceAttitude` friendly on the entity;
+  every look at it (32 devices a frame) keeps it so: hostile to our V again
+  (streamed in again, a state set while away) → the same action, at most
+  every 2 s; each puppet it is hostile to gets its attitude to our V and is
+  dropped from its senses; a puppet it followed is lost. A V never becomes
+  its target while it is turned (`SetAsIntrestingTarget`, a read-only wrap:
+  the moment between a stream-in and the next look). A Friendly Mode that
+  ran out (vanilla leaves it neutral) is left so.
+- **Cleared** (the session's word, our own save put back): the state's flag
+  off, its group back (its security system's, as the game puts it back when
+  that system is enabled again, else the one it had before), that group's
+  attitude to our V and each puppet, its senses, sense preset, aim assist
+  and lights as before.
+- **Turrets**: the host's turret takes no puppet while turned or in another
+  player's hands (`TandemEngage`); a guest's turned copy says nothing of our
+  V (`Locked`).
+- Logs: `devices: E C turned for every V here: …`, `… back to its own
+attitude for every V here`. Queries `device KIND attitude|puppet|target|
+alarm` (testing.md). Scenarios `devices-camera-friendly` (the mock guest
+  turns an enemy's camera, then back: friendly to V and the puppet, nothing
+  followed, no new alarm) and `turret-friendly` (and its copy's `Seen`:
+  the host's turret takes no puppet).
+
+## A partner's hack, marked
+
+"Visual feedback on the minimap and live for a device hacked by an ally."
+Built 2026-11-21, **not yet run in game**. Code: `Devices.reds`
+(`UpdateMarks`), `Comms.reds` (`MarkerOn`).
+
+- **What**: an enemy's device in our world (on a security system that is
+  not our V's friend, or a camera or turret whose own side is hostile to
+  our V) that another player's doing holds turned (`friendly`: Friendly
+  Mode, a takeover), distracted (`glitching`) or off with `hacked` (a
+  shutdown). Our own hacks, and a device of ours or a neutral one, show
+  nothing.
+- **How**: a mappin drawn as our pings are (world, minimap, map: the `Use`
+  icon in the hacker's colour, `TandemMarkers.ColorOf`), on the device,
+  labelled "Hacked by NAME" (`Devices-HackedBy`), registered twice a second
+  while it holds and the `markers` setting is on; gone when it ends, the
+  device leaves our world or the session ends. Who: the player the
+  session's word names (guest: the host's `DeviceState`; host: the guest's
+  request). The vanilla friendly look (green cone and lights) is the
+  device's own (above). Logs `devices: E C marked: hacked by player N`,
+  `… unmarked (player N's hack)`; query `device KIND mark`.
+- **Vehicles**: not marked. The only car hack that crosses games is
+  `VehicleHack`, on a car another V drives (an ally's, not an enemy's); a
+  hack on an NPC's car stays in the hacker's game (no message carries it).
+
 ## A device's fire
 
 "The others see the host's turret firing at what it actually targets, and
@@ -346,9 +421,10 @@ shows its aim and shots on the others' copies; damage as today." Built
   (`reply.unasked`), a guest refused three times in a row without letting
   go (`authority.turret-taken`).
 - **Cameras**: a camera in a player's hands (the takeover, a chain of
-  devices) is that game's view only: nothing of it travels (its state,
-  on, off, friendly, is the host's record), so two players may look
-  through one camera at once and nothing is arbitrated.
+  devices) is that game's view only: only its `friendly` bit travels (the
+  others' copies see no V while it is held: "A camera or turret turned"),
+  so two players may look through one camera at once and nothing is
+  arbitrated.
 - Tests: `tests/devices_test.cpp` ("a turret in a player's hands", "a
   turret's holds", "… is that player's alone"), `tests/protocol_test.cpp`,
   `tests/referee_test.cpp`; the mock player's
@@ -473,7 +549,8 @@ hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
   `our breach pays nothing: player N was first`.
 - Scenarios (`tools/scenario.sh NAME`, none run yet): `devices-door`,
   `devices-lift` (an elevator ride together), `devices-camera` (hacked by
-  the guest), `devices-barrel` (shot by the guest), `devices-guest` (the
+  the guest), `devices-camera-friendly` (turned by the guest: no V seen,
+  marked), `turret-friendly`, `devices-barrel` (shot by the guest), `devices-guest` (the
   game as the guest: its own copy first, the host's word, and its world put
   back on leaving). `DEVICES_AT="X Y Z"` names the spot; V's flat has a
   door and lifts, a camera and a barrel need one.
@@ -495,6 +572,12 @@ hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
   its camera's aim point is 40 m out (a target nearer or farther is drawn
   along the same line), its drawn rate is not the weapon's own, and the
   copy's own vision cone and lights are not changed while it is held.
+- **A camera or turret turned, a partner's hack marked: not run in game.**
+  To verify: that `SetDeviceAttitude` on a copy turns its cone green and
+  stops "intruder detected" for that game's V; that the per-agent attitude
+  and `SetDetectionOverwrite` keep a puppet out of its senses; that the
+  undo leaves it hostile again (its group, lights, preset); that the
+  `Use` icon reads well in the hacker's colour on the minimap.
 - **Detection by NPCs after a camera's alarm** uses the puppet's position
   at the moment of the alarm; the camera feeding the security system
   continuously for a guest is not done.
