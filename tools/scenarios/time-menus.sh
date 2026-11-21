@@ -1,5 +1,5 @@
 # The host's menus slow nothing while another player is in the session: its world runs at full speed, the mock player's clock with it
-# shellcheck shell=bash disable=SC2317
+# shellcheck shell=bash disable=SC2317,SC2154
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode idle --body male
 expect 'joined \(player [0-9]+' 20
@@ -32,13 +32,13 @@ done
 # follow the world's slow motion at all, this part would pass unfixed: the
 # world speed lines above are the measure.)
 expect_peer 'host clock [0-9]+ s: [0-9]+ game s in [0-9.]+ s \(rate [0-9.]+\)' 25
-before=$(grep -o 'rate [0-9.]*' .cache/peer.log | tail -1 | cut -d' ' -f2)
+before=$(grep -o 'rate [0-9.]*' "$peer_log" | tail -1 | cut -d' ' -f2)
 mark
 cmd time menu map 25
 expect 'time: a menu \(WorldMap\) would slow the shared world: unset' 5
 expect 'time: world speed (0\.9[5-9]|1\.0)[0-9]* over the test' 5
 pause 22
-during=$(grep -o 'rate [0-9.]*' .cache/peer.log | tail -1 | cut -d' ' -f2)
+during=$(grep -o 'rate [0-9.]*' "$peer_log" | tail -1 | cut -d' ' -f2)
 awk -v b="$before" -v d="$during" 'BEGIN { exit !(d >= 0.9 * b) }' ||
   fail "the host's clock slowed while its map was open: rate $during, $before before"
 expect 'time: test menu over' 15
