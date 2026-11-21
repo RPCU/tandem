@@ -48,7 +48,7 @@ addresses, 192.0.2.x / 198.51.100.x / 203.0.113.x, and fake names).
 | `task menu:check`       | co-op menu: settings rows aligned, texts EN + FR, no dupes   |
 | `task threads:check`    | script hooks that may run on job threads only read and queue |
 | `task refs:check`       | script calls of ours and our TweakDB records exist           |
-| `task scenarios:check`  | scenarios name real peer flags, game commands and helpers    |
+| `task scenarios:check`  | scenarios name real peer flags, commands, helpers, log lines |
 | `task docs:check`       | doc links and § numbers resolve; no fact lost since HEAD     |
 | `task mods:check DIR=…` | other mods' script hooks against tandem's (conflicts)        |
 | `task scenario -- …`    | in-game scenarios against the mock player (NAME, all, list)  |

@@ -18,7 +18,7 @@
 | scripts | `scripts/tandem` compiles with the game's redscript, bundle and mods; no method defined twice, no bare value local, no array intrinsic or struct field on a call's result (`tools/scripts-temporaries.py`, also in CI) | `task scripts:check` |
 | co-op menu | the settings page's arrays aligned, each row's label and description in English and French, keys the plugin takes, no duplicate or vanilla-looking entry (`tools/menu-check.py`) | `task menu:check` |
 | threads | every script hook that may run on a job thread (per-entity, component and persistent-state wraps, `cb func`s, lifecycle methods, `Entity/*` callbacks) and all it calls: reads, the wrapped method, natives; no write to a system's state (`tools/scripts-threads.py`; `.known`: 82 hooks older than the check, unproven, each with the thread probe's call) | `task threads:check` |
-| references | every `TandemX.Name(…)` call names a declared function, every record of ours the scripts name is in `tweaks/tandem` (`tools/scripts-refs.py`: what scc and the game would say, in CI); every scenario's `--flags` exist in the mock player, its `cmd` words in the scripts, its helpers in `tools/scenario.sh` (`tools/scenarios-check.py`) | `task refs:check`, `task scenarios:check` |
+| references | every `TandemX.Name(…)` call names a declared function, every record of ours the scripts name is in `tweaks/tandem` (`tools/scripts-refs.py`: what scc and the game would say, in CI); every scenario's `--flags` exist in the mock player, its `cmd` words in the scripts, its helpers in `tools/scenario.sh` (`tools/scenarios-check.py`); every log pattern a scenario waits for, can match a line the game or the mock player writes (`tools/scenarios-patterns.py`, below) | `task refs:check`, `task scenarios:check` |
 | other mods | every method another mod's redscript or CET Lua wraps, replaces or observes, against the ones tandem wraps: conflicts, order-sensitive, harmless chains (`tools/mods-check.py`, on any game folder or copy) | `task mods:check DIR=…` |
 | scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all`, `task sweep` |
 | in game | deploy the DLL, read its log | `task deploy`, `task logs` |
@@ -136,6 +136,26 @@ output, `NAME.log`. Build first (`tools/build.sh`, or `tools/remote.sh` and
   its pattern does, its text up to the first regex sign, 8 characters at
   least, is there: reworded, or other values), `missing` (no such line at
   all), `unexpected` (a `reject`), `command` (a `cmd` not taken), `other`.
+
+**Log patterns** (`tools/scenarios-patterns.py`, in `task scenarios:check`
+and CI, about 20 s): a reworded log line leaves its scenarios waiting for a
+line that never comes. Each `expect`, `reject`, `at_most` and `since | grep`
+pattern must be able to match a line of the game's log, each `expect_peer`,
+`expect_peer2` and `reject_peer` one of the mock player's. The lines are
+formats collected from the sources: the scripts' string expressions (behind
+`[script] `) and `Log*`/`Once` arguments, every `std::format`-style call
+and literal of `plugin/src`, `core/` and `peer/`, the co-op notices
+(`coop notice: <English text> [<key>]`). Values are followed where they are
+plain (ternaries, locals and fields with their `+=`, parameters from their
+callers, our functions' returns, Text.reds texts, `{}` arguments) and typed
+as printed: a script Float is `60.000000`, `{:.0f}` digits. Any other value
+stands for at most three words, none ending with a colon (a line's last
+one, any number): a value never holds the `subsystem: ` a pattern begins
+with. Pattern and format become automata and their product is searched.
+A finding names the formats nearest to the pattern; `-v` shows which format
+answers each pattern. It catches the rewordings and the Float formatting
+that failed scenarios in game, not a changed order of events (`0 -> 3`
+logged as `0 -> 1 -> 3`).
 
 **Launches** (`tools/game.sh launches [N]`, default 5): the cheap crash
 check, the first thing to run after a script or plugin change that touches
@@ -595,7 +615,8 @@ C++ builds (`AGENTS.md`, Git).
 - **Jobs:** `go` (relay and pilot: vet, race tests), `kubernetes` (the
   kustomize base and overlays, kubeconform), `docs, natives, strings`
   (`tools/docs-check.py links`, `check-natives.py`, `check-strings.py`,
-  `scripts-threads.py`, `scripts-refs.py`, `scenarios-check.py`),
+  `scripts-threads.py`, `scripts-refs.py`, `scenarios-check.py`,
+  `scenarios-patterns.py`),
   `core build (Linux)` (`task build:linux` with GCC 16, the devenv's: the
   tests' seeded links are measured with its libstdc++), then `core tests`
   in four jobs side by side on its binaries (`tandem-tests` in three
