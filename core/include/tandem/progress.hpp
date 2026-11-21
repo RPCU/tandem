@@ -4,7 +4,8 @@
 // are plain arithmetic or a state machine, kept here so the plugin and the
 // mock player apply them the same way and they are tested on Linux.
 //
-//   levels  the session's level (the mean of its players' levels) and the
+//   levels  the session's level (the mean of its players' levels, capped
+//           at level_gap above the lowest) and the
 //           power level modifier a host NPC and its proxies carry for it;
 //   saves   what a guest's game does about saving when it leaves a session.
 
@@ -20,6 +21,15 @@ namespace tandem::progress {
 // The session's level: the mean of its players' character levels, rounded
 // to the nearest (a half goes up). 0 with no player.
 std::uint8_t MeanLevel(std::span<const std::uint8_t> levels);
+
+// tandem.ini `level_gap` (the host's): enemies are scaled to the mean, but
+// never more than this many levels above the session's lowest player, so a
+// new V beside a veteran is not one shot by its NPCs (0: the plain mean).
+inline constexpr std::uint8_t kDefaultLevelGap = 8;
+inline constexpr std::uint8_t kMaxLevelGap = 60;
+// The session's level: MeanLevel, capped at `gap` above the lowest level
+// (gap 0: no cap). 0 with no player.
+std::uint8_t SessionLevelOf(std::span<const std::uint8_t> levels, std::uint8_t gap);
 
 // The highest power level an NPC is moved to (BaseStats.PowerLevel's Max is
 // read in game; this is the fallback).

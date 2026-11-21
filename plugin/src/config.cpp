@@ -128,6 +128,17 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       return Bad("enemy_scaling_health is 0 to {} (the health added per extra player), not {}",
                  scaling::kMaxHealthPerPlayer, value);
     config.enemyScalingHealth = health;
+  } else if (key == "level_gap") {
+    unsigned gap{};
+    auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), gap);
+    if (value == "off")
+      config.levelGap = 0;
+    else if (ec == std::errc{} && end == value.data() + value.size() &&
+             gap <= progress::kMaxLevelGap)
+      config.levelGap = static_cast<std::uint8_t>(gap);
+    else
+      return Bad("level_gap is off or 0 to {} (levels above the lowest player), not {}",
+                 progress::kMaxLevelGap, value);
   } else if (key == "recorder_max_mb" || key == "recorder_segment_minutes") {
     std::uint32_t number32{};
     auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), number32);
@@ -387,6 +398,8 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return OnOff(config.enemyScaling);
   if (key == "enemy_scaling_health")
     return std::format("{:.2f}", config.enemyScalingHealth);
+  if (key == "level_gap")
+    return config.levelGap == 0 ? std::string("off") : std::to_string(config.levelGap);
   if (key == "notices")
     return config.notices;
   if (key == "race_car")

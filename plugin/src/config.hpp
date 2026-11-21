@@ -74,6 +74,9 @@
 //                        ; them (health, poise, armour; tandem/scaling.hpp, Rules)
 //   enemy_scaling_health = 0.6 ; host, advanced (ini only): the health added per
 //                        ; extra player, 0..2.5 (0.6: x1.6 for two, x2.2 for three)
+//   level_gap = 8        ; host: enemies follow the players' mean level, but never
+//                        ; more than this many levels above the lowest (off: the
+//                        ; mean; tandem/progress.hpp SessionLevelOf)
 //   notices = all        ; important: no news (rides, calls, pauses...); minimal: only
 //                        ; what asks for an answer or went wrong
 //   markers = on         ; off: no marker for the other players (HUD, minimap, map)
@@ -212,6 +215,9 @@ struct Config {
   // first): on, and the health added per extra player near an NPC.
   bool enemyScaling{true};
   float enemyScalingHealth{scaling::kHealthPerPlayer};
+  // The session's level, at most this far above its lowest player (0: the
+  // plain mean; the settings page edits it; the host's, taken at a start).
+  std::uint8_t levelGap{progress::kDefaultLevelGap};
   std::string notices{"all"};
   // A partner's street race (scripts/tandem/Races.reds): "own", our garage's
   // active car on the grid; "copy", a copy of the starter's.
