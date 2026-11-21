@@ -67,7 +67,8 @@ public class TandemPartyHud {
   private let m_why: String;
   private let m_left: Float;
   private let m_top: Float;
-  // The camera's field of view is read as horizontal (false) or vertical.
+  // The camera's field of view is read as vertical (true, the default) or
+  // horizontal (research engine/presence.md, 13.35).
   private let m_fovVertical: Bool;
   private let m_now: Float;
   // Our V's scene tier, as Hidden read it.
@@ -114,6 +115,7 @@ public class TandemPartyHud {
     this.m_width = 3840.0;
     this.m_height = 2160.0;
     this.m_aspect = 16.0 / 9.0;
+    this.m_fovVertical = true;
   }
 
   public func Stop() -> Void {
@@ -613,15 +615,17 @@ public class TandemPartyHud {
       return;
     }
     let cameras = GameInstance.GetCameraSystem(this.m_game);
-    let frame: Transform;
-    cameras.GetActiveCameraWorldTransform(frame);
-    let camera = Transform.GetPosition(frame);
+    let camera = this.CameraPosition(cameras);
     let forward = cameras.GetActiveCameraForward();
     let right = cameras.GetActiveCameraRight();
+    // GetActiveCameraFOV is the vertical angle (vanilla's own fallback for
+    // it is 0.89 rad, 51 degrees: the height of an 80 degree wide 16:9
+    // frame). Bearing wants half the horizontal one.
     let half = Deg2Rad(cameras.GetActiveCameraFOV()) * 0.5;
     if half <= 0.01 {
-      half = Deg2Rad(40.0);
+      half = this.m_fovVertical ? 0.445 : Deg2Rad(40.0);
     }
+    let wide = this.m_fovVertical ? TandemPartyHud.HorizontalHalf(half, this.m_aspect) : half;
     let story = TandemStorySystem.Get(this.m_game);
     let away = TandemElsewhere.Get(this.m_game);
     let revive = TandemRevive.Of(this.m_game);
@@ -655,11 +659,23 @@ public class TandemPartyHud {
       entry.state.SetVisible(StrLen(text) > 0);
 
       // Where they are: the body here, hidden or not (a V elsewhere has
-      // its body where it was left).
+      // its body where it was left). A body just spawned stands at the
+      // world's origin until it is put in place: their own position then.
       let where = IsDefined(body) ? body.GetWorldPosition() : TandemNative.RemotePosition(player);
-      let bearing = TandemPresence.Bearing(camera, forward, half, where);
+      if IsDefined(body) && Vector4.IsZero(where) {
+        where = TandemNative.RemotePosition(player);
+      }
+      let bearing = TandemPresence.Bearing(camera, forward, wide, where);
       let hiddenBody = TandemVisibility.IsHidden(this.m_game, player);
-      let off = !bearing.inView || hiddenBody;
+      // Seen: the chest or the head inside the frame (the feet of a body a
+      // few metres away are below its bottom edge).
+      let chest = where;
+      chest.Z += 1.0;
+      let head = where;
+      head.Z += 2.0;
+      let point = TandemPresence.Project(camera, forward, right, half, this.m_fovVertical, this.m_aspect, head);
+      let seen = point.visible || TandemPresence.Project(camera, forward, right, half, this.m_fovVertical, this.m_aspect, chest).visible;
+      let off = !seen || hiddenBody;
       entry.where.SetVisible(linked && off && !this.m_compact);
       let metres = TandemPresence.RoundedMetres(bearing.distance);
       if linked && off {
@@ -667,11 +683,8 @@ public class TandemPartyHud {
         entry.distance.SetText(metres < 1000 ? TandemText.F("Party-Metres", s"\(metres)") : TandemText.F("Party-Kilometres", s"\(metres / 1000).\((metres % 1000) / 100)"));
       }
 
-      // The nameplate, over the head: near, always (only the near ones
-      // while our V talks), or off.
-      let head = where;
-      head.Z += 2.0;
-      let point = TandemPresence.Project(camera, forward, right, half, this.m_fovVertical, this.m_aspect, head);
+      // The nameplate, over the head (point): near, always (only the near
+      // ones while our V talks), or off.
       let mode = plates;
       if mode == 1 && this.m_tier >= 2 {
         mode = 0;
@@ -706,6 +719,32 @@ public class TandemPartyHud {
         this.Log(entry, TandemPartyHud.StateText(status, place, left, true));
       }
     }
+  }
+
+  // The active camera's position; our V's eyes when the camera system has
+  // none (the transform is not left unset: AGENTS.md, value-type locals).
+  private func CameraPosition(cameras: ref<CameraSystem>) -> Vector4 {
+    let eyes = new Vector4(0.0, 0.0, 0.0, 1.0);
+    let player = GetPlayer(this.m_game);
+    if IsDefined(player) {
+      eyes = player.GetWorldPosition();
+      eyes.Z += 1.7;
+    }
+    let frame = Transform.Create(eyes);
+    if !IsDefined(cameras) || !cameras.GetActiveCameraWorldTransform(frame) {
+      return eyes;
+    }
+    return Transform.GetPosition(frame);
+  }
+
+  // Half the horizontal field of view of a frame `aspect` wide (width /
+  // height) whose half vertical angle is `half` (radians): the frame's
+  // half width at a distance of 1 is tan(half) * aspect.
+  public static func HorizontalHalf(half: Float, aspect: Float) -> Float {
+    let w = TanF(half) * (aspect > 0.0 ? aspect : 16.0 / 9.0);
+    // atan(w) = asin(w / sqrt(1 + w^2)), without relying on AtanF's
+    // argument order.
+    return AsinF(w / SqrtF(1.0 + w * w));
   }
 
   private func Log(entry: ref<TandemPartyEntry>, state: String) -> Void {
@@ -760,8 +799,7 @@ public class TandemPartyHud {
       // What the engine's own projection says of each puppet's head, next
       // to ours: one run settles the field of view's convention.
       let cameras = GameInstance.GetCameraSystem(this.m_game);
-      let frame: Transform;
-      cameras.GetActiveCameraWorldTransform(frame);
+      let camera = this.CameraPosition(cameras);
       for player in system.PuppetPlayers() {
         let body = system.PuppetOf(player);
         if IsDefined(body) {
@@ -769,8 +807,8 @@ public class TandemPartyHud {
           head.Z += 2.0;
           let theirs = cameras.ProjectPoint(head);
           let half = Deg2Rad(cameras.GetActiveCameraFOV()) * 0.5;
-          let h = TandemPresence.Project(Transform.GetPosition(frame), cameras.GetActiveCameraForward(), cameras.GetActiveCameraRight(), half, false, 16.0 / 9.0, head);
-          let v = TandemPresence.Project(Transform.GetPosition(frame), cameras.GetActiveCameraForward(), cameras.GetActiveCameraRight(), half, true, 16.0 / 9.0, head);
+          let h = TandemPresence.Project(camera, cameras.GetActiveCameraForward(), cameras.GetActiveCameraRight(), half, false, 16.0 / 9.0, head);
+          let v = TandemPresence.Project(camera, cameras.GetActiveCameraForward(), cameras.GetActiveCameraRight(), half, true, 16.0 / 9.0, head);
           TandemNative.Log(s"hud: camera fov \(cameras.GetActiveCameraFOV()); player \(player)'s head: engine ProjectPoint (\(theirs.X) \(theirs.Y) \(theirs.Z) \(theirs.W)); ours as horizontal (\(h.x) \(h.y) \(h.visible)), as vertical (\(v.x) \(v.y) \(v.visible))");
         }
       }

@@ -212,10 +212,20 @@ n"inkHUDLayer").GetVirtualWindow()` (`CW`: `inkSystem`,
 GetActiveCameraWorldTransform(out Transform)`, `GetActiveCameraForward()`,
   `GetActiveCameraRight()`, `GetActiveCameraFOV()` (`:174219-174229`);
   `ProjectPoint(Vector4) -> Vector4` (`:174233`) has no script caller, so
-  its convention is unknown. **Open**: whether `GetActiveCameraFOV` is the
-  horizontal or the vertical angle (read as horizontal; `tools/game.sh
-cmd presence hud camera` logs the engine's projection next to both
-  readings, `presence hud fov v` switches). [to-see]
+  its convention is unknown. `GetActiveCameraFOV` is the **vertical**
+  angle: vanilla's scope sway falls back to 0.89 rad for it (`:443995`),
+  51°, the height of the settings' 80° wide 16:9 frame; read as
+  horizontal, a partner 4 m ahead was never in view (its feet below a
+  15° half height, its head off a 25° half width) while plainly on
+  screen (hud-linked, 2026-11-21). `tools/game.sh cmd presence hud
+camera` logs the engine's projection next to both readings, `presence
+hud fov v` (the default) or `fov h` switches. [inferred]
+- A puppet just spawned stands at the world's origin until it is put in
+  place (the HUD read it 2100 m away at the test field for one tick):
+  the remote position until then. [seen]
+- The engine's own frustum test: `IsInCameraFrustum(object, height,
+radius)` (`:174237`; vanilla `2.0, 0.75` for a body, `:130122`). Not
+  used (our projection decides). [2.5-untested]
 - Hiding: photo mode `GameInstance.GetPhotoModeSystem(game).
 IsPhotoModeActive()` (`:53351`) and the blackboard
   `PhotoMode.IsActive` (`:248383`); cinematics the player state machine's
