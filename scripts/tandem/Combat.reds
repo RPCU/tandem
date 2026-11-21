@@ -399,20 +399,47 @@ public abstract class TandemWeakSpots {
 
   // What a hit on a weak spot takes, in percent of its health, measured as
   // DealDamages would apply it (StatPoolsManager.ApplyDamage, not for real;
-  // DrainStatPool's points to percent, final.reds 219136-219145).
+  // DrainStatPool's points to percent, final.reds 219136-219145). Its
+  // health is the WeakspotHealth pool, which a hit drains through its hit
+  // shape's pool (ApplyLocalizedDamageSingle, final.reds:218995); the
+  // Health pool stands in only when nothing of that one was taken (a spot
+  // has none: a hit without shapes measured 0, npcs-weakspot 2026-11-21).
   public static func Measure(game: GameInstance, hitEvent: ref<gameHitEvent>, spot: ref<WeakspotObject>) -> Float {
     let lost: array<SDamageDealt>;
     StatPoolsManager.ApplyDamage(hitEvent, false, lost);
     let points = 0.0;
+    let whole = 0.0;
     for dealt in lost {
-      if Equals(dealt.affectedStatPool, gamedataStatPoolType.Health) {
+      if Equals(dealt.affectedStatPool, gamedataStatPoolType.WeakspotHealth) {
         points += dealt.value;
+      } else if Equals(dealt.affectedStatPool, gamedataStatPoolType.Health) {
+        whole += dealt.value;
       }
     }
-    if points <= 0.0 {
-      return 0.0;
+    let pools = GameInstance.GetStatPoolsSystem(game);
+    let id = Cast<StatsObjectID>(spot.GetEntityID());
+    if points > 0.0 {
+      return pools.ToPercentage(id, gamedataStatPoolType.WeakspotHealth, points);
     }
-    return GameInstance.GetStatPoolsSystem(game).ToPercentage(Cast<StatsObjectID>(spot.GetEntityID()), gamedataStatPoolType.Health, points);
+    return whole > 0.0 ? pools.ToPercentage(id, gamedataStatPoolType.Health, whole) : 0.0;
+  }
+
+  // (npcs-weakspot) What a hit that took nothing measured was made of: its
+  // hit shapes, those that name a pool, and each pool it would drain.
+  public static func Describe(hitEvent: ref<gameHitEvent>) -> String {
+    let shapes = hitEvent.hitRepresentationResult.hitShapes;
+    let named = 0;
+    for shape in shapes {
+      let data = shape.userData as HitData_Base;
+      named += IsDefined(data) && NotEquals(data.m_bodyPartStatPoolName, n"None") ? 1 : 0;
+    }
+    let lost: array<SDamageDealt>;
+    StatPoolsManager.ApplyDamage(hitEvent, false, lost);
+    let pools = "";
+    for dealt in lost {
+      pools += s" \(ToString(dealt.affectedStatPool)) \(dealt.value)";
+    }
+    return s"\(ArraySize(shapes)) hit shapes, \(named) naming a pool; would drain:\(Equals(pools, "") ? " nothing" : pools)";
   }
 
   // Guest: our hit on a proxy's weak spot took `drain` percent of it.
@@ -469,22 +496,72 @@ public abstract class TandemWeakSpots {
 
   // (test) tools/game.sh cmd "npc weakspot [N]": our V's hit of N (default
   // 40) on the first whole weak spot of the nearest proxy that takes hits
-  // (a boss's plate shut in its phase does not: IsInvulnerable).
-  public static func Test(game: GameInstance, proxy: ref<ScriptedPuppet>, amount: Float) -> Void {
+  // (a boss's plate shut in its phase does not: IsInvulnerable). A built
+  // hit has no hit shapes, and took nothing of a spot (2026-11-21):
+  // "npc weakspot draw" (our V draws its last weapon), then "npc weakspot
+  // shot" (a real bullet of the gun in V's hands at each open spot, as
+  // the game fires one at a place: its hit is the game's own).
+  public static func Test(game: GameInstance, proxy: ref<ScriptedPuppet>, amount: Float, how: String) -> Void {
     let player = GetPlayer(game);
     let target: wref<WeakspotObject>;
+    let open: array<wref<WeakspotObject>>;
     let shut = 0;
     for candidate in TandemWeakSpots.Of(proxy) {
       if IsDefined(candidate) && !candidate.IsDead() {
         if candidate.IsInvulnerable() {
           shut += 1;
-        } else if !IsDefined(target) {
-          target = candidate;
+        } else {
+          ArrayPush(open, candidate);
+          if !IsDefined(target) {
+            target = candidate;
+          }
         }
       }
     }
+    if IsDefined(player) && Equals(how, "draw") {
+      let held = GameObject.GetActiveWeapon(player);
+      if IsDefined(held) {
+        TandemNative.Log(s"npc weakspot: our V holds \(TDBID.ToStringDEBUG(ItemID.GetTDBID(held.GetItemID())))");
+        return;
+      }
+      let request = new EquipmentSystemWeaponManipulationRequest();
+      request.owner = player;
+      request.requestType = EquipmentManipulationAction.RequestLastUsedOrFirstAvailableWeapon;
+      GameInstance.GetScriptableSystemsContainer(game).Get(n"EquipmentSystem").QueueRequest(request);
+      TandemNative.Log("npc weakspot: our V draws its weapon");
+      return;
+    }
     if !IsDefined(player) || !IsDefined(target) {
       TandemNative.Log(s"npc weakspot: none open on the nearest proxy (\(shut) shut)");
+      return;
+    }
+    if Equals(how, "shot") {
+      let gun = GameObject.GetActiveWeapon(player);
+      if !IsDefined(gun) || !gun.IsAttached() || gun.IsMelee() {
+        TandemNative.Log("npc weakspot: no gun in our V's hands (npc weakspot draw)");
+        return;
+      }
+      for spot in open {
+        let at = spot.GetWorldPosition();
+        let params: gameprojectileWeaponParams;
+        // A native struct local is not cleared by the script VM: every
+        // field the shot reads is set (as Presence.reds, Bullet).
+        params.targetPosition = at;
+        params.smartGunSpreadOnHitPlane = new Vector3(0.0, 0.0, 0.0);
+        params.charge = 0.0;
+        params.smartGunAccuracy = 0.0;
+        params.smartGunIsProjectileGuided = false;
+        params.hitPlaneOffset = new Vector4(0.0, 0.0, 0.0, 0.0);
+        params.shootingOffset = 0.0;
+        params.ignoreWeaponOwnerCollision = true;
+        params.range = 0.0;
+        params.ignoreMountedVehicleCollision = true;
+        let place: WorldPosition; // assigned on every path: filled whole by WorldPosition.SetVector4 at once
+        WorldPosition.SetVector4(place, at);
+        AIWeapon.SetAttackBasedOnTimeDilation(player, gun);
+        gun.AI_ShootAt(IPositionProvider.CreateStaticPositionProvider(place), spot, player, Cast<Uint16>(0), params, Cast<Uint8>(1), 0.0, 0.01);
+      }
+      TandemNative.Log(s"npc weakspot: a shot of \(TDBID.ToStringDEBUG(ItemID.GetTDBID(gun.GetItemID()))) at each of \(ArraySize(open)) open weak spots of \(EntityID.ToDebugStringDecimal(proxy.GetEntityID())) (\(shut) shut), the first \(TandemWeakSpots.Health(game, target))% whole, \(Vector4.Distance(player.GetWorldPosition(), target.GetWorldPosition())) m off");
       return;
     }
     let context: AttackInitContext;
@@ -555,7 +632,11 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) {
     let measured = TandemWeakSpots.Measure(game, hitEvent, spot);
     wrappedMethod(hitEvent);
     let drain = had - TandemWeakSpots.Health(game, spot);
-    TandemWeakSpots.Lost(spot, spotNpc, drain > 0.0 ? drain : MinF(measured, had));
+    let share = drain > 0.0 ? drain : MinF(measured, had);
+    if share <= 0.0 {
+      TandemNative.LogDebug(s"combat: a hit on a weak spot of proxy \(spotNpc) took nothing (\(had)% whole): \(TandemWeakSpots.Describe(hitEvent))");
+    }
+    TandemWeakSpots.Lost(spot, spotNpc, share);
     return;
   }
   let npc = TandemCombat.ProxyNpc(game, hitEvent.target);
