@@ -599,6 +599,41 @@ TEST_CASE("a scene through the endpoints: a guest watches, another arrives mid-s
   }
 }
 
+TEST_CASE("a line names only a speaker the guests were told of") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  REQUIRE(a);
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t, const auto &) {
+    return a->IsJoined() && host->Players().size() == 2;
+  }));
+  host->SendNpcSpawn({.npc = 7, .record = 1});
+  REQUIRE(Pump({host.get(), a.get()},
+               [&](std::size_t, const auto &) { return a->SharedNpcs().size() == 1; }));
+
+  host->SendStory(proto::SceneLine{.line = 1, .speaker = 55}); // a bark of an NPC not shared
+  host->SendStory(proto::SceneLine{.line = 2, .speaker = 7});
+  host->SendStory(proto::SceneLine{.play = 3, .line = 4, .speaker = 55});
+  std::vector<proto::SceneLine> heard;
+  Pump(
+      {host.get(), a.get()},
+      [&](std::size_t i, const auto &events) {
+        for (const auto &event : events)
+          if (const auto *story = std::get_if<events::Story>(&event); story && i == 1)
+            if (const auto *line = std::get_if<proto::SceneLine>(&story->message))
+              heard.push_back(*line);
+        return false;
+      },
+      300ms);
+  REQUIRE(heard.size() == 2);
+  CHECK(heard[0].line == 2);
+  CHECK(heard[0].speaker == 7);
+  CHECK(heard[1].line == 4);
+  CHECK(heard[1].speaker == 0);
+}
+
 TEST_CASE("the host vanishes mid-scene: the scene stops and every proxy is released") {
   const auto port = NextPort();
   std::string error;

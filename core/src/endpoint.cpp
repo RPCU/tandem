@@ -3318,6 +3318,15 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
   // A vehicle is credited to the guests that took part, one by one.
   if (std::holds_alternative<proto::VehicleUnlock>(message) && to == proto::kNoPlayer)
     return;
+  // A line names its speaker only if the guests were told of that NPC: a
+  // bark from one we do not share is nobody's to hear, a scene's line stays
+  // without its speaker.
+  if (auto *line = std::get_if<proto::SceneLine>(&message);
+      line && line->speaker != 0 && !m_npcs.contains(line->speaker)) {
+    if (line->play == 0)
+      return;
+    line->speaker = 0;
+  }
   if (to != proto::kNoPlayer) {
     // One guest (a reward): not part of the story a joiner gets.
     for (const auto &[peer, player] : m_playerOfPeer)
