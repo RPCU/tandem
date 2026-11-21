@@ -666,10 +666,12 @@ public class TandemThrows {
     let puppet = IsDefined(system) ? system.PuppetOf(copy.player) : null;
     let target = this.TargetOf(copy.npc, copy.at);
     if !IsDefined(puppet) || !IsDefined(target) {
+      this.Once(n"smartNoTarget", s"throws: player \(copy.player)'s smart round not fired: \(IsDefined(puppet) ? "its target is not here" : "no puppet")");
       return;
     }
     let weapon = GameInstance.GetTransactionSystem(this.m_game).GetItemInSlot(puppet, t"AttachmentSlots.WeaponRight") as WeaponObject;
     if !IsDefined(weapon) {
+      this.Once(n"smartNoWeapon", s"throws: player \(copy.player)'s smart round not fired: its puppet holds no weapon");
       return;
     }
     let component = GameInstance.GetTargetingSystem(this.m_game).GetBestComponentOnTargetObject(weapon.GetWorldPosition(), weapon.GetWorldForward(), target, TargetComponentFilterType.Shooting);

@@ -1,7 +1,7 @@
 # As a guest, the host V's grenades and smart rounds fly on our game from its puppet, and its NPCs' grenades from their proxies
 # shellcheck shell=bash disable=SC2317
 ensure join
-host_world recordings/npcs.rec --mode idle --body female --throw 4 --smart 3
+host_world recordings/npcs.rec --mode idle --body female --throw 4 --smart 3 --hold Items.Preset_Yukimura_Default
 expect 'in the session as player' 30
 expect 'puppet 6[0-9]{4}: controller handed to the engine' 30
 expect_peer 'we throw grenade [0-9]+' 20
