@@ -209,7 +209,8 @@ struct RemoteTimeEffect {
   proto::TimeEffect effect;
 };
 // A hit outcome message (proto::IsCombat) for this game. Another player's
-// NpcStrike or Defended on an NPC we run, stamped; an NPC owner's NpcWound,
+// NpcStrike, Defended, WeakSpotHit or HackTraced on an NPC we run,
+// stamped; an NPC owner's NpcWound,
 // NpcPoise and NpcLevel on one we show; an AreaHit on our V; another
 // player's Throw and ThrowEnd. Guest: the host's Difficulty and Rules.
 struct Combat {
@@ -763,14 +764,12 @@ public:
   // guest), kept for late joiners (story::Record). Guest: to the host, which
   // relays ChoiceCursor and StoryState. Anything else is dropped.
   void SendStory(proto::Message message, proto::PlayerId to = proto::kNoPlayer);
-  // Hit outcomes (proto::IsCombat). NpcStrike and Defended to the NPC's
-  // owner (a guest's through the host). An NPC's owner (the host, or a guest
-  // for its own NPCs: regions.md): NpcWound, NpcPoise and NpcLevel to the
-  // games that show it (poise and level kept for late joiners until the
-  // NPC goes). Host: Difficulty, Rules to every guest (kept for late
-  // joiners). Either: AreaHit
-  // to its victim's game, through the host, only while the session's rules
-  // allow friendly fire; Throw and ThrowEnd to every other game, through
+  // Hit outcomes (proto::IsCombat). NpcStrike, Defended, WeakSpotHit and
+  // HackTraced to the NPC's owner (a guest's through the host). An NPC's owner (the host, or a
+  // guest for its own NPCs: regions.md): NpcWound, NpcPoise and NpcLevel to the games that show it
+  // (poise and level kept for late joiners until the NPC goes). Host: Difficulty, Rules to every
+  // guest (kept for late joiners). Either: AreaHit to its victim's game, through the host, only
+  // while the session's rules allow friendly fire; Throw and ThrowEnd to every other game, through
   // the host. Levels travel here too (tandem/progress.hpp): PlayerLevel is
   // our V's, kept and said to the host as soon as we are in the session (the
   // host keeps everyone's and tells all the session's level when their mean

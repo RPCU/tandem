@@ -99,6 +99,7 @@ ThrowEvents < CarriedObjectEvents < CarriedObjectTransition < DefaultTransition 
 TimeDilationHelper < IScriptable
 TimeskipGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 UpdateWhistlePosition < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
+UploadFromNPCToPlayerListener < QuickHackUploadListener < ActionUploadListener < CustomValueStatPoolsListener < ScriptStatPoolsListener < IStatPoolsListener < IScriptable
 VehicleComponent < ScriptableDeviceComponent < DeviceComponent < GameComponent < IComponent < IScriptable
 VehicleComponentPS < ScriptableDeviceComponentPS < SharedGameplayPS < DeviceComponentPS < GameComponentPS < PersistentState < IScriptable
 VehicleObject < GameObject < GameEntity < Entity < IScriptable

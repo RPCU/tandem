@@ -62,8 +62,12 @@ std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
     hash.Add(std::uint64_t{id}).Add(spawn.record).Add(spawn.appearance);
     // Health of the NPCs shared now only: what the host said of one that
     // died or went is no one's business.
-    if (const auto it = health.find(id); it != health.end())
+    if (const auto it = health.find(id); it != health.end()) {
       hash.Add(it->second.health);
+      // Protected (it cannot die now): said, or not (none is the same).
+      if (it->second.flags != 0)
+        hash.Add(std::uint64_t{0xE3}).Add(std::uint64_t{it->second.flags});
+    }
     if (const auto it = holds.find(id); it != holds.end())
       hash.Add(std::uint64_t{0xE0})
           .Add(std::uint64_t{it->second.player})
@@ -320,7 +324,9 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<Throw>(message) || std::holds_alternative<ThrowEnd>(message) ||
          // A race's join, seat, reward: each acted on once (activities.md, "Races").
          std::holds_alternative<Race>(message) || std::holds_alternative<Defended>(message) ||
-         std::holds_alternative<TimeSkip>(message) ||
+         // A weak spot's share of a hit, a trace's end: acted on once (npcs.md).
+         std::holds_alternative<WeakSpotHit>(message) ||
+         std::holds_alternative<HackTraced>(message) || std::holds_alternative<TimeSkip>(message) ||
          std::holds_alternative<TimeSkipVote>(message) ||
          std::holds_alternative<TimeSkipResult>(message) || IsTrade(message) ||
          std::holds_alternative<Mark>(message) || std::holds_alternative<Tag>(message) ||

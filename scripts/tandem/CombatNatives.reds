@@ -22,7 +22,11 @@ public native struct TandemFightEvent {
   // the level). Levels.reds takes the last two. 12 an owner's word on one
   // of its NPCs: how many players it is scaled for (npc, player: the
   // count; Scaling.reds). 13 where another V's throw is now (player, id,
-  // x y z, dx dy dz its velocity: zero when it lies still).
+  // x y z, dx dy dz its velocity: zero when it lies still). 14 (owner)
+  // another V's fire on a weak spot of our NPC (npc, player, damage: the
+  // share of its health it lost, percent; level: its index; attack: its
+  // Weakspot record). 15 (owner) our NPC netrunner's trace on player's V
+  // ran to its end (npc, player).
   native let kind: Int32;
   native let npc: Uint32;
   native let player: Uint32;
@@ -70,6 +74,8 @@ public native class TandemFight extends IScriptable {
   public static native func ConfiguredRules() -> Int32
   public static native func FriendlyFire() -> Bool
   public static native func SendDefended(npc: Uint32, how: Int32)
+  public static native func SendWeakSpot(npc: Uint32, record: TweakDBID, index: Int32, drain: Float)
+  public static native func SendTraced(npc: Uint32)
   public static native func MeleeHold(npc: Uint32) -> Float
   public static native func StaleThrows() -> Int32
   public static native func TakeEvents() -> array<TandemFightEvent>

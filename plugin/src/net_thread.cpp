@@ -530,7 +530,8 @@ struct NetThread::Impl {
               } else if constexpr (std::is_same_v<E, events::HostNpcHealth>) {
                 runtime.PushNpcEvent({.kind = NpcEvent::Kind::Health,
                                       .spawn = {.npc = e.health.npc},
-                                      .amount = e.health.health});
+                                      .amount = e.health.health,
+                                      .flags = e.health.flags});
               } else if constexpr (std::is_same_v<E, events::NpcEffectBy>) {
                 for (const auto effect : e.effect.effects)
                   runtime.PushNpcEvent({.kind = NpcEvent::Kind::Effect,

@@ -1996,6 +1996,12 @@ TEST_CASE("throws: each copy everywhere but the thrower's game; defences to the 
   CHECK(host->SendCombat(proto::Throw{.id = 5, .kind = proto::ThrowKind::Knife}));
   CHECK(a->SendCombat(proto::Defended{.npc = 7, .how = proto::DefendKind::Parried}));
   CHECK_FALSE(host->SendCombat(proto::Defended{.npc = 7, .how = proto::DefendKind::Blocked}));
+  // a breaks a weak spot of NPC 7 and is traced by it to the end: for its
+  // owner, the host; the host's own are its game's.
+  CHECK(a->SendCombat(proto::WeakSpotHit{.player = 99, .npc = 7, .record = 5, .drain = 30.f}));
+  CHECK(a->SendCombat(proto::HackTraced{.npc = 7}));
+  CHECK_FALSE(host->SendCombat(proto::WeakSpotHit{.npc = 7, .record = 5, .drain = 30.f}));
+  CHECK_FALSE(host->SendCombat(proto::HackTraced{.npc = 7}));
   PumpFor({host.get(), a.get(), b.get()}, 300ms, collect);
   const auto count = [&]<class T>(std::size_t i, std::type_identity<T>, proto::PlayerId by) {
     return std::ranges::count_if(heard[i], [&](const auto &m) {
@@ -2007,13 +2013,18 @@ TEST_CASE("throws: each copy everywhere but the thrower's game; defences to the 
   constexpr std::type_identity<proto::ThrowEnd> kEnd;
   constexpr std::type_identity<proto::Defended> kDefended;
   constexpr std::type_identity<proto::ThrowPath> kPath;
-  // The host: a's grenade, its path and its end, a's parry; never its own knife.
+  constexpr std::type_identity<proto::WeakSpotHit> kWeakSpot;
+  constexpr std::type_identity<proto::HackTraced> kTraced;
+  // The host: a's grenade, its path and its end, a's parry, weak spot hit
+  // and trace; never its own knife.
   CHECK(count(0, kThrow, a->You()) == 1);
   CHECK(count(0, kPath, a->You()) == 1);
   CHECK(count(0, kEnd, a->You()) == 1);
   CHECK(count(0, kDefended, a->You()) == 1);
+  CHECK(count(0, kWeakSpot, a->You()) == 1);
+  CHECK(count(0, kTraced, a->You()) == 1);
   CHECK(count(0, kThrow, host->You()) == 0);
-  CHECK(heard[0].size() == 4);
+  CHECK(heard[0].size() == 6);
   // a: the host's knife only (its own grenade is its game's).
   CHECK(count(1, kThrow, host->You()) == 1);
   CHECK(heard[1].size() == 1);
@@ -2023,6 +2034,7 @@ TEST_CASE("throws: each copy everywhere but the thrower's game; defences to the 
   CHECK(count(2, kEnd, a->You()) == 1);
   CHECK(count(2, kThrow, host->You()) == 1);
   CHECK(count(2, kDefended, a->You()) == 0);
+  CHECK(count(2, kWeakSpot, a->You()) == 0);
   CHECK(heard[2].size() == 4);
 }
 

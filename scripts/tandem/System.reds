@@ -1581,6 +1581,11 @@ public class TandemSystem extends ScriptableSystem {
       } else {
         TandemNative.Log("relic mark: no proxy");
       }
+    } else if StrBeginsWith(command, "npc weakspot") {
+      // (test, Combat.reds TandemWeakSpots) "npc weakspot [N]".
+      let spotPlayer = GetPlayer(this.GetGameInstance());
+      let spotAmount = StrLen(command) > 13 ? StringToFloat(StrAfterFirst(command, "weakspot "), 40.0) : 40.0;
+      TandemWeakSpots.Test(this.GetGameInstance(), IsDefined(this.m_npcs) && IsDefined(spotPlayer) ? this.m_npcs.NearestProxy(spotPlayer.GetWorldPosition()) : null, spotAmount);
     } else if StrBeginsWith(command, "npc punch") {
       // (test) a hit from our V on the nearest proxy, through the game's
       // damage pipeline as a real one would go (Combat.reds): lethal

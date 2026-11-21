@@ -358,8 +358,11 @@ public class TandemHacks extends ScriptableSystem {
     }
     let tags = evt.staticData.GameplayTags();
     // A breach's daemons too (Breach.reds): an owner's NPC weakened by
-    // another player's breach looks so on every proxy.
-    if !ArrayContains(tags, n"Quickhack") && !TandemBreach.IsDaemonEffect(effect) {
+    // another player's breach looks so on every proxy. And what stops a
+    // netrunner's upload (Interrupts): its proxy wears it where the upload
+    // runs on another V's game.
+    let interrupt = TandemHacks.Interrupts(evt.staticData);
+    if !ArrayContains(tags, n"Quickhack") && !TandemBreach.IsDaemonEffect(effect) && !interrupt {
       return;
     }
     let game = npc.GetGame();
@@ -372,9 +375,21 @@ public class TandemHacks extends ScriptableSystem {
     TandemNative.SendNpcStatus(id, who, effect, true);
     TandemCommsNative.PartnerEffect(id, who, effect, true, TandemComms.EffectSeconds(npc, effect));
     // A guest's loud quickhack: what the game does for ours.
-    if who != 0u && who != hacks.You() && !ArrayContains(tags, n"Stealth") {
+    if who != 0u && who != hacks.You() && ArrayContains(tags, n"Quickhack") && !ArrayContains(tags, n"Stealth") {
       hacks.Victim(npc, id, who, effect);
     }
+  }
+
+  // What stops an NPC netrunner's upload on a V: vanilla's listener reads it
+  // on the netrunner each tick (UploadFromNPCToPlayerListener
+  // .OnStatPoolValueChanged, final.reds:195098), applied by the NPC's
+  // behaviour and senses, both off on a proxy.
+  public static func Interrupts(record: ref<StatusEffect_Record>) -> Bool {
+    if !IsDefined(record) {
+      return false;
+    }
+    let id = record.GetID();
+    return id == t"AIQuickHackStatusEffect.HackingInterrupted" || id == t"AIQuickHackStatusEffect.HackRevealInterrupted" || record.GameplayTagsContains(n"CyberwareMalfunction");
   }
 
   public static func EffectRemoved(npc: ref<NPCPuppet>, evt: ref<RemoveStatusEffect>) -> Void {
@@ -382,7 +397,7 @@ public class TandemHacks extends ScriptableSystem {
       return;
     }
     let tags = evt.staticData.GameplayTags();
-    if !ArrayContains(tags, n"Quickhack") && !TandemBreach.IsDaemonEffect(evt.staticData.GetID()) {
+    if !ArrayContains(tags, n"Quickhack") && !TandemBreach.IsDaemonEffect(evt.staticData.GetID()) && !TandemHacks.Interrupts(evt.staticData) {
       return;
     }
     let id = TandemHacks.NpcOf(npc.GetGame(), npc.GetEntityID());
@@ -545,6 +560,51 @@ public class TandemHacks extends ScriptableSystem {
     TandemNative.Log(s"hacks: npc \(event.npc) hacks our V with \(what)\(reveal ? " (trace)" : "")");
   }
 
+  // The V's game: the NPC a trace on our V comes from, when it is a proxy
+  // (0: none, or one we run). Its trace's end is then its owner's to play
+  // (Traced; the wrap of UploadFromNPCToPlayerListener below).
+  public static func TracingProxy(netrunner: wref<ScriptedPuppet>, trace: Bool) -> Uint32 {
+    if !trace || !IsDefined(netrunner) {
+      return 0u;
+    }
+    return TandemCombat.ProxyNpc(netrunner.GetGame(), netrunner);
+  }
+
+  // The netrunner's owner: its trace on player's V ran to its end on that
+  // V's game. What the game does then (UploadFromNPCToPlayerListener
+  // .OnStatPoolMaxValueReached, final.reds:194925), here where the
+  // netrunner's squad is: it and each squadmate turn hostile to the V's
+  // puppet and know where it is, and the security system hears of combat.
+  public static func Traced(game: GameInstance, npc: Uint32, player: Uint32, npcs: ref<TandemNpcs>) -> Void {
+    let netrunner = npcs.Owns(npc) ? GameInstance.FindEntityByID(game, npcs.EntityOfNpc(npc)) as ScriptedPuppet : null;
+    let puppet = TandemNpcs.PuppetOf(game, player) as ScriptedPuppet;
+    if !IsDefined(netrunner) || !IsDefined(puppet) || netrunner.IsDead() {
+      TandemNative.Log(s"hacks: npc \(npc)'s trace of player \(player) ended, dropped (no netrunner or puppet here)");
+      return;
+    }
+    let squad: array<EntityID>;
+    AISquadHelper.GetSquadmatesID(netrunner, squad);
+    let tracker: wref<TargetTrackingExtension>;
+    let first = ArraySize(squad) > 0 ? GameInstance.FindEntityByID(game, squad[0]) as ScriptedPuppet : null;
+    if !TargetTrackingExtension.Get(first, tracker) && !TargetTrackingExtension.Get(netrunner, tracker) {
+      TandemNative.Log(s"hacks: npc \(npc)'s trace of player \(player) ended, dropped (no target tracker)");
+      return;
+    }
+    TandemHacks.StartCombat(puppet, netrunner, tracker);
+    for id in squad {
+      TandemHacks.StartCombat(puppet, GameInstance.FindEntityByID(game, id) as ScriptedPuppet, tracker);
+    }
+    TandemNative.Log(s"hacks: npc \(npc)'s trace of player \(player) ran to its end: it and \(ArraySize(squad)) squadmate(s) are on them");
+  }
+
+  // The listener's TryStartCombat, final.reds:194913.
+  private static func StartCombat(target: ref<ScriptedPuppet>, npc: ref<ScriptedPuppet>, tracker: wref<TargetTrackingExtension>) -> Void {
+    if IsDefined(npc) && !npc.IsDead() && AIActionHelper.TryChangingAttitudeToHostile(npc, target) {
+      tracker.AddThreat(target, true, target.GetWorldPosition(), 1.0, -1.0, false);
+      npc.TriggerSecuritySystemNotification(target.GetWorldPosition(), target, ESecurityNotificationType.COMBAT);
+    }
+  }
+
   // ---- cars ----
 
   // The player whose car this is a copy of (0: a car of our world).
@@ -626,6 +686,25 @@ protected cb func OnHackTargetEvent(evt: ref<HackTargetEvent>) -> Bool {
     return true;
   }
   return wrappedMethod(evt);
+}
+
+// A trace on our V from a proxy (HackedByNpc) ran to its end: the game's own
+// end of it, but the squad part (each squadmate turned on our V, final.reds
+// 194958-194978) is the netrunner's owner's (TandemHacks.Traced): the proxy
+// has no squad here, and that part reads its first squadmate whatever.
+@wrapMethod(UploadFromNPCToPlayerListener)
+protected cb func OnStatPoolMaxValueReached(value: Float) -> Bool {
+  let npc = TandemHacks.TracingProxy(this.m_npcPuppet, this.m_ssAction);
+  if npc == 0u {
+    return wrappedMethod(value);
+  }
+  this.m_ssAction = false;
+  let result = wrappedMethod(value);
+  this.m_ssAction = true;
+  this.m_playerPuppet.RemoveLinkedStatusEffects(true);
+  TandemFight.SendTraced(npc);
+  TandemNative.Log(s"hacks: npc \(npc)'s trace of our V ran to its end: its owner sets its squad on us");
+  return result;
 }
 
 // Host: quickhack effects on our NPCs, for everyone (and a guest's alert).

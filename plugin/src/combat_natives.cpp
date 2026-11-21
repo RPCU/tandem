@@ -59,7 +59,9 @@ enum Kind : std::int32_t {
   kSessionLevel = 10,
   kNpcLevel = 11,
   kNpcScale = 12,
-  kThrowPath = 13
+  kThrowPath = 13,
+  kWeakSpot = 14,
+  kTraced = 15
 };
 
 proto::Vec3 Vec(const Red::Vector4 &v) { return {v.X, v.Y, v.Z}; }
@@ -134,6 +136,15 @@ TandemFightEvent EventOf(const proto::Message &message) {
     out.x = path->position.x, out.y = path->position.y, out.z = path->position.z;
     out.dx = path->velocity.x, out.dy = path->velocity.y, out.dz = path->velocity.z;
     out.id = path->id;
+  } else if (const auto *weak = std::get_if<proto::WeakSpotHit>(&message)) {
+    out = {.kind = kWeakSpot,
+           .npc = weak->npc,
+           .player = weak->player,
+           .damage = weak->drain,
+           .level = weak->index,
+           .attack = Red::TweakDBID(weak->record)};
+  } else if (const auto *traced = std::get_if<proto::HackTraced>(&message)) {
+    out = {.kind = kTraced, .npc = traced->npc, .player = traced->player};
   }
   return out;
 }
@@ -257,6 +268,22 @@ struct TandemFight : Red::IScriptable {
       return;
     Combat::Get().Send(proto::Defended{.npc = npc, .how = static_cast<proto::DefendKind>(how)});
   }
+  // Our fire took `drain` percent of the health of weak spot `index`
+  // (record `record`) of the proxy of NPC `npc`: for its owner.
+  static void SendWeakSpot(std::uint32_t npc, Red::TweakDBID record, std::int32_t index,
+                           float drain) {
+    if (npc == 0 || index < 0 || index > 255 || !(drain > 0.f))
+      return;
+    Combat::Get().Send(proto::WeakSpotHit{.npc = npc,
+                                          .record = record.value,
+                                          .index = static_cast<std::uint8_t>(index),
+                                          .drain = std::min(drain, 100.f)});
+  }
+  // NPC `npc`'s trace on our V ran to its end: its owner sets its squad on us.
+  static void SendTraced(std::uint32_t npc) {
+    if (npc != 0)
+      Combat::Get().Send(proto::HackTraced{.npc = npc});
+  }
   // Guest: how long (seconds) a melee hit of the host's NPC `npc` waits
   // before our game runs it, so it lands when its proxy is drawn landing it.
   static float MeleeHold(std::uint32_t npc) {
@@ -355,6 +382,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemFight, "TandemFight", {
   RTTI_METHOD(ConfiguredRules);
   RTTI_METHOD(FriendlyFire);
   RTTI_METHOD(SendDefended);
+  RTTI_METHOD(SendWeakSpot);
+  RTTI_METHOD(SendTraced);
   RTTI_METHOD(MeleeHold);
   RTTI_METHOD(StaleThrows);
   RTTI_METHOD(TakeEvents);

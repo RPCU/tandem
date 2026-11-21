@@ -258,6 +258,110 @@ public abstract class TandemCombat {
   }
 }
 
+// A boss's weak spots (WeakspotObject: a plate, a heat sink, a mech's
+// vents), each an entity of its own on its NPC. Our fire on a proxy's
+// breaks the proxy's on our screen as alone; the share of its health each
+// hit took goes to the NPC's owner (WeakSpotHit), whose real weak spot
+// takes the same: its destruction there sets its fact and moves the boss
+// on (ScriptedWeakspotObject.OnWeakspotDestroy, final.reds:293345), on the
+// game that runs the quest's NPC.
+public abstract class TandemWeakSpots {
+  // Its health, percent.
+  public static func Health(game: GameInstance, spot: ref<GameObject>) -> Float {
+    return GameInstance.GetStatPoolsSystem(game).GetStatPoolValue(Cast<StatsObjectID>(spot.GetEntityID()), gamedataStatPoolType.WeakspotHealth, true);
+  }
+
+  // Its NPC's weak spots, in the component's order.
+  public static func Of(npc: ref<ScriptedPuppet>) -> array<wref<WeakspotObject>> {
+    let spots: array<wref<WeakspotObject>>;
+    let component = IsDefined(npc) ? npc.GetWeakspotComponent() : null;
+    if IsDefined(component) {
+      component.GetWeakspots(spots);
+    }
+    return spots;
+  }
+
+  // Guest: our hit on a proxy's weak spot took `drain` percent of it.
+  public static func Lost(spot: ref<WeakspotObject>, npc: Uint32, drain: Float) -> Void {
+    let record = spot.GetRecord();
+    let spots = TandemWeakSpots.Of(spot.GetOwner() as ScriptedPuppet);
+    let index = -1;
+    let i = 0;
+    while i < ArraySize(spots) {
+      if IsDefined(spots[i]) && spots[i].GetEntityID() == spot.GetEntityID() {
+        index = i;
+      }
+      i += 1;
+    }
+    if drain <= 0.0 || index < 0 || !IsDefined(record) {
+      return;
+    }
+    TandemFight.SendWeakSpot(npc, record.GetID(), index, drain);
+    TandemNative.LogDebug(s"combat: our hit took \(drain)% of weak spot \(index) (\(TDBID.ToStringDEBUG(record.GetID()))) of proxy \(npc), for its owner");
+  }
+
+  // The NPC's owner: another V's fire on a weak spot of one of our NPCs (its
+  // proxy there): the same share off ours, from that V's puppet. The one at
+  // its index if it is of that record, else the first of that record still
+  // whole.
+  public static func Take(game: GameInstance, event: TandemFightEvent, npcs: ref<TandemNpcs>) -> Void {
+    let body = npcs.Owns(event.npc) ? GameInstance.FindEntityByID(game, npcs.EntityOfNpc(event.npc)) as ScriptedPuppet : null;
+    if !IsDefined(body) || body.IsDead() {
+      return;
+    }
+    let spots = TandemWeakSpots.Of(body);
+    let pick: wref<WeakspotObject>;
+    let index = event.level;
+    if index >= 0 && index < ArraySize(spots) && IsDefined(spots[index]) && IsDefined(spots[index].GetRecord()) && spots[index].GetRecord().GetID() == event.attack {
+      pick = spots[index];
+    } else {
+      for candidate in spots {
+        if !IsDefined(pick) && IsDefined(candidate) && IsDefined(candidate.GetRecord()) && candidate.GetRecord().GetID() == event.attack && !candidate.IsDead() {
+          pick = candidate;
+        }
+      }
+    }
+    let what = TDBID.ToStringDEBUG(event.attack);
+    if !IsDefined(pick) || pick.IsDead() || pick.IsInvulnerable() {
+      TandemNative.Log(s"combat: player \(event.player)'s hit on weak spot \(index) (\(what)) of npc \(event.npc) dropped (none whole and open here)");
+      return;
+    }
+    let by = TandemNpcs.PuppetOf(game, event.player);
+    GameInstance.GetStatPoolsSystem(game).RequestChangingStatPoolValue(Cast<StatsObjectID>(pick.GetEntityID()), gamedataStatPoolType.WeakspotHealth, -event.damage, by, false, true);
+    TandemNative.Log(s"combat: player \(event.player)'s hit took \(event.damage)% of weak spot \(index) (\(what)) of npc \(event.npc): \(TandemWeakSpots.Health(game, pick))% left");
+  }
+
+  // (test) tools/game.sh cmd "npc weakspot [N]": our V's hit of N (default
+  // 40) on the first whole weak spot of the nearest proxy.
+  public static func Test(game: GameInstance, proxy: ref<ScriptedPuppet>, amount: Float) -> Void {
+    let player = GetPlayer(game);
+    let target: wref<WeakspotObject>;
+    for candidate in TandemWeakSpots.Of(proxy) {
+      if !IsDefined(target) && IsDefined(candidate) && !candidate.IsDead() {
+        target = candidate;
+      }
+    }
+    if !IsDefined(player) || !IsDefined(target) {
+      TandemNative.Log("npc weakspot: none on the nearest proxy");
+      return;
+    }
+    let context: AttackInitContext;
+    context.record = TweakDBInterface.GetAttackRecord(t"Attacks.VehicleImpact");
+    context.instigator = player;
+    context.source = player;
+    let hit = new gameHitEvent();
+    hit.attackData = new AttackData();
+    hit.target = target;
+    hit.attackComputed = new gameAttackComputed();
+    hit.attackComputed.SetAttackValue(amount, gamedataDamageType.Physical);
+    hit.attackData.SetSource(player);
+    hit.attackData.SetInstigator(player);
+    hit.attackData.SetAttackDefinition(IAttack.Create(context));
+    GameInstance.GetDamageSystem(game).QueueHitEvent(hit, target);
+    TandemNative.Log(s"npc weakspot: \(EntityID.ToDebugStringDecimal(target.GetEntityID())) of \(EntityID.ToDebugStringDecimal(proxy.GetEntityID())), \(TandemWeakSpots.Health(game, target))% whole");
+  }
+}
+
 @wrapMethod(DamageSystem)
 private final func DealDamages(hitEvent: ref<gameHitEvent>) {
   let game = GetGameInstance();
@@ -286,6 +390,18 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) {
     wrappedMethod(hitEvent);
     let after = TandemCombat.Health(game, hitEvent.target);
     TandemNative.LogDebug(s"combat: npc hit applied to our V: \(hitEvent.attackComputed.GetTotalAttackValue(gamedataStatPoolType.Health)) damage, health \(before) -> \(after)");
+    return;
+  }
+  // Our V's fire on a weak spot of a proxy (a boss's plate): it breaks on
+  // our screen as alone, and what it lost goes to the NPC's owner, whose
+  // real one takes it (its fact, the boss's next phase: TandemWeakSpots).
+  let spot = hitEvent.target as WeakspotObject;
+  let spotNpc = IsDefined(spot) ? TandemCombat.ProxyNpc(game, spot.GetOwner()) : 0u;
+  let shooter = hitEvent.attackData.GetInstigator();
+  if spotNpc != 0u && IsDefined(shooter) && shooter.IsPlayer() {
+    let had = TandemWeakSpots.Health(game, spot);
+    wrappedMethod(hitEvent);
+    TandemWeakSpots.Lost(spot, spotNpc, had - TandemWeakSpots.Health(game, spot));
     return;
   }
   let npc = TandemCombat.ProxyNpc(game, hitEvent.target);

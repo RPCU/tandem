@@ -22,7 +22,8 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // forms of the netcode (PoseFrame, NpcMotion, PlayerMotion, VehicleMotion);
 // the record hints of Held, Appearance, Seat and NpcSpawn (mod-compat.md),
 // added before protocol 7 left the developers' machines.
-inline constexpr std::uint16_t kProtocolVersion = 8;
+// 9: NpcHealth.flags (kNpcProtected); WeakSpotHit and HackTraced appended.
+inline constexpr std::uint16_t kProtocolVersion = 9;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -321,9 +322,15 @@ inline constexpr std::uint8_t kHitIgnoreDifficulty = 16, kHitCannotKill = 32;
 
 // An NPC's health as the host's game has it, sent when it changes. Death
 // is NpcGone with reason 1.
+// NpcHealth::flags. kNpcProtected: the owner's game cannot kill it now (god
+// mode Immortal or Invulnerable, or its IsInvulnerable stat): a guest's hit
+// that takes the last of its proxy's health is no kill (npcs.md).
+inline constexpr std::uint8_t kNpcProtected = 1;
+inline constexpr std::uint8_t kNpcHealthFlags = kNpcProtected;
 struct NpcHealth { // Event channel; kept by the host for late joiners
   NpcId npc{};
-  float health{}; // fraction of its maximum, 0..1
+  float health{};       // fraction of its maximum, 0..1
+  std::uint8_t flags{}; // kNpc* (since protocol 9)
   friend bool operator==(const NpcHealth &, const NpcHealth &) = default;
 };
 
@@ -3022,6 +3029,36 @@ struct ScenePlace {
   friend bool operator==(const ScenePlace &, const ScenePlace &) = default;
 };
 
+// ---- What a player's game did to an NPC's proxy that the NPC's owner
+// runs on the real one (docs/architecture/npcs.md, "What a proxy cannot
+// do") ----
+//
+// A weak spot of the proxy (a boss's plate or heat sink: a WeakspotObject)
+// lost health to the sender's fire on its game: the owner drains the same
+// share from its real weak spot, so what its destruction does (its fact,
+// the boss's next phase, the damage to its owner) happens on the game that
+// runs the NPC. The sender's copy breaks on its own screen too. Combat path,
+// routed to the NPC's owner as NpcStrike; a one-shot.
+struct WeakSpotHit {
+  PlayerId player{};      // whose fire: set by the host from the connection
+  NpcId npc{};            // the weak spot's NPC
+  std::uint64_t record{}; // TweakDB id of its Weakspot record
+  std::uint8_t index{};   // its place in the NPC's weak spots (several of one record)
+  float drain{};          // the share of its health it lost, percent (0..100]
+  friend bool operator==(const WeakSpotHit &, const WeakSpotHit &) = default;
+};
+
+// An NPC netrunner's trace (AIQuickHack.HackRevealPosition, PlayerHack with
+// kPlayerHackReveal) ran to its end on the traced V's game: the owner sets
+// the netrunner and its squad on that V, as the game does when a trace
+// completes (UploadFromNPCToPlayerListener), which the V's game cannot: its
+// proxy has no squad. Combat path, to the NPC's owner; a one-shot.
+struct HackTraced {
+  PlayerId player{}; // the traced V's: set by the host from the connection
+  NpcId npc{};       // the netrunner
+  friend bool operator==(const HackTraced &, const HackTraced &) = default;
+};
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -3043,7 +3080,7 @@ using MessageVariant = std::variant<
     BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
-    ScenePlace>;
+    ScenePlace, WeakSpotHit, HackTraced>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
@@ -3058,8 +3095,8 @@ bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit, Throw … Defended, ThrowPath),
 // a level (PlayerLevel … NpcLevel), a car's lending (CarLend), an NPC's
 // scale (NpcScale), a vendor (NpcVendor), a placed NPC (NpcPlaced), a
-// death of the ledger (NpcDeath) or a street race (Race): one path in
-// endpoint.hpp too.
+// death of the ledger (NpcDeath), a street race (Race), or what a proxy
+// cannot do (WeakSpotHit, HackTraced): one path in endpoint.hpp too.
 bool IsCombat(const Message &message);
 // A trade message (Trade, TradeOffer, TradeCommit): one path as well.
 bool IsTrade(const Message &message);

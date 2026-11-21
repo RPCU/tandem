@@ -52,7 +52,8 @@ public native struct TandemNpcEvent {
   native let player: Uint32;
   // 3 hit: damage in health points; 4 health (guest): fraction 0..1
   native let amount: Float;
-  // 3 hit: 1 weak spot, 2 critical, 4 melee, 8 lethal
+  // 3 hit: 1 weak spot, 2 critical, 4 melee, 8 lethal; 4 health: 1 the
+  // owner's game cannot kill it now (immortal, invulnerable)
   native let flags: Int32;
   // 3 hit: its direction (x, y, z: where it landed)
   native let dx: Float;
@@ -410,7 +411,7 @@ public native class TandemNative extends IScriptable {
   public static native func SendNpcSpawn(npc: Uint32, record: TweakDBID, appearance: CName, position: Vector4, orientation: Quaternion, hint: TandemRecordHint)
   public static native func SendNpcStates(npcs: array<Uint32>, positions: array<Vector4>, orientations: array<Quaternion>, detected: array<Int32>)
   public static native func SendNpcGone(npc: Uint32, reason: Int32, killer: Uint32)
-  public static native func SendNpcHealth(npc: Uint32, health: Float)
+  public static native func SendNpcHealth(npc: Uint32, health: Float, flags: Int32)
   public static native func SendNpcHit(npc: Uint32, damage: Float, flags: Int32, position: Vector4, direction: Vector4)
   public static native func SendNpcEffect(npc: Uint32, effects: array<TweakDBID>)
   public static native func SendPlayerHit(player: Uint32, npc: Uint32, physical: Float, thermal: Float, electric: Float, chemical: Float, attackType: Int32, flags: Int32, pierce: Float, position: Vector4, direction: Vector4, attack: TweakDBID, weapon: TweakDBID)

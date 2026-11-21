@@ -19,8 +19,10 @@ public class TandemNpcKnown {
   public let id: EntityID;
   public let npc: Uint32;
   public let seen: Bool;
-  // Health last sent (fraction 0..1; -1 none yet), and whether we said it died.
+  // Health last sent (fraction 0..1; -1 none yet), with whether our game
+  // cannot kill it now (1: Protected), and whether we said it died.
   public let health: Float;
+  public let protect: Int32;
   public let dead: Bool;
   // Poise last sent (fraction; -1 none yet), and whether it was knocked out.
   public let poise: Float;
@@ -90,6 +92,9 @@ public class TandemNpcProxy {
   // and when the host's health for it said it lives (0: no such doubt).
   public let predictedAt: Float;
   public let doubtAt: Float;
+  // Its owner's game cannot kill it now (NpcHealth's kNpcProtected): no hit
+  // of ours is a kill (PredictKill).
+  public let protect: Bool;
   // Regions: its body is the game's own entity (an NPC of ours we handed
   // over): never deleted, hidden when its proxy goes, woken up when the
   // session ends.
@@ -896,9 +901,14 @@ public class TandemNpcs {
           this.m_anims.Sample(npc, known.npc, this.m_you);
         }
         let health = pools.GetStatPoolValue(Cast<StatsObjectID>(id), gamedataStatPoolType.Health, true) / 100.0;
-        if AbsF(health - known.health) >= 0.01 {
+        let protect = TandemNpcs.Protected(npc) ? 1 : 0;
+        if AbsF(health - known.health) >= 0.01 || protect != known.protect {
+          if protect != known.protect {
+            TandemNative.Log(s"npcs: \(known.npc) \(protect == 1 ? "cannot die now (immortal or invulnerable)" : "can die again")");
+          }
           known.health = health;
-          TandemNative.SendNpcHealth(known.npc, health);
+          known.protect = protect;
+          TandemNative.SendNpcHealth(known.npc, health, protect);
         }
         // Scaled to the session's level, and its level told (Levels.reds).
         this.m_levels.Host(known, npc);
@@ -1188,6 +1198,18 @@ public class TandemNpcs {
     return true;
   }
 
+  // Our game cannot kill this NPC now: god mode (a quest's immortality or
+  // invulnerability: GetImmortality, final.reds:87656) or its IsInvulnerable
+  // stat (as the weak spots read it, final.reds:306570). Its health floors
+  // or stays, so a guest's hit that takes the last of its proxy's is none.
+  public static func Protected(npc: ref<ScriptedPuppet>) -> Bool {
+    let mode = gameGodModeType.Mortal;
+    if GetImmortality(npc, mode) {
+      return true;
+    }
+    return GameInstance.GetStatsSystem(npc.GetGame()).GetStatValue(Cast<StatsObjectID>(npc.GetEntityID()), gamedataStatType.IsInvulnerable) > 0.0;
+  }
+
   // A remote player's puppet (the instigator of their hits).
   public static func PuppetOf(game: GameInstance, player: Uint32) -> ref<GameObject> {
     let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
@@ -1225,6 +1247,7 @@ public class TandemNpcs {
         let proxy = this.FindProxy(event.npc);
         if IsDefined(proxy) {
           proxy.health = event.amount;
+          proxy.protect = (event.flags & 1) != 0;
           this.ApplyHealth(proxy);
           if proxy.predictedAt > 0.0 && event.amount > 0.0 {
             proxy.doubtAt = now;
@@ -1825,10 +1848,16 @@ public class TandemNpcs {
   // Sandevistan's kill extension and the skill XP fire at the hit, not a
   // round trip to the host later. The host's word follows (Die); if it
   // says the NPC lives instead (its health was above what we knew), the
-  // proxy is brought back (Reconcile).
+  // proxy is brought back (Reconcile). One its owner's game cannot kill now
+  // (a quest's immortal, a boss between phases: Protected) is never killed
+  // here: its owner's health comes back instead.
   public func PredictKill(npc: Uint32) -> Void {
     let proxy = this.FindProxy(npc);
     if !IsDefined(proxy) || proxy.dead || TandemTakedowns.Get(this.m_game).DefersDeath(npc, this.m_you) {
+      return;
+    }
+    if proxy.protect {
+      TandemNative.LogDebug(s"npcs: proxy \(npc) takes our lethal hit but cannot die on its owner's game: no kill here");
       return;
     }
     proxy.dead = true;
@@ -1850,12 +1879,14 @@ public class TandemNpcs {
     TandemNative.Log(s"npcs: proxy \(npc) died by our hit (ahead of the host)");
   }
 
-  // A kill we saw that the host did not: 1.5 s after it, with the host's
-  // health for the NPC above zero since and no death from it, the proxy is
-  // spawned again where it fell. (What the kill gave our V stays given.)
+  // A kill we saw that the host did not: 1.5 s after it with no death from
+  // it (its health above zero since, or no word at all: an immortal NPC at
+  // its floor sends none), the proxy is spawned again where it fell. (What
+  // the kill gave our V stays given.)
   private func Reconcile(now: Float) -> Void {
     for proxy in this.m_proxies {
-      if proxy.predictedAt > 0.0 && proxy.doubtAt > 0.0 && now - proxy.predictedAt > 1.5 {
+      if proxy.predictedAt > 0.0 && now - proxy.predictedAt > 1.5 {
+        let why = proxy.doubtAt > 0.0 ? "its health says it lives" : "no word of its death in 1.5 s";
         let entities = GameInstance.GetDynamicEntitySystem();
         let old = this.ProxyBody(proxy.id) as GameObject;
         let spec = new DynamicEntitySpec();
@@ -1884,7 +1915,7 @@ public class TandemNpcs {
         proxy.levelShift = 0.0;
         proxy.predictedAt = 0.0;
         proxy.doubtAt = 0.0;
-        TandemNative.Log(s"npcs: proxy \(proxy.npc) lives on the host: our kill was not one, brought back");
+        TandemNative.Log(s"npcs: proxy \(proxy.npc) lives on the host (\(why)): our kill was not one, brought back");
       }
     }
   }

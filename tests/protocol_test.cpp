@@ -70,6 +70,7 @@ TEST_CASE("every message survives encoding") {
                     .direction = {0, 1, 0}});
   RoundTrips(NpcEffect{.player = 2, .npc = 7, .effects = {11, 12}});
   RoundTrips(NpcHealth{.npc = 7, .health = 0.25f});
+  RoundTrips(NpcHealth{.npc = 7, .health = 0.01f, .flags = kNpcProtected});
   RoundTrips(World{
       .revision = 2, .gameTimeSeconds = 86400 + 3600 * 18, .weather = 0x1234, .timePaused = true});
   RoundTrips(Pause{.player = 3, .paused = true});
@@ -1148,6 +1149,25 @@ TEST_CASE("the world's objects: fractures and a device's fire survive encoding, 
   CHECK(Encode(DeviceFire{}).size() <= 48);
   CHECK_FALSE(Decode(Encode(DeviceFire{.kind = static_cast<DeviceFireKind>(5)})).has_value());
   CHECK_FALSE(Decode(Encode(DeviceFire{.target = {static_cast<TargetKind>(4), 1}})).has_value());
+}
+
+TEST_CASE("what a proxy cannot do survives encoding, for its owner: reliable, small, combat") {
+  RoundTrips(
+      WeakSpotHit{.player = 2, .npc = 7, .record = 0x1122334455ULL, .index = 1, .drain = 35.5f});
+  RoundTrips(HackTraced{.player = 3, .npc = 9});
+  CHECK(Message(WeakSpotHit{}).index() == Message(ScenePlace{}).index() + 1); // appended
+  CHECK(Message(HackTraced{}).index() == Message(WeakSpotHit{}).index() + 1);
+  CHECK(std::string(NameOf(WeakSpotHit{})) == "WeakSpotHit");
+  CHECK(std::string(NameOf(HackTraced{})) == "HackTraced");
+  CHECK(ChannelOf(WeakSpotHit{}) == Channel::Event);
+  CHECK(ChannelOf(HackTraced{}) == Channel::Event);
+  CHECK(IsReliable(WeakSpotHit{}));
+  CHECK(IsCombat(WeakSpotHit{}));
+  CHECK(IsCombat(HackTraced{}));
+  CHECK(Encode(WeakSpotHit{}).size() <= 32);
+  CHECK(Encode(HackTraced{}).size() <= 16);
+  // An NPC's health: protected or not, nothing this version does not know.
+  CHECK_FALSE(Decode(Encode(NpcHealth{.npc = 1, .flags = 2})).has_value());
 }
 
 TEST_CASE("a turret in a player's hands survives encoding, small, unreliable, known flags "
