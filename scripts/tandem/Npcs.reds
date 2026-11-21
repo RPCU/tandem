@@ -1440,7 +1440,9 @@ public class TandemNpcs {
     let lost: array<Uint32>;
     for proxy in this.m_proxies {
       let keep = true;
-      if !proxy.dead && !TandemSync.IsNpcShared(proxy.npc) {
+      // (A corpse or an unconscious body stays where it fell: the host's
+      // record lets go of a knocked-out NPC too, its body is ours to keep.)
+      if !proxy.dead && !proxy.down && !TandemSync.IsNpcShared(proxy.npc) {
         if proxy.orphanSince <= 0.0 {
           proxy.orphanSince = now;
         } else if now - proxy.orphanSince >= 2.0 {
