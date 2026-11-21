@@ -171,11 +171,11 @@ struct TandemObjects : Red::IScriptable {
     return out;
   }
 
-  // A new session (or its end): nothing broken is remembered.
-  static void Reset() {
-    Glass().Clear();
-    Runtime::Get().TakeObjects();
-  }
+  // A new session (or its end): nothing broken is remembered. What the
+  // others said stays queued: a joiner's replay of the session's breaks
+  // comes with the welcome, before the scripts see the new session (the net
+  // thread empties the queue between sessions, Runtime::ResetSession).
+  static void Reset() { Glass().Clear(); }
 
   // (tools/game.sh cmd glass) one line for the log.
   static Red::CString Report() {

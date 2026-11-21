@@ -47,7 +47,8 @@ public native class TandemObjects extends IScriptable {
   public static native func Hands(entity: EntityID, position: Vector4, flags: Int32)
   // What the others' games say since the last call.
   public static native func TakeEvents() -> array<TandemObjectEvent>
-  // A new session, or its end: nothing broken is remembered.
+  // A new session, or its end: nothing broken is remembered (the queue of
+  // what the others said is kept: the net thread empties it between sessions).
   public static native func Reset()
   public static native func Report() -> String
 }

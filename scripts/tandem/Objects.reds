@@ -49,7 +49,8 @@ public class TandemObjectSync extends ScriptableSystem {
   public func Update(you: Uint32) -> Void {
     let game = this.GetGameInstance();
     if this.m_you != you {
-      // A new session, or its end: nothing broken is remembered.
+      // A new session, or its end: nothing broken is remembered (what the
+      // others said stays queued: a joiner's replay came with the welcome).
       TandemObjects.Reset();
       ArrayClear(this.m_waiting);
       this.m_you = you;

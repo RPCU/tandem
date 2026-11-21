@@ -394,7 +394,10 @@ file. Code: `scripts/tandem/Objects.reds` (`TandemObjectSync`),
   `FracturesDropped`), so a guest's record never holds one the host's lacks.
   A late joiner gets it whole at its join (world domain); it is in the world
   digest (count and an order-free sum), and a world resync sends it again.
-  The session's only: it ends with the session.
+  The session's only: it ends with the session. It comes with the welcome,
+  before the scripts see the new session: their reset at a session's start
+  forgets what broke here but keeps the queue of what the others said (the
+  net thread empties it between sessions, `Runtime::ResetSession`).
 - **A break not in our world yet** (more than 120 m from our V, or a named
   part whose entity is not streamed in within 60 m) waits in
   `TandemObjectSync` (512 at most, the oldest dropped) and is tried again
