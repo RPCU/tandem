@@ -125,6 +125,7 @@ found through this table, each number once.
 | 13.100 | The physics queue while the world is paused                                             | `time.md`           |
 | 13.101 | Removing a car copy: the stub path, and what crashed                                    | `vehicles.md`       |
 | 13.102 | The strategy pre-check needs all seven strategies                                       | `traffic-police.md` |
+| 13.110 | Viktor's clinic: where, and when the story has it                                       | `revive.md`         |
 
 ## Top traps (one line each)
 
