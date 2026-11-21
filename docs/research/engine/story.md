@@ -714,3 +714,19 @@ splineRef`). Script-side, a quest's map pins are journal entries
   or the `VehicleScene` tag: §13.27), and another world (§13.26). None
   names a quest: the list is the same for the base game and Phantom
   Liberty. [2.5-untested]
+- **The audio listener is the player's, not the active camera's**: a
+  camera takes it only when activated with
+  `CameraComponent.Activate(blendTime, shouldOverrideAudioListeners =
+true)` (`:106188`, `Deactivate` the same, `:106190`); vanilla's camera
+  takeover does (`TakeControlOverCamera`, `:102040`, `:102051`), and a
+  braindance moves it by `AudioSystem.SetBDCameraListenerOverride`
+  (`:45364`, `:149636`). A camera of ours activated with `false` leaves the
+  listener on our V. [2.5-untested]
+- **A puppet's head in first person**: the game draws V's own first person
+  from its FPP head (no face, hair or headgear; the head groups `FPP`,
+  `FPP_hairs`, §5) and dresses a TPP puppet with `Items.PlayerMaTppHead` /
+  `Items.PlayerWaTppHead` (`:347449`). On tandem's puppet the head is its
+  own mesh components (§13.4: morph target skinned meshes), each hidden
+  with `IVisualComponent.TemporaryHide` (§13.26): which components by name
+  (the meshes' `h0_`, `hh_`, `he_`… prefixes) is unmeasured
+  (`tools/game.sh cmd story spectate parts` lists them). [unverified]
