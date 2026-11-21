@@ -1,6 +1,7 @@
 #include "tandem/story.hpp"
 
 #include "tandem/consistency.hpp"
+#include "tandem/scene.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -163,7 +164,7 @@ std::uint32_t Record::Digest() const {
 
 void Record::Forget(proto::PlayerId player) { m_states.erase(player); }
 
-std::vector<proto::Message> Record::ForJoiner() const {
+std::vector<proto::Message> Record::ForJoiner(std::uint64_t hostNowUs) const {
   std::vector<proto::Message> out;
   // No snapshot from the host's game yet: nothing to say (an empty one
   // would empty the joiner's journal).
@@ -195,8 +196,13 @@ std::vector<proto::Message> Record::ForJoiner() const {
     for (const auto &[id, place] : m_placed)
       out.push_back(place);
   }
-  for (const auto &line : m_lines)
-    out.push_back(line);
+  for (const auto &line : m_lines) {
+    const float seconds = line.duration > 0.f ? line.duration : scene::kUnknownLineSeconds;
+    const auto endUs =
+        line.startUs + static_cast<std::uint64_t>(static_cast<double>(seconds) * 1e6);
+    if (hostNowUs == 0 || endUs > hostNowUs)
+      out.push_back(line);
+  }
   return out;
 }
 

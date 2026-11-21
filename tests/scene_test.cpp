@@ -464,6 +464,17 @@ TEST_CASE("the story record keeps the scene for a joiner and hashes it") {
   CHECK(std::get<proto::SceneState>(joiner[0]) == state);
   CHECK(std::get<proto::SceneCast>(joiner[1]) == cast);
   CHECK(std::get<proto::SceneLine>(joiner[2]) == line);
+  // With the host's clock: the line while it is spoken, not once it is over
+  // (5 s from kT0 + 1 s); a bark of unknown length for kUnknownLineSeconds.
+  CHECK(host.ForJoiner(kT0 + 2 * kSecond).size() == 3);
+  CHECK(host.ForJoiner(kT0 + 7 * kSecond).size() == 2);
+  {
+    story::Record barks;
+    const proto::SceneLine bark{.line = 50, .speaker = 3, .startUs = kT0};
+    CHECK(barks.Note(bark));
+    CHECK(barks.ForJoiner(kT0 + 10 * kSecond).size() == 1);
+    CHECK(barks.ForJoiner(kT0 + 31 * kSecond).empty());
+  }
 
   // A cast or a line of another play is not kept.
   CHECK_FALSE(host.Note(proto::SceneCast{.play = 1, .actors = {{9, 0}}}));

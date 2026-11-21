@@ -1306,7 +1306,7 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
   SendVehiclesTo(peer, them, domains, resync);
   // The story so far: journal, tracked entry, call, choice hub, story states.
   if (domains & proto::kDomainStory) {
-    for (const auto &message : m_story.ForJoiner())
+    for (const auto &message : m_story.ForJoiner(HostNowUs()))
       Send(peer, message);
     // A resync also says what is not: no scene plays (a guest that missed
     // its end lets its proxies go).
