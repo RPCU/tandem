@@ -29,13 +29,13 @@
 //   quest_freeze = off   ; on: a guest's own story phases wait while it is in a
 //                        ; session (engine/quests.cpp); off: the hook stays out
 //   scene_privacy = on   ; off: every scene is watched (no private scenes)
-//   scene_replay = off   ; on: a host's story scenes play for its guests (their
+//   scene_replay = on    ; on: a host's story scenes play for its guests (their
 //                        ; cast, voices and, with pose = on, the actors' bodies:
 //                        ; docs/architecture/scene-replay.md); poses: only the
 //                        ; actors' bodies are left out
 //   scene_camera = on    ; with scene_replay: off: a guest keeps its own eyes in
 //                        ; the host's cutscenes (no watch camera)
-//   scene_rigs = off     ; with scene_replay = on: on: a speaking actor's face and
+//   scene_rigs = on      ; with scene_replay = on: on: a speaking actor's face and
 //                        ; the bodies of drones and robots are streamed too
 //   spectate = on        ; guest: off: in the host's scripted moments (scenes,
 //                        ; quest rides, set pieces) you keep playing your own V
@@ -172,7 +172,7 @@ struct Config {
   std::vector<std::string> questInteractHostOnly, questInteractAllow;
   // Scene privacy (engine/scenes.cpp): private scenes are not watched.
   bool scenePrivacy{true};
-  bool sceneReplay{false};
+  bool sceneReplay{true};
   bool scenePoses{true}; // with sceneReplay
   // With sceneReplay: a guest in the host's moment sees a cutscene through
   // the host's camera; what the scene's streams may take on a link (0: the
@@ -184,7 +184,7 @@ struct Config {
   // With sceneReplay and scenePoses: speakers' faces and the bodies of
   // actors on other rigs than the humanoid one (engine/posestream.cpp,
   // "Other rigs"): never run in game, so off unless asked for.
-  bool sceneRigs{false};
+  bool sceneRigs{true};
   std::uint32_t sceneKbps{0};
   // A V's line on a guest: 0 the game picks, 1 locVoiceTagGender, 2 swapped.
   std::uint8_t sceneVoiceGender{1};
