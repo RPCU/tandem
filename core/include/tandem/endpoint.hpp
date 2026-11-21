@@ -823,6 +823,12 @@ public:
   // Who may drive each player's cars, as they said (a guest's own is not
   // kept here; the host's is).
   const std::map<proto::PlayerId, proto::CarLend> &CarLends() const { return m_lends; }
+  // The custom paint of each player's car, as they said (CarPaint through
+  // SendCombat, as CarLend: ours kept and said as soon as we are in; the
+  // host stamps who, keeps everyone's and tells all; a repeat is applied
+  // nowhere). Only cars that have one: stock paint is kept nowhere. A
+  // guest's own is not kept here; the host's is.
+  const std::map<proto::PlayerId, proto::CarPaint> &CarPaints() const { return m_paints; }
   // The shared NPCs that are placed vendors (their entities), and the
   // entities whose vendor died in the session (docs/architecture/progression.md).
   const std::map<proto::NpcId, proto::NpcVendor> &NpcVendors() const { return m_npcVendors; }
@@ -1789,6 +1795,11 @@ private:
   // A player's lending heard (host: from its connection): kept, passed on,
   // given to our game. False: a repeat, nothing done.
   bool NoteLend(const proto::CarLend &lend, std::vector<SessionEvent> &out);
+  // Paint, the same way: ours, and the others' cars that have one.
+  std::optional<proto::CarPaint> m_localPaint;
+  std::map<proto::PlayerId, proto::CarPaint> m_paints;
+  void SendLocalPaintNow();
+  bool NotePaint(const proto::CarPaint &paint, std::vector<SessionEvent> &out);
   // Trade. Host: the table, and its word passed on (to our own game: an
   // event). Every game: the trades whose commit it has applied.
   trade::Table m_trades;

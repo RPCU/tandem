@@ -208,6 +208,42 @@ TEST_CASE("referee: a quickhack on a shared vehicle is a player's, passed on, ne
   CHECK(Rules(host).empty());
 }
 
+TEST_CASE("referee: a car's paint is its owner's word, passed on, never back") {
+  auto guest = Guest();
+  guest.Received(1,
+                 proto::CarPaint{.player = 3,
+                                 .vehicle = 9,
+                                 .flags = proto::kPaintPrimary | proto::kPaintLights,
+                                 .primaryR = 255,
+                                 .lightsHue = 120.f},
+                 kSecond);
+  guest.Received(1, proto::CarPaint{.player = 3}, kSecond); // back to stock paint
+  CHECK(Rules(guest).empty());
+  // Our own back, a player nobody knows, a flag of no version, a second
+  // colour without a first, a hue that is no number.
+  guest.Received(1, proto::CarPaint{.player = 2}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
+  guest.Received(1, proto::CarPaint{.player = 9}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"ids.unknown-player"});
+  guest.Received(1, proto::CarPaint{.player = 3, .vehicle = 9, .flags = 32}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1, proto::CarPaint{.player = 3, .vehicle = 9, .flags = proto::kPaintSecondary},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1,
+                 proto::CarPaint{.player = 3,
+                                 .vehicle = 9,
+                                 .flags = proto::kPaintLights,
+                                 .lightsHue = std::numeric_limits<float>::quiet_NaN()},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.not-finite"});
+  // Host: a guest says it in its own name, never in another's.
+  auto host = Host();
+  host.Received(2, proto::CarPaint{.player = 2, .vehicle = 9, .flags = proto::kPaintPrimary},
+                kSecond);
+  CHECK(Rules(host).empty());
+}
+
 TEST_CASE("referee: a device's fire is the host's turret's, what a copy sees a guest's") {
   using Kind = proto::DeviceFireKind;
   auto host = Host();

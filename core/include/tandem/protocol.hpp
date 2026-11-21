@@ -30,7 +30,8 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 13: NpcShotAt.flags (a smart gun's guided round, kShotAtTracked);
 // CueKind::Ricochet and CueKind::Charge (a game of 12 refuses them).
 // 14: TrafficHack appended (a game of 13 cannot read it).
-inline constexpr std::uint16_t kProtocolVersion = 14;
+// 15: CarPaint appended (a game of 14 cannot read it).
+inline constexpr std::uint16_t kProtocolVersion = 15;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3175,6 +3176,42 @@ struct TrafficHack {
   friend bool operator==(const TrafficHack &, const TrafficHack &) = default;
 };
 
+// The custom paint of a player's own car (docs/architecture/vehicles.md,
+// "Paint"): the game's CrystalCoat / TwinTone template as the owner's game
+// shows it on the real car, for every copy of that car elsewhere. Each game
+// says its own (the car its V sits in, or last sat in, that is no
+// partner's); the host stamps who and keeps everyone's for late joiners; a
+// repeat is applied nowhere; forgotten when the player goes. State, with
+// CarLend: `flags` 0 is stock paint (also what nobody said). Event channel.
+inline constexpr std::uint8_t kPaintPrimary = 1;   // primary*: the body's colour
+inline constexpr std::uint8_t kPaintSecondary = 2; // secondary*: the second colour
+inline constexpr std::uint8_t kPaintLights = 4;    // lightsHue: the lights' colour
+// A unique template (a TwinTone scanned from a vehicle with a pattern):
+// `unique` is its VehicleColorTemplate record, `model` the vehicle model it
+// fits (TwintoneModelName). Never with colours.
+inline constexpr std::uint8_t kPaintUnique = 8;
+inline constexpr std::uint8_t kPaintFlags = 15;
+struct CarPaint {
+  PlayerId player{};
+  std::uint64_t vehicle{}; // the car's TweakDB record, as its Seat names it (0: no car)
+  std::uint8_t flags{};    // kPaint*; 0: stock paint
+  std::uint8_t primaryR{};
+  std::uint8_t primaryG{};
+  std::uint8_t primaryB{};
+  std::uint8_t secondaryR{};
+  std::uint8_t secondaryG{};
+  std::uint8_t secondaryB{};
+  float lightsHue{};      // degrees, 0..360
+  std::uint64_t unique{}; // TweakDB id of the unique template's record
+  std::uint64_t model{};  // CName hash of the vehicle model it fits
+  friend bool operator==(const CarPaint &, const CarPaint &) = default;
+};
+// What a CarPaint may say: flags this version knows; a unique template or
+// colours, never both; a second colour only with a first; what is not said
+// left at zero (one wire form per paint, so a repeat is equal); a hue in
+// degrees; a paint only on a named car.
+bool Fits(const CarPaint &paint);
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -3197,7 +3234,7 @@ using MessageVariant = std::variant<
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
-    TrafficHack>;
+    TrafficHack, CarPaint>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
@@ -3211,7 +3248,7 @@ bool operator==(const Message &a, const Message &b);
 // endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit, Throw … Defended, ThrowPath),
-// a level (PlayerLevel … NpcLevel), a car's lending (CarLend), an NPC's
+// a level (PlayerLevel … NpcLevel), a car's lending or paint (CarLend, CarPaint), an NPC's
 // scale (NpcScale), a vendor (NpcVendor), a placed NPC (NpcPlaced), a
 // death of the ledger (NpcDeath), a street race (Race), or what a proxy
 // cannot do (WeakSpotHit, HackTraced): one path in endpoint.hpp too.

@@ -1246,6 +1246,46 @@ TEST_CASE("a quickhack on a shared vehicle survives encoding: reliable, small, a
   CHECK_FALSE(Decode(Encode(TrafficHack{.hack = static_cast<CarHack>(3)})).has_value());
 }
 
+TEST_CASE("a car's paint survives encoding: reliable, small, appended, one form per paint") {
+  const CarPaint twoTone{.player = 2,
+                         .vehicle = 0x2a1b,
+                         .flags = kPaintPrimary | kPaintSecondary | kPaintLights,
+                         .primaryR = 200,
+                         .primaryG = 10,
+                         .primaryB = 30,
+                         .secondaryR = 1,
+                         .secondaryG = 2,
+                         .secondaryB = 3,
+                         .lightsHue = 215.5f};
+  RoundTrips(twoTone);
+  RoundTrips(
+      CarPaint{.player = 3, .vehicle = 7, .flags = kPaintUnique, .unique = 0x51, .model = 0x77});
+  RoundTrips(CarPaint{.player = 3}); // stock paint
+  RoundTrips(CarPaint{.vehicle = 7, .flags = kPaintLights, .lightsHue = 360.f});
+  CHECK(Message(CarPaint{}).index() == Message(TrafficHack{}).index() + 1); // appended
+  CHECK(std::string(NameOf(CarPaint{})) == "CarPaint");
+  CHECK(ChannelOf(CarPaint{}) == Channel::Event);
+  CHECK(IsReliable(CarPaint{}));
+  CHECK(IsCombat(CarPaint{}));
+  CHECK_FALSE(IsStory(CarPaint{}));
+  CHECK(Encode(twoTone).size() <= 48);
+  // Refused on the wire: a flag of another version, a template with colours
+  // or without its record, a second colour alone, a colour or a hue nothing
+  // announces, a hue that is no angle, a paint on no car.
+  const auto refused = [](const CarPaint &paint) { return !Decode(Encode(paint)).has_value(); };
+  CHECK(refused({.vehicle = 7, .flags = 16}));
+  CHECK(refused({.vehicle = 7, .flags = kPaintUnique | kPaintPrimary, .unique = 5}));
+  CHECK(refused({.vehicle = 7, .flags = kPaintUnique}));
+  CHECK(refused({.vehicle = 7, .flags = kPaintPrimary, .unique = 5}));
+  CHECK(refused({.vehicle = 7, .flags = kPaintSecondary}));
+  CHECK(refused({.vehicle = 7, .flags = kPaintLights, .primaryG = 1, .lightsHue = 10.f}));
+  CHECK(refused({.vehicle = 7, .flags = kPaintPrimary, .secondaryB = 1}));
+  CHECK(refused({.vehicle = 7, .flags = kPaintPrimary, .lightsHue = 10.f}));
+  CHECK(refused({.vehicle = 7, .flags = kPaintLights, .lightsHue = 361.f}));
+  CHECK(refused({.vehicle = 7, .flags = kPaintLights, .lightsHue = -1.f}));
+  CHECK(refused({.flags = kPaintPrimary}));
+}
+
 TEST_CASE("vehicles changing hands: survive encoding, reliable, small") {
   RoundTrips(TrafficOwnership{.id = MakeTrafficId(2, 9), .owner = 3});
   RoundTrips(TrafficHandover{.id = MakeTrafficId(2, 9), .to = 3});
