@@ -2,15 +2,23 @@
 //
 // Main menu (SingleplayerMenuGameController): a "Co-op" entry. Its pages
 // live in the menu's own list, the way the menu shows its items:
-//   Co-op   -> Host a game | Join a game | Join by address | Play solo (once
-//              one is chosen) | Write a bug report | Co-op settings | Back
+//   Co-op   -> Start a new co-op game | Host a saved game | Join a game |
+//              Join by address | Play solo (once one is chosen) | Write a
+//              bug report | Co-op settings | Back
 //   Settings -> one item per setting (Settings.reds): picking it switches or
 //              cycles it, or asks for a text; saved to tandem.ini at once
 //   Host    -> Continue | Load game | Back      (the game's own load list)
-//   Join    -> recent hosts... | Enter an address | Back
-//   Save    -> Continue | Load game | Back      (the V to join with)
+//   Join    -> recent hosts... | Enter a join code | Back (no recent host:
+//              straight to the code's popup)
+//   Save    -> Create a new V | Continue | Load game | Back (the V to join with)
 // Picking Continue or Load game chooses the session in the plugin
 // (TandemNative.StartHost / Join); TandemSystem starts it as the save loads.
+// Start a new co-op game and Create a new V choose it the same way, then
+// open the game's own New Game (difficulty, lifepath, character creation:
+// SpawnEvent(n"OnNewGame"), as the menu's New game does); the session
+// starts as the new V's world loads. A join chosen in the menu arrives
+// beside the host at its first welcome (TandemNative.ChooseArrival,
+// Travel.reds Arrive), behind the fast travel's loading screen.
 //
 // Join by address (LAN, VPN: Tailscale, NetBird): a text popup asks for
 // host[:port], checked (TandemNative.AddressProblem), saved as tandem.ini's
@@ -71,6 +79,8 @@ enum TandemCoopAction {
   NewCode = 16,
   JoinAddress = 17,
   Mods = 18,
+  NewHost = 19,
+  NewV = 20,
 }
 
 // One of our entries in a menu's list: the vanilla item data (its label is
@@ -276,15 +286,19 @@ public class TandemCoop {
     let port = status.role == 1 ? status.port : TandemNative.DefaultPort();
     let addresses = TandemNative.LocalAddresses();
     let code = TandemNative.RelayCode();
-    let prefix = StrLen(code) > 0 ? TandemText.FE(english, "Invite-Code", code) : "";
+    // A code reaches everyone, on the network or not: nothing else to say
+    // (the addresses are Join by address's, for those who look for it).
+    if StrLen(code) > 0 {
+      return TandemText.FE(english, "Invite-Code", code);
+    }
     if ArraySize(addresses) == 0 {
-      return prefix + TandemText.FE(english, "Invite-NoAddress", s"\(port)");
+      return TandemText.FE(english, "Invite-NoAddress", s"\(port)");
     }
     let targets: array<String>;
     for address in addresses {
       ArrayPush(targets, s"\(address):\(port)");
     }
-    return prefix + TandemText.FE(english, "Invite-Addresses", TandemText.AnyOf(targets, english));
+    return TandemText.FE(english, "Invite-Addresses", TandemText.AnyOf(targets, english));
   }
 
   // A join code rather than an address (a host name has a dot, or is not
@@ -401,6 +415,11 @@ public class TandemCoop {
   public static func NoticeInSession(game: GameInstance) -> Void {
     let status = TandemNative.SessionStatus();
     if status.role == 1 {
+      // Through a relay the join code says it all, once the relay gives it
+      // (TandemSystem.ShowCode); the addresses only without one.
+      if StrLen(TandemNative.Setting("relay")) > 0 {
+        return;
+      }
       TandemText.Say(game, SimpleMessageType.Neutral, 5.0, "Session-Hosting", TandemText.F("Session-Hosting", TandemCoop.InviteText()), TandemText.FE(true, "Session-Hosting", TandemCoop.InviteText(true)));
     } else {
       let host = TandemCoop.HostName();
@@ -556,6 +575,7 @@ public class TandemCoopMenu {
       }
       this.Add("Menu-Report", TandemCoopAction.Report);
     } else if Equals(this.page, TandemCoopPage.Coop) {
+      this.Add("Menu-NewHost", TandemCoopAction.NewHost);
       this.Add("Menu-Host", TandemCoopAction.HostPage);
       this.Add("Menu-Join", TandemCoopAction.JoinPage);
       this.Add("Menu-JoinAddress", TandemCoopAction.JoinAddress);
@@ -564,7 +584,10 @@ public class TandemCoopMenu {
       }
       this.Add("Menu-Report", TandemCoopAction.Report);
     } else {
-      // Host, Save: the V to play.
+      // Host, Save: the V to play (a guest may make a new one).
+      if Equals(this.page, TandemCoopPage.Save) {
+        this.Add("Menu-NewV", TandemCoopAction.NewV);
+      }
       if saves > 0 {
         this.Add("", TandemCoopAction.Continue, TandemText.Vanilla("UI-ScriptExports-Continue0"));
       }
@@ -929,11 +952,37 @@ private func TandemChoose() -> Bool {
   if Equals(this.m_tandem.page, TandemCoopPage.Host) {
     return TandemNative.StartHost(this.m_tandem.port);
   }
-  if Equals(this.m_tandem.page, TandemCoopPage.Save) && !TandemCoop.ChooseJoin(this.m_tandem.target) {
-    GenericMessageNotification.Show(this, TandemText.Get("Menu-Join"), TandemText.Get("Popup-NeedsRelay"), GenericMessageNotificationType.OK);
-    return false;
+  if Equals(this.m_tandem.page, TandemCoopPage.Save) {
+    if !TandemCoop.ChooseJoin(this.m_tandem.target) {
+      GenericMessageNotification.Show(this, TandemText.Get("Menu-Join"), TandemText.Get("Popup-NeedsRelay"), GenericMessageNotificationType.OK);
+      return false;
+    }
+    // Once in, our V goes beside the host, no prompt (Travel.reds).
+    TandemNative.ChooseArrival();
   }
   return true;
+}
+
+// The game's own New Game (the main menu's New game: difficulty, lifepath,
+// character creation), the session already chosen: it starts as the new V's
+// world loads (TandemSystem.OnPlayerAttach), as a save's load would.
+@addMethod(SingleplayerMenuGameController)
+private func TandemNewGame() -> Void {
+  let status = TandemNative.SessionStatus();
+  TandemNative.Log(s"coop: main menu: a new game, the session (role \(status.role)) starts as its world loads");
+  this.m_menuEventDispatcher.SpawnEvent(n"OnNewGame");
+}
+
+// Join a game: the recent hosts' page, or straight to the code's popup
+// when there is none to pick (one step less).
+@addMethod(SingleplayerMenuGameController)
+private func TandemJoinPage() -> Void {
+  let recent = TandemNative.RecentHosts();
+  if ArraySize(recent) == 0 {
+    this.TandemAskAddress();
+  } else {
+    this.TandemGo(TandemCoopPage.Join);
+  }
 }
 
 @addMethod(SingleplayerMenuGameController)
@@ -955,9 +1004,14 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Bool {
       this.m_tandem.port = 0;
       this.TandemGo(TandemCoopPage.Host);
     }
+  } else if Equals(action, TandemCoopAction.NewHost) {
+    if !this.TandemAskName(action) {
+      TandemNative.StartHost(0);
+      this.TandemNewGame();
+    }
   } else if Equals(action, TandemCoopAction.JoinPage) {
     if !this.TandemAskName(action) {
-      this.TandemGo(TandemCoopPage.Join);
+      this.TandemJoinPage();
     }
   } else if Equals(action, TandemCoopAction.JoinAddress) {
     if !this.TandemAskName(action) {
@@ -968,6 +1022,10 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Bool {
   } else if Equals(action, TandemCoopAction.JoinRecent) {
     this.m_tandem.target = item.target;
     this.TandemGo(TandemCoopPage.Save);
+  } else if Equals(action, TandemCoopAction.NewV) {
+    if this.TandemChoose() {
+      this.TandemNewGame();
+    }
   } else if Equals(action, TandemCoopAction.Continue) {
     if !this.TandemChoose() {
       return true;
@@ -1072,10 +1130,13 @@ protected cb func OnTandemName(data: ref<inkGameNotificationData>) -> Bool {
   if Equals(this.m_tandem.nameFor, TandemCoopAction.HostPage) {
     this.m_tandem.port = 0;
     this.TandemGo(TandemCoopPage.Host);
+  } else if Equals(this.m_tandem.nameFor, TandemCoopAction.NewHost) {
+    TandemNative.StartHost(0);
+    this.TandemNewGame();
   } else if Equals(this.m_tandem.nameFor, TandemCoopAction.JoinAddress) {
     this.TandemAskDirect();
   } else {
-    this.TandemGo(TandemCoopPage.Join);
+    this.TandemJoinPage();
   }
   return true;
 }
@@ -1444,7 +1505,7 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Void {
     }
   } else if Equals(action, TandemCoopAction.JoinPage) {
     if !this.TandemAskName(action) {
-      this.TandemGo(TandemCoopPage.Join);
+      this.TandemJoinPage();
     }
   } else if Equals(action, TandemCoopAction.JoinAddress) {
     if !this.TandemAskName(action) {
@@ -1554,9 +1615,20 @@ protected cb func OnTandemName(data: ref<inkGameNotificationData>) -> Bool {
   } else if Equals(this.m_tandem.nameFor, TandemCoopAction.JoinAddress) {
     this.TandemAskDirect();
   } else {
-    this.TandemGo(TandemCoopPage.Join);
+    this.TandemJoinPage();
   }
   return true;
+}
+
+// Join a game: the recent hosts' page, or straight to the code's popup.
+@addMethod(PauseMenuGameController)
+private func TandemJoinPage() -> Void {
+  let recent = TandemNative.RecentHosts();
+  if ArraySize(recent) == 0 {
+    this.TandemAskAddress();
+  } else {
+    this.TandemGo(TandemCoopPage.Join);
+  }
 }
 
 @addMethod(PauseMenuGameController)

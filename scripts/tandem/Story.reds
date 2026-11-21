@@ -54,6 +54,9 @@ public class TandemStorySystem extends ScriptableSystem {
   private let m_saveLocked: Bool;
   private let m_frozen: Bool;
   private let m_warnedNoFreeze: Bool;
+  // Both of those taken at the load for a join chosen in the co-op menu,
+  // before its welcome (HoldEarly): given back if the welcome never comes.
+  private let m_heldEarly: Bool;
   private let m_touched: array<Uint32>;
   private let m_touchedBefore: array<Int32>;
   private let m_ownTracked: Uint32;
@@ -208,7 +211,48 @@ public class TandemStorySystem extends ScriptableSystem {
     if this.m_isHost && this.m_you != 0u {
       this.HostStart();
     }
+    // A join the co-op menu chose: our own story waits from the load.
+    let chosen = TandemNative.SessionStatus();
+    if this.m_you == 0u && chosen.role == 2 && TandemNative.Arriving() {
+      this.HoldEarly();
+    }
     this.Schedule();
+  }
+
+  // From the load to the host's welcome (seconds, through a relay more),
+  // our own story would run on: a new V's prologue its first steps (a scene,
+  // items, restrictions), a save its quest's next ones. It waits from the
+  // load instead, saving locked as in the session (a save made now would
+  // lose the signals held). The welcome keeps both (GuestJoin); a session
+  // that ends before it gives them back (ReleaseEarly).
+  private func HoldEarly() -> Void {
+    if this.m_frozen || !TandemStory.FreezeAvailable() || !TandemStory.Freeze(true) {
+      return;
+    }
+    this.m_frozen = true;
+    this.m_heldEarly = true;
+    if !this.m_saveLocked {
+      this.m_saveLocked = true;
+      SaveLocksManager.RequestSaveLockAdd(this.GetGameInstance(), n"tandem");
+      GameInstance.GetAutoSaveSystem(this.GetGameInstance()).InvalidateAutoSaveRequests();
+    }
+    TandemNative.Log("quest: own quests held from the load, until the host's welcome (a join of the co-op menu)");
+  }
+
+  private func ReleaseEarly() -> Void {
+    if !this.m_heldEarly {
+      return;
+    }
+    this.m_heldEarly = false;
+    if this.m_frozen {
+      TandemStory.Freeze(false);
+      this.m_frozen = false;
+    }
+    if this.m_saveLocked {
+      this.m_saveLocked = false;
+      SaveLocksManager.RequestSaveLockRemove(this.GetGameInstance(), n"tandem");
+    }
+    TandemNative.Log(s"quest: own quests resumed, no welcome came (\(TandemStory.FreezeReport()))");
   }
 
   private final func OnPlayerDetach(request: ref<PlayerDetachRequest>) -> Void {
@@ -421,6 +465,8 @@ public class TandemStorySystem extends ScriptableSystem {
           }
           if !this.m_isHost && this.m_you != 0u {
             this.GuestLeave();
+          } else if this.m_you == 0u {
+            this.ReleaseEarly();
           }
           if this.m_isHost {
             this.m_scenes.HostEnd();
@@ -731,6 +777,8 @@ public class TandemStorySystem extends ScriptableSystem {
   private func GuestJoin() -> Void {
     let game = this.GetGameInstance();
     TandemNative.Log("story: joining the host's story");
+    // Held since the load (HoldEarly): the session's now.
+    this.m_heldEarly = false;
     // Saving, locked twice (manager reason + IsSavingLocked) and no queued
     // autosave (final.reds:195179, :203134).
     if !this.m_saveLocked {

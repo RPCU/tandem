@@ -231,6 +231,10 @@ public class TandemSystem extends ScriptableSystem {
   private let m_phoneContacts: ref<TandemPhoneContacts>;
   // Shops: our own vendor behind a partner's (Vendors.reds).
   private let m_vendors: ref<TandemVendors>;
+  // Host: the join code last said on screen, and the relay's last problem
+  // said (ShowCode).
+  private let m_codeShown: String;
+  private let m_relayShown: String;
 
   private func OnAttach() -> Void {
     if TandemNative.IsConfigured() {
@@ -634,12 +638,14 @@ public class TandemSystem extends ScriptableSystem {
   // Join "address[:port]", or a join code (through tandem.ini's relay), now.
   // False: neither (nothing changed), or a code with no relay set (then out
   // of the session it was in).
+  // Once in, our V goes beside the host, no prompt (Travel.reds Arrive).
   public func CoopJoin(address: String) -> Bool {
     if TandemCoop.IsCode(address) {
       this.EndSession(true);
       if !TandemNative.JoinByCode(address) {
         return false;
       }
+      TandemNative.ChooseArrival();
       this.BeginSession();
       return this.m_inGame;
     }
@@ -649,6 +655,7 @@ public class TandemSystem extends ScriptableSystem {
     }
     this.EndSession(true);
     TandemNative.Join(target.address, target.port);
+    TandemNative.ChooseArrival();
     this.BeginSession();
     return this.m_inGame;
   }
@@ -1096,6 +1103,9 @@ public class TandemSystem extends ScriptableSystem {
     TandemNative.PerfMark(8);
     this.HandleEvents();
     this.SpawnJoined();
+    if this.m_playing {
+      this.ShowCode();
+    }
     TandemNative.PerfMark(9);
     if this.m_playing && this.m_you != 0u {
       this.CheckPuppets();
@@ -2699,7 +2709,17 @@ public class TandemSystem extends ScriptableSystem {
             this.m_revive.InSession();
           }
           this.m_sessionAt = this.Now();
-          TandemCoop.NoticeInSession(this.GetGameInstance());
+          this.m_codeShown = "";
+          this.m_relayShown = "";
+          // A join chosen in the co-op menu: our V goes beside the host first
+          // (Travel.reds), and that arrival says we joined.
+          let status = TandemNative.SessionStatus();
+          let host = status.host;
+          if !TandemNative.IsHost() && TandemNative.TakeArrival() && IsDefined(this.m_travel) && host != 0u && host != event.player {
+            this.m_travel.ArriveBeside(host);
+          } else {
+            TandemCoop.NoticeInSession(this.GetGameInstance());
+          }
           break;
         case 3:
           TandemNative.Log(s"session ended: \(event.name)");
@@ -2762,6 +2782,28 @@ public class TandemSystem extends ScriptableSystem {
         default:
           break;
       }
+    }
+  }
+
+  // Host: the join code on screen as soon as the relay gives it, and again
+  // when it changes (New join code); it stays in the pause menu (its panel,
+  // Invite). Without a code, the relay's problem once, in words.
+  private func ShowCode() -> Void {
+    if this.m_you == 0u || !TandemNative.IsHost() {
+      return;
+    }
+    let code = TandemNative.RelayCode();
+    if StrLen(code) > 0 {
+      if NotEquals(code, this.m_codeShown) {
+        this.m_codeShown = code;
+        TandemText.NoticeAs(this.GetGameInstance(), SimpleMessageType.Neutral, 12.0, "Session-Code", code);
+      }
+      return;
+    }
+    let relay = TandemNative.RelayStatus();
+    if StrLen(relay) > 0 && NotEquals(relay, "connecting") && NotEquals(relay, "ready") && NotEquals(relay, this.m_relayShown) {
+      this.m_relayShown = relay;
+      TandemText.NoticeReason(this.GetGameInstance(), "Session-NoCode", relay);
     }
   }
 

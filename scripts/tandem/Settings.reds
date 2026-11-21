@@ -12,14 +12,14 @@ public class TandemSettings {
   // here: relays are open, a token is set in tandem.ini alone.)
   public static func Keys() -> array<String> {
     return [
-      "name", "friendly_fire", "enemy_scaling", "notices", "markers", "nameplates", "party_hud", "link", "pings", "recorder",
+      "name", "friendly_fire", "enemy_scaling", "level_gap", "notices", "markers", "nameplates", "party_hud", "link", "pings", "recorder",
       "relay", "code", "direct", "story", "quest_freeze", "scene_privacy", "time_host", "race_car"
     ];
   }
 
   private static func Labels() -> array<String> {
     return [
-      "Settings-Name", "Settings-FriendlyFire", "Settings-EnemyScaling", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-PartyHud", "Settings-Link", "Settings-Pings", "Settings-Recorder",
+      "Settings-Name", "Settings-FriendlyFire", "Settings-EnemyScaling", "Settings-LevelGap", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-PartyHud", "Settings-Link", "Settings-Pings", "Settings-Recorder",
       "Settings-Relay", "Settings-Code", "Settings-Direct", "Settings-Story", "Settings-QuestFreeze", "Settings-ScenePrivacy", "Settings-TimeHost", "Settings-RaceCar"
     ];
   }
@@ -27,17 +27,17 @@ public class TandemSettings {
   // What each one does, shown under the page for the row the cursor is on.
   private static func Abouts() -> array<String> {
     return [
-      "Settings-About-Name", "Settings-About-FriendlyFire", "Settings-About-EnemyScaling", "Settings-About-Notices", "Settings-About-Markers", "Settings-About-Nameplates", "Settings-About-PartyHud", "Settings-About-Link", "Settings-About-Pings", "Settings-About-Recorder",
+      "Settings-About-Name", "Settings-About-FriendlyFire", "Settings-About-EnemyScaling", "Settings-About-LevelGap", "Settings-About-Notices", "Settings-About-Markers", "Settings-About-Nameplates", "Settings-About-PartyHud", "Settings-About-Link", "Settings-About-Pings", "Settings-About-Recorder",
       "Settings-About-Relay", "Settings-About-Code", "Settings-About-Direct", "Settings-About-Story", "Settings-About-QuestFreeze", "Settings-About-ScenePrivacy", "Settings-About-TimeHost", "Settings-About-RaceCar"
     ];
   }
 
   private static func Kinds() -> array<Int32> {
-    return [2, 0, 0, 1, 0, 1, 0, 1, 0, 0, 2, 1, 1, 0, 0, 0, 1, 1];
+    return [2, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 2, 1, 1, 0, 0, 0, 1, 1];
   }
 
   private static func Whens() -> array<Int32> {
-    return [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 2, 2, 1, 0];
+    return [1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 2, 2, 1, 0];
   }
 
   private static func IndexOf(key: String) -> Int32 {
@@ -81,6 +81,9 @@ public class TandemSettings {
     if Equals(key, "link") {
       return ["auto", "ask", "off"];
     }
+    if Equals(key, "level_gap") {
+      return ["8", "5", "12", "off"];
+    }
     return ["on", "off"];
   }
 
@@ -105,6 +108,9 @@ public class TandemSettings {
     }
     if Equals(key, "link") {
       return ["Settings-Link-Auto", "Settings-Link-Ask", "Common-Off"];
+    }
+    if Equals(key, "level_gap") {
+      return ["Settings-LevelGap-Eight", "Settings-LevelGap-Five", "Settings-LevelGap-Twelve", "Common-Off"];
     }
     return ["Common-On", "Common-Off"];
   }

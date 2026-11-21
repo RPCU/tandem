@@ -247,13 +247,15 @@ public class TandemTextEnglish extends ModLocalizationPackage {
   protected func DefineTexts() -> Void {
     // The co-op menu.
     this.Text("Tandem-Menu-Coop", "Co-op");
-    this.Text("Tandem-Menu-Host", "Host a game");
+    this.Text("Tandem-Menu-NewHost", "Start a new co-op game");
+    this.Text("Tandem-Menu-Host", "Host a saved game");
+    this.Text("Tandem-Menu-NewV", "Create a new V");
     this.Text("Tandem-Menu-Join", "Join a game");
     this.Text("Tandem-Menu-Solo", "Play solo");
     this.Text("Tandem-Menu-HostNow", "Host this game");
     this.Text("Tandem-Menu-Invite", "Invite");
     this.Text("Tandem-Menu-Leave", "Leave session");
-    this.Text("Tandem-Menu-EnterCode", "Enter a code or an address");
+    this.Text("Tandem-Menu-EnterCode", "Enter a join code");
     this.Text("Tandem-Menu-JoinAddress", "Join by address");
     this.Text("Tandem-Menu-Back", "Back");
     this.Text("Tandem-Menu-Report", "Write a bug report");
@@ -299,14 +301,14 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Common-Off", "off");
     this.Text("Tandem-Status-CodeTarget", "code {1}");
     this.Text("Tandem-Status-ChooseHostSave", "Choose the save to host");
-    this.Text("Tandem-Status-ChooseJoinSave", "Choose the save your V comes from, to join {1}");
-    this.Text("Tandem-Status-PickHost", "Pick a host, or enter their join code or address");
+    this.Text("Tandem-Status-ChooseJoinSave", "Your V to join {1}: a new one, or a saved one");
+    this.Text("Tandem-Status-PickHost", "Pick a host, or enter their join code");
     // Invites and popups.
-    this.Text("Tandem-Invite-Code", "Join code {1}. ");
+    this.Text("Tandem-Invite-Code", "Join code {1}: friends enter it in Co-op, Join a game");
     this.Text("Tandem-Invite-NoAddress", "Friends join you on port {1} (no network address found)");
     this.Text("Tandem-Invite-Addresses", "Friends on your network join you at {1}");
     this.Text("Tandem-Popup-NeedsRelay", "Joining by code needs a relay: set one in the co-op settings");
-    this.Text("Tandem-Popup-EnterCode", "The host's join code (K7Q-2M9) or address (192.168.1.20, or 192.168.1.20:27450), as their Co-op menu shows it");
+    this.Text("Tandem-Popup-EnterCode", "The join code your friend's game shows (like K7Q-2M9)");
     this.Text("Tandem-Popup-NotATarget", "Not a join code or an address: {1}");
     this.Text("Tandem-Popup-JoinAddress", "The host's address on your network or VPN (Tailscale, NetBird...): host or host:port, port {1} if none. A direct connection, without the relay: the host's port must be open to you. Over the internet, a join code is easier.");
     this.Text("Tandem-Popup-JoinAddressLast", "Leave it empty to join {1} again.");
@@ -316,6 +318,8 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Address-Ipv6", "{1} is an IPv6 address: tandem connects over IPv4 only. Use the host's IPv4 address (Tailscale and NetBird give one, 100.x.y.z)");
     // The session.
     this.Text("Tandem-Session-Hosting", "Hosting co-op. {1}");
+    this.Text("Tandem-Session-Code", "Co-op join code: {1}");
+    this.Text("Tandem-Session-NoCode", "No join code yet: {1}");
     this.Text("Tandem-Session-JoinedOf", "Joined {1}'s session");
     this.Text("Tandem-Session-Joined", "Joined the co-op session");
     this.Text("Tandem-Session-YouLeft", "You left the co-op session");
@@ -669,6 +673,10 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-Name", "Name");
     this.Text("Tandem-Settings-FriendlyFire", "Friendly fire");
     this.Text("Tandem-Settings-EnemyScaling", "Tougher enemies for each extra player");
+    this.Text("Tandem-Settings-LevelGap", "Enemies above the lowest level");
+    this.Text("Tandem-Settings-LevelGap-Eight", "8 levels at most");
+    this.Text("Tandem-Settings-LevelGap-Five", "5 levels at most");
+    this.Text("Tandem-Settings-LevelGap-Twelve", "12 levels at most");
     this.Text("Tandem-Settings-Notices", "Notices");
     this.Text("Tandem-Settings-Notices-All", "all");
     this.Text("Tandem-Settings-Notices-Important", "important only");
@@ -702,6 +710,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-About-Name", "The name the others see over your V and in their party list");
     this.Text("Tandem-Settings-About-FriendlyFire", "Host's rule: the Vs' shots, blades and explosions hurt each other");
     this.Text("Tandem-Settings-About-EnemyScaling", "Host's rule: hostile NPCs get more health for each extra player near them");
+    this.Text("Tandem-Settings-About-LevelGap", "Host's rule: enemies follow the players' mean level, but never more than this above the lowest player, so a new V can fight beside a veteran");
     this.Text("Tandem-Settings-About-Notices", "Which co-op notices show: all, no news, or only questions and problems");
     this.Text("Tandem-Settings-About-Markers", "A marker for each other player on the HUD, the minimap and the map");
     this.Text("Tandem-Settings-About-Nameplates", "The name over the other players: close by, at any distance, or none");
@@ -723,13 +732,15 @@ public class TandemTextEnglish extends ModLocalizationPackage {
 public class TandemTextFrench extends ModLocalizationPackage {
   protected func DefineTexts() -> Void {
     this.Text("Tandem-Menu-Coop", "Coop");
-    this.Text("Tandem-Menu-Host", "Héberger une partie");
+    this.Text("Tandem-Menu-NewHost", "Commencer une nouvelle partie coop");
+    this.Text("Tandem-Menu-Host", "Héberger une partie sauvegardée");
+    this.Text("Tandem-Menu-NewV", "Créer un nouveau V");
     this.Text("Tandem-Menu-Join", "Rejoindre une partie");
     this.Text("Tandem-Menu-Solo", "Jouer en solo");
     this.Text("Tandem-Menu-HostNow", "Héberger cette partie");
     this.Text("Tandem-Menu-Invite", "Inviter");
     this.Text("Tandem-Menu-Leave", "Quitter la session");
-    this.Text("Tandem-Menu-EnterCode", "Saisir un code ou une adresse");
+    this.Text("Tandem-Menu-EnterCode", "Saisir un code d'invitation");
     this.Text("Tandem-Menu-JoinAddress", "Rejoindre par adresse");
     this.Text("Tandem-Menu-Back", "Retour");
     this.Text("Tandem-Menu-Report", "Écrire un rapport de bug");
@@ -774,13 +785,13 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Common-Off", "désactivé");
     this.Text("Tandem-Status-CodeTarget", "code {1}");
     this.Text("Tandem-Status-ChooseHostSave", "Choisissez la sauvegarde à héberger");
-    this.Text("Tandem-Status-ChooseJoinSave", "Choisissez la sauvegarde de votre V pour rejoindre {1}");
-    this.Text("Tandem-Status-PickHost", "Choisissez un hôte, ou saisissez son code d'invitation ou son adresse");
-    this.Text("Tandem-Invite-Code", "Code d'invitation {1}. ");
+    this.Text("Tandem-Status-ChooseJoinSave", "Votre V pour rejoindre {1} : un nouveau, ou une sauvegarde");
+    this.Text("Tandem-Status-PickHost", "Choisissez un hôte, ou saisissez son code d'invitation");
+    this.Text("Tandem-Invite-Code", "Code d'invitation {1} : vos amis le saisissent dans Coop, Rejoindre une partie");
     this.Text("Tandem-Invite-NoAddress", "Vos amis vous rejoignent sur le port {1} (aucune adresse réseau trouvée)");
     this.Text("Tandem-Invite-Addresses", "Vos amis sur votre réseau vous rejoignent à {1}");
     this.Text("Tandem-Popup-NeedsRelay", "Rejoindre par code demande un relais : indiquez-le dans les paramètres coop");
-    this.Text("Tandem-Popup-EnterCode", "Le code d'invitation de l'hôte (K7Q-2M9) ou son adresse (192.168.1.20, ou 192.168.1.20:27450), comme l'affiche son menu Coop");
+    this.Text("Tandem-Popup-EnterCode", "Le code d'invitation qu'affiche le jeu de votre ami (comme K7Q-2M9)");
     this.Text("Tandem-Popup-NotATarget", "Ni un code d'invitation ni une adresse : {1}");
     this.Text("Tandem-Popup-JoinAddress", "L'adresse de l'hôte sur votre réseau ou votre VPN (Tailscale, NetBird...) : hôte ou hôte:port, port {1} par défaut. Une connexion directe, sans le relais : le port de l'hôte doit vous être ouvert. Par Internet, un code d'invitation est plus simple.");
     this.Text("Tandem-Popup-JoinAddressLast", "Laissez vide pour rejoindre {1} de nouveau.");
@@ -789,6 +800,8 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Address-Name", "Ni un nom d'hôte ni une adresse IPv4 : {1}");
     this.Text("Tandem-Address-Ipv6", "{1} est une adresse IPv6 : tandem se connecte en IPv4 seulement. Utilisez l'adresse IPv4 de l'hôte (Tailscale et NetBird en donnent une, 100.x.y.z)");
     this.Text("Tandem-Session-Hosting", "Partie coop hébergée. {1}");
+    this.Text("Tandem-Session-Code", "Code d'invitation coop : {1}");
+    this.Text("Tandem-Session-NoCode", "Pas encore de code d'invitation : {1}");
     this.Text("Tandem-Session-JoinedOf", "Vous avez rejoint la session de {1}");
     this.Text("Tandem-Session-Joined", "Vous avez rejoint la session coop");
     this.Text("Tandem-Session-YouLeft", "Vous avez quitté la session coop");
@@ -1131,6 +1144,10 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-Name", "Nom");
     this.Text("Tandem-Settings-FriendlyFire", "Tirs alliés");
     this.Text("Tandem-Settings-EnemyScaling", "Ennemis plus coriaces à chaque joueur en plus");
+    this.Text("Tandem-Settings-LevelGap", "Ennemis au-dessus du niveau le plus bas");
+    this.Text("Tandem-Settings-LevelGap-Eight", "8 niveaux au plus");
+    this.Text("Tandem-Settings-LevelGap-Five", "5 niveaux au plus");
+    this.Text("Tandem-Settings-LevelGap-Twelve", "12 niveaux au plus");
     this.Text("Tandem-Settings-Notices", "Notifications");
     this.Text("Tandem-Settings-Notices-All", "toutes");
     this.Text("Tandem-Settings-Notices-Important", "importantes seulement");
@@ -1163,6 +1180,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-About-Name", "Le nom que les autres voient au-dessus de votre V et dans leur liste de groupe");
     this.Text("Tandem-Settings-About-FriendlyFire", "Règle de l'hôte : les tirs, lames et explosions des V se blessent entre eux");
     this.Text("Tandem-Settings-About-EnemyScaling", "Règle de l'hôte : les PNJ hostiles ont plus de santé pour chaque joueur en plus près d'eux");
+    this.Text("Tandem-Settings-About-LevelGap", "Règle de l'hôte : les ennemis suivent le niveau moyen des joueurs, mais jamais plus que ceci au-dessus du joueur le plus bas, pour qu'un nouveau V puisse se battre à côté d'un vétéran");
     this.Text("Tandem-Settings-About-Notices", "Les notifications coop affichées : toutes, sans les nouvelles, ou seulement questions et problèmes");
     this.Text("Tandem-Settings-About-Markers", "Un marqueur pour chaque autre joueur sur l'ATH, la mini-carte et la carte");
     this.Text("Tandem-Settings-About-Nameplates", "Le nom au-dessus des autres joueurs : de près, à toute distance, ou aucun");
