@@ -311,6 +311,13 @@ public class TandemTurrets extends ScriptableSystem {
     if !IsDefined(ours) || ours.GetEntityID() != target {
       return;
     }
+    // Turned (any player's doing) or in another player's hands: it has no V
+    // to say (Devices.reds turns our copy for every V on the tick).
+    let turret = this.Body(entity);
+    if IsDefined(turret) && (turret.GetDevicePS().IsAttitudeChanged() || turret.TandemInHands()) {
+      TandemNative.LogDebug(s"turrets: our copy of \(TandemNative.EntityHex(entity)) locked our V while turned: not said");
+      return;
+    }
     let known = this.Track(entity);
     if known.seen {
       return;
@@ -851,12 +858,13 @@ public func TandemHeld(seconds: Float) -> Void {
 
 // Host: a guest's copy locked that guest's V; ours takes its puppet as a
 // target the way a quest forces one (hostile to it, recognized whatever
-// the security system thinks of it). False: ours is off, turned, or in a
-// player's hands.
+// the security system thinks of it). False: ours is off, turned (by any
+// player: Devices.reds keeps it friendly to every V), or in a player's
+// hands (our V's, or another player's: TurretHands).
 @addMethod(SensorDevice)
 public func TandemEngage(target: ref<GameObject>) -> Bool {
   let ps = this.GetDevicePS();
-  if !IsDefined(target) || !IsDefined(ps) || !ps.IsON() || ps.IsAttitudeChanged() || ps.IsControlledByPlayer() {
+  if !IsDefined(target) || !IsDefined(ps) || !ps.IsON() || ps.IsAttitudeChanged() || ps.IsControlledByPlayer() || this.TandemInHands() {
     return false;
   }
   let mine = this.GetAttitudeAgent();

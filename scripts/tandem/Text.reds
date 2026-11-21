@@ -400,6 +400,8 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Interact-Missing", "Not there in {1}'s world right now");
     this.Text("Tandem-Interact-Busy", "{1} is busy: try again in a moment");
     this.Text("Tandem-Turrets-Busy", "{1} is controlling this turret");
+    this.Text("Tandem-Devices-HackedBy", "Hacked by {1}");
+    this.Text("Tandem-Devices-HackedByDescription", "{1} hacked this device, for as long as the hack lasts");
     // Loot, markers.
     this.Text("Tandem-Loot-Taken", "Someone already took it");
     this.Text("Tandem-Loot-TakenBy", "{1} picked it up first");
@@ -885,6 +887,8 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Interact-Missing", "Pas là dans le monde de {1} pour l'instant");
     this.Text("Tandem-Interact-Busy", "{1} est occupé(e) : réessayez dans un instant");
     this.Text("Tandem-Turrets-Busy", "{1} contrôle cette tourelle");
+    this.Text("Tandem-Devices-HackedBy", "Piraté par {1}");
+    this.Text("Tandem-Devices-HackedByDescription", "{1} a piraté cet appareil, le temps que dure le piratage");
     this.Text("Tandem-Loot-Taken", "Quelqu'un l'a déjà pris");
     this.Text("Tandem-Loot-TakenBy", "{1} l'a ramassé avant vous");
     // Other mods (Mods.reds, docs/architecture/mod-compat.md).
