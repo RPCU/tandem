@@ -4,7 +4,8 @@ ensure host
 cmd teleport home
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female --ping 4
 expect 'joined \(player [0-9]+' 20
-expect 'comms: on \(link auto, pings true\)' 30
+# (comms: on … is said once per session, which the harness keeps across
+# scenarios: the ping shown below is the check.)
 # Its spot in front of us: a marker in the world, on the minimap and the map
 # (a person checks the shot: the icon, the label "tandem-peer: Here").
 expect 'comms: showing ping [0-9]+ of tandem-peer \(Here, 20 s\) at a place, registered true' 30
