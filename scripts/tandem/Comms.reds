@@ -84,6 +84,8 @@ public class TandemComms {
   private let m_offerAt: Float;
   private let m_offerListening: Bool;
   private let m_offerHeld: Bool;
+  // The request rings as a call does (the game's ringtone, stopped with it).
+  private let m_ringing: Bool;
   // Our team target (none: no hash), and when we last looked at it.
   public let m_ownTarget: EntityID;
   private let m_ownTargetSeen: Float;
@@ -407,6 +409,10 @@ public class TandemComms {
     let name = ListenerAction.GetName(action);
     if Equals(name, n"PhoneInteract") {
       this.OnPhoneKey(action);
+      return false;
+    }
+    if Equals(name, n"PhoneReject") {
+      this.OnRejectKey(action);
       return false;
     }
     if !Equals(name, n"TagButton") || !ListenerAction.IsButtonJustPressed(action) {
@@ -760,6 +766,39 @@ public class TandemComms {
     return TandemCommsNative.SetLink(player, on);
   }
 
+  // The phone's call to a partner (PhoneContacts.reds): with nothing
+  // between us, ask to link; their request, answer it; ours, cancel it;
+  // linked, hang up (the link breaks).
+  public func PhoneCall(player: Uint32) -> Bool {
+    if TandemCommsNative.LinkSetting() == 2 {
+      this.Notice("Comms-LinksOff");
+      return false;
+    }
+    let state = TandemCommsNative.LinkState(player);
+    let name = this.NameOf(player);
+    if state == 2 && this.m_offerFrom == player {
+      return this.AcceptOffer();
+    }
+    let on = state == 0 || state == 2;
+    let what = "hanging up on";
+    if state == 0 {
+      what = "calling";
+    } else if state == 1 {
+      what = "cancelling our call to";
+    } else if state == 2 {
+      what = "answering";
+    }
+    TandemNative.Log(s"comms: \(what) \(name) (link was \(state))");
+    let done = TandemCommsNative.SetLink(player, on);
+    if done && state == 1 {
+      this.Notice("Phone-Cancelled", name);
+    } else if done && state == 0 && TandemCommsNative.LinkSetting() == 0 {
+      // (LinkChanged says it for link = ask; auto says nothing of requests.)
+      this.Notice("Comms-LinkSent", name);
+    }
+    return done;
+  }
+
   private func LinkChanged(player: Uint32, now: Int32, before: Int32) -> Void {
     let name = this.NameOf(player);
     TandemNative.Log(s"comms: link with \(name): \(before) -> \(now)");
@@ -791,42 +830,72 @@ public class TandemComms {
     }
   }
 
-  // Their request: the game's on-screen message and an input hint on the
-  // phone key, as a regroup offer (Travel.reds), unless one is on it.
+  // Their request is a call: the game's on-screen message, its ringtone
+  // (unless a call of the game's is up), and the phone keys' hints, answer
+  // (a press, as a holocall) and decline (PhoneReject's hold), beside a
+  // regroup offer's (Travel.reds) unless one has the key.
   private func ShowOffer(player: Uint32) -> Void {
     let name = this.NameOf(player);
     this.Notice("Comms-LinkAsked", name);
-    this.Sound(n"ui_phone_sms");
     let travel = TandemTravel.Of(this.m_game);
     if IsDefined(travel) && travel.ShowingOffer() {
+      this.Sound(n"ui_phone_sms");
       TandemNative.Log(s"comms: link request of \(name) shown without its hint (a regroup offer has the key)");
       return;
     }
     this.HideOffer();
     this.m_offerFrom = player;
     this.m_offerAt = this.m_now;
+    if this.CallUp() {
+      this.Sound(n"ui_phone_sms");
+    } else {
+      GameInstance.GetAudioSystem(this.m_game).Play(n"ui_phone_incoming_call");
+      this.m_ringing = true;
+    }
     this.Hint(true, TandemText.F("Comms-LinkWith", name));
+    TandemText.Hint(this.m_game, n"TandemLinkDecline", n"PhoneReject", true, TandemText.Get("Comms-Decline"), inkInputHintHoldIndicationType.Hold);
     let local = GetPlayer(this.m_game);
     if IsDefined(local) && !this.m_offerListening {
       local.RegisterInputListener(this, n"PhoneInteract");
+      local.RegisterInputListener(this, n"PhoneReject");
       this.m_offerListening = true;
       this.m_offerHeld = false;
     }
-    TandemNative.Log(s"comms: showing the link request of \(name)");
+    TandemNative.Log(s"comms: showing the link request of \(name)\(this.m_ringing ? " (ringing)" : "")");
   }
 
   private func HideOffer() -> Void {
     if this.m_offerFrom != 0u {
       this.Hint(false, "");
+      TandemText.Hint(this.m_game, n"TandemLinkDecline", n"PhoneReject", false, "", inkInputHintHoldIndicationType.Hold);
     }
     this.m_offerFrom = 0u;
+    if this.m_ringing {
+      GameInstance.GetAudioSystem(this.m_game).Play(n"ui_phone_incoming_call_stop");
+      this.m_ringing = false;
+    }
     if this.m_offerListening {
       let local = GetPlayer(this.m_game);
       if IsDefined(local) {
         local.UnregisterInputListener(this, n"PhoneInteract");
+        local.UnregisterInputListener(this, n"PhoneReject");
       }
       this.m_offerListening = false;
     }
+  }
+
+  // A call of the game's own is ringing or on (its keys are its own then).
+  private func CallUp() -> Bool {
+    let blackboard = GameInstance.GetBlackboardSystem(this.m_game).Get(GetAllBlackboardDefs().UI_ComDevice);
+    if !IsDefined(blackboard) {
+      return false;
+    }
+    let info = blackboard.GetVariant(GetAllBlackboardDefs().UI_ComDevice.PhoneCallInformation);
+    if !IsDefined(info) {
+      return false;
+    }
+    let call = FromVariant<PhoneCallInformation>(info);
+    return Equals(call.callPhase, questPhoneCallPhase.IncomingCall) || Equals(call.callPhase, questPhoneCallPhase.StartCall);
   }
 
   private func OnPhoneKey(action: ListenerAction) -> Void {
@@ -839,10 +908,29 @@ public class TandemComms {
     } else if Equals(kind, gameinputActionType.BUTTON_RELEASED) {
       if this.m_offerHeld {
         this.m_offerHeld = false;
-      } else {
+      } else if !this.CallUp() {
         this.AcceptOffer();
       }
     }
+  }
+
+  // PhoneReject held, as for a holocall: the request is declined (it rings
+  // no more; their consent stands, as an unanswered request's does).
+  private func OnRejectKey(action: ListenerAction) -> Void {
+    if this.m_offerFrom != 0u && !this.CallUp() && Equals(ListenerAction.GetType(action), gameinputActionType.BUTTON_HOLD_COMPLETE) {
+      this.DeclineOffer();
+    }
+  }
+
+  public func DeclineOffer() -> Bool {
+    let player = this.m_offerFrom;
+    if player == 0u {
+      TandemNative.Log("comms: no link request to decline");
+      return false;
+    }
+    this.HideOffer();
+    TandemNative.Log(s"comms: declined the link request of \(this.NameOf(player))");
+    return true;
   }
 
   public func AcceptOffer() -> Bool {
@@ -1071,7 +1159,8 @@ public class TandemComms {
   }
 
   // tools/game.sh cmd: comms report | comms ping | comms link [NAME] |
-  // comms unlink [NAME] | comms accept | comms tag | comms target
+  // comms unlink [NAME] | comms accept | comms decline | comms tag |
+  // comms target
   public func Command(command: String) -> Void {
     if Equals(command, "comms hacks") {
       TandemNative.Log(s"comms: \(ArraySize(this.m_hacks)) partner quickhack indicator(s)");
@@ -1104,6 +1193,8 @@ public class TandemComms {
       this.PingLookAt();
     } else if Equals(command, "comms accept") {
       this.AcceptOffer();
+    } else if Equals(command, "comms decline") {
+      this.DeclineOffer();
     } else if Equals(command, "comms tag") {
       let player = GetPlayer(this.m_game);
       let target = IsDefined(player) ? GameInstance.GetTargetingSystem(this.m_game).GetLookAtObject(player, true, true) : null;
