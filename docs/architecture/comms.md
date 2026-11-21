@@ -4,7 +4,7 @@
 they can share stuff like quickhacking ping visuals." Two players
 coordinate the way the game already talks to one player: its scanner tag,
 its mappins (world, minimap, world map), its outlines, its prompts and
-input hints. Nothing here adds a widget of its own.
+input hints, its phone's call widgets. Nothing here adds a widget of its own.
 
 **State (2026-11-19).** Built and compiled against the game's scripts
 (`task scripts:check`: 0 errors, 0 warnings); core logic and the session
@@ -328,17 +328,58 @@ yet**. `scripts/tandem/PhoneContacts.reds`.
   press), "Decline" (`PhoneReject` held) stops the ring. An answered call
   is the link: the existing link notice ("Linked with NAME: scans and
   pings are shared"), the party HUD's entry (presence.md); hanging up from
-  either phone breaks it ("Link with NAME broken").
-- **The game's incoming-call widget and holocall portrait: not used.**
-  They are the `PhoneSystem`'s (`questTriggerCallRequest`, then
-  `UI_ComDevice.PhoneCallInformation` drives `IncomingCallLogicController`
-  and `HoloAudioCallLogicController`): a call is looked up as a journal
-  contact (`GetIncomingContact`: a `JournalContact` by id, for its name and
-  avatar), which a player is not, and its phases write `phonecall_*` facts
-  that quests read and that story sync relays (`Phone.reds`). Using them
-  would mean a fake journal contact, a call no quest should see, and the
-  story mirror told to skip it; first to see in game how the widget takes
-  a missing contact. Today: the ringtone, the notice and the hints.
+  either phone breaks it ("Link with NAME broken"). Both sides see the call
+  as the game draws one (The call on screen, below).
+- **The call on screen** (`scripts/tandem/Holocall.reds`, 2026-11-21,
+  **not yet run in game**): the game's own call widgets, without its call.
+  - Their call rings with the **incoming-call widget**
+    (`IncomingCallLogicController`): their name, the game's unknown avatar
+    (`PhoneAvatars.Avatar_Unknown`) tinted in their colour
+    (`TandemMarkers.ColorOf`), the hold-to-reject glyph, the `ring`
+    animation played again until it is answered, declined or left (15 s).
+  - Our call (the phone's Call, or a ping on their V) shows the **call
+    portrait** connecting (`HoloAudioCallLogicController.ShowIncomingContact`,
+    status "Calling..."), for at most 20 s unanswered.
+  - Answered (either side): the **audio call view** with the avatar
+    (`StartAudiocall`, status "Linked") for 8 s, then it hides with the
+    game's animation and the link goes on, shown by the party HUD. A link
+    lasts the session: a portrait held that long would sit on the HUD's
+    left column for hours. A link made without a call (`link = auto` at the
+    start) shows none.
+  - **One button ends the call**: `PhoneReject` held, as for the game's
+    calls, hint "Hang up", while the view is up: our call taken back, or the
+    link broken (the phone's Hang up); the view says "Call ended" with the
+    game's disconnecting animation. The link broken from anywhere else ends
+    it the same way.
+  - The portrait is not the partner's face: the holocall mode's render
+    texture (`HudPhoneAvatarController.m_HolocallRenderTexture`) is fed by
+    the engine's holocall setup, which no script points at another V (not
+    tried); the audio call view shows the avatar instead.
+  - How: the HUD phone (`NewHudPhoneGameController`, found on the HUD layer
+    with Codeware's `GetGameControllers`) spawns its own library widgets
+    (`incomingCallElement`, `holoAudioCallElement`: their `libraryID`, into
+    their `slot`) into fields of ours, and plays them with the game's
+    functions (`SetCallInfo`'s steps without its `JournalContact`; the
+    holo's take an avatar id and a name). The game's call state never hears
+    of them: no `questTriggerCallRequest`, no `m_CurrentCallInformation`,
+    no `TalkingTriggerRequest`, so no `phonecall_*` fact for quests or story
+    sync (`Phone.reds`). `ActivatePhoneElement` is called as the game's
+    calls do (the HUD's phone icon; `UI_ComDevice.ActivatePhoneElements`, a
+    UI board). A call of the game's comes first: while one rings or is on,
+    ours is not drawn (the link and its keys unchanged). No wrap and no
+    callback: everything runs on `TandemComms.Tick` (the game thread); the
+    hang-up key's listener (`TandemComms.OnAction`, already in
+    `scripts-threads.known`) only sets a flag the tick acts on.
+  - The party HUD moves below our call widgets as below the game's
+    (`TandemComms.HolocallUp`, [`presence.md`](presence.md)).
+  - To see in game: that the spawned widgets sit and animate as the game's
+    (the slots' layout without the game's call state), the tint on the
+    unknown avatar, the status line, the ring animation's length.
+  - Test commands: `comms holocall` (what is shown), `comms hangup` (as the
+    key). Scenarios (not run yet): `phone-holocall-ring` (their call rings
+    with the widget and their name, answered, the view closes, the link
+    stays), `phone-holocall-call` (our call connecting, answered, hung up
+    with the call's button).
 - **How, in the game's scripts** (`final.reds:408140`, wrapped, each a
   `public final func` of the HUD controller, reached from its own input
   listener on the game thread; none is a cb func or a per-entity class,

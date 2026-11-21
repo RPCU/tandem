@@ -412,8 +412,12 @@ public class TandemPartyHud {
   }
 
   // A holocall or an audio call is up (the phone's own blackboard: the
-  // phase NewHudPhoneGameController shows its holo for).
+  // phase NewHudPhoneGameController shows its holo for), or a call between
+  // players drawn the same way (Holocall.reds).
   private func HoloCall() -> Bool {
+    if TandemComms.HolocallUp(this.m_game) {
+      return true;
+    }
     let board = GameInstance.GetBlackboardSystem(this.m_game).Get(GetAllBlackboardDefs().UI_ComDevice);
     if !IsDefined(board) {
       return false;
