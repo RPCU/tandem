@@ -279,6 +279,20 @@ note() { echo "  $*"; }
 # the spot, then 3 s more for the world around it to stream in. A loading
 # screen silences the game thread (the watchdog's "silent" line, which the
 # scenarios reject): when one came, the log is marked after it.
+# The scenarios resolve the game machine's name with getent: a lookup that
+# comes back empty for a moment left the mock player with no address ("join
+# needs an address", 2026-11-21). Tried again, 10 s at most.
+getent() {
+  local i out
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    out=$(command getent "$@") && [ -n "$out" ] && {
+      echo "$out"
+      return 0
+    }
+    sleep 1
+  done
+  return 2
+}
 fixture_file=tools/scenarios/fixtures.txt
 spot() {
   if [[ $1 =~ ^-?[0-9.]+\ +-?[0-9.]+\ +-?[0-9.]+ ]]; then
