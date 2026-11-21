@@ -11,6 +11,8 @@ expect_peer 'our smart round at npc [0-9]+' 20
 expect "throws: player [0-9]+'s smart round fired from their puppet at npc [0-9]+" 10
 # A copy's explosion never reaches our V: a remote V's puppet deals nothing here.
 reject 'outcomes: player [0-9]+.s area effect on our V'
+# The copy lives until the real one's end (it was destroyed at its launch).
+reject 'its copy gone before its end'
 mark
 pkill -x tandem-peer
 expect 'session ended' 60

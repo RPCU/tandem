@@ -537,8 +537,14 @@ public class TandemThrows {
         }
       } else if !IsDefined(copy.object) {
         // Knives and rounds: their projectile reports in (Bind) within a
-        // moment; one that never does was not spawned.
-        if now - copy.launchedAt > 2.0 {
+        // moment; one that never does was not spawned. A grenade is bound
+        // at its launch: gone, it was destroyed before its end.
+        if copy.kind == TandemThrows.GrenadeKind() {
+          if !copy.ended {
+            this.Once(n"grenadeGone", s"throws: player \(copy.player)'s grenade \(copy.id) launched, its copy gone before its end");
+          }
+          keep = false;
+        } else if now - copy.launchedAt > 2.0 {
           this.Once(n"unbound", s"throws: player \(copy.player)'s throw \(copy.id) launched, its copy never seen");
           keep = false;
         }
@@ -608,6 +614,13 @@ public class TandemThrows {
       }
       return false;
     }
+    // In the slot but still spawning (its entity is there before the slot's
+    // spawn is done): RemoveItemFromSlot destroys it then, whatever its
+    // shouldDestroyEntity says (engine/presence.md §13.97). Launched once
+    // it is done, a frame or a few later.
+    if transactions.IsSlotSpawningItem(thrower, slot, held.GetItemID()) {
+      return false;
+    }
     let grenade = held as BaseGrenade;
     if !IsDefined(grenade) {
       this.Once(n"notGrenade", s"throws: \(TDBID.ToStringDEBUG(copy.item)) is not a grenade here");
@@ -629,9 +642,10 @@ public class TandemThrows {
       launch.projectileParams.trackedTargetComponent = component;
       launch.projectileParams.targetPosition = ProjectileTargetingHelper.GetTargetingComponentsWorldPosition(component);
     }
+    // A copy before it flies: its OnShoot holds its fuse (HoldsFuse).
+    this.Adopt(copy, grenade);
     grenade.QueueEvent(launch);
     transactions.RemoveItemFromSlot(thrower, slot, false);
-    this.Adopt(copy, grenade);
     this.Once(n"grenade", s"throws: player \(copy.player)'s grenade \(copy.id) (\(TDBID.ToStringDEBUG(copy.item))) launched from \((copy.flags & TandemThrows.ByNpcFlag()) != 0 ? "its proxy" : "their puppet") at \(Vector4.Length(copy.velocity)) m/s");
     return true;
   }

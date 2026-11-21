@@ -11,6 +11,8 @@ expect "throws: player [0-9]+'s throw [0-9]+ was [0-9.]+ m off the real one's pa
 expect "throws: player [0-9]+'s throw [0-9]+ ended here \(0\)" 10
 cmd throws report
 expect 'throws: ours in flight.*put back on their real path [1-9]' 5
+# The copy lives until the real one's end (it was destroyed at its launch).
+reject 'its copy gone before its end'
 # Seen (a person there): the copy leaves its arc a second in, flies on from
 # 3 m to the side and explodes there, with no pause in the air.
 reject 'watchdog: game thread silent'

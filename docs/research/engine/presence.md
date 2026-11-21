@@ -287,3 +287,29 @@ and the engine time), said on the tick. Its `hitInstances` hold
 `GetUser()` (`m_user`). A rolling grenade's collisions come every frame
 _(inferred: the landed-on-ground branch and the impact-sound cooldown of
 0.2 s)_. [2.5-untested]
+
+### 13.97 An item taken from a slot still spawning it is destroyed (2026-11-21, decompiled, not run)
+
+The transaction system's attachment slot (0x90 bytes; `FUN_1401be0f0`
+finds it by slot id) holds the item's entity at +0x08 and the item it is
+spawning at +0x18 (an `ItemID`). `AddItemToSlot` sets +0x18 when it asks
+for the spawn (`FUN_14089b6f0`) and two callbacks of the spawn follow:
+the first puts the new entity at +0x08 and leaves +0x18 set
+(`FUN_1402e655c`, through `0x141324774`), the second clears +0x18
+(`0x141326824`, when `FUN_1407545a4` says the spawn is done). Between them
+`GetItemInSlot` (native `0x1401ad894`, which reads +0x08 only) already
+returns the entity, and `IsSlotSpawningItem(obj, slot, item)` (native
+`0x142175c70`: +0x18 valid and equal to `item`) is still true.
+`RemoveItemFromSlot(obj, slot, shouldDestroyEntity)` (native
+`0x14063cec4`, then `FUN_140602614`) destroys the entity when
+`shouldDestroyEntity` **or** +0x18 is set: in that window, `false` does not
+keep it. An item launched the frame it appears in a slot (a grenade the AI's
+way, `AISubActionThrowItem.ThrowItem`, final.reds:440036) is destroyed
+there, its launch with it: tandem waits for `IsSlotSpawningItem` false
+(`TandemThrows.LaunchGrenade`). Vanilla's own give-and-throw
+(`GrenadeChangedCallback`, final.reds:303338) waits for
+`OnItemEquippedVisual` before `RemoveItemFromSlot(…, false)`.
+[2.5-untested]
+
+- `RemoveItemFromSlot`'s native reads `shouldDestroyEntity` into a buffer
+  that starts at 1 (`0x14063cec4`): left out, it is true _(inferred)_.
