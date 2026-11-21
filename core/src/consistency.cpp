@@ -338,6 +338,10 @@ void FaultyLink::Set(const Faults &faults) {
   m_random.seed(faults.seed);
 }
 
+bool CarriesOver(const proto::Seat &seat) { return seat.owner == proto::kNoPlayer; }
+
+bool CarriesOver(const proto::Transit &transit) { return transit.carrier == proto::kNoPlayer; }
+
 FaultyLink::Action FaultyLink::Decide(const proto::Message &message) {
   using namespace proto;
   if (!Active() || std::holds_alternative<Hello>(message) ||

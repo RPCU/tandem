@@ -1585,7 +1585,19 @@ void Runtime::ResetSession() {
     m_seatCombat.clear();
     m_bumps.Clear();
     m_ownDamage.clear();
+    // The old host's clock and weather are not the next host's: none until
+    // it says its own (the count moves, so World.reds sees a fresh state with
+    // nothing in it and leaves our weather be).
+    if (m_hostWorld) {
+      m_hostWorld.reset();
+      ++m_hostWorldChanges;
+    }
+    // The next session names its players itself (a number may be reused).
+    m_names.clear();
   }
+  // The NPCs' poses and rig tracks (scenes): the next session's ids are
+  // other NPCs.
+  ForgetActorPoses();
   // The NPCs' tracks: the next session's ids are other NPCs.
   std::lock_guard _(m_tracksLock);
   std::erase_if(m_tracks, [](const auto &entry) { return entry.first >= kNpcPuppetBase; });

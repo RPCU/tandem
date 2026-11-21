@@ -53,6 +53,10 @@ public:
   bool VendorDead(std::uint64_t entity);
   std::vector<std::uint64_t> TakeDeadVendors();
   void ClearVendors();
+  // Net thread, at a session's end: its vendors, lends and rules are not
+  // the next one's (an NPC id or a player number it reuses is someone
+  // else, and its host says its own rules).
+  void EndSession();
 
 private:
   std::map<proto::PlayerId, proto::Lend> m_lends;

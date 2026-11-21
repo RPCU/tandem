@@ -16,6 +16,7 @@
 
 #include "tandem/combat.hpp"
 #include "tandem/compat.hpp"
+#include "tandem/consistency.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/net_traffic.hpp"
 #include "tandem/play.hpp"
@@ -978,6 +979,15 @@ struct NetThread::Impl {
                 // Nobody of this session is anywhere for us any more.
                 runtime.ClearRemoteElsewhere();
                 Activities::Get().EndSession();
+                // The session's vendors, lends and rules (an NPC id or a
+                // player number the next one reuses is someone else's).
+                Combat::Get().EndSession();
+                // Our seat and ride are said again to the next session
+                // only when they name nobody of this one.
+                if (lastSeat && !consistency::CarriesOver(*lastSeat))
+                  lastSeat.reset();
+                if (lastTransit && !consistency::CarriesOver(*lastTransit))
+                  lastTransit.reset();
                 // The next session's players start afresh (a restarted host
                 // counts its states from the start again).
                 for (const auto &[id, info] : endpoint->Players())
