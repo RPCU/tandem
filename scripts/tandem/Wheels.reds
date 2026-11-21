@@ -201,11 +201,24 @@ public class TandemWheelsSync {
       let noWeapons = StatusEffectSystem.ObjectHasStatusEffect(me, t"GameplayRestriction.NoWeapons");
       let noCombat = StatusEffectSystem.ObjectHasStatusEffect(me, t"GameplayRestriction.NoCombat");
       let firearms = StatusEffectSystem.ObjectHasStatusEffect(me, t"GameplayRestriction.DriverCombatFirearms");
-      let request = new EquipmentSystemWeaponManipulationRequest();
-      request.owner = me;
-      request.requestType = EquipmentManipulationAction.RequestLastUsedOrFirstAvailableDriverCombatRangedWeapon;
-      GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"EquipmentSystem").QueueRequest(request);
-      TandemNative.Log(s"wheels: draw in \(NameToString(slot)) of vehicle \(this.RefOf(ride, system)) (copy of player \(system.CarOwnerOf(ride.GetEntityID()))): no weapons \(noWeapons), no combat \(noCombat), seat firearms \(firearms)");
+      // With no weapon a seat takes, the game's stand-in pistol, as a forced
+      // combat in a vehicle draws it (EnteringCombatEvents, final.reds
+      // 549571-549597): a V's loadout may hold none.
+      let data = EquipmentSystem.GetData(me);
+      let item = IsDefined(data) ? data.GetLastUsedOrFirstAvailableDriverCombatWeapon(n"DriverCombatRangedWeapon") : ItemID.None();
+      let equipment = GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"EquipmentSystem") as EquipmentSystem;
+      if ItemID.IsValid(item) {
+        let request = new EquipmentSystemWeaponManipulationRequest();
+        request.owner = me;
+        request.requestType = EquipmentManipulationAction.RequestLastUsedOrFirstAvailableDriverCombatRangedWeapon;
+        equipment.QueueRequest(request);
+      } else {
+        let draw = new DrawItemRequest();
+        draw.owner = me;
+        draw.itemID = ItemID.CreateQuery(t"Items.Preset_V_Unity_Cutscene");
+        equipment.QueueRequest(draw);
+      }
+      TandemNative.Log(s"wheels: draw in \(NameToString(slot)) of vehicle \(this.RefOf(ride, system)) (copy of player \(system.CarOwnerOf(ride.GetEntityID()))): no weapons \(noWeapons), no combat \(noCombat), seat firearms \(firearms), weapon \(ItemID.IsValid(item) ? TDBID.ToStringDEBUG(ItemID.GetTDBID(item)) : "the stand-in")");
       return;
     }
     // (probe, §13.70) "wheels turret PART": turn the turret of our vehicle
