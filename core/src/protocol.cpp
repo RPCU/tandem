@@ -263,7 +263,9 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
       crime && (crime->kind < CrimeKind::Witness || crime->kind > CrimeKind::Kill))
     return std::nullopt;
   if (const auto *cue = std::get_if<Cue>(&message);
-      cue && (cue->kind < CueKind::Trace || cue->kind > CueKind::MeleeHit))
+      cue &&
+      (cue->kind < CueKind::Trace || cue->kind > CueKind::Charge ||
+       (cue->kind == CueKind::Charge ? cue->arg > kChargeMax : (cue->arg & ~kTraceFlags) != 0)))
     return std::nullopt;
   if (const auto *reaction = std::get_if<NpcReaction>(&message);
       reaction && reaction->type > kReactionMax)

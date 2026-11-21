@@ -180,7 +180,7 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
     }
     if (play == Play::Fight && now >= nextEvent) {
       // Twice a second: a guest's strike, the NPC's health and animation,
-      // shots both ways.
+      // shots both ways with their tracers' ends, a ricochet, a charge.
       nextEvent += 500'000;
       const auto npc = static_cast<proto::NpcId>(1 + frame % 24);
       joined.front()->SendCombat(proto::NpcStrike{.npc = npc, .damage = 10.f, .poise = 5.f});
@@ -190,6 +190,19 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
         host->SendNpcShot({.npc = npc, .effect = 16});
         joined.front()->SendLocalShot({.effect = 16});
         host->SendLocalShot({.effect = 16});
+        // Each V's shot says where its bullet ended (the others' tracer).
+        joined.front()->SendLocalCue({.kind = proto::CueKind::Trace, .at = {1.f, 2.f, 3.f}});
+        host->SendLocalCue({.kind = proto::CueKind::Trace, .at = {1.f, 2.f, 3.f}});
+      }
+      // A bounce of one of them, and a tech weapon's charge said again
+      // (every 0.25 s while it charges: twice here, both ways).
+      joined.front()->SendLocalCue({.kind = proto::CueKind::Ricochet, .at = {4.f, 2.f, 3.f}});
+      for (int k = 0; k < 2; ++k) {
+        joined.front()->SendLocalCue(
+            {.kind = proto::CueKind::Charge, .arg = proto::kChargeReady, .at = {0.6f, 0.f, 0.f}});
+        host->SendLocalCue({.kind = proto::CueKind::Charge,
+                            .arg = proto::kChargeCharging,
+                            .at = {0.3f, 0.f, 0.f}});
       }
     }
     for (auto *endpoint : all)

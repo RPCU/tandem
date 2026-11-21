@@ -623,6 +623,34 @@ TEST_CASE("referee: rates, sizes and values") {
   guest.Received(1, proto::NpcSpawn{.npc = 1}, kSecond);
   guest.Received(1, proto::NpcHealth{.npc = 1, .health = 1.5f}, kSecond);
   CHECK(Broke(guest, "value.range"));
+
+  // A smart gun's guided round says what it is in known flags only (v13).
+  guest.Received(1,
+                 proto::NpcShotAt{.player = 2,
+                                  .npc = 1,
+                                  .timeUs = kSecond,
+                                  .flags = proto::kShotAtSmart | proto::kShotAtTracked},
+                 kSecond, kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1, proto::NpcShotAt{.player = 2, .npc = 1, .timeUs = kSecond + 1, .flags = 8},
+                 kSecond, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  // A V's ricochet and its charge: a real place, a known step.
+  guest.Received(1, proto::Cue{.player = 3, .seq = 1, .kind = proto::CueKind::Ricochet}, kSecond);
+  guest.Received(1,
+                 proto::Cue{.player = 3,
+                            .seq = 2,
+                            .kind = proto::CueKind::Charge,
+                            .arg = proto::kChargeFull,
+                            .at = {1.f, 0.f, 0.f}},
+                 kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1, proto::Cue{.player = 3, .seq = 3, .kind = proto::CueKind::Charge, .arg = 9},
+                 kSecond);
+  guest.Received(
+      1, proto::Cue{.player = 3, .seq = 4, .kind = proto::CueKind::Ricochet, .at = {nan, 0.f, 0.f}},
+      kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range", "value.not-finite"});
 }
 
 TEST_CASE("referee: resync requests are budgeted at the pace of the endpoint's digests") {
