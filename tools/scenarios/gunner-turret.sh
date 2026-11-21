@@ -1,4 +1,5 @@
 # As host, at the wheel of an armed vehicle (a Basilisk, a car with mounted guns): a guest takes our vehicle's gun; where it aims and fires, our real vehicle fires (seen and heard here and by everyone), and what those shots hit is the guest's game's, never ours; then the turret look-at probe
+# by hand: a person in game does what its notes say (tools/sweep.sh leaves it out)
 # shellcheck shell=bash disable=SC2317
 # Needs our V at the wheel of an armed vehicle (no command puts it there).
 ensure host

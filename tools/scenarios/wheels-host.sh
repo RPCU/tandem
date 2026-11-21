@@ -1,4 +1,5 @@
 # As host, at the wheel: a guest's shots on our car and its flat tyre applied by our game, the guest on our car's gun, its car ramming our NPC, its pushes on our car
+# by hand: a person in game does what its notes say (tools/sweep.sh leaves it out)
 # shellcheck shell=bash disable=SC2317
 # Needs our V at the wheel of a car on a street with people around (summon
 # one and get in before running it: no command puts V at the wheel).
