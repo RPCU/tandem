@@ -388,6 +388,13 @@ public class TandemStorySystem extends ScriptableSystem {
     return (this.m_hostFlags & 8) != 0;
   }
 
+  // Guest: the host's game would not let its V fast travel now (its
+  // quest's lock: StoryState 128). Our V never respawns far away then
+  // (Revive.reds LeaveRefused).
+  public func HostNoFastTravel() -> Bool {
+    return this.IsGuest() && (this.m_hostFlags & 128) != 0;
+  }
+
   // Scene replay (Scenes.reds): the host's scenes for its guests.
   public func Scenes() -> ref<TandemScenes> {
     return this.m_scenes;
@@ -656,7 +663,7 @@ public class TandemStorySystem extends ScriptableSystem {
       ArrayClear(this.m_changedNotify);
       let player = GetPlayer(this.GetGameInstance());
       this.m_ourTier = PlayerPuppet.GetSceneTier(player);
-      TandemStory.SendState(this.m_ourTier, 0);
+      TandemStory.SendState(this.m_ourTier, this.m_ourFlags);
     }
     if ArraySize(this.m_changedHashes) > 0 {
       TandemStory.SendJournal(false, this.m_changedHashes, this.m_changedStates, this.m_changedNotify);
@@ -1330,11 +1337,16 @@ public class TandemStorySystem extends ScriptableSystem {
     if !this.m_isHost && this.m_spectate.Watching() {
       flags += 32;
     }
+    // Our quest locks fast travel (Revive.reds TravelLock): a guest's V
+    // stays in the area when it respawns.
+    if this.m_isHost && StrLen(TandemRevive.TravelLock(this.GetGameInstance())) > 0 {
+      flags += 128;
+    }
     this.m_spectate.KeepSpectatorsHidden();
     if flags != this.m_ourFlags {
       this.m_ourFlags = flags;
       TandemStory.SendState(this.m_ourTier, flags);
-      TandemNative.Log(s"story: our story flags \(flags) (1 braindance, 2 Johnny, 8 private, 16 moment, 32 spectating, 64 to watch)");
+      TandemNative.Log(s"story: our story flags \(flags) (1 braindance, 2 Johnny, 8 private, 16 moment, 32 spectating, 64 to watch, 128 no fast travel)");
     }
   }
 
@@ -1352,6 +1364,11 @@ public class TandemStorySystem extends ScriptableSystem {
     if (flags & 1) != 0 && (before & 1) == 0 {
       // The notice is Elsewhere.reds'.
       TandemNative.Log("story: the host is in a braindance");
+    }
+    if (flags & 128) != 0 && (before & 128) == 0 {
+      TandemNative.Log("story: the host's quest blocks fast travel (no far respawn)");
+    } else if (flags & 128) == 0 && (before & 128) != 0 {
+      TandemNative.Log("story: the host's fast travel is free again");
     }
   }
 
