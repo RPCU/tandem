@@ -314,6 +314,7 @@ public class TandemStorySystem extends ScriptableSystem {
       } else {
         this.GuestTick();
       }
+      this.m_dialogue.Tick(this.Now());
       if IsDefined(this.m_garage) {
         this.m_garage.Tick(this.Now(), this.m_isHost);
       }
@@ -843,7 +844,6 @@ public class TandemStorySystem extends ScriptableSystem {
     // Whether we watch the host's moment first: the holds follow it.
     this.m_spectate.GuestTick(this.Now());
     this.UpdateHolds();
-    this.m_dialogue.GuestTick();
     this.m_scenes.GuestTick(this.Now());
     this.m_phone.GuestTick();
   }

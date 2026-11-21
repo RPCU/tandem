@@ -4,7 +4,9 @@
 // :268284; the dialogue hub to UIInteractions, :399949). Face-to-face lines
 // and hubs reach guests within 25 m of the host's V; holocall lines and phone
 // hubs reach everyone. The host's V decides: a guest moves its own cursor on
-// the hub and can mark a suggestion, which the host sees; the host's pick
+// the hub and can mark a suggestion; every player's cursor is marked on the
+// others' hubs (a chip in their colour and their name on the option they
+// lean to: docs/architecture/story.md, "Choices together"); the host's pick
 // closes every hub.
 
 public class TandemDialogue {
@@ -45,6 +47,20 @@ public class TandemDialogue {
   private let m_cbOwn: ref<CallbackHandle>;
   private let m_native: array<Uint64>;
 
+  // Either: the other players' cursors on our hub (the host's: its guests';
+  // a guest's: the host's and the other guests'), each one's option and kind
+  // (0 hover, 1 suggestion), drawn on our hub by the game's choice widget
+  // (dialogWidgetGameController, found on the HUD layer); what was drawn
+  // last, and whether our hub was on screen then.
+  private let m_markPlayers: array<Uint32>;
+  private let m_markIndexes: array<Int32>;
+  private let m_markKinds: array<Int32>;
+  private let m_marksKey: String;
+  private let m_marksOnScreen: Bool;
+  private let m_widget: wref<dialogWidgetGameController>;
+  private let m_widgetScannedAt: Float;
+  private let m_now: Float;
+
   public func Start(game: GameInstance, story: ref<TandemStorySystem>) -> Void {
     this.m_game = game;
     this.m_story = story;
@@ -64,6 +80,7 @@ public class TandemDialogue {
       interactionsBoard.UnregisterListenerVariant(interactions.LastAttemptedChoice, this.m_cbAttempt);
       this.m_hostListening = false;
     }
+    this.ClearMarks();
     if this.m_ownListening {
       this.Board(true).UnregisterListenerVariant(GetAllBlackboardDefs().UIGameData.ShowDialogLine, this.m_cbOwn);
       this.m_ownListening = false;
@@ -217,6 +234,9 @@ public class TandemDialogue {
         this.m_sentHub = hub.id;
         this.m_sentKey = key;
         this.m_sentTexts = texts;
+        // The guests' cursors were on the hub before; ours goes on theirs.
+        this.ClearMarks();
+        TandemStory.SendCursor(hub.id, this.Board(false).GetInt(GetAllBlackboardDefs().UIInteractions.SelectedIndex), 0);
         return;
       }
     }
@@ -227,25 +247,148 @@ public class TandemDialogue {
       TandemNative.Log("choice: our hub closed");
       this.m_sentOpen = false;
       this.m_sentKey = "";
+      this.ClearMarks();
     }
   }
 
   // ---- either: cursors ----
 
+  // A cursor moved (0), a suggestion (1), the host's pick (2). Another
+  // player's cursor on our hub is marked there at once; a suggestion the
+  // host cannot see on its hub (not on screen: a menu, the HUD hidden) is
+  // its on-screen notice.
   private func OnCursor(event: TandemStoryEvent) -> Void {
     if this.m_story.IsHostInSession() {
-      // A guest's suggestion, for the host to see (its hover: TODO, a marker
-      // on the option through a wrap of UpdateDialogsData).
-      if event.state == 1 && event.index >= 0 && event.index < ArraySize(this.m_sentTexts) {
-        this.m_story.Notice("Dialogue-Suggests", this.m_story.NameOf(event.player), this.m_sentTexts[event.index]);
-        TandemNative.Log(s"choice: player \(event.player) suggests \(event.index)");
+      if !this.m_sentOpen || event.extra != this.m_sentHub || event.index < 0 || event.index >= ArraySize(this.m_sentTexts) || event.state > 1 {
+        return;
+      }
+      this.SetMark(event.player, event.index, event.state);
+      let marked = this.DrawMarks();
+      if event.state == 1 {
+        if !marked {
+          this.m_story.Notice("Dialogue-Suggests", this.m_story.NameOf(event.player), this.m_sentTexts[event.index]);
+        }
+        TandemNative.Log(s"choice: player \(event.player) suggests \(event.index)\(marked ? " (marked on the hub)" : " (the notice: our hub is not on screen)")");
       }
       return;
     }
     if event.player == this.m_story.HostPlayer() && event.state == 2 {
       TandemNative.Log(s"choice: the host picked \(event.index)");
       this.CloseHub();
+      return;
     }
+    if event.player != this.m_story.You() && event.state <= 1 && event.extra == this.m_pendingHub && event.index >= 0 {
+      this.SetMark(event.player, event.index, event.state);
+      this.DrawMarks();
+    }
+  }
+
+  // ---- either: the others' markers on our hub ----
+
+  private func SetMark(player: Uint32, index: Int32, kind: Int32) -> Void {
+    let i = ArrayFindFirst(this.m_markPlayers, player);
+    if i < 0 {
+      ArrayPush(this.m_markPlayers, player);
+      ArrayPush(this.m_markIndexes, index);
+      ArrayPush(this.m_markKinds, kind);
+      return;
+    }
+    // A hover after a suggestion on the same option keeps the suggestion.
+    if kind == 0 && this.m_markIndexes[i] == index && this.m_markKinds[i] == 1 {
+      return;
+    }
+    this.m_markIndexes[i] = index;
+    this.m_markKinds[i] = kind;
+  }
+
+  private func ClearMarks() -> Void {
+    ArrayClear(this.m_markPlayers);
+    ArrayClear(this.m_markIndexes);
+    ArrayClear(this.m_markKinds);
+    this.DrawMarks();
+  }
+
+  // Ten times a second (Story.reds Tick): the markers follow the choice
+  // widgets (a hub redrawn spawns new option widgets, without ours).
+  public func Tick(now: Float) -> Void {
+    this.m_now = now;
+    if ArraySize(this.m_markPlayers) > 0 || StrLen(this.m_marksKey) > 0 {
+      this.DrawMarks();
+    }
+  }
+
+  // Our hub, by the id the choice widget knows it by (-1: none shown).
+  private func OurHub() -> Int32 {
+    if this.m_story.IsHostInSession() {
+      return this.m_sentOpen ? this.m_sentHub : -1;
+    }
+    return this.m_shown ? this.StandIn(this.m_shownHub) : -1;
+  }
+
+  // True: drawn on our hub, on screen.
+  private func DrawMarks() -> Bool {
+    let hub = this.OurHub();
+    let indexes: array<Int32>;
+    let labels: array<String>;
+    let colors: array<HDRColor>;
+    let key = "";
+    let i = 0;
+    while hub >= 0 && i < ArraySize(this.m_markPlayers) {
+      let player = this.m_markPlayers[i];
+      if TandemSync.InSession(player) {
+        let name = this.m_story.NameOf(player);
+        let suggests = this.m_markKinds[i] == 1;
+        ArrayPush(indexes, this.m_markIndexes[i]);
+        ArrayPush(labels, suggests ? TandemText.F("Dialogue-MarkSuggests", name) : name);
+        ArrayPush(colors, TandemMarkers.ColorOf(player));
+        if StrLen(key) > 0 {
+          key += ", ";
+        }
+        key += s"\(name) on \(this.m_markIndexes[i])\(suggests ? " (suggests)" : "")";
+      }
+      i += 1;
+    }
+    if StrLen(key) > 0 {
+      key = s"hub \(hub): \(key)";
+    }
+    let widget = this.Widget();
+    if !IsDefined(widget) {
+      this.m_marksOnScreen = false;
+      return false;
+    }
+    let shown = widget.TandemMarks(hub, indexes, labels, colors);
+    if !Equals(key, this.m_marksKey) && (shown || StrLen(key) == 0) {
+      TandemNative.Log(StrLen(key) > 0 ? s"choice: marks on \(key)" : "choice: marks cleared");
+      this.m_marksKey = key;
+    }
+    this.m_marksOnScreen = shown && StrLen(key) > 0;
+    return this.m_marksOnScreen;
+  }
+
+  // The game's choice widget on the HUD layer (Codeware's controllers),
+  // looked for again at most once a second while it is missing.
+  private func Widget() -> wref<dialogWidgetGameController> {
+    if IsDefined(this.m_widget) {
+      return this.m_widget;
+    }
+    let now = this.m_now;
+    if this.m_widgetScannedAt > 0.0 && now >= this.m_widgetScannedAt && now - this.m_widgetScannedAt < 1.0 {
+      return null;
+    }
+    this.m_widgetScannedAt = now;
+    let layer = GameInstance.GetInkSystem().GetLayer(n"inkHUDLayer");
+    if !IsDefined(layer) {
+      return null;
+    }
+    for controller in layer.GetGameControllers() {
+      let widget = controller as dialogWidgetGameController;
+      if IsDefined(widget) {
+        this.m_widget = widget;
+        TandemNative.Log("choice: the game's choice widget found");
+        return widget;
+      }
+    }
+    return null;
   }
 
   // ---- guest ----
@@ -338,6 +481,9 @@ public class TandemDialogue {
     if !this.m_story.IsGuest() {
       return;
     }
+    if event.extra != this.m_pendingHub || event.index == 0 {
+      this.ClearMarks();
+    }
     this.m_pendingHub = event.extra;
     this.m_pendingCount = event.index;
     this.m_pendingFlags = event.flags;
@@ -412,6 +558,8 @@ public class TandemDialogue {
     }
     this.m_shown = true;
     this.m_shownHub = this.m_pendingHub;
+    // Where we start, marked on the host's hub (and the others').
+    TandemStory.SendCursor(this.m_shownHub, 0, 0);
     TandemNative.Log(s"choice: hub shown (\(ArraySize(this.m_pendingTexts)) options)");
   }
 
@@ -420,6 +568,7 @@ public class TandemDialogue {
       return;
     }
     this.m_shown = false;
+    this.ClearMarks();
     let hubs: DialogChoiceHubs;
     let board = this.Board(false);
     board.SetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs, ToVariant(hubs), true);
@@ -454,8 +603,6 @@ public class TandemDialogue {
       TandemNative.Log(s"choice: suggested \(this.m_cursor)");
     }
   }
-
-  public func GuestTick() -> Void {}
 
   // Leaving: no hub or line of the host's stays on screen.
   public func Close() -> Void {
@@ -514,5 +661,133 @@ public class TandemDialogue {
       board.SetInt(GetAllBlackboardDefs().UIInteractions.ActiveChoiceHubID, 4242, true);
       TandemNative.Log("story: test hub shown");
     }
+  }
+}
+
+// ---- the others' markers on the game's choice hub (final.reds:399949) ----
+//
+// Called from TandemDialogue.DrawMarks only, on our story tick (the game
+// thread): no wrap, no callback. A marker is a widget of ours added to an
+// option's row: a chip and the player's name in their colour
+// (TandemMarkers.ColorOf), or "NAME suggests".
+
+// The markers on the hub `hub` (an id of DialogChoiceHubs), none on the
+// others. True: that hub is drawn and visible.
+@addMethod(dialogWidgetGameController)
+public final func TandemMarks(hub: Int32, indexes: array<Int32>, labels: array<String>, colors: array<HDRColor>) -> Bool {
+  let noIndexes: array<Int32>;
+  let noLabels: array<String>;
+  let noColors: array<HDRColor>;
+  let shown = false;
+  for controller in this.m_hubControllers {
+    if IsDefined(controller) {
+      if hub >= 0 && controller.GetId() == hub {
+        if controller.TandemMarks(indexes, labels, colors) && this.GetRootWidget().IsVisible() {
+          shown = true;
+        }
+      } else {
+        controller.TandemMarks(noIndexes, noLabels, noColors);
+      }
+    }
+  }
+  return shown;
+}
+
+// Each option's markers. True: the hub has its options and is visible.
+@addMethod(DialogHubLogicController)
+public final func TandemMarks(indexes: array<Int32>, labels: array<String>, colors: array<HDRColor>) -> Bool {
+  let names: array<String>;
+  let tints: array<HDRColor>;
+  let i = 0;
+  for item in this.m_itemControllers {
+    ArrayClear(names);
+    ArrayClear(tints);
+    let k = 0;
+    while k < ArraySize(indexes) {
+      if indexes[k] == i {
+        ArrayPush(names, labels[k]);
+        ArrayPush(tints, colors[k]);
+      }
+      k += 1;
+    }
+    if IsDefined(item) {
+      item.TandemMark(names, tints);
+    }
+    i += 1;
+  }
+  return ArraySize(this.m_itemControllers) > 0 && IsDefined(this.m_rootWidget) && this.m_rootWidget.IsVisible();
+}
+
+@addField(DialogChoiceLogicController)
+private let m_tandemMarks: wref<inkHorizontalPanel>;
+
+@addField(DialogChoiceLogicController)
+private let m_tandemMarksKey: String;
+
+// This option's markers, after its text (in the row that holds the text,
+// else at the option's right edge); redrawn only when they change.
+@addMethod(DialogChoiceLogicController)
+public final func TandemMark(labels: array<String>, colors: array<HDRColor>) -> Void {
+  let key = "";
+  for label in labels {
+    key += label + "|";
+  }
+  if Equals(key, this.m_tandemMarksKey) {
+    return;
+  }
+  this.m_tandemMarksKey = key;
+  if !IsDefined(this.m_tandemMarks) {
+    if ArraySize(labels) == 0 {
+      return;
+    }
+    let panel = new inkHorizontalPanel();
+    panel.SetName(n"tandem_marks");
+    panel.SetFitToContent(true);
+    panel.SetInteractive(false);
+    panel.SetVAlign(inkEVerticalAlign.Center);
+    panel.SetMargin(new inkMargin(24.0, 0.0, 0.0, 0.0));
+    let row = IsDefined(this.m_TextFlex) ? this.m_TextFlex.GetParentWidget() as inkHorizontalPanel : null;
+    if IsDefined(row) {
+      panel.Reparent(row);
+    } else {
+      panel.SetAnchor(inkEAnchor.CenterRight);
+      panel.SetAnchorPoint(new Vector2(0.0, 0.5));
+      panel.Reparent(this.m_RootWidget);
+    }
+    this.m_tandemMarks = panel;
+  }
+  this.m_tandemMarks.RemoveAllChildren();
+  let i = 0;
+  while i < ArraySize(labels) {
+    let chip = new inkRectangle();
+    chip.SetSize(new Vector2(6.0, 30.0));
+    chip.SetTintColor(colors[i]);
+    chip.SetVAlign(inkEVerticalAlign.Center);
+    chip.SetMargin(new inkMargin(i == 0 ? 0.0 : 20.0, 0.0, 8.0, 0.0));
+    chip.SetInteractive(false);
+    chip.Reparent(this.m_tandemMarks);
+    let text = new inkText();
+    text.SetFontFamily("base\\gameplay\\gui\\fonts\\raj\\raj.inkfontfamily");
+    text.SetFontStyle(n"Medium");
+    text.SetFontSize(30);
+    text.SetLetterCase(textLetterCase.UpperCase);
+    text.SetText(labels[i]);
+    text.SetTintColor(colors[i]);
+    text.SetVAlign(inkEVerticalAlign.Center);
+    text.SetFitToContent(true);
+    text.SetInteractive(false);
+    text.Reparent(this.m_tandemMarks);
+    i += 1;
+  }
+  this.m_tandemMarks.SetVisible(ArraySize(labels) > 0);
+  if ArraySize(labels) > 0 {
+    // The mark arrives: a short fade in.
+    let anim = new inkAnimDef();
+    let fade = new inkAnimTransparency();
+    fade.SetStartTransparency(0.0);
+    fade.SetEndTransparency(1.0);
+    fade.SetDuration(0.2);
+    anim.AddInterpolator(fade);
+    this.m_tandemMarks.PlayAnimation(anim);
   }
 }

@@ -371,6 +371,8 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Phone-AwayReply", "Too far from {1} to reply for them");
     this.Text("Tandem-Dialogue-Suggests", "{1} suggests: {2}");
     this.Text("Tandem-Dialogue-Suggested", "Suggested: {1}");
+    // A player's mark on the option they suggest (Dialogue.reds).
+    this.Text("Tandem-Dialogue-MarkSuggests", "{1} suggests");
     // Story.
     this.Text("Tandem-Story-NotRestored", "Co-op: your story could not be restored exactly. Load your last save");
     this.Text("Tandem-Story-SceneStarted", "{1} started a scene");
@@ -858,6 +860,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Phone-AwayReply", "Trop loin de {1} pour répondre à sa place");
     this.Text("Tandem-Dialogue-Suggests", "{1} suggère : {2}");
     this.Text("Tandem-Dialogue-Suggested", "Suggéré : {1}");
+    this.Text("Tandem-Dialogue-MarkSuggests", "{1} suggère");
     this.Text("Tandem-Story-NotRestored", "Coop : votre histoire n'a pas pu être restaurée à l'identique. Chargez votre dernière sauvegarde");
     this.Text("Tandem-Story-SceneStarted", "{1} a lancé une scène");
     this.Text("Tandem-Story-Busy", "{1} est occupé(e)");
