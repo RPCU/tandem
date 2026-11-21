@@ -319,6 +319,12 @@ public class TandemTime {
         local = true;
       }
     }
+    // A shop's or the stash's screen slows the world (0.05) for a reason
+    // scripts cannot name: ours alone, like any menu's.
+    let vendors = TandemVendors.Of(this.m_game);
+    if IsDefined(vendors) && vendors.ScreenUp() {
+      local = true;
+    }
     let factor = TandemNative.TimeUnexplainedSlow(times.GetActiveTimeDilation(), explained, local);
     if factor < 1.0 && !this.m_unexplainedSaid {
       this.m_unexplainedSaid = true;

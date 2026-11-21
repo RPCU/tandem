@@ -55,7 +55,9 @@
   exceptions stay as they were: melee hit stop (`meleeHit`,
   `meleeHitStrong`) and deflect local, menus (`WorldMap`, the TweakDB
   profiles' reasons of `radialMenu`, `hubMenu`, `vehicleRadioMenu`,
-  `nanoWireBreach`, `settings`), a ride's skip (`customFFTimeDilation`, a
+  `nanoWireBreach`, `settings`; a shop's or the stash's screen, the
+  vendor hub menu, whose 0.05 has no reason scripts can name: while
+  `TandemVendors.ScreenUp`, seen in game 2026-11-21), a ride's skip (`customFFTimeDilation`, a
   speed-up) and our V slowed by another V's bubble (`tandemBubble`) are
   never taken for one. A host cannot take it back (no reason to hold): its
   world stays slowed and the NPCs it shares are exempted, as with

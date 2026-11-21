@@ -22,6 +22,12 @@ public class TandemPuppet {
   public let worn: array<TweakDBID>;
   // The held items received for this player that the puppet holds.
   public let heldChanges: Int32;
+  // What its hands were last asked to hold, and when they are looked at
+  // again (0: not due): a second ask while the first item still spawns
+  // took it away, the hand stayed empty (presence-audio, 2026-11-21).
+  public let askedRight: TweakDBID;
+  public let askedLeft: TweakDBID;
+  public let armCheckAt: Float;
   // Vehicles: the seats received for this player that the puppet sits in;
   // the copy of their car while they drive it; where the puppet is mounted;
   // a seat waiting for its vehicle to exist.
@@ -1059,7 +1065,9 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   private func HandleCommand() -> Void {
-    let now = EngineTime.ToFloat(GameInstance.GetSimTime(this.GetGameInstance()));
+    // Real time: the sim time is dilated (a shop's or the stash's screen
+    // slows the world to 0.05, and twice a second became every 9 s).
+    let now = EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance()));
     // Twice a second; every frame while the test pilot plays (its actions
     // and heartbeat come through here).
     let due = now - this.m_lastCommandCheck >= 0.45;
@@ -2708,7 +2716,9 @@ public class TandemSystem extends ScriptableSystem {
         }
       }
       if puppet.dressed && TandemNative.RemoteHeldChanges(puppet.player) != puppet.heldChanges {
-        this.Rearm(puppet);
+        this.Rearm(puppet, false);
+      } else if puppet.dressed && puppet.armCheckAt > 0.0 && this.Now() >= puppet.armCheckAt {
+        this.CheckArmed(puppet);
       }
       if puppet.dressed && TandemNative.RemoteSeatChanges(puppet.player) != puppet.seatChanges {
         this.Reseat(puppet);
@@ -3198,8 +3208,9 @@ public class TandemSystem extends ScriptableSystem {
     }
   }
 
-  // What the player holds, in the puppet's hands.
-  private func Rearm(puppet: ref<TandemPuppet>) -> Void {
+  // What the player holds, in the puppet's hands. The same items asked
+  // again within 3 s are left to spawn (`again` asks anyway).
+  private func Rearm(puppet: ref<TandemPuppet>, again: Bool) -> Void {
     let entity = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
     if !IsDefined(entity) {
       return;
@@ -3207,8 +3218,32 @@ public class TandemSystem extends ScriptableSystem {
     puppet.heldChanges = TandemNative.RemoteHeldChanges(puppet.player);
     let right = TandemNative.RemoteHeld(puppet.player, false);
     let left = TandemNative.RemoteHeld(puppet.player, true);
+    if !again && puppet.armCheckAt > 0.0 && right == puppet.askedRight && left == puppet.askedLeft {
+      TandemNative.LogDebug(s"player \(puppet.player): holds the same again, still spawning");
+      return;
+    }
+    puppet.askedRight = right;
+    puppet.askedLeft = left;
+    puppet.armCheckAt = this.Now() + 3.0;
     let ok = TandemWeapons.Hold(entity, t"AttachmentSlots.WeaponRight", right) && TandemWeapons.Hold(entity, t"AttachmentSlots.WeaponLeft", left);
     TandemNative.Log(s"player \(puppet.player): holds \(TDBID.ToStringDEBUG(right)) / \(TDBID.ToStringDEBUG(left)) (\(ok))");
+  }
+
+  // 3 s after an ask: a hand without what it was asked for is asked again.
+  private func CheckArmed(puppet: ref<TandemPuppet>) -> Void {
+    puppet.armCheckAt = 0.0;
+    let entity = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
+    if !IsDefined(entity) {
+      return;
+    }
+    let right = TandemWeapons.Held(entity, t"AttachmentSlots.WeaponRight");
+    let left = TandemWeapons.Held(entity, t"AttachmentSlots.WeaponLeft");
+    if right != puppet.askedRight || left != puppet.askedLeft {
+      TandemNative.Log(s"player \(puppet.player): hands hold \(TDBID.ToStringDEBUG(right)) / \(TDBID.ToStringDEBUG(left)) 3 s after the ask: asked again");
+      this.Rearm(puppet, true);
+      // Once: a hand that cannot hold it waits for the next change.
+      puppet.armCheckAt = 0.0;
+    }
   }
 
   // The others' shots, on their puppets' weapons.

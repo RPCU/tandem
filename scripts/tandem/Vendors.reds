@@ -382,6 +382,11 @@ public class TandemVendors {
     }
   }
 
+  // A shop's or the stash's screen is up (both are the vendor hub menu).
+  public func ScreenUp() -> Bool {
+    return IsDefined(this.m_screen);
+  }
+
   public func Bind(screen: ref<VendorHubMenuGameController>) -> Void {
     this.m_screen = screen;
     TandemNative.Log(s"vendor: the shop's screen is up (\(this.m_now - this.m_openedAt) s after we opened one)");
