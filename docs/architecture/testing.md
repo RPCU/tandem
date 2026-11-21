@@ -425,7 +425,8 @@ on` its camera's views go out, scene or not, for a guest to spectate
   `--hack-car N` brakes the car another player drives. The game side's
   test commands: `tools/game.sh cmd hack npc [RECORD]` (our V quickhacks
   the nearest proxy), `hack car`, and `npc weakspot [N]` (our V's hit of
-  N, default 40, on the nearest proxy's first whole weak spot).
+  N, default 40, on the nearest proxy's first whole weak spot that is not
+  shut, flagged `WeakspotHit` as a shot's).
 - `--region-immortal said|silent` (`--mode region`): the mock's own NPCs
   cannot die (health floors at 1 %); `said` tells the others with
   `NpcHealth`'s `kNpcProtected`, `silent` does not (scenario
