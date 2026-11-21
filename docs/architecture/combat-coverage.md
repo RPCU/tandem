@@ -81,6 +81,7 @@ Counts at the end. Evidence names a scenario, a code path or a dated check.
 <!-- prettier-ignore -->
 | Attack | On the host's V | On a guest's V | Seen on the other game |
 | --- | --- | --- | --- |
+| Choosing whom to attack (threat weights) | W vanilla | U the guest's puppet weighed as a player (the player's base and terms, `BlockTargetingPlayer` honoured: `Threats.reds`, `npcs-target-guest`; not yet run in game; **was D**: weighed as an NPC, 0.01 against V's 1.0) | U the proxy's target (`NpcAnims`) |
 | Gunfire | W vanilla | U fired from the proxy and applied on the guest's game, whether it may land the host's time between hits on the puppet (`npcs-shoot-guest`; **was B** too: every shot missed, the proxy's line of sight reads 0), by a player's rules: the group and cover coefficients and a V's base, which the game gives no NPC target (`TandemShouldHitAsPlayer`, `npcs-shoot-puppet`; not yet run in game); **was B**: those hits were dropped as a proxy's own (`IsProxyComputed`), fixed here (`TandemShots.IsSimulatedHit`) | U the shot on the proxy (`NpcShot`) |
 | Smart weapons | W vanilla | D the proxy fires plain rounds (no lock), the hit is still the guest's | U |
 | Melee | W vanilla | U the host's hit is held until the proxy's swing lands on the guest's screen, then run on its V (`TandemFight.MeleeHold`, `combat-melee-guest`) | U the NPC's animation (`NpcAnims`) |
@@ -128,10 +129,10 @@ then W; "W off / U on" counts as the default, W; "was B" is history),
 | Table | Cells | W | D | B | U | – |
 | --- | --- | --- | --- | --- | --- | --- |
 | The Vs attacking (28 rows × 7) | 196 | 69 | 17 | 1 | 34 | 75 |
-| The host's NPCs attacking (10 × 3) | 30 | 10 | 2 | 0 | 18 | 0 |
+| The host's NPCs attacking (11 × 3) | 33 | 11 | 2 | 0 | 20 | 0 |
 | Companions and allies | 5 | 1 | 1 | 0 | 2 | 1 |
 | Healing and consumables | 5 | 1 | 1 | 0 | 2 | 1 |
-| All | 236 | 81 | 21 | 1 | 56 | 77 |
+| All | 239 | 82 | 21 | 1 | 58 | 77 |
 
 Before this change three of today's U were B (NPC gunfire on a guest, NPC
 grenades and every V's thrown object unseen on the other game) and the

@@ -252,6 +252,50 @@ the first group session.
   civilians friendly to the puppet, neutral to V, and no NPC near V
   (fixed since, to run again; engine-knowledge §13.17).
 
+- **Whom NPCs attack** (`scripts/tandem/Threats.reds`, engine-knowledge
+  §13.123): an NPC weighs each hostile threat in `AIActionTarget`, and only
+  the engine's player-controlled flag gives a threat a player's weight; a
+  puppet has it off, so the game that runs an NPC weighed a guest's V as
+  one more NPC. On that game (the host, or a guest owning NPCs under
+  regions: a proxy's brain is off, and the `Tandem.Proxy` tag is checked
+  too) a puppet gets the player's treatment: `RegularThreatCalculation`
+  adds the 0.99 between an NPC's base (0.01) and a player's (1.0), scaled
+  as vanilla scales the whole (×0.1 grappled, ×0.5 unarmed);
+  `BossThreatCalculation` the 1.99 between 0.01 and 2.0 (not for a
+  companion dropped after 3 s as its target, as vanilla);
+  `MadnessThreatCalculation` has no player term. `BlockTargetingPlayer` (a
+  quest's "do not target the player") is honoured for a puppet: after
+  `UpdateThreatsValue` a blocked puppet's threat base is -1, and
+  `SetTopThreatToCombatTarget.SetCombatTarget` refuses it, as vanilla does
+  for a player; blocked means the effect on the puppet, on the NPC, or on
+  our V (a quest that spares the player on this game spares every V). These
+  run on the AI's job threads: they read, call the wrapped method and change
+  only their out value or, as the wrapped method does, the NPC's own target
+  tracker. A puppet is known by its spawn tag (`Tandem.Puppet`, read from
+  Codeware's `DynamicEntitySystem` under its lock), never from
+  `TandemSystem`'s puppet list, which the game thread changes. Tools:
+  `tools/game.sh cmd npc threats` (each NPC we run with hostile threats: its
+  top one, what it holds on our V and on each puppet), `npc threats npc` /
+  `npc threats player` (vanilla's weights or the player's, to compare;
+  `test reset` puts the player's back), `npc threats spawn` (two hostile
+  gangers 4 m beyond the first puppet), `test query threat puppet`;
+  scenario `npcs-target-guest`. Not yet run in game.
+
+  The other readers of the flag (§13.123), not given to puppets: security
+  areas (`SecurityAreaControllerPS.AreaEntered`/`AreaExited`: one
+  `m_isPlayerInside` per area in a persistent state, which a puppet leaving
+  would clear while V is inside) and the senses' breach detection
+  (`OnSecurityAreaCrossingPerimeter`, "breacher is not player"): a trespass
+  is the security system's state (blacklist, alarm), which needs an owner
+  of its own first; NPCs still see a trespassing puppet by their senses.
+  `NPCPuppet.CheckNPCKilledThrowingGrenade`: the local player's "Denied"
+  achievement, never a guest's kill. `MechanicalImpactComponent
+.FilterOutVehicleImpact`: a car's hit on an NPC is its driver's game's
+  (Wheels.reds), so a puppet's car copy must not knock it down twice.
+  Proficiency level-up (`PlayerDevelopmentData`): telemetry only. The
+  native `gameEffectObjectFilter_NoInstigatorIfPlayerControlled`: out of
+  scripts' reach (the flag itself, row 2 of the research's ranked table).
+
 - **Vendors** (`scripts/tandem/Vendors.reds`, `progression.md` "Vendors"):
   a vendor placed in the world is named by its owner with its static
   entity (`NpcVendor`, with the NPC's records). A player whose game shows

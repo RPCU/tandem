@@ -210,7 +210,9 @@ Physics/InputHandler/Inventory/Stats/…Component`. [2.5-untested]
    threat (1.0 + the same distance/visibility terms); in
    `UpdateThreatsValue`, give it 2.0 and honour `BlockTargetingPlayer`.
    Reads only, so `// job thread safe:`. Scenario: `npc-targets-guest`
-   (V far, puppet near, two hostiles), assert the top threat.
+   (V far, puppet near, two hostiles), assert the top threat. Built
+   2026-11-21 (`Threats.reds`, scenario `npcs-target-guest`; npcs.md,
+   "Whom NPCs attack", also for the other readers); not yet run in game.
 2. **The flag (row 2), only if row 1 is not enough.** First a read-only
    pass: `tools/re/xref` the functions that test `+0x1fc & 4` and check
    which also read `+0x1f0`. Only then a plugin setter behind a startup
