@@ -27,6 +27,10 @@ void TickEnd();
 // False on any other thread than the game thread (the last script tick's),
 // and while none is known.
 bool OnGameThread();
+// Windows thread ids (0: not known yet): the frame update's, the last script
+// tick's. Any thread (the stall report, stall.hpp).
+std::uint32_t FrameThread();
+std::uint32_t TickThread();
 // Any thread. `text` names a hook the first time it is seen (the CName's
 // string, which the engine keeps).
 void HookRan(std::uint64_t name, const char *(*text)(std::uint64_t));

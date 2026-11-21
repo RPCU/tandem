@@ -192,6 +192,9 @@ void TickEnd() {
   }
 }
 
+std::uint32_t FrameThread() { return g_frame.load(std::memory_order_relaxed); }
+std::uint32_t TickThread() { return g_tick.load(std::memory_order_relaxed); }
+
 bool OnGameThread() {
   const auto game = GameThread();
   return game != 0 && Here() == game;

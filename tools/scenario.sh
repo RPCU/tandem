@@ -90,7 +90,12 @@ fail() {
   tail -n +$((peer_mark + 1)) .cache/peer.log >"$out/peer.log" 2>/dev/null || true
   [ -z "$piloted" ] || cp .cache/pilot.log "$out/pilot.log" 2>/dev/null || true
   $game shot "scenario-fail" >/dev/null 2>&1 && cp .cache/shots/scenario-fail.png "$out/" || true
-  if grep -q 'watchdog: game thread silent' "$out/game.log" 2>/dev/null; then
+  # The stall report (plugin/src/stall.hpp): the net thread stopped too, so
+  # no watchdog line came; its stacks are in it.
+  remote "cat '$dir/red4ext/plugins/tandem/stall.log'" >"$out/stall.log" 2>/dev/null || true
+  [ -s "$out/stall.log" ] || rm -f "$out/stall.log"
+  if grep -q 'watchdog: game thread silent' "$out/game.log" 2>/dev/null ||
+    { [ -f "$out/stall.log" ] && ! tail -1 "$out/stall.log" | grep -q ' is back after '; }; then
     $game bt >/dev/null 2>&1 && cp .cache/re/bt.txt "$out/bt.txt" || true
     echo "  the game thread stopped: backtraces in $out/bt.txt"
   fi
