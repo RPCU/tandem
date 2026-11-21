@@ -746,7 +746,9 @@ public class TandemTradeTable {
     if EquipmentSystem.GetInstance(player).IsEquipped(player, id) {
       return "Trade-Not-Equipped";
     }
-    if RPGManager.IsItemBroken(strong) || RPGManager.IsItemSingleInstance(data) {
+    // A plain stack is one instance with a quantity (single instance): the
+    // rule is for the others (refused 2 components, trade-peer 2026-11-21).
+    if RPGManager.IsItemBroken(strong) || (!plain && RPGManager.IsItemSingleInstance(data)) {
       return "Trade-Not-Single";
     }
     if Equals(type, gamedataItemType.Con_Skillbook) || Equals(type, gamedataItemType.Gen_Readable) || Equals(type, gamedataItemType.Gen_MoneyShard) || Equals(type, gamedataItemType.Gen_Keycard) {

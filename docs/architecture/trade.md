@@ -54,7 +54,7 @@ and §13.38.8.
 | never an iconic, a keycard, or anything `TandemLoot.Important`                                                   | every player has those already: whoever gets one, every V gets it. A trade would make a second |
 | the game's own "can be sold" tags (`UIInventoryItemsManager.IsSellableStatic`), and not hidden from the backpack | the base rule                                                                                  |
 | not equipped, not installed (`EquipmentSystem.IsEquipped`)                                                       | unequip it first                                                                               |
-| not broken, not single-instance                                                                                  | the game would refuse or merge it                                                              |
+| not broken, not single-instance (but plain stacks, one instance with a quantity)                                 | the game would refuse or merge it                                                              |
 | not a skill book, a readable, a money shard                                                                      | the game uses them up the moment they are given                                                |
 | not a grenade, an inhaler, an injector                                                                           | counted in charges, and the stash screen refuses them too                                      |
 | crafting components and ammunition: always                                                                       | plain stacks (the stash screen hides ammunition: by command only, for now)                     |
