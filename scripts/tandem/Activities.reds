@@ -155,6 +155,17 @@ public class TandemActivities {
     return this.m_contests;
   }
 
+  // (test reset) no test kind of ours left set (`busy KIND`), nor a contest's.
+  public func ClearTest() -> Void {
+    if this.m_test != 0 {
+      this.m_test = 0;
+      TandemNative.Log("activities: (test) our V busy none");
+    }
+    if IsDefined(this.m_contests) {
+      this.m_contests.ClearTest();
+    }
+  }
+
   public func Stop() -> Void {
     this.HidePrompt();
     this.ReleaseAll();
