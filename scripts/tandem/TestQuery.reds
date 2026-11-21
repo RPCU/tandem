@@ -6,7 +6,11 @@
 // "none" when there is nothing to read (no V, not mounted, no such NPC or
 // entry). Solo or in a session.
 //
-//   health                our V's health, percent (2 decimals)
+//   health                our V's health, percent (2 decimals); starts
+//                         the watch "health low" reads
+//   health low            the lowest our V's health went since the last
+//                         "health", read every tick: a hit's dip that
+//                         regeneration fills again within a second
 //   item RECORD           how many of RECORD our inventory holds (0: none)
 //   money                 our eddies
 //   fact NAME             a quest fact's value (0: never set)
@@ -32,9 +36,16 @@ public class TandemTestQuery {
     let asked = StrAfterFirst(command, "test query ");
     let player = GetPlayer(game);
     let value = "none";
-    if Equals(what, "health") {
+    if Equals(what, "health") && Equals(arg, "low") {
+      let low = 0.0;
+      if system.HealthLow(low) {
+        value = FloatToStringPrec(low, 2);
+      }
+    } else if Equals(what, "health") {
       if IsDefined(player) {
-        value = TandemTestQuery.Health(game, player);
+        let percent = GameInstance.GetStatPoolsSystem(game).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, true);
+        value = FloatToStringPrec(percent, 2);
+        system.StartHealthWatch(percent);
       }
     } else if Equals(what, "item") && count > 3 {
       if IsDefined(player) {
@@ -85,7 +96,7 @@ public class TandemTestQuery {
       value = "unknown";
     }
     if Equals(value, "unknown") {
-      TandemNative.Log(s"test query: unknown: \(asked) (health, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health, threat puppet)");
+      TandemNative.Log(s"test query: unknown: \(asked) (health, health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health, threat puppet)");
       return;
     }
     TandemNative.Log(s"test query: \(asked) = \(value)");

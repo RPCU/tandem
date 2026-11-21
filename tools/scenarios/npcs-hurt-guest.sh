@@ -1,9 +1,13 @@
 # As a guest of a replayed host whose NPC shoots it every 2 s: each hit runs on our V by our game's rules and lowers its health
 # shellcheck shell=bash disable=SC2317,SC2154
 ensure join
+# Before the host's first hit (it comes 2 s after the mock player starts);
+# this also starts the watch of the lowest health, which a hit's dip shows
+# however fast our V's regeneration fills it again (10 physical is a point
+# or so through V's armour).
+query before health
 host_world recordings/npcs.rec --mode idle --body female --hit-you 2
 expect 'in the session as player' 30
-query before health
 expect 'npcs: guest, own crowd off' 20
 expect 'puppet 6[0-9]{4}: controller handed to the engine' 30
 expect_peer 'npc [0-9]+ hit player [0-9]+ for 10 physical' 15
@@ -16,8 +20,8 @@ expect 'combat: npc hit applied to our V: [0-9.]+ damage, health [0-9.]+ -> [0-9
 mark
 expect 'combat: npc hit applied to our V: [0-9.]+ damage' 10
 reject 'npc hit on our V dealt no damage'
-query after health
-expect_changed "$before" "$after" down
+query low health low
+expect_changed "$before" "$low" down
 # Few hits: stop the host before V is in danger.
 # Only what comes after: the previous host's goodbye may be just past the start.
 mark
