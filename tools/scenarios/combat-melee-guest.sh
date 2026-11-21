@@ -10,10 +10,8 @@ expect 'npcs: hit by npc [0-9]+: 10(\.0+)? physical' 10
 # Held while the proxy's swing is still to come (a replayed NPC has a track).
 expect "npcs: npc [0-9]+'s melee hit on our V held [0-9.]+ ms" 10
 expect 'combat: npc hit applied to our V: [0-9.]+ damage' 10
-# Not "health A -> A": the hit changed it, and the game holds it lower.
-hit=$(since | grep -oE 'combat: npc hit applied to our V: [0-9.]+ damage, health [0-9.]+ -> [0-9.]+' | tail -1 || true)
-from=${hit#*health }
-expect_changed "${from%% -> *}" "${hit##* -> }" down
+# (Our log line's health is read around DealDamages, before the game's
+# pool takes the damage: the queries are the measure.)
 query after health
 expect_changed "$before" "$after" down
 mark

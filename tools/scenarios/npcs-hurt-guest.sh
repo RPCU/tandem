@@ -10,10 +10,8 @@ expect_peer 'npc [0-9]+ hit player [0-9]+ for 10 physical' 15
 expect 'npcs: hit by npc [0-9]+: 10(\.0+)? physical' 10
 # 10 physical before our armour: a few points off V's health each time.
 expect 'combat: npc hit applied to our V: [0-9.]+ damage, health [0-9.]+ -> [0-9.]+' 10
-# Not "health A -> A": the hit changed it.
-hit=$(since | grep -oE 'combat: npc hit applied to our V: [0-9.]+ damage, health [0-9.]+ -> [0-9.]+' | tail -1 || true)
-from=${hit#*health }
-expect_changed "${from%% -> *}" "${hit##* -> }" down
+# (Our log line's health is read around DealDamages, before the game's
+# pool takes the damage: the queries are the measure.)
 # The next one, 2 s later.
 mark
 expect 'combat: npc hit applied to our V: [0-9.]+ damage' 10
