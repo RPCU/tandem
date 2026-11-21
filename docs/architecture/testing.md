@@ -243,6 +243,7 @@ read):
 | `position` | our V's X Y Z |
 | `mounted [player N \| puppet]` | `RECORD SLOT ENTITYHASH` of the vehicle our V (player N's puppet, the first remote player's) is mounted in (`MountingFacility`) |
 | `npc ID health` | a shared NPC's health, percent: our own NPC or our proxy |
+| `wanted` | our V's wanted level, 0..5 (`PreventionSystem.GetHeatStageAsInt`) |
 | `threat puppet` | the largest threat value an NPC we run near our V holds on the first remote player's puppet (`TargetTrackerComponent`) |
 | `car marks` | the shared vehicles another player's quickhack is marked on now (their traffic ids; `Hacks.reds`), or `none` |
 | `device KIND WHAT` | the nearest device of KIND within 40 m: `attitude` (to our V: `friendly`, `neutral`, `hostile`), `puppet` (to the first puppet), `target` (what it follows: `none`, `V`, `puppet`, `other`), `alarm` (its security system: `SAFE`, `ALERTED`, `COMBAT`), `mark` (the player whose hack is marked on it; 0: none) |
