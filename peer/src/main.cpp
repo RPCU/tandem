@@ -283,6 +283,7 @@ struct Options {
   int answerSeconds{-1};         // join: answer the host's ringing call after this long (-1: never)
   std::uint32_t replyEntry{};    // join: reply to the text with this choice entry hash
   int suggestIndex{-1};          // join: suggest this option of every hub (-1: never)
+  int hoverIndex{-1};            // join: move our cursor to this option of every hub (-1: never)
   int sandevistanAtSeconds{-1};  // switch a Sandevistan on this long into the session (-1: never)
   int sandevistanForSeconds{5};  // ...for this long
   float sandevistanScale{0.25f}; // ...asking for this world speed
@@ -748,6 +749,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --answer N         join: answer the host's ringing call after N seconds\n"
          "  --reply HASH       join: reply to a text with this choice entry (journal hash)\n"
          "  --suggest N        join: suggest option N of every choice hub the host shows\n"
+         "  --hover N          join: move our cursor to option N of every choice hub the\n"
+         "                     host shows (the host's hub marks it)\n"
          "  --sandevistan-at N switch a Sandevistan on N seconds after another player is in\n"
          "                     the session: the host slows the NPCs around this V\n"
          "  --sandevistan-for N  --sandevistan-at: switch it off after N seconds (default 5)\n"
@@ -1888,6 +1891,8 @@ Options Parse(int argc, char **argv) {
       options.replyEntry = Number<std::uint32_t>(value);
     } else if (flag == "--suggest") {
       options.suggestIndex = Number<int>(value);
+    } else if (flag == "--hover") {
+      options.hoverIndex = Number<int>(value);
     } else if (flag == "--anims") {
       options.animsFile = value;
     } else if (flag == "--path") {
@@ -2292,6 +2297,8 @@ private:
 //   hide                         the last line goes
 //   hub ID TITLE|OPTION|...      a choice hub (no options: closed)
 //   pick ID INDEX                the host picks (every hub closes)
+//   hover ID INDEX               the host's cursor on an option (marked on
+//                                the guests' hubs)
 //   tier N                       the host's scene tier (1..5)
 //   reward RECORD [QUESTHASH]    a quest reward for every guest
 //   prefabs REF[,REF]|off        the world prefabs the host's quests have
@@ -2623,6 +2630,10 @@ std::optional<tandem::proto::Message> StoryMessage(const StoryStep &step, std::u
       return proto::ChoiceCursor{.hub = std::stoi(a[0]),
                                  .index = static_cast<std::int8_t>(std::stoi(a[1])),
                                  .kind = proto::kCursorPicked};
+    if (step.verb == "hover" && a.size() >= 2)
+      return proto::ChoiceCursor{.hub = std::stoi(a[0]),
+                                 .index = static_cast<std::int8_t>(std::stoi(a[1])),
+                                 .kind = proto::kCursorHover};
     if (step.verb == "tier" && !a.empty())
       return proto::StoryState{.tier = static_cast<std::uint8_t>(std::stoi(a[0]))};
     if (step.verb == "private" && !a.empty())
@@ -5345,6 +5356,14 @@ int main(int argc, char **argv) {
                   call->answeredBy == proto::kNoPlayer)
                 toAnswer = {call->contact, std::chrono::steady_clock::now() +
                                                std::chrono::seconds(options.answerSeconds)};
+              if (const auto *hub = std::get_if<proto::ChoiceHub>(&e.message);
+                  hub && options.hoverIndex >= 0 && !hub->options.empty() && !options.host) {
+                endpoint->SendStory(
+                    proto::ChoiceCursor{.hub = hub->hub,
+                                        .index = static_cast<std::int8_t>(options.hoverIndex),
+                                        .kind = proto::kCursorHover});
+                Log("hover option {} of hub {}", options.hoverIndex, hub->hub);
+              }
               if (const auto *hub = std::get_if<proto::ChoiceHub>(&e.message);
                   hub && options.suggestIndex >= 0 && !hub->options.empty() && !options.host) {
                 endpoint->SendStory(
