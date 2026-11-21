@@ -1,11 +1,10 @@
 # As a guest, a vendor the host runs is a proxy here: beside it we open our own game's vendor of the same placed NPC (our stock, our money), the puppet shows us busy in a shop; when the host's vendor dies, ours is hidden and the shop stays shut
 # shellcheck shell=bash disable=SC2317
-# Where: VENDOR_AT ("X Y Z", default V's flat: a vendor of our own world
-# within 200 m of it). The mock host stands in front of us, so its region
+# Where: VENDOR_AT (a fixture or "X Y Z", default kabuki-market, testing.md
+# "Fixtures": a vendor of our own world within 200 m of it). The mock host stands in front of us, so its region
 # covers ours; its vendor is our own nearest one, by record, place and entity.
 ensure join
-cmd teleport "${VENDOR_AT:-home}"
-pause 4
+at "${VENDOR_AT:-kabuki-market}"
 cmd vendor near
 expect 'vendor: near .* record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' 10
 line=$(since | grep -oE 'vendor: near .* record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' | tail -1)

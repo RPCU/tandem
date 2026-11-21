@@ -2,10 +2,11 @@
 # shellcheck shell=bash disable=SC2317
 ensure host
 # Someone sitting, leaning or smoking: the nearest NPC in a workspot around
-# V's flat (Watson, busy by day), V moved within sharing range of it. Rain
-# and night empty the street: then this step fails, not the sync.
-cmd teleport home
-pause 8
+# NPCS_AT (a fixture or "X Y Z", default kabuki-market: its stalls, busy by
+# day; testing.md "Fixtures"), V moved within sharing range of it. Rain and
+# night empty the street: then this step fails, not the sync.
+at "${NPCS_AT:-kabuki-market}"
+pause 5
 cmd npc seek 150
 expect 'npc seek: [1-9][0-9]* in a workspot' 10
 pause 3

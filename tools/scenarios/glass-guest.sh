@@ -1,15 +1,15 @@
 # As a host: something breaks in the mock guest's game near V (world glass has no name: an impulse at the place); the levers tried alone first
 # shellcheck shell=bash disable=SC2317
-# Where: GLASS_AT ("X Y Z": V looking at a window or a glass pane; V's flat
-# window does not break, so name a shop front or a bus shelter) and
+# Where: GLASS_AT (a fixture or "X Y Z [YAW]": V looking at a window or a glass
+# pane, a shop front or a bus shelter; default kabuki-market, testing.md
+# "Fixtures") and
 # GLASS_BREAK ("X,Y,Z": a point on that pane; default: where V stands,
 # which proves the path, not the pane).
 # To look at: the pane V looks at shatters at `glass break`; the pane at
 # GLASS_BREAK when the guest's break arrives, with nobody shooting; nothing
 # and nobody takes damage.
 ensure host
-cmd teleport "${GLASS_AT:-home}"
-pause 4
+at "${GLASS_AT:-kabuki-market}"
 mark
 cmd where
 expect 'where: [-0-9.]+ ' 5

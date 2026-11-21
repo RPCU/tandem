@@ -1,17 +1,14 @@
 # As host: a wanted guest is chased by a police car of ours with its crew (at five stars, the MaxTac AV too), hostile to its puppet and not to our V; they stand down with its stars
 # shellcheck shell=bash disable=SC2317
 # Needs roads near V that the spawn system can bring a car on: from the
-# test field there may be none (then "no road" or "no place for a car" in
-# the log and units on foot only). POLICE_AT="X Y Z [YAW]" teleports our V
-# to a street first.
+# test field it found none (2026-11-21: "no place for a car out of player
+# N's sight (0 found)", units on foot only). POLICE_AT (a fixture or "X Y Z
+# [YAW]", default drake-ave, testing.md "Fixtures") is a street.
 ensure host
 # Cars and the AV are off by default until proven in game: on for this test.
 cmd police cars on
 expect 'police: cars and the AV for the others on' 5
-if [ -n "${POLICE_AT:-}" ]; then
-  cmd teleport "$POLICE_AT"
-  pause 5
-fi
+at "${POLICE_AT:-drake-ave}"
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female --heat 3 --heat-at 8 --heat-for 80
 expect 'joined \(player [0-9]+' 20
 expect 'police: player [0-9]+ wanted level 0 -> 3' 30

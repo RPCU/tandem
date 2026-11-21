@@ -1,11 +1,11 @@
 # As a guest: V breaches the host's network (its outcome faked as a minigame-skipping mod does); the host runs it, refuses its own second breach
 # shellcheck shell=bash disable=SC2317
-# Where: BREACH_AT ("X Y Z": an access point within 40 m; V's flat has none).
+# Where: BREACH_AT (a fixture or "X Y Z": an access point within 40 m; default
+# h11-basement, testing.md "Fixtures").
 # To look at: V's eddies and components arrive a ping after the breach (the
 # guest's rewards, paid on the host's grant); the access point's lights go out.
 ensure join
-cmd teleport "${BREACH_AT:-home}"
-pause 4
+at "${BREACH_AT:-h11-basement}"
 mark
 cmd device near ap
 expect 'devices: nearest ap [0-9a-f]+ AccessPointControllerPS at ' 10

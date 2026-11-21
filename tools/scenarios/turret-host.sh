@@ -1,13 +1,12 @@
 # As a host: the mock guest's copy of a turret near V "has its V"; our turret takes the guest's puppet as a target, turns to it, fires, and every shot is told
 # shellcheck shell=bash disable=SC2317
-# Where: TURRET_AT ("X Y Z": a place with a security turret that is on,
-# within 60 m and in sight of V's front; V's flat has none, so name one).
+# Where: TURRET_AT (a fixture or "X Y Z": a security turret that is on,
+# within 60 m and in sight of V's front; default arasaka-park).
 # To look at: the turret turns to the other player's puppet (in front of V)
 # and fires at it; the puppet takes no damage here (its player's game
 # decides); V is fired at only when the turret has V too.
 ensure host
-cmd teleport "${TURRET_AT:-home}"
-pause 4
+at "${TURRET_AT:-arasaka-park}"
 mark
 cmd device near turret
 expect 'devices: nearest turret [0-9a-f]+ SecurityTurretControllerPS at ' 10

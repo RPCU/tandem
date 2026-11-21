@@ -1,12 +1,15 @@
 # As a guest, grouped: our V uses the host's placed object; the host's game is asked and does it (the mock host says performed), our device change waits for it, a second use is asked again
 # shellcheck shell=bash disable=SC2317
-# Where: INTERACT_AT ("X Y Z", default V's flat: its door and lifts are placed devices).
+# Where: INTERACT_AT (a fixture or "X Y Z", default v-door, testing.md
+# "Fixtures": V's own door, a placed device, within 200 m).
 ensure join
 peer host --mode idle --body female --interact-answer performed
 expect 'in the session as player' 30
 expect 'devices: following [0-9]+ around us \(guest\)' 30
-cmd teleport "${INTERACT_AT:-home}"
-pause 4
+at "${INTERACT_AT:-v-door}"
+# Beside the nearest door (V's own at v-door): the device the uses below take.
+cmd device goto door
+expect 'devices: at door [0-9a-f]+ [A-Za-z]+: ' 10
 cmd story interact look device
 expect 'interact look: [A-Za-z]+ .*, placed true' 10
 mark

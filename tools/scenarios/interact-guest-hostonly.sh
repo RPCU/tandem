@@ -1,12 +1,15 @@
 # As a guest, grouped: the host's game says our use is its own to do (the mock host says host-only); the notice names the host, the second use is refused here without asking, and the prompt is greyed
 # shellcheck shell=bash disable=SC2317
-# Where: INTERACT_AT ("X Y Z", default V's flat).
+# Where: INTERACT_AT (a fixture or "X Y Z", default v-door, testing.md
+# "Fixtures": V's own door, a placed device, within 200 m).
 ensure join
 peer host --mode idle --body male --interact-answer host-only
 expect 'in the session as player' 30
 expect 'devices: following [0-9]+ around us \(guest\)' 30
-cmd teleport "${INTERACT_AT:-home}"
-pause 4
+at "${INTERACT_AT:-v-door}"
+# Beside the nearest door (V's own at v-door): the device the uses below take.
+cmd device goto door
+expect 'devices: at door [0-9a-f]+ [A-Za-z]+: ' 10
 mark
 cmd story interact use device
 expect 'interact: asked the host about ' 10

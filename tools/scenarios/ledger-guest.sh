@@ -1,14 +1,14 @@
 # As a guest: a placed NPC the host kills alone, far from us, is gone from our game too (our own copy hidden, in the session's ledger), and a body lies where it fell when we come by
 # shellcheck shell=bash disable=SC2317
-# Where: LEDGER_AT ("X Y Z", default V's flat: a placed vendor of our own
-# world within 200 m of it stands for "a placed NPC"). The mock host stands
+# Where: LEDGER_AT (a fixture or "X Y Z", default kabuki-market, testing.md
+# "Fixtures": a placed vendor of our own world within 200 m of it stands for
+# "a placed NPC"). The mock host stands
 # 300 m east of it (unlinked: it never sees ours, we never see its own) with
 # an NPC of that record and entity, and kills it. LEDGER_AWAY ("X Y Z", a
 # spot our V can stand on, 200 m or more from the vendor): the host stands
 # there instead, and we go there afterwards to see the body.
 ensure join
-cmd teleport "${LEDGER_AT:-home}"
-pause 4
+at "${LEDGER_AT:-kabuki-market}"
 cmd vendor near
 expect 'vendor: near .* record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' 10
 line=$(since | grep -oE 'vendor: near .* record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' | tail -1)

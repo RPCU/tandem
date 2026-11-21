@@ -1,13 +1,12 @@
 # As a guest: what broke in the mock host's game before we joined is broken in ours, at once where V stands and, 300 m away, only when V comes there
 # shellcheck shell=bash disable=SC2317
-# Where: GLASS_AT ("X Y Z", as glass-guest: V looking at a pane). The mock
+# Where: GLASS_AT (as glass-guest: V looking at a pane; default kabuki-market). The mock
 # host breaks a piece of the world where V stands and one 300 m east, both
 # before we join (the session's record of breaks, devices.md).
 # To look at: the pane at V shatters right after the join; nothing happens
 # 300 m away until V is teleported there.
 ensure join
-cmd teleport "${GLASS_AT:-home}"
-pause 4
+at "${GLASS_AT:-kabuki-market}"
 mark
 cmd where
 expect 'where: [-0-9.]+ ' 5
