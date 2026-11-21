@@ -90,6 +90,7 @@ then a rename) at 20 Hz.
 | `savelock`, `session`, `role`                       | saving locked; in a session; `host`, `guest`, `none`                                             |
 | `npcs`, `hostile`                                   | living NPCs within 30 m, and the hostile ones                                                    |
 | `tid`, `tx ty tz`, `td`, `thp`, `tdead`             | the target: where to aim, distance, health, down or dead                                         |
+| `pad`                                               | the game's last input came from a pad (`PlayerLastUsedPad`)                                      |
 
 **The actions** (`pilot N ACTION ARGS`, answered by `ack=N`):
 `target nearest|hostile [RANGE] | proxy | view | none`, `look target [S] |
@@ -118,6 +119,16 @@ tandem-pilot owner | state | pad [SECONDS] | release
   --pad auto|uinput|keys|none|dry   --focus auto|require|display|off
   --instance NAME   --product 0x028e   --keys BUTTON=KEY,...   --look PX/S   --display :N
 ```
+
+Before a routine's first step that uses a uinput pad, the pilot wakes
+it: it nudges the view right and back until the nudge turns the view and
+the state says `pad=1`, for at most 5 s (`the game reads the pad`, else
+the run fails). The game takes a new pad's input only a moment after its
+first one: a press straight away was lost (`press b` at 0.4 s did not
+crouch, 2026-11-21; not yet run in game since). The simulator models it
+(`PadLate`, on in `dry`). A crouch in the routines is a tap of B, then a
+0.5 s hold of it when the tap did nothing (the locomotion takes
+`ToggleCrouch` tapped or held, `final.reds:282129`).
 
 By default each `run` makes its pad and removes it. `serve`
 (`tools/game.sh pilot start`) is for a game that only takes a pad it saw
@@ -415,6 +426,7 @@ tools/game.sh`); move the file back.
   (`survey`'s log says which directions are free).
 - `crouch is 0`, `air is 0` → the button is not the default (the player's
   bindings) or the state field does not mean what it should: `show`.
+  `the game never took the pad's input` → as step 6.
 
 **10. Recording** — with the game as host: `tools/game.sh pilot record
 street street`, then `build/linux/peer/tandem-peer play-info

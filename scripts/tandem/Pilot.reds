@@ -263,6 +263,8 @@ public class TandemPilot {
     }
     let revive = TandemRevive.Of(this.m_game);
     line += s" down=\(TandemPilot.B(IsDefined(revive) && revive.IsDown()))";
+    // The game's last input came from a pad (the pilot's wake waits for it).
+    line += s" pad=\(TandemPilot.B(player.PlayerLastUsedPad()))";
     line += s" weapon=\(TandemPilot.B(IsDefined(GameObject.GetActiveWeapon(player))))";
     line += s" firing=\(TandemPilot.B(this.m_firing))";
     line += s" dilated=\(TandemPilot.B(GameInstance.GetTimeSystem(this.m_game).IsTimeDilationActive()))";

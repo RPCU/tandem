@@ -15,6 +15,12 @@ else
 end
 check tid != 0
 press b
+optional until crouch == 1 timeout 1.5
+# A tap the game did not take as ToggleCrouch's: its hold toggles crouch
+# too (IsActionJustHeld, final.reds:282129).
+if crouch == 0
+  press b 0.5
+end
 until crouch == 1 timeout 3
 walk target within 1.6 pace walk timeout 30
 act takedown nonlethal
