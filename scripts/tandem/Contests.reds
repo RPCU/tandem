@@ -363,6 +363,14 @@ public class TandemContests {
     TandemText.NoticeAs(this.m_game, SimpleMessageType.Neutral, 4.0, key, name);
   }
 
+  // (test reset) the test contest off (`contest duel|race|range`).
+  public func ClearTest() -> Void {
+    if this.m_test != 0 {
+      this.m_test = 0;
+      TandemNative.Log("contests: (test) none");
+    }
+  }
+
   // tools/game.sh cmd contest duel|race|range|off|report|races|join|leave
   public func Command(command: String) -> Void {
     let what = StrAfterFirst(command, " ");

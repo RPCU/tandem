@@ -2222,6 +2222,10 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_revive) {
       this.m_revive.Command("revive fresh");
     }
+    // A test kind of busy or a test contest an earlier scenario set.
+    if IsDefined(this.m_activities) {
+      this.m_activities.ClearTest();
+    }
     if IsDefined(this.m_vehicleProbe) {
       this.RunCommand("vehicle probe stop");
     }
