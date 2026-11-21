@@ -1,4 +1,5 @@
 # Out of the mirror, the ripperdoc or the wardrobe our look is sent again; unchanged, nobody redresses the puppet (in game: open and close the mirror by hand)
+# by hand: a person in game does what its notes say (tools/sweep.sh leaves it out)
 # shellcheck shell=bash disable=SC2317
 ensure host
 cmd teleport home
