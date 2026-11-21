@@ -1,4 +1,5 @@
 # As a guest: our fire on a weak spot of a host NPC's proxy breaks it on our screen and goes to the NPC's owner, whose real weak spot takes the same share (a boss's phases move on its game)
+# by hand: a person shoots the weak spot (a scripted shot at one 23 m off never registered, four tries 2026-11-21); tools/sweep.sh leaves it out
 # shellcheck shell=bash disable=SC2317
 # WEAKSPOT_RECORD: a character with weak spots (default
 # Character.main_boss_adam_smasher; its proxy, brain off, stands 20 m off).
