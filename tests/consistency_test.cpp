@@ -240,6 +240,8 @@ TEST_CASE("faults never touch the handshake and never send a one-shot twice") {
   // A weak spot's share doubled breaks it sooner; a trace's end doubled, no harm, but once.
   CHECK(consistency::IsOneShot(proto::WeakSpotHit{}));
   CHECK(consistency::IsOneShot(proto::HackTraced{}));
+  // A turret's refusal: its game lets go and says so once.
+  CHECK(consistency::IsOneShot(proto::TurretBusy{}));
   CHECK_FALSE(consistency::IsOneShot(proto::Rules{}));
   CHECK(link.Decide(proto::Throw{}) == consistency::FaultyLink::Action::Send);
   CHECK(link.Decide(proto::Rules{}) == consistency::FaultyLink::Action::Twice);

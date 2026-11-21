@@ -26,7 +26,7 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // and StoryGates appended (a game of 9 cannot read them).
 // 11: NpcHealth.flags (kNpcProtected); WeakSpotHit and HackTraced appended.
 // 12: StoryState's kStoryNoFastTravel (a game of 11 would let a guest's V
-// respawn out of the host's locked quest area).
+// respawn out of the host's locked quest area); TurretBusy appended.
 inline constexpr std::uint16_t kProtocolVersion = 12;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
@@ -3119,6 +3119,19 @@ struct HackTraced {
   friend bool operator==(const HackTraced &, const HackTraced &) = default;
 };
 
+// A turret is in one player's hands at a time (devices.md, "A turret in a
+// player's hands"). The host keeps who holds each, first come: from a
+// player's first TurretHands until it lets go or is unheard of for
+// kTurretHandsHoldS. Another player's claim is not passed on; its game is
+// told who holds the turret (at most once per kTurretHandsHoldS while it
+// claims), lets go at once and says so in words. Host to that player only
+// (Event channel; a one-shot).
+struct TurretBusy {
+  std::uint64_t entity{}; // the turret's static id
+  PlayerId holder{};      // who holds it
+  friend bool operator==(const TurretBusy &, const TurretBusy &) = default;
+};
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -3140,7 +3153,7 @@ using MessageVariant = std::variant<
     BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
-    ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced>;
+    ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,

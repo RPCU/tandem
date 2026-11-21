@@ -64,6 +64,8 @@ TANDEM_SAID_BY(Host, StoryRestrictions)
 TANDEM_SAID_BY(Host, WorldPrefabs)
 TANDEM_SAID_BY(Host, NpcMotion)
 TANDEM_SAID_BY(Host, BreachResult)
+// Who holds a turret is the host's to say (devices::TurretHolds).
+TANDEM_SAID_BY(Host, TurretBusy)
 
 // What only a guest sends, and the host never passes on: its hello, its
 // questions, its answers to the host's call, a V's own level (the host's
@@ -452,6 +454,7 @@ void Referee::Forget(p::PlayerId player) {
   });
   std::erase_if(m_dropTokens, [&](const auto &entry) { return entry.first == player; });
   std::erase_if(m_resyncs, [&](const auto &entry) { return entry.first.first == player; });
+  std::erase_if(m_turretRefusals, [&](const auto &entry) { return entry.first.first == player; });
 }
 
 void Referee::NeedNpc(p::NpcId npc, const char *what) {
@@ -514,7 +517,28 @@ void Referee::Sent(p::PlayerId to, const p::Message &message, std::uint64_t nowU
           m_epochOwed[player] = {nowUs};
     return;
   }
+  if (const auto *busy = std::get_if<p::TurretBusy>(&message); busy && m_host) {
+    // Host: a guest's claim on a turret another holds, refused. Its game
+    // lets go at once; refused again and again (once a second while it
+    // claims) it never did.
+    auto &run = m_turretRefusals[{to, busy->entity}];
+    if (run.count == 0 || nowUs > run.lastUs + 1'500'000) {
+      run = TurretRefusals{.firstUs = nowUs, .lastUs = nowUs, .count = 1};
+    } else {
+      run.lastUs = nowUs;
+      if (++run.count == 3)
+        Add("authority.turret-taken",
+            std::format("player {} kept claiming turret {:x} for {:.1f} s after we refused it "
+                        "(player {} holds it): its game did not let go",
+                        to, busy->entity, static_cast<double>(nowUs - run.firstUs) / 1e6,
+                        busy->holder));
+    }
+  }
   if (!m_host) {
+    // Our claims on turrets: the host may refuse them.
+    if (const auto *hands = std::get_if<p::TurretHands>(&message);
+        hands && !(hands->flags & p::kHandsLetGo))
+      m_turretsClaimed.insert(hands->entity);
     // Our breach: the host answers it (unless the minigame was lost).
     if (const auto *breach = std::get_if<p::Breach>(&message);
         breach && !(breach->flags & p::kBreachFailed))
@@ -829,6 +853,9 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::TurretHands>) {
           finite = Finite(m.at);
           inRange = m.entity != 0;
+        } else if constexpr (std::is_same_v<M, p::TurretBusy>) {
+          // A named turret, held by a player.
+          inRange = m.entity != 0 && m.holder != p::kNoPlayer;
         } else if constexpr (std::is_same_v<M, p::ThrowPath>) {
           // Nothing thrown flies faster than a launcher's round.
           finite = Finite(m.position) && Finite(m.velocity);
@@ -1197,6 +1224,12 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
         } else if constexpr (std::is_same_v<M, p::TurretHands>) {
           // A turret in another player's hands; never our own back.
           notOurs(m.player);
+        } else if constexpr (std::is_same_v<M, p::TurretBusy>) {
+          // Our claim refused: another player holds a turret we claimed.
+          notOurs(m.holder);
+          if (!m_turretsClaimed.contains(m.entity))
+            Add("reply.unasked",
+                std::format("the host refused us turret {:x}, which we never claimed", m.entity));
         } else if constexpr (std::is_same_v<M, p::DeviceFire>) {
           // The host's turret's target: a player of the session (an NPC's
           // shot may overtake its spawn on the State channel: not checked).

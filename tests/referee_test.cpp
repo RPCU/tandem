@@ -254,6 +254,39 @@ TEST_CASE("referee: a turret in a player's hands is that player's word") {
   CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
 }
 
+TEST_CASE("referee: a turret's refusal is the host's, for a claim of ours; a refused guest lets "
+          "go") {
+  // Guest: refused a turret we claimed, held by another player.
+  auto guest = Guest();
+  guest.Sent(1, proto::TurretHands{.entity = 7}, kSecond);
+  guest.Received(1, proto::TurretBusy{.entity = 7, .holder = 3}, kSecond);
+  CHECK(Rules(guest).empty());
+  // Never claimed, held by nobody or by us, unnamed.
+  guest.Received(1, proto::TurretBusy{.entity = 8, .holder = 3}, kSecond);
+  guest.Received(1, proto::TurretBusy{.entity = 7}, kSecond);
+  guest.Received(1, proto::TurretBusy{.entity = 7, .holder = 2}, kSecond);
+  guest.Received(1, proto::TurretBusy{.holder = 3}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"reply.unasked", "value.range",
+                                                 "authority.own-state-back", "value.range",
+                                                 "reply.unasked"});
+
+  // Host: a guest may not say it.
+  auto host = Host();
+  host.Received(2, proto::TurretBusy{.entity = 7, .holder = 3}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.host-only"});
+  // Refused twice (it let go late): fine. Refused a third time in a row, it
+  // never let go.
+  host.Sent(2, proto::TurretBusy{.entity = 7, .holder = 3}, kSecond);
+  host.Sent(2, proto::TurretBusy{.entity = 7, .holder = 3}, 2 * kSecond);
+  CHECK(Rules(host).empty());
+  host.Sent(2, proto::TurretBusy{.entity = 7, .holder = 3}, 3 * kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.turret-taken"});
+  // A claim again after a pause is a new one.
+  host.Sent(2, proto::TurretBusy{.entity = 7, .holder = 3}, 10 * kSecond);
+  host.Sent(2, proto::TurretBusy{.entity = 7, .holder = 3}, 11 * kSecond);
+  CHECK(Rules(host).empty());
+}
+
 TEST_CASE("referee: a scripted moment is the host's V's, spectating a guest's") {
   auto host = Host();
   host.Received(2, proto::StoryState{.player = 2, .tier = 1, .flags = proto::kStorySpectating},

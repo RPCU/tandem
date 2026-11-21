@@ -327,7 +327,9 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<Race>(message) || std::holds_alternative<Defended>(message) ||
          // A weak spot's share of a hit, a trace's end: acted on once (npcs.md).
          std::holds_alternative<WeakSpotHit>(message) ||
-         std::holds_alternative<HackTraced>(message) || std::holds_alternative<TimeSkip>(message) ||
+         std::holds_alternative<HackTraced>(message) ||
+         // A refused turret's control: let go and told once (devices.md).
+         std::holds_alternative<TurretBusy>(message) || std::holds_alternative<TimeSkip>(message) ||
          std::holds_alternative<TimeSkipVote>(message) ||
          std::holds_alternative<TimeSkipResult>(message) || IsTrade(message) ||
          std::holds_alternative<Mark>(message) || std::holds_alternative<Tag>(message) ||

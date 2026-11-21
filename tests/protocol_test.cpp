@@ -1216,6 +1216,16 @@ TEST_CASE("a turret in a player's hands survives encoding, small, unreliable, kn
   CHECK_FALSE(Decode(Encode(TurretHands{.flags = 4})).has_value());
 }
 
+TEST_CASE("a turret's refused claim survives encoding: reliable, small, appended") {
+  RoundTrips(TurretBusy{.entity = 0x1122334455667788ULL, .holder = 3});
+  CHECK(Message(TurretBusy{}).index() == Message(HackTraced{}).index() + 1); // appended
+  CHECK(std::string(NameOf(TurretBusy{})) == "TurretBusy");
+  CHECK(ChannelOf(TurretBusy{}) == Channel::Event);
+  CHECK(IsReliable(TurretBusy{}));
+  CHECK_FALSE(IsCombat(TurretBusy{}));
+  CHECK(Encode(TurretBusy{}).size() <= 16);
+}
+
 TEST_CASE("vehicles changing hands: survive encoding, reliable, small") {
   RoundTrips(TrafficOwnership{.id = MakeTrafficId(2, 9), .owner = 3});
   RoundTrips(TrafficHandover{.id = MakeTrafficId(2, 9), .to = 3});

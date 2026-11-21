@@ -374,6 +374,11 @@ struct DeviceFired {
 struct TurretHeld {
   proto::TurretHands hands;
 };
+// Our claim on a turret was refused: `busy.holder` holds it (first come).
+// Our game lets go of it and says who has it.
+struct TurretRefused {
+  proto::TurretBusy busy;
+};
 // Regions (docs/architecture/regions.md). The players our region is linked
 // with changed: we see their NPCs, they see ours.
 struct RegionsChanged {
@@ -630,7 +635,7 @@ using SessionEventVariant = std::variant<
     events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered,
     events::RemoteStatusVisuals, events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom,
     events::TrafficGive, events::TrafficTake, events::TrafficOwnerChanged, events::Fractured,
-    events::DeviceFired, events::TurretHeld, events::LinkDeclined>;
+    events::DeviceFired, events::TurretHeld, events::LinkDeclined, events::TurretRefused>;
 // Its copies, moves and conversions compiled in session_event.cpp only, as
 // proto::Message's (tandem/closed_variant.hpp).
 using SessionEvent = ClosedVariant<SessionEventVariant>;
@@ -1005,8 +1010,13 @@ public:
   void SendFracture(proto::Fracture fracture);
   // A turret in our V's hands: where it points, whether it fires, or that
   // we let go of it (`player` is filled in). To the players linked with
-  // us (a guest's: through the host).
+  // us (a guest's: through the host). One player holds a turret at a time,
+  // first come (the host's devices::TurretHolds): another's claim is not
+  // passed on, and its game hears TurretRefused.
   void SendTurretHands(proto::TurretHands hands);
+  // Host: who holds a turret now (kNoPlayer: nobody); claims refused so far.
+  proto::PlayerId TurretHolder(std::uint64_t entity) const;
+  std::uint64_t TurretsRefused() const { return m_turretHolds.Refused(); }
   // Host: fractures dropped for coming too fast, or past a full record.
   std::uint64_t FracturesDropped() const { return m_fracturesDropped; }
   // What broke in the session (host: kept; guest: as the host sent it).
@@ -1829,6 +1839,10 @@ private:
   // copy in a guest's game has that guest's V (host; at most
   // kMaxDevicesSeeing each), let go when the guest is gone.
   std::map<proto::PlayerId, comms::Limiter> m_fractureRate;
+  // Host: who holds each turret; whether a player's word on one is passed
+  // on (a refused claim is told to its game; `peer` none: ours).
+  devices::TurretHolds m_turretHolds;
+  bool HoldTurret(const proto::TurretHands &hands, std::optional<net::PeerId> peer);
   std::uint64_t m_fracturesDropped{};
   devices::FractureRecord m_fractureRecord;
   // Host: a break said by `player` (ours or a guest's, stamped), past the

@@ -238,6 +238,14 @@ private:
   // and who breached each network as the host said.
   std::map<std::tuple<std::uint64_t, std::uint64_t, proto::NpcId>, std::uint32_t> m_breachesAsked;
   std::map<std::pair<std::uint64_t, std::uint64_t>, proto::PlayerId> m_breached;
+  // Turrets: those we claimed (guest); the host's refusals in a row of each
+  // guest's claim on one (host).
+  std::set<std::uint64_t> m_turretsClaimed;
+  struct TurretRefusals {
+    std::uint64_t firstUs{}, lastUs{};
+    std::uint32_t count{};
+  };
+  std::map<std::pair<proto::PlayerId, std::uint64_t>, TurretRefusals> m_turretRefusals;
   std::deque<std::uint64_t> m_pings;
   std::uint32_t m_offers{}; // the Regroup offers we made
   // Epochs.
