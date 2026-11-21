@@ -153,7 +153,9 @@ grenades and every V's thrown object unseen on the other game) and the
   up, `Release`, `ExecuteGameEffect`) goes as `ThrowEnd`.
 - **The others launch a copy from the thrower's puppet.** A grenade the
   AI's way (`AISubActionThrowItem.ThrowItem`): in the puppet's left hand
-  (the one it shows from `Held`, else given), then a
+  (the one it shows from `Held`, else given), once the slot's spawn of it
+  is done (`IsSlotSpawningItem` false: taken from a slot still spawning
+  it, an item is destroyed, engine/presence.md §13.97), then a
   `gameprojectileSetUpAndLaunchEvent` with the thrower's origin and
   direction and a parabola of its speed and the grenade's gravity
   (`ParabolicTrajectoryParams.GetAccelVelParabolicParams`). A knife or a

@@ -119,6 +119,7 @@ found through this table, each number once.
 | 13.94 | Placed NPCs: static ids, the ledger's hiding and bodies                                 | `regions.md`        |
 | 13.95 | The overlap: the crowd's density in parts, null areas, a despawn probe                  | `regions.md`        |
 | 13.96 | Spectating: what makes a scripted moment, a V the NPCs do not see                       | `story.md`          |
+| 13.97 | An item taken from a slot still spawning it is destroyed                                | `presence.md`       |
 
 ## Top traps (one line each)
 

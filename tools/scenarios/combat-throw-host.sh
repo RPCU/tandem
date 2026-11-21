@@ -10,5 +10,7 @@ expect "throws: player [0-9]+'s throw [0-9]+ ended here \(0\)" 10
 # Its explosion's hits come from a remote V's puppet: never applied here.
 reject 'outcomes: [0-9]+ struck by player'
 reject "not shown: no thrower or item"
+# The copy lives until the real one's end (it was destroyed at its launch).
+reject 'its copy gone before its end'
 shot combat-throw-host
 reject 'watchdog: game thread silent'
