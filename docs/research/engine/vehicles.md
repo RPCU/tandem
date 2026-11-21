@@ -134,7 +134,7 @@ because of its past occupant, and the next pass uses it. The hang dumps
 were the game's report queue waiting on that crash. Next: name that table
 (decompile `sub_140dbb958`'s caller and the job's owner), then either take
 the car out of it before deleting, or reuse parked copies (a pool) rather
-than delete them. [2.5-verified]
+than delete them. [2.5-verified] (Decompiled since: §13.99.)
 
 **The full vehicle loop runs** (mock player `--mode drive`): copy spawned
 from the record, the driver's puppet mounted in `seat_front_left`
@@ -419,3 +419,62 @@ the wheel, no AI driver):
   not holster a weapon already drawn (`OnGameplayRestrictionAdded` has no
   branch for it, `:179041`); `NoCombat` does (`ForceEmptyHands`,
   `:540418`): `TandemTransit.Restrict` now puts both on. [2.5-untested]
+
+### 13.99 Removing a car copy: the stub path, and what crashed (2026-11-21, game 2.50, exe read)
+
+Lead: a study of another co-op mod (NightCoop), facts only: it spawns its
+vehicle mirrors with a transient id (`gameIDynamicEntityIDSystem`
++0x1B0) and an entity stub (`gameIEntityStubSystem` +0x1B0), and removes
+them through the stub system's +0x1C8 and +0x1C0 and
+`gameIPopulationSystem` +0x1F8. Decompiled on 2.50:
+
+- **Stub system** (`gameEntityStubSystem`, vtable `0x1431083C0`, RTTI size
+  0xC8): +0x1B0 (`0x1402FA044`, hash 184577501) `CreateStub(out token,
+request, callback)` queues a request (0xE0-byte entries at +0x48, under
+  the lock at +0xB8); +0x1B8 (`0x1409CF378`) the same without an
+  orientation (a restore); +0x1C0 (`0x140CB341C`, hash 303576408)
+  `CancelStub(token)`: only while the token is still `Requested` (byte
+  +0x10 = 0), takes the request out and marks it `Cancelled` (4); +0x1C8
+  (`0x1402FD588`, hash 569519567) `DeleteStub(stub)`: tells the
+  persistency system (+0xB0, `gameIPersistencySystem`, set at init from
+  the game instance) to forget the id (its slot +0x200), then moves the
+  stub to a list at +0x58 that the system's update destroys later;
+  +0x1D0 (`0x140219D60`) `FindStub(id)`. These slots match
+  RED4ext.SDK's `gameIEntityStubSystem.hpp`. [2.5-static]
+- **Two SDK headers are one slot short on 2.50**: the population system's
+  `RegisterEntity` is +0x1F0 (`0x140465F50`: request in, finds the stub
+  with the stub system's +0x1D0) and `RemoveEntity(u32 id, …)` +0x1F8
+  (`0x1402FCAFC`, hash 46405381: drops the id from its lists and
+  despawns), where the vendored SDK says +0x1E8 and +0x1F0; the id
+  system's transient id is +0x1B0 (`0x1404FAC20`: an atomic counter at
+  +0xE0 kept under 0xFFFFFF), where the SDK says +0x1A8. Do not call these
+  through the vendored headers. [2.5-static]
+- **This is the path tandem already used.** Codeware's
+  `DynamicEntitySystem` (MIT, `src/App/World/DynamicEntitySystem.cpp`)
+  spawns with `GetNextTransientID`, `CreateStub` and the population
+  system's `RegisterEntity`, and `DeleteEntity` is `RemoveEntity` then
+  `DeleteStub`. NightCoop's only addition is `CancelStub`, which matters
+  only for a copy deleted before its stub exists (it would otherwise be
+  created after its deletion). The stub path is not a way around the
+  crash of §13.6. [2.5-static]
+- **What the crash was** (the stack of §13.6, decompiled): the job
+  `0x140DBB958` (scheduled by `0x140DBBD14`) walks a range of entities
+  queued for detaching (`u16` indices at +0x1FFDA4 into 0x38-byte records)
+  and detaches each (`0x140206A14`: state byte +0x156 to 5, each
+  component's slot +0x190, the entity's +0x168, state 2); the fault is the
+  entity's own virtual call (`0x14071CA98`+0x15) on an entity already
+  freed. So the car was freed while still queued for a detach. The
+  per-entity state machine is `0x1410D1C04`. [2.5-static]
+- **It does not always crash** (tandem logs, 2026-11-21): `test reset`
+  (`TandemSystem.ClearTestCars`, `DynamicEntitySystem.DeleteEntity`)
+  deleted three car copies in which the mock player's puppet had been
+  seated, each about 1.5 s after the puppet's body was deleted, and the
+  game went on. The crash of 2026-11-18 deleted the car 0.3 s after an
+  unmount, or with the body still seated. [2.5-verified]
+- **Design, not built** (needs a game to prove): delete a parked copy
+  only when nobody is mounted in it, its last occupant's body is gone or
+  unmounted for at least 2 s, and it is not the car of anyone in the
+  session; through `DynamicEntitySystem.DeleteEntity` (no vtable call of
+  ours); oldest first once more than a few are parked. To prove it: a
+  scenario that seats a puppet, unmounts it, waits T in {0.3, 1, 2, 5} s
+  and runs `vehicle clear`, `tools/game.sh bt` on a freeze. [2.5-untested]

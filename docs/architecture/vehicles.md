@@ -14,7 +14,8 @@
   controller keeps still while seated and is re-attached when the player
   gets out. Copies are never deleted while the game runs (deleting one that
   had someone seated in it froze the game): a car someone got out of stays
-  parked. Puppets leave in steps over several frames (out of the seat, then
+  parked (what crashed, and a guarded deletion to prove in game:
+  engine-knowledge §13.99). Puppets leave in steps over several frames (out of the seat, then
   the body).
 - **A partner's car** ([`garage.md`](garage.md), not run in game yet): a
   parked copy remembers whose car it was; a V that takes the wheel of a
