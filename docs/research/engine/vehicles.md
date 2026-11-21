@@ -534,3 +534,88 @@ that was text (`rcx` `0x6544203043394605`, "4E9C0 De" as the pointer).
   10 s: its stub is long there). The first held deletion of a game is
   logged at `info` (`entities: body … deleted before it exists`).
   `tools/game.sh bt` names this crash site. [2.5-untested]
+
+### 13.150 CrystalCoat / TwinTone: a vehicle's custom paint (2026-11-22, 2.50 scripts read, not run in game)
+
+All from the decompiled 2.50 scripts (`final.reds`), nothing run:
+[2.5-untested] throughout.
+
+- **The template** is `VehicleVisualCustomizationTemplate`: `hasUniqueTemplate`,
+  `genericData` (`GenericTemplatePersistentData`: `primaryColorDefined` and
+  `primaryColorR/G/B` as `Uint8`, the same for `secondary`,
+  `lightsColorDefined`, `lightsColorHue` in degrees) and `uniqueData`
+  (`UniqueTemplateData`: `recordId` of a `VehicleColorTemplate` record,
+  `twintoneModelName`, multilayers, decals, clear coats, all read from the
+  record by `VehicleVisualCustomizationTemplate.FromRecord`). `IsValid`: a
+  unique one with multilayers, or a generic one with a primary colour or a
+  lights' colour. `Equals`: unique by `recordId`; generic by its flags, its
+  colours within 2 and its hue within 2.
+- **Where it lives**: `VehicleComponentPS`, persistent:
+  `m_vehicleVisualCustomizationTemplate` (a
+  `SavedVehicleVisualCustomizationTemplate`: the generic data, or the
+  unique record's id and model name), `m_vehicleApperanceCustomizationActive`,
+  `…InDistanceTermination`, `m_vehicleAppearanceCustomizationBlockedByDamage`;
+  public `Get/SetVehicleVisualCustomizationTemplate`,
+  `Get/SetVehicleVisualCustomizationActive`,
+  `SetVehicleVisualCustomizationnBlockedByDamage` (two n),
+  `SetVehicleApperanceCustomizationInDistanceTermination`. A player's
+  templates per vehicle record are stored on the player
+  (`PlayerPuppet.GetVehicleVisualCustomizationComponent`,
+  `vehicleVisualCustomizationComponent.RetrieveVisualCustomizationForVehicle`).
+- **How the game applies one**: the UI queues a
+  `NewVehicleVisualCustomizationEvent {template, reset}` on the vehicle
+  (`VehicleObject.OnNewVehicleVisualCustomizationEvent`): it asks
+  `VehicleComponent.CanApplyTemplateOnVehicle`, writes the template to the
+  state, stores it on the player (`StoreVisualCustomizationDataForIDEvent`),
+  touches the wanted level (`ProcessHeatLevelOnVisualCustomization`), then
+  `ExecuteVehicleVisualCustomizationEvent {set, reset, instant}` after
+  0.8 s. `VehicleComponent.ExecuteVehicleVisualCustomization` takes the
+  current paint off (`DisableCurrentCustomization`: the unique decals
+  hidden, the default decals back, the `vvc_color*` effects' loops broken),
+  sets the state's active flag, queues
+  `NewVehicleVisualCustomizationTemplateEvent {template, isInstant}` 0.6 s
+  later and `VehicleCustomizationLightsEvent` 0.5 s (1.6 s with a paint)
+  later, and gives the player `BaseStatusEffect.VehicleVisualModCooldown`.
+  The template event ends in the protected
+  `VehicleComponent.ApplyVehicleVisualCustomizationTemplate`: the native
+  `VehicleCustomizationComponent` (`VehicleObject.GetCustomizationComponent`,
+  kept as `VehicleComponent.m_customizationComponent` from the component's
+  `OnGameAttach`) gets `SetDefaultDecalsEnabled(false)` and
+  `SetupGenericCustomization(record.ExcludedComponentsGeneric(),
+  record.GenericCustomizationMask(), packedA, packedB, isInstant,
+  record.CustomizeCarRims())` (a colour packed as
+  `r + g / 100 + b / 10000`, each 0.01 to 0.99: `PackColorForEffect`), or
+  `SetupUniqueCustomization` and `ShowUniqueCustomizationDecalsWithDisolve`.
+  The lights event (`OnProcessVehicleVisualCustomizationLights`) reads the
+  state's template: `VehicleLightQuestChangeColorEvent` for the head,
+  interior (and a bike's utility) lights from the hue, or back to the
+  record's colours; only where the record says `CustomizeLights`.
+- **Who may**: `CanApplyTemplateOnVehicle` wants
+  `GetIsVehicleVisualCustomizationEnabled` (the fact
+  `vvc_visual_customization_for_all_vehicles`, or the record's
+  `HasVisualCustomization` with the fact `vvc_visual_customization_unlocked`),
+  no damage block, no teaser record, an up-to-date one (`mq058_update_applied`
+  where the record asks), and for a unique template the vehicle's
+  `TwintoneModelName`. The request events therefore do nothing in a game
+  that has not unlocked the feature; the protected apply asks nothing.
+- **What takes it off by itself**: a part falling off (trunk, hood, a door,
+  a bumper: `OnVehicleOnPartDetached`) calls
+  `SignalDamageToVehicleVisualCustomization` (the paint off, the state
+  blocked); the local player unmounting starts
+  `CheckVehicleVisialCustomizationDistanceTermination` (1 s later, then
+  every 0.5 s): past a squared distance of 32 from the local player the
+  paint is switched off (`SwitchVehicleVisualCustomizationStateEvent`, the
+  active flag cleared, the template kept), and
+  `OnVehicleFinishedMounting` switches it on again. The local player
+  mounting also writes that player's stored template for the record into
+  the state (`SyncVehicleVisualCustomizationDefinition`, an empty one when
+  it has none), where the feature is enabled.
+- **What tandem does** (`scripts/tandem/Paint.reds`, built, not run): reads
+  the owner's car's state; on a copy writes the state and calls the
+  protected apply through an added method, 0.6 s after
+  `DisableCurrentCustomization` when a paint was on. To see in game
+  [to-see]: that `SetupGenericCustomization` paints a vehicle whose game has
+  not unlocked CrystalCoat and a record without `HasVisualCustomization`
+  (an empty mask); that it starts the `vvc_color` effect itself (no script
+  starts it, only breaks its loop); the look of an instant apply on a copy
+  that just spawned.

@@ -259,6 +259,7 @@ read):
 | `npc ID health` | a shared NPC's health, percent: our own NPC or our proxy |
 | `wanted` | our V's wanted level, 0..5 (`PreventionSystem.GetHeatStageAsInt`) |
 | `threat puppet` | the largest threat value an NPC we run near our V holds on the first remote player's puppet (`TargetTrackerComponent`) |
+| `paint [puppet]` | the custom paint the car's own state says (`VehicleComponentPS`): our V's car (the one it sits in, else its last), or the first remote player's car copy: `stock`, `primary R,G,B [secondary R,G,B] [lights HUE]`, `unique RECORD` |
 | `car marks` | the shared vehicles another player's quickhack is marked on now (their traffic ids; `Hacks.reds`), or `none` |
 | `device KIND WHAT` | the nearest device of KIND within 40 m: `attitude` (to our V: `friendly`, `neutral`, `hostile`), `puppet` (to the first puppet), `target` (what it follows: `none`, `V`, `puppet`, `other`), `alarm` (its security system: `SAFE`, `ALERTED`, `COMBAT`), `mark` (the player whose hack is marked on it; 0: none) |
 | `upload` | the upload on our V (an NPC's hack or trace), percent of its `QuickHackUpload` pool (`none`: no upload) |
@@ -367,7 +368,10 @@ Reading a played session (`tools/game.sh threads` at its end):
   tests the copy of a remote player's car, its seated driver and its motion
   without anyone driving. `--radio STATION` (0–13, a station name, or
   `off`) plays that station on its radio: sent at the wheel and again when
-  your V gets in (`tools/game.sh cmd vehicle ride`).
+  your V gets in (`tools/game.sh cmd vehicle ride`). `--paint
+  RRGGBB[,RRGGBB][@HUE]` gives the car a custom paint (`CarPaint`: its
+  colour, a second one, its lights' hue), `--paint-off-at S` takes it off
+  S seconds after the seat (scenario `paint`).
 - **drive --seat SLOT** — the same car, but the mock player rides in SLOT
   while "an AI" drives it (a `Ride`); `--scene` makes it a story scene's
   (as host: guests near it get a free seat); `--driver-npc RECORD` (host)
