@@ -182,7 +182,11 @@ the first group session.
   on the traced V's game sets the netrunner and its squad on that V's
   puppet on the owner's game, as the game does for its own V (the guest's
   wrap of `UploadFromNPCToPlayerListener.OnStatPoolMaxValueReached` skips
-  the squad part: `hacks-trace-squad`). What stops a netrunner's upload
+  the squad part: `hacks-trace-squad`). The guest sets where the trace
+  began (`LastPlayerHackPosition`, as `RevealPlayerPositionIfNeeded` does):
+  unset, the upload stopped at its first tick; the reasons the game stops
+  one silently are logged (`hacks: npc N's trace of our V stops at …`), and
+  the scenario reads the upload's pool fill (`query upload`). What stops a netrunner's upload
   (`HackingInterrupted`, `HackRevealInterrupted`, a `CyberwareMalfunction`
   effect, which its behaviour puts on it) goes as `NpcStatus`, and the
   proxy wears it where the upload runs (`hacks-interrupt`). Not yet run in
