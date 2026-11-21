@@ -22,11 +22,19 @@ expect_peer "turret $turret: in our V's hands" 20
 expect "turrets: $turret is in player [0-9]+'s hands: our copy follows it" 5
 cmd turret take
 expect "turrets: our V takes control of $turret" 5
+# The claim itself: without it nothing is refused (a police turret's was
+# never said, 2026-11-21).
+expect "turrets: our V holds $turret: where it points said to the others" 5
 expect "turrets: our claim on $turret refused: player [0-9]+ holds it; our V lets go" 5
 expect 'coop notice: .+ is controlling this turret \[Turrets-Busy\]' 5
 shot turret-hands-busy
+# Out of the turret for real (the takeover system's own word), and our
+# copy still follows the guest's hold.
 cmd turret
-expect 'turrets: .* claims refused 1\b' 5
+expect 'turrets: .* in others. hands 1, .* claims refused 1; our V controls a device: false' 5
 expect_peer "turret $turret: our V lets go of it" 30
 expect "turrets: $turret is out of player [0-9]+'s hands: our copy is our game's again" 5
+# One hold from end to end: our V's takeover did not end the guest's.
+held=$(since | grep -cE "turrets: $turret is in player [0-9]+'s hands: our copy follows it")
+[ "$held" = 1 ] || fail "the guest's hold of $turret began $held times: our V's takeover ended it"
 reject 'watchdog: game thread silent'

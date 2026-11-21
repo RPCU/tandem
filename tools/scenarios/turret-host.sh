@@ -1,20 +1,26 @@
 # As a host: the mock guest's copy of a turret near V "has its V"; our turret takes the guest's puppet as a target, turns to it, fires, and every shot is told
 # shellcheck shell=bash disable=SC2317
-# Where: TURRET_AT (a fixture or "X Y Z": a security turret that is on,
-# within 60 m and in sight of V's front; default drake-ave: arasaka-park's are the police's, not followed).
+# Where: TURRET_AT (a fixture or "X Y Z": a security turret we follow, a
+# "sentry", within 200 m: V goes beside it; default arasaka-park). The
+# police's street-corner turrets are not followed (devices.md): a spot
+# with only those fails on "no sentry within 200 m" (drake-ave, and the 33 m
+# around arasaka-park's gate, 2026-11-21).
 # To look at: the turret turns to the other player's puppet (in front of V)
 # and fires at it; the puppet takes no damage here (its player's game
 # decides); V is fired at only when the turret has V too.
 ensure host
-at "${TURRET_AT:-drake-ave}"
+at "${TURRET_AT:-arasaka-park}"
 mark
-cmd device near turret
-expect 'devices: nearest turret [0-9a-f]+ SecurityTurretControllerPS at ' 10
-turret=$(since | grep -oE 'devices: nearest turret [0-9a-f]+' | tail -1 | awk '{ print $4 }')
+cmd device near sentry
+expect 'devices: nearest sentry [0-9a-f]+ SecurityTurretControllerPS at ' 10
+turret=$(since | grep -oE 'devices: nearest sentry [0-9a-f]+' | tail -1 | awk '{ print $4 }')
 note "turret $turret"
-# On: a save may hold it off (the survey found every fixture's turret off).
-cmd device on turret
-expect 'devices: on [0-9a-f]+ SecurityTurretControllerPS at ' 10
+cmd device goto sentry
+expect "devices: at sentry $turret SecurityTurretControllerPS: " 10
+pause 2
+# On: a save may hold it off.
+cmd device on sentry
+expect "devices: on $turret SecurityTurretControllerPS at " 10
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male \
   --turret-seen "$turret@8"
 expect 'joined \(player [0-9]+' 30

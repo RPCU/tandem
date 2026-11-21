@@ -1352,6 +1352,12 @@ public class TandemDevices extends ScriptableSystem {
     if Equals(kind, "turret") {
       return IsDefined(ps as SecurityTurretControllerPS);
     }
+    // A turret the session follows (Turrets.reds): not the police's, which
+    // stand at street corners (every fixture's nearest was one, 2026-11-21).
+    if Equals(kind, "sentry") {
+      let turret = ps as SecurityTurretControllerPS;
+      return IsDefined(turret) && !turret.IsPartOfPrevention();
+    }
     // One still whole: a barrel that went up (an earlier test, a fight)
     // stays exploded for the rest of the game.
     if Equals(kind, "barrel") {
@@ -1444,7 +1450,7 @@ public class TandemDevices extends ScriptableSystem {
       j += 1;
     }
     TandemNative.Log(s"fixture: devices within \(radius) m: \(total) (\(listed))");
-    let kinds: array<String> = ["door", "lift", "camera", "turret", "barrel", "ap", "radio"];
+    let kinds: array<String> = ["door", "lift", "camera", "turret", "sentry", "barrel", "ap", "radio"];
     for kind in kinds {
       let distance = 200.0;
       let device = this.Nearest(kind, distance);
