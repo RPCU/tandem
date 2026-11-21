@@ -295,9 +295,9 @@ public class TandemTurrets extends ScriptableSystem {
       return;
     }
     if seen {
-      let taken = turret.TandemEngage(puppet);
+      let taken = turret.TandemTake(puppet);
       this.m_engaged += taken ? 1 : 0;
-      TandemNative.Log(s"turrets: player \(player)'s copy of \(TandemNative.EntityHex(entity)) has its V: our turret takes its puppet (\(taken))");
+      TandemNative.Log(s"turrets: player \(player)'s copy of \(TandemNative.EntityHex(entity)) has its V: our turret takes its puppet (\(taken)); \(turret.TandemSenses())");
     } else {
       turret.TandemDisengage(puppet);
       TandemNative.Log(s"turrets: player \(player)'s copy of \(TandemNative.EntityHex(entity)) lost its V: our turret lets its puppet go");
@@ -741,7 +741,7 @@ public class TandemTurrets extends ScriptableSystem {
     } else if Equals(verb, "provoke") {
       // Our copy takes our own V as a target (as the host's takes a puppet):
       // a spot's turret is not always hostile to V, or has it in sight.
-      TandemNative.Log(s"turrets: \(hex) takes our V as a target: \(turret.TandemEngage(ours)) (followed \(TandemTurrets.Follows(turret)), the police's \(turret.GetDevicePS().IsPartOfPrevention()))");
+      TandemNative.Log(s"turrets: \(hex) takes our V as a target: \(turret.TandemTake(ours)) (followed \(TandemTurrets.Follows(turret)), the police's \(turret.GetDevicePS().IsPartOfPrevention())); \(turret.TandemSenses())");
     } else if Equals(verb, "engage") {
       let system = TandemSystem.Of(game);
       let players = IsDefined(system) ? system.PuppetPlayers() : [];
@@ -750,7 +750,7 @@ public class TandemTurrets extends ScriptableSystem {
         TandemNative.Log("turrets: no puppet here");
         return;
       }
-      TandemNative.Log(s"turrets: \(hex) takes player \(players[0])'s puppet as a target: \(turret.TandemEngage(puppet))");
+      TandemNative.Log(s"turrets: \(hex) takes player \(players[0])'s puppet as a target: \(turret.TandemTake(puppet)); \(turret.TandemSenses())");
     } else {
       TandemNative.Log(s"turrets: unknown command: \(command)");
     }
@@ -879,9 +879,17 @@ public func TandemHeld(seconds: Float) -> Void {
 
 // Host: a guest's copy locked that guest's V; ours takes its puppet as a
 // target the way a quest forces one (hostile to it, recognized whatever
-// the security system thinks of it). False: ours is off, turned (by any
-// player: Devices.reds keeps it friendly to every V), or in a player's
-// hands (our V's, or another player's: TurretHands).
+// the security system thinks of it), and locks it at once. The game's own
+// lock (OnCurrentTargetAppears) never comes for it: a turret of a security
+// system that is not in combat only follows its target (SAFE: nothing,
+// ALERTED: no lock), and ours is not, the guest's game's is (arasaka-park's
+// sentry followed a puppet for 6 s without a shot, 2026-11-21); elsewhere
+// it waits its time to act, which the guest's copy already has. The lock is
+// ours, not OnTargetLocked: that one sets our security system to combat,
+// against our own V too. False: ours is off, turned (by any player:
+// Devices.reds keeps it friendly to every V), in a player's hands (our
+// V's, or another player's: TurretHands), or it would not follow the
+// target (it cannot detect, the target is down, a forced state).
 @addMethod(SensorDevice)
 public func TandemEngage(target: ref<GameObject>) -> Bool {
   let ps = this.GetDevicePS();
@@ -894,7 +902,36 @@ public func TandemEngage(target: ref<GameObject>) -> Bool {
     mine.SetAttitudeTowards(theirs, EAIAttitude.AIA_Hostile);
   }
   this.RecognizeTarget(target, true);
+  if this.GetCurrentlyFollowedTarget() != target {
+    return false;
+  }
+  this.StartBehaviourResolve(ESensorDeviceStates.TARGETLOCK);
+  this.SetQuestVisibility(true);
+  return Equals(this.GetSensorDeviceState(), ESensorDeviceStates.TARGETLOCK);
+}
+
+// ...and fires at it (OnTargetLocked's own two lines). A guest's copy holds
+// that fire and says what it locked (the ShootStart wrap below).
+@addMethod(SecurityTurret)
+public func TandemTake(target: ref<GameObject>) -> Bool {
+  if !this.TandemEngage(target) {
+    return false;
+  }
+  if !this.m_animFeature.Shoot {
+    this.SelectShootingPattern(this.GetWeapon(), this, true);
+    this.ShootStart();
+  }
   return true;
+}
+
+// For the log: what the turret's lock depends on.
+@addMethod(SensorDevice)
+public func TandemSenses() -> String {
+  let ps = this.GetDevicePS();
+  let security = IsDefined(ps) && ps.IsConnectedToSecuritySystem() ? ps.GetSecuritySystem() : null;
+  let alarm = IsDefined(security) ? EnumValueToString("ESecuritySystemState", Cast<Int64>(EnumInt(security.GetSecurityState()))) : "none";
+  let state = EnumValueToString("ESensorDeviceStates", Cast<Int64>(EnumInt(this.GetSensorDeviceState())));
+  return s"security system \(alarm), sensor \(state), follows a target \(IsDefined(this.GetCurrentlyFollowedTarget()))";
 }
 
 @addMethod(SensorDevice)

@@ -364,8 +364,11 @@ not run in game; engine facts §13.90. Code: `scripts/tandem/Turrets.reds`
   only: the principle above). A guest's copy that locks its V (its
   `ShootStart`) says `Seen`; the host's turret then takes that guest's
   puppet as a target the way a quest forces one (`TandemEngage`: hostile to
-  it, `RecognizeTarget(puppet, true)`), unless it is off, turned friendly
-  or in a player's hands; `Lost` lets it go. The host's hits on the puppet
+  it, `RecognizeTarget(puppet, true)`) and locks it at once (`TandemTake`:
+  sensor state `TARGETLOCK`, `ShootStart`; not the game's `OnTargetLocked`,
+  which sets the host's security system to combat), unless it is off,
+  turned friendly or in a player's hands; `Lost` lets it go. The game's own
+  lock never comes for a puppet: §13.90. The host's hits on the puppet
   are not forwarded (`ForwardsToPlayer`).
 - **Its look** (guest, linked with the host): the copy's laser mesh and
   scan light show the host's turret, not the copy's own senses: laser on
