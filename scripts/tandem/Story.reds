@@ -485,11 +485,12 @@ public class TandemStorySystem extends ScriptableSystem {
           if !this.m_isHost && this.m_you != 0u {
             this.GuestLeave();
           } else if this.m_you == 0u {
-            // An attempt ended before the welcome while the join tries again
-            // (coop-arrive-load: the first failed, the retry got in a moment
-            // later, our quests let go in between): held until it gives up.
+            // A session ended before the welcome while our join goes on (the
+            // one the menu left, ending as the join connects; or a failed
+            // attempt the join retries): held until the join is in or gives
+            // up (coop-arrive-load let go twice in between).
             let status = TandemNative.SessionStatus();
-            if status.role == 2 && (status.state == 1 || status.state == 2 || status.state == 4) {
+            if status.role == 2 && status.state >= 1 && status.state <= 4 {
               TandemNative.Log("quest: own quests still held: the join tries again");
             } else {
               this.ReleaseEarly();
