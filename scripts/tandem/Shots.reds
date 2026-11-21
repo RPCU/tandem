@@ -45,6 +45,10 @@ public class TandemShots {
   // Guest: why the last shot is still waiting, and the shots fired.
   private let m_waitingFor: String;
   private let m_fired: Int32;
+  // Of those, the ones our game's time between hits let land (the rest
+  // are aimed to miss), and the test switch: proxies' senses on.
+  private let m_decidedHits: Int32;
+  private let m_sensesOn: Bool;
   // Guest: the proxies that fired at us lately, and when: their bullets'
   // hits on our V are ours to apply (IsSimulatedHit), whatever flight time.
   private let m_recentBy: array<EntityID>;
@@ -301,8 +305,19 @@ public class TandemShots {
     let maxSpread = stats.GetStatValue(weaponStats, gamedataStatType.SpreadMaxAI);
     let offset = new Vector4(0.0, 0.0, 0.0, 0.0);
     let target = player.GetTargetShootComponent();
+    let miss = false;
     if IsDefined(target) {
-      offset = target.HandleBeingShot(proxy, weapon, aim, maxSpread, shot.tbh);
+      if this.m_sensesOn {
+        let senses = proxy.GetSensesComponent();
+        if IsDefined(senses) && !senses.IsEnabled() {
+          senses.ToggleComponent(true);
+          TandemNative.Log(s"shots: npc \(shot.npc)'s proxy: senses on (test)");
+        }
+      }
+      offset = target.HandleBeingShot(proxy, weapon, aim, maxSpread, shot.tbh, miss);
+    }
+    if !miss {
+      this.m_decidedHits += 1;
     }
     let params: gameprojectileWeaponParams;
     params.hitPlaneOffset = offset;
@@ -336,9 +351,9 @@ public class TandemShots {
     WeaponObject.TriggerWeaponEffects(weapon, gamedataFxAction.Shoot);
     AnimationControllerComponent.PushEventToReplicate(weapon, n"Shoot");
     this.m_fired += 1;
-    // The first of each session, then every tenth.
-    if this.m_fired == 1 || this.m_fired % 10 == 0 {
-      TandemNative.LogDebug(s"shots: npc \(shot.npc)'s shot at us fired from its proxy (\(this.m_fired) so far; speed \(shot.factor), catching up x\(shot.boost) for \(shot.boostSeconds) s)");
+    // The first five of each session, then every tenth.
+    if this.m_fired <= 5 || this.m_fired % 10 == 0 {
+      TandemNative.LogDebug(s"shots: npc \(shot.npc)'s shot at us fired from its proxy (\(this.m_fired) so far, \(this.m_decidedHits) let land by the time between hits, tbh \(shot.tbh); speed \(shot.factor), catching up x\(shot.boost) for \(shot.boostSeconds) s)");
     }
     return true;
   }
@@ -443,6 +458,11 @@ public class TandemShots {
       TandemNative.SendShotHit(npc, hitEvent.hitPosition, hitEvent.hitDirection);
       this.Once(n"hit", s"shots: npc \(npc)'s shot hit our V (our game's decision), reported to the host");
     }
+  }
+
+  public func SensesTest(on: Bool) -> Void {
+    this.m_sensesOn = on;
+    TandemNative.Log(s"shots: proxies' senses \(on ? "on" : "left off") while they fire at us (test)");
   }
 
   public func End() -> Void {
