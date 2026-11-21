@@ -340,3 +340,14 @@ target's position, the target, …)`, the anim event `Shoot`, the effect
   player as owner (171601). The camera is the device's while held
   (`OnTCSTakeOverControlActivate`, 152744) _(inferred: the active camera's
   forward is the turret's aim)_. [2.5-untested]
+- Leaving and taking a device's control from script: the static
+  `TakeOverControlSystem.ReleaseControl(game)` (154288) queues
+  `RequestReleaseControl` (false when nothing is controlled), whose handler
+  gives the player back its body (`ToggleToMainPlayerObject`, 154331); a
+  quest's forced release goes this way
+  (`SensorDeviceControllerPS.QuestReleaseCurrentObject`, 153789).
+  `TakeOverControlSystem.RequestTakeControl(device, ToggleTakeOverControl)`
+  (154180) takes one, as a device's own `Device.OnToggleTakeOverControl`
+  does (102002) and the chain's `MoveToSpecificEntity` with a bare
+  `ToggleTakeOverControl` (`SetProperties(true, false)`, 154681).
+  [2.5-untested]

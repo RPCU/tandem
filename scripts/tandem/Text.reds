@@ -179,7 +179,7 @@ public class TandemText {
       "Saves-NotRestored", "Mods-Replaced-Item", "Trade-Unknown", "Exit-Saving", "Exit-NotSaved",
       "Checkpoint-Saving", "Checkpoint-Failed",
       "Interact-HostOnly", "Interact-Taken", "Interact-TooFar",
-      "Interact-Missing", "Interact-Busy", "Trade-NotNow", "Phone-Unreachable"
+      "Interact-Missing", "Interact-Busy", "Trade-NotNow", "Phone-Unreachable", "Turrets-Busy"
     ];
     if ArrayContains(asks, key) {
       return 2;
@@ -397,6 +397,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Interact-TooFar", "Too far from it in {1}'s world");
     this.Text("Tandem-Interact-Missing", "Not there in {1}'s world right now");
     this.Text("Tandem-Interact-Busy", "{1} is busy: try again in a moment");
+    this.Text("Tandem-Turrets-Busy", "{1} is controlling this turret");
     // Loot, markers.
     this.Text("Tandem-Loot-Taken", "Someone already took it");
     this.Text("Tandem-Loot-TakenBy", "{1} picked it up first");
@@ -878,6 +879,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Interact-TooFar", "Trop loin dans le monde de {1}");
     this.Text("Tandem-Interact-Missing", "Pas là dans le monde de {1} pour l'instant");
     this.Text("Tandem-Interact-Busy", "{1} est occupé(e) : réessayez dans un instant");
+    this.Text("Tandem-Turrets-Busy", "{1} contrôle cette tourelle");
     this.Text("Tandem-Loot-Taken", "Quelqu'un l'a déjà pris");
     this.Text("Tandem-Loot-TakenBy", "{1} l'a ramassé avant vous");
     // Other mods (Mods.reds, docs/architecture/mod-compat.md).

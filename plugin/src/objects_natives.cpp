@@ -27,9 +27,12 @@ namespace tandem::plugin {
 // Something of the world for the script to show. Plain fields only: the
 // script VM aligns struct locals to 8.
 struct TandemObjectEvent {
-  std::int32_t kind{};    // 1 something broke, 2 a device's fire, 3 a turret in a player's hands
-  std::uint32_t player{}; // 1: whose game saw it break; 2 (seen, lost): whose V; 3: whose hands
-  // 1: the placed entity it is a part of (none: the world's); 2 and 3: the device
+  // 1 something broke, 2 a device's fire, 3 a turret in a player's hands,
+  // 4 our claim on a turret refused (another player holds it)
+  std::int32_t kind{};
+  // 1: whose game saw it break; 2 (seen, lost): whose V; 3: whose hands; 4: who holds it
+  std::uint32_t player{};
+  // 1: the placed entity it is a part of (none: the world's); 2 to 4: the device
   Red::EntityID entity;
   Red::CName name;      // 1: its destruction component
   float x{}, y{}, z{};  // where (3: where it points)
@@ -136,6 +139,9 @@ struct TandemObjects : Red::IScriptable {
                                           .y = hands->at.y,
                                           .z = hands->at.z,
                                           .value = hands->flags});
+      } else if (const auto *busy = std::get_if<proto::TurretBusy>(&message)) {
+        out.EmplaceBack(TandemObjectEvent{
+            .kind = 4, .player = busy->holder, .entity = Red::EntityID(busy->entity)});
       } else if (const auto *fire = std::get_if<proto::DeviceFire>(&message)) {
         if (fire->kind == proto::DeviceFireKind::Shot) {
           const auto now = Runtime::Get().HostNowUs();

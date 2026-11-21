@@ -85,6 +85,7 @@ file: the same in every game) and the class name of its state; its
 | `DeviceFire` | host → the guests linked with it | its turret turned to a target (said again every second), shot at it, or follows nobody. A shot at a V: Event channel (that V's game fires it for real); any other shot: State channel. At most 43 bytes |
 | `DeviceFire` | guest → host | "my copy of that turret has locked my V", "…lost it" (kept by the host: a repeat tells nothing, a vanished guest is let go) |
 | `TurretHands` | the controller's game → host → the linked | a turret in a player's hands: where it points, whether it fires (5 a second while held), let go. State channel, at most 32 bytes ("A turret in a player's hands") |
+| `TurretBusy` | host → the refused player | its claim on a turret another player holds is refused: who holds it. One-shot, at most once a second per claim ("A turret in a player's hands") |
 | `Fracture` | any game → host → everyone (a piece new to the record) or the linked (another piece of a known one) | something broke: where, and the placed entity's destruction component when it is one. About 34 bytes; the host holds each guest to 48 then 24 a second. The record's entries again to a late joiner and in a world resync |
 
 Sending the _state the device should be in_, not the action that was
@@ -328,9 +329,34 @@ shows its aim and shots on the others' copies; damage as today." Built
   not applied to, a copy in a player's hands, nor to the turret in our own.
 - **Let go**, or silent for 1 s (the controller vanished, unlinked): the
   copy is its game's again.
-- Tests: `tests/devices_test.cpp` ("a turret in a player's hands"),
-  `tests/protocol_test.cpp`, `tests/referee_test.cpp`; the mock player's
-  `--turret-hands E[:X,Y,Z][@S]`; scenario `turret-hands`.
+- **One player's hands at a time**, first come, the host's to decide
+  (`devices::TurretHolds`, `Endpoint::HoldTurret`; built 2026-11-21, not
+  yet run in game). The first `TurretHands` claim on a turret nobody holds
+  makes its sender the holder until its let-go, 1 s of silence or its
+  leaving. Another player's claim meanwhile (the takeover quickhack, a
+  control panel, the host's own V) is not passed on: its game hears
+  `TurretBusy` (the host's game from its endpoint, at once), at most once a
+  second while it claims; its let-go is dropped too (it would free the
+  holder's copies). That game lets its V go at once, the game's own way
+  out of a device's control (`TakeOverControlSystem.ReleaseControl`, as a
+  quest ends one; `Turrets.reds`, `Refused`), shows "NAME is controlling
+  this turret" (`Turrets-Busy`) and says nothing more of it; taken again
+  within 3 s, it is let go again unsaid, later a claim asks again. The
+  referee holds both sides: a refusal of a turret we never claimed
+  (`reply.unasked`), a guest refused three times in a row without letting
+  go (`authority.turret-taken`).
+- **Cameras**: a camera in a player's hands (the takeover, a chain of
+  devices) is that game's view only: nothing of it travels (its state,
+  on, off, friendly, is the host's record), so two players may look
+  through one camera at once and nothing is arbitrated.
+- Tests: `tests/devices_test.cpp` ("a turret in a player's hands", "a
+  turret's holds", "… is that player's alone"), `tests/protocol_test.cpp`,
+  `tests/referee_test.cpp`; the mock player's
+  `--turret-hands E[:X,Y,Z][@S]` and `--turret-hands-for D` (held D
+  seconds); in game `tools/game.sh cmd turret take` (V takes the nearest
+  turret, as its control panel gives it); scenarios `turret-hands`,
+  `turret-hands-busy` (the mock guest holds the turret, V's takeover is
+  refused and let go; not yet run in game).
 
 ## Glass and breakable scenery
 
