@@ -178,6 +178,18 @@ TEST_CASE("a still V goes 5 times a second, and leaves from where it stood") {
   CHECK((first - 1)->timeUs == test::kEpoch + 59 * kFrame);
   CHECK(sent.end() - first == 30);
 
+  SUBCASE("a still state held over a pause in the offers is not sent") {
+    netcode::StillGate<proto::PlayerState> paused;
+    std::uint64_t t = test::kEpoch;
+    for (int i = 0; i < 10; ++i, t += kFrame)
+      paused.Offer(proto::PlayerState{.timeUs = t}, 0);
+    // Nothing offered for 4 s (our V elsewhere), then it moves.
+    t += 4'000'000;
+    const auto out = paused.Offer(proto::PlayerState{.timeUs = t, .position = {1.f, 0.f, 0.f}}, 0);
+    REQUIRE(out.size() == 1);
+    CHECK(out[0].timeUs == t);
+  }
+
   SUBCASE("far away: a few states a second") {
     netcode::StillGate<proto::PlayerState> far;
     std::size_t n = 0;

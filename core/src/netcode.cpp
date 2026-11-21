@@ -95,8 +95,11 @@ std::vector<State> StillGate<State>::Offer(const State &state, std::uint64_t rel
     // Far away: fewer states, the motion between them is the receiver's.
     m_held.reset();
     return out;
-  } else if (m_held) {
-    // Off again: from where, and when, it last stood.
+  } else if (m_held &&
+             state.timeUs - m_held->timeUs <= std::max(kStillIntervalUs, relevanceUs) + kSlackUs) {
+    // Off again: from where, and when, it last stood. Not after a pause in
+    // the offers (our V elsewhere, a loading screen): that one is stale, the
+    // receiver would draw V back there for a moment.
     out.push_back(*m_held);
   }
   m_held.reset();
