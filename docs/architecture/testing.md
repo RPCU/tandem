@@ -126,8 +126,17 @@ output, `NAME.log`. Build first (`tools/build.sh`, or `tools/remote.sh` and
 - **A failed test reset** (class `reset`) in a game that runs: stopped too
   (a `harness:` repair). What the last one left (an open phone stops the
   tick) would fail every later one; `test reset` closes the phone.
+- **On several games at once** (`--instances N`, not yet run in game: the
+  coordinator will try it): the Steam game and the first N-1 instances of
+  `SWEEP_INSTANCES` (default `a b c`, `tools/instance.sh`), each a slice of
+  the order in parallel, on its own port and mock players; those that need
+  the Steam game (keys, the pilot's, by hand, the port named) stay on it.
+  `TANDEM_INSTANCE=NAME` points `tools/game.sh`, `tools/scenario.sh` and a
+  one-game sweep at an instance. How, and what is routed:
+  `two-instances.md`, "Sweeps on two games".
 - **`results.txt`**, a line per scenario, tab-separated: name, `PASS` or
-  `FAIL`, seconds, class, the first `FAIL:` line, the evidence folder. The
+  `FAIL`, seconds, class, the first `FAIL:` line, the evidence folder (and
+  the game, with `--instances`). The
   end prints the passes, game starts, `harness:` repairs, and the failures
   grouped by class. `--rerun-failed FILE` runs a results file's failures
   again (in a new folder).

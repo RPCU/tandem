@@ -224,8 +224,11 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
 - **Instances** (`tools/instance.sh`, `docs/architecture/two-instances.md`;
   tried on anya: two games in a session over loopback, a guest froze once):
   more games apart from the player's, in `/data/Steam/tandem-instances`.
-  `tools/game.sh` and `tools/scenario.sh` know one game and kill it **by
-  name**: never run them while instances run.
+  `tools/game.sh` and `tools/scenario.sh` act on one game,
+  `TANDEM_INSTANCE=NAME` or the Steam game, its processes by pid;
+  `tools/sweep.sh --instances N` runs N at once (`two-instances.md`,
+  "Sweeps on two games"; not yet run in game: until it has been, run them
+  beside instances only through it).
 - **Every scenario starts from `test reset`** (`tools/game.sh test-reset`,
   `scripts/tandem/TestReset.reds`), which `tools/scenario.sh` runs before
   each one: the save loads as the player left it (in a car, mid-mission,

@@ -314,16 +314,16 @@ pilot run ROUTINE` plays an instance's V by XTEST on that display
 
 ### 5. Risks to the player's install
 
-| Risk                                                     | How the setup removes it                                                                                                                                    |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A test game saves over the player's saves                | its own prefix, holding a copy of one save; the player's prefix is hidden from it (an empty tmpfs in its sandbox)                                           |
-| Steam cloud uploads a test save, or downloads over one   | not launched by Steam, no app id, the client's folder hidden; Steam's local cloud folder (`userdata/*/1091500`) hidden as well                              |
-| Achievements, playtime, "in game" status on the account  | the same: the game cannot reach the client                                                                                                                  |
-| The script cache, logs or mod state of the player's game | the instance's game folder is a copy; the player's is mounted read only in the sandbox                                                                      |
-| A game update or a mod change while an instance is built | nothing is written to the player's folder; `instance.sh sync` refreshes the copy                                                                            |
-| The tools kill the player's game                         | `instance.sh` kills only processes carrying its mark, never by name. **`tools/game.sh stop` still kills by name** (`pkill -f Cyberpunk2077.exe`): see below |
-| Two games starve the player's                            | every changing verb refuses while a game we did not start runs; a memory limit per instance; `stop` always works                                            |
-| A half-copied prefix                                     | the prefix is copied only while the player's game is not running                                                                                            |
+| Risk                                                     | How the setup removes it                                                                                                                                                                                                                  |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A test game saves over the player's saves                | its own prefix, holding a copy of one save; the player's prefix is hidden from it (an empty tmpfs in its sandbox)                                                                                                                         |
+| Steam cloud uploads a test save, or downloads over one   | not launched by Steam, no app id, the client's folder hidden; Steam's local cloud folder (`userdata/*/1091500`) hidden as well                                                                                                            |
+| Achievements, playtime, "in game" status on the account  | the same: the game cannot reach the client                                                                                                                                                                                                |
+| The script cache, logs or mod state of the player's game | the instance's game folder is a copy; the player's is mounted read only in the sandbox                                                                                                                                                    |
+| A game update or a mod change while an instance is built | nothing is written to the player's folder; `instance.sh sync` refreshes the copy                                                                                                                                                          |
+| The tools kill the player's game                         | `instance.sh` kills only processes carrying its mark, never by name; `tools/game.sh stop` kills the Steam game's unmarked processes by pid, no longer by name (`pkill -f Cyberpunk2077.exe`): [Sweeps on two games](#sweeps-on-two-games) |
+| Two games starve the player's                            | every changing verb refuses while a game we did not start runs; a memory limit per instance; `stop` always works                                                                                                                          |
+| A half-copied prefix                                     | the prefix is copied only while the player's game is not running                                                                                                                                                                          |
 
 What the sandbox does **not** do: it is not a jail. The game can still write
 elsewhere in the home directory (as any game can). It protects the three
@@ -389,16 +389,101 @@ and a `load` each, the second once the first plays.
 sends itself to anya over ssh; `GAME_HOST=local` runs it on the machine at
 hand.
 
-**`tools/game.sh` and `tools/scenario.sh` are not instance-aware**, but for
-the test pilot: they find, start and kill "the game" by name and through
-Steam. Do not run them while instances run. `PILOT_INSTANCE=NAME
-tools/game.sh pilot …` (and its `cmd`, `log`, `fetch-play`) works on
-instance NAME: our V there is played by keys sent to the instance's own
-gamescope display, or by a pad only that instance reads (`.tandem-instance`
-records it as `pad = 0x02d1`, `INSTANCE_PAD` picks it, and `start` passes
+**`tools/game.sh` and `tools/scenario.sh` take an instance**,
+`TANDEM_INSTANCE=NAME` ([Sweeps on two games](#sweeps-on-two-games));
+`PILOT_INSTANCE=NAME` is its older name. `tools/game.sh pilot …` on an
+instance plays our V there by keys sent to the instance's own gamescope
+display, or by a pad only that instance reads (`.tandem-instance` records
+it as `pad = 0x02d1`, `INSTANCE_PAD` picks it, and `start` passes
 `SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT`): `autopilot.md`, "Two real
-games". The next piece of work is a two-game scenario runner on top of
-`instance.sh` (its `cmd` and `log`, per instance).
+games".
+
+## Sweeps on two games
+
+**Not yet run in game: the coordinator will try it** (written 2026-11-21;
+checked by shellcheck, `--list` and a run against stubs of `game.sh` and
+`scenario.sh`). Doubles the sweep's throughput: the Steam game and an
+instance each run a slice of the list, against a mock player each.
+
+```sh
+tools/instance.sh create a                          # once; b too for --instances 3
+tools/sweep.sh --list --instances 2                 # which game runs what
+TANDEM_PREBUILT=1 tools/sweep.sh --instances 2      # the Steam game and instance a
+TANDEM_INSTANCE=a tools/scenario.sh three-players   # one scenario on a, by hand
+```
+
+- **Which game**: `TANDEM_INSTANCE=NAME` for `tools/game.sh`,
+  `tools/scenario.sh` and a one-game `tools/sweep.sh`; unset, `0` or `main`
+  is the Steam game, everything as before. `tools/game.sh where` prints the
+  game's instance, folder, port and local cache folder. `launches` and
+  `threads` refuse anything but the Steam game alone.
+- **Its processes**: an instance's carry `TANDEM_INSTANCE_ID` (its folder),
+  the Steam game's none; `running`, `stop`, `own`, `bt` (each game has its
+  own wineserver) and the sweep's crash and hang check find only the
+  game's own, by pid, never every `Cyberpunk2077.exe` by name. An instance
+  starts, loads (`tools/instance.sh load`: a click on Continue) and stops
+  through `tools/instance.sh`, beside the Steam game with
+  `INSTANCE_ALLOW_FOREIGN=1` (the sweep sets it: the Steam game is a test
+  game then). Everything else follows its folder: logs, `tandem.cmd`,
+  `tandem.ini` roles, `.started`, the deploy (`GAME_DIR`).
+- **Ports**: game k listens on 27450 + 100 k (`TANDEM_GAME_PORT`; an
+  instance alone defaults to 27550), in its `tandem.ini`. The scenarios name
+  27450: `tools/game.sh peer` and `peer2` turn a mock player's
+  `ADDRESS:27450` into the game's port and give a mock host `--port`.
+- **Mock players** carry `TANDEM_PEER_OF=GAME`; beside another game
+  (`TANDEM_PARALLEL`, which the sweep sets) or on an instance, the harness
+  and the scenarios' `pkill` (a function of `tools/scenario.sh`) stop only
+  the game's own. Their logs, the pilot's, screenshots and `bt.txt` go to
+  `.cache/instances/NAME/` (`$peer_log` in a scenario); evidence to
+  `.cache/scenarios/SCENARIO-TIME-on-NAME/`.
+- **One at a time**: game starts (until "playing": a start under load
+  passed the engine's 120 s watchdog, above) and deploys (the build,
+  `scripts:check`), by `flock` on `.cache/game-start.lock` and
+  `.cache/deploy.lock`.
+- **The split** (`tools/sweep.sh --instances N`): whole `ensure` groups
+  where it can (one start per group and game), a group cut where it is more
+  than a game's share, heaviest first; `--weights FILE` takes an earlier
+  `results.txt`'s seconds instead of one per scenario. 181 scenarios
+  (2026-11-21): 91 and 90 on two games, 61, 60 and 60 on three. Each game
+  writes `results-GAME.txt`; `results.txt` merges them in the sweep's
+  order, a 7th column naming the game.
+
+**Keys and screenshots.** On anya's Sway session `ydotool` (a kernel input
+device) and `grim` act on the focused window and the output, one game at a
+time: unusable for two. An instance has its own gamescope (nested, or
+headless: the sweep's default, `INSTANCE_DISPLAY`), whose Xwayland takes
+XTEST input for that game only and whose screen `gamescopectl screenshot`
+takes `[anya]` (above). So `shot` works on an instance. `key` and `hold`
+are sent there as X keycodes (the Linux code + 8; Esc by name), physical
+keys as ydotool's; whether xdotool takes a bare keycode, and what the
+instance's keymap (not anya's AZERTY) makes of the codes the scenarios
+chose, is `[unknown]`. The test reset's ChoiceApply (F) and the loading
+screen's Space are the same key on both layouts. **Routed to the Steam
+game** (instance 0) by the sweep, `needs_main`: `# needs the main game`;
+the by-hand ones (a person watches that screen); the pilot's (its pad and
+keys); `tools/game.sh key`/`hold` (`names-prompt`); the port 27450 named
+outside a mock player's address (`coop`, `devices-guest`, `join-address`,
+`recorder`, `release`, `settings`, `solo`: a log line, a `coop join`, `ss`).
+
+**Resources** (proposed, from the measures above): two games fit anya's
+31 GB and 16 GB of VRAM only without builds, so **no build on anya during
+a parallel sweep** (build here, or `tools/remote.sh` before:
+`TANDEM_PREBUILT=1`). The instance at 1280x720, textures Low, no sound
+(`create`'s `settings`), 30 fps (`INSTANCE_FPS`: vkd3d and gamescope),
+headless (no window in the streamed session), `MemoryMax=14G` and
+`INSTANCE_MIN_FREE_MB=12000` (the start refuses with less), CPU weight 100
+(400 if anything else competes). Cores apart, when the frame rates say the
+two fight: `INSTANCE_CPUS=6-11` (`taskset`, inherited by every process of
+the instance; check `nproc` first; the user manager's scopes have no cpuset
+controller for `AllowedCPUs`). The Steam game keeps the player's own
+settings: the tests change none of them.
+
+**First try**: `tools/instance.sh status` (a stopped, deployed or not),
+then `TANDEM_INSTANCE=a tools/scenario.sh three-players` alone (start, load,
+port, mock players, evidence), then `tools/sweep.sh --instances 2 coop
+three-players combat-defend markers` beside the Steam game, watching
+`tools/instance.sh stats a` and the guest freeze above (the first open
+unknown).
 
 ### What tandem needed
 
