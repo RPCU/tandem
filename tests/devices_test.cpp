@@ -545,6 +545,62 @@ TEST_CASE("glass: the host holds a guest's fractures to a rate") {
   CHECK(s.host->FracturesDropped() > 0);
 }
 
+TEST_CASE("the fracture record keeps a piece once, by its name or its metre, in any order") {
+  devices::FractureRecord host, guest;
+  const proto::Fracture part{.player = 2, .entity = 0x77, .component = 0x9, .at = {1.f, 2.f, 3.f}};
+  const proto::Fracture pane{.player = 1, .at = {10.2f, -3.4f, 1.f}};
+  CHECK(host.Note(part));
+  CHECK(host.Note(pane));
+  // The same part anywhere, by anyone; another piece in the pane's metre.
+  CHECK_FALSE(host.Note({.player = 3, .entity = 0x77, .component = 0x9, .at = {9.f, 9.f, 9.f}}));
+  CHECK_FALSE(host.Note({.player = 2, .at = {10.9f, -3.1f, 1.5f}}));
+  CHECK(host.Note({.at = {11.1f, -3.4f, 1.f}}));
+  CHECK(host.Size() == 3);
+  CHECK(host.InOrder().front() == part);
+  // Heard in another order: the same digest.
+  CHECK(guest.Note({.at = {11.1f, -3.4f, 1.f}}));
+  CHECK(guest.Digest() != host.Digest());
+  CHECK(guest.Note(pane));
+  CHECK(guest.Note(part));
+  CHECK(guest.Digest() == host.Digest());
+  // Bounded: full, a new piece is not kept; a known one is still known.
+  devices::FractureRecord full;
+  for (std::size_t i = 0; i < devices::kMaxFractureRecord; ++i)
+    full.Note({.at = {static_cast<float>(i) * 2.f, 0.f, 0.f}});
+  CHECK(full.Full());
+  CHECK_FALSE(full.Note({.at = {-50.f, 0.f, 0.f}}));
+  CHECK(full.Has({.at = {0.5f, 0.f, 0.f}}));
+  CHECK_FALSE(full.Has({.at = {-50.f, 0.f, 0.f}}));
+}
+
+TEST_CASE("glass: what broke before a player joined is broken for it, and every record is the "
+          "host's") {
+  auto s = Start(false);
+  Heard heard;
+  s.a->SendFracture({.entity = 0x77, .component = 0x9, .at = {1.f, 2.f, 3.f}, .level = 2});
+  s.host->SendFracture({.at = {5.f, 6.f, 7.f}});
+  REQUIRE(heard.Run(s.All(), [&] {
+    return heard.broke[0].size() == 1 && heard.broke[1].size() == 1 && s.a->Fractures().Size() == 2;
+  }));
+  // Another piece of the host's pane: news to the linked, not to the record.
+  s.host->SendFracture({.at = {5.2f, 6.1f, 7.3f}});
+  REQUIRE(heard.Run(s.All(), [&] { return heard.broke[1].size() == 2; }));
+  CHECK(s.host->Fractures().Size() == 2);
+
+  // b joins later: both pieces, once each, in their players' names.
+  std::string error;
+  s.b = Endpoint::Join({"b"}, "127.0.0.1", s.host->LocalPort(), error, kQuick);
+  REQUIRE(s.b);
+  REQUIRE(heard.Run(s.All(), [&] { return heard.broke[2].size() == 2; }));
+  CHECK(heard.broke[2][0].player == s.a->You());
+  CHECK(heard.broke[2][0].entity == 0x77);
+  CHECK(heard.broke[2][1].player == s.host->You());
+  heard.Run(s.All(), [] { return false; }, 400ms);
+  CHECK(heard.broke[2].size() == 2);
+  CHECK(s.a->Fractures().Digest() == s.host->Fractures().Digest());
+  CHECK(s.b->Fractures().Digest() == s.host->Fractures().Digest());
+}
+
 TEST_CASE("a device's fire: the host's turret's aim and shots reach every guest; what a copy "
           "sees, the host alone") {
   using Kind = proto::DeviceFireKind;

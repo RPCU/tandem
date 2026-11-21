@@ -69,6 +69,16 @@ struct TandemObjects : Red::IScriptable {
     return true;
   }
 
+  // Another game's break that waited for our V (Objects.reds), replayed
+  // now: its echo is not told.
+  static void Replaying(Red::EntityID entity, Red::CName name, Red::Vector4 position) {
+    proto::Fracture fracture{
+        .entity = entity.hash, .component = name.hash, .at = {position.X, position.Y, position.Z}};
+    if (fracture.entity == 0 || fracture.component == 0)
+      fracture.entity = fracture.component = 0;
+    Glass().Replaying(fracture, net::NowUs());
+  }
+
   // A device's fire. Host: our turret turned to a target (kind 1), shot at
   // it (2) or follows nobody (0); the target a shared NPC, a player, a
   // placed entity, else the place alone. Guest: our copy of it locked our
@@ -173,6 +183,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemObjectEvent, "TandemObjectEvent", {
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemObjects, "TandemObjects", {
   RTTI_METHOD(Broke);
+  RTTI_METHOD(Replaying);
   RTTI_METHOD(Fire);
   RTTI_METHOD(TakeEvents);
   RTTI_METHOD(Reset);
