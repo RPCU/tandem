@@ -130,9 +130,13 @@ void Endpoint::SendTrafficStates(proto::TrafficStates states) {
     spawn.orientation = traffic::UnpackOrientation(entry.orientation);
   }
   // Nobody sees our street: its reliable record is the host's all the same,
-  // its motion is nobody's business.
-  if (Linked().empty())
-    return;
+  // and where our vehicles are once a second (a link shows them from it).
+  if (Linked().empty()) {
+    const auto now = net::NowUs();
+    if (now - m_apartTrafficStatesUs < regions::kApartStatesUs)
+      return;
+    m_apartTrafficStatesUs = now;
+  }
   // One numbering with the NPC states: an epoch's firstNpcSeq fences both
   // (the host numbers a guest's again).
   states.seq = ++m_npcSeq;

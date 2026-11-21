@@ -1446,6 +1446,9 @@ private:
   std::map<proto::NpcId, proto::NpcHold> m_npcHolds;
   std::map<proto::NpcId, proto::NpcAnim> m_npcAnims;
   std::uint32_t m_npcSeq{};
+  // A guest linked with nobody: when it last told the host where its NPCs
+  // and its vehicles are (regions::kApartStatesUs).
+  std::uint64_t m_apartNpcStatesUs{}, m_apartTrafficStatesUs{};
   // Scene replay's streams (the camera; the actors' bodies and faces).
   scene::Pacer m_scenePacer;
   std::uint32_t m_cameraSeq{};

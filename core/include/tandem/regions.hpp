@@ -28,6 +28,9 @@ inline constexpr float kLose = 90.f;     // an owner stops sharing an NPC farthe
 // A lower-ranked game's own crowd is off while its V is this deep in a
 // higher-ranked linked player's region, and back on beyond the radius.
 inline constexpr float kQuietIn = 45.f;
+// An owner linked with nobody still tells the host where its NPCs and its
+// vehicles are, this often (microseconds): the record a link shows them from.
+inline constexpr std::uint64_t kApartStatesUs = 1'000'000;
 
 // An NPC's session id: the announcing game's player id minus one in the top
 // 8 bits, that game's own counter below. The host's ids are below 2^24.

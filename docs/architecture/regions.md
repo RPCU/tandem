@@ -288,9 +288,14 @@ owner whatever the asker shows: one in flight when a link breaks counts.
 `NpcStates` from a guest are renumbered by the host (one sequence for every
 receiver, so the epoch fence and the tracks keep working) and keep the
 owner's timestamp on the host clock. An owner linked with nobody sends no
-`NpcStates`, `NpcAwareness` or `NpcShot` at all; its reliable messages
-(spawns, health…) still go to the host, so the record is whole the moment a
-link forms.
+`NpcAwareness` or `NpcShot` at all, and its `NpcStates` once a second
+(`regions::kApartStatesUs`), which the host keeps in its record and passes
+to nobody; its reliable messages (spawns, health…) still go to the host, so
+the record is whole, positions included, the moment a link forms. Without
+those states a link showed its NPCs where they were first announced: a
+proxy's spawn beyond 250 m of the V is ignored by `Npcs.reds`, so the
+proxies came 2.5 s later from the consistency check (`regions-meet`,
+2026-11-21).
 
 **Paths generalised** (each was "host owns, guest asks"; each is now "owner
 owns, anyone asks"): hits and their outcomes, status effects, kill credit
