@@ -186,30 +186,38 @@ wait_log() {
 }
 
 # ---- whose game it is ----
-# The test pilot (below) only ever drives a game this script started: start
-# writes that game's pid and start time to the pilot's cache folder on the
-# game machine (never in the game's folder), stop removes it, and the pilot
-# refuses a running game that is not the one written there (the player's).
+# Each game this script starts (start, launches) is recorded as soon as its
+# process exists: its pid and kernel start time (together they never name
+# another process) in ~/.cache/tandem/pilot/INSTANCE/game.owner on the game
+# machine, never in the game's folder; stop removes the record once the game
+# is gone. The test pilot (below) refuses a running game that is not the one
+# written there; tools/instance.sh takes the Steam game written there, and
+# the launchers it runs under, for a test game. Any other game is the
+# player's (tools/instance.sh who).
 pilot_dir=.cache/tandem/pilot/$instance # on the game machine, under $HOME
 pilot_bin=build/linux/pilot/tandem-pilot
 
+# The game's own process (Wine's "Z:\...\Cyberpunk2077.exe", not the
+# launchers around it), waited for up to 90 s.
 own() {
-  remote "$pids_fn mkdir -p $pilot_dir; p=\$(game_pids -f '^[A-Z]:.*Cyberpunk2077[.]exe' | head -1); [ -n \"\$p\" ] || exit 1; \
-    echo \"\$p \$(sed 's/.*) //' /proc/\$p/stat | awk '{ print \$20 }')\" > $pilot_dir/game.owner"
+  remote "$pids_fn mkdir -p $pilot_dir; for i in \$(seq 1 90); do p=\$(game_pids -f '^[A-Z]:.*Cyberpunk2077[.]exe' | head -1); [ -z \"\$p\" ] || break; sleep 1; done; [ -n \"\$p\" ] || exit 1; \
+    echo \"\$p \$(sed 's/.*) //' /proc/\$p/stat | awk '{ print \$20 }')\" > $pilot_dir/game.owner.new && mv -f $pilot_dir/game.owner.new $pilot_dir/game.owner"
 }
 unown() { remote "rm -f $pilot_dir/game.owner" || true; }
 
 # (keep_pilot: start's own stop leaves a serving pilot up, with its pad:
 # the game about to start must see it.) Only this game's processes: an
 # instance's through tools/instance.sh (its scope, its marked processes,
-# gamescope too), the Steam game's by pid, those without a mark.
+# gamescope too), the Steam game's by pid, those without a mark (Steam runs
+# one game of the app at a time). The record goes once the game is gone: a
+# game still dying stays a test game for tools/instance.sh.
 stop() {
   [ -n "${keep_pilot:-}" ] || pilot_stop >/dev/null 2>&1 || true
-  unown
   if [ "$instance" != main ]; then
     local was=''
     running && was=1
     tools/instance.sh stop "$instance" >/dev/null 2>&1 || return 1
+    unown
     [ -z "$was" ] || echo "game stopped"
     return 0
   fi
@@ -217,11 +225,11 @@ stop() {
     remote "$pids_fn"'kill -KILL $(game_pids -f "[C]yberpunk2077.exe") 2>/dev/null; for i in $(seq 1 15); do [ -n "$(game_pids -f "[C]yberpunk2077.exe")" ] || exit 0; sleep 1; done; exit 1'
     echo "game stopped"
   fi
+  unown
 }
 
 # Through the running Steam, in its session; an instance outside Steam, by
-# tools/instance.sh (beside the Steam game only with INSTANCE_ALLOW_FOREIGN=1,
-# which tools/sweep.sh --instances sets: that game is then a test game too).
+# tools/instance.sh (beside a Steam game only when own recorded that one).
 launch() {
   if [ "$instance" != main ]; then
     tools/instance.sh start "$instance"
@@ -252,6 +260,9 @@ start() {
   # never come.
   local launched
   launched=$(remote 'date +%s')
+  # Its process comes within seconds: a test game from then on, for the
+  # pilot and for tools/instance.sh (a sweep's other games).
+  own || echo "the game's process was not found: the pilot and tools/instance.sh take it for the player's" >&2
   if remote "cd '$dir/r6/logs'; for i in \$(seq 1 90); do \
       if [ -f redscript_rCURRENT.log ] && [ \$(stat -c %Y redscript_rCURRENT.log) -ge $launched ]; then \
         sleep 2; grep -q '\[ERROR' redscript_rCURRENT.log && exit 0; exit 1; fi; sleep 1; done; exit 1"; then
@@ -273,8 +284,6 @@ start() {
     remote "grep -A4 '\\[ERROR' '$dir/r6/logs/redscript_rCURRENT.log' | head -20" >&2 || true
     exit 1
   fi
-  # The game process exists now: it is ours, for the pilot.
-  own || echo "the game's process was not found: the pilot will refuse this game" >&2
   if [ "$instance" != main ]; then
     # Its own mouse and keys: a click on Continue, Space at the loading screen.
     tools/instance.sh load "$instance" || exit 1
@@ -313,13 +322,14 @@ launches() {
   local n=${1:-5} crashes=0 playing=0 neither=0 i result t0 off=''
   for i in $(seq 1 "$n"); do
     keep_pilot=1 stop >/dev/null
-    remote 'pkill -KILL -f "[C]rashReporter.exe"; sleep 3; true'
+    remote "$pids_fn"'kill -KILL $(game_pids -f "[C]rashReporter.exe") 2>/dev/null; sleep 3; true'
     t0=$(remote 'date +%s')
     launch
-    result=$(remote "cd '$dir/red4ext/logs' || exit 1; t0=$t0; "'
+    own >/dev/null || true
+    result=$(remote "$pids_fn cd '$dir/red4ext/logs' || exit 1; t0=$t0; "'
       crashed() {
         rg=$(find . -name "redgraph-*.log" -newermt "@$t0" | head -1)
-        { [ -n "$rg" ] && grep -q "\[crash\] thread" "$rg"; } || pgrep -f "[C]rashReporter.exe" >/dev/null
+        { [ -n "$rg" ] && grep -q "\[crash\] thread" "$rg"; } || [ -n "$(game_pids -f "[C]rashReporter.exe")" ]
       }
       res=neither
       for i in $(seq 1 120); do
@@ -350,7 +360,7 @@ launches() {
     esac
   done
   keep_pilot=1 stop >/dev/null
-  remote 'pkill -KILL -f "[C]rashReporter.exe"; true'
+  remote "$pids_fn"'kill -KILL $(game_pids -f "[C]rashReporter.exe") 2>/dev/null; true'
   echo "$n launches, $crashes crashes ($playing playing, $neither neither within 240 s)"
   if [ -n "$off" ]; then
     echo "hooks that ran beside the script tick (queue them, testing.md):$(tr ' ' '\n' <<<"$off" | sort -u | tr '\n' ' ')"
