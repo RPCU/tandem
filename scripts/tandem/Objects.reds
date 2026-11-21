@@ -75,7 +75,7 @@ public class TandemObjectSync extends ScriptableSystem {
         if !this.Break(event, false) {
           this.Wait(event);
         }
-      } else if event.kind == 2 && IsDefined(turrets) {
+      } else if (event.kind == 2 || event.kind == 3) && IsDefined(turrets) {
         turrets.OnEvent(event, now);
       }
     }
