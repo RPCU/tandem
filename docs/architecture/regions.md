@@ -738,5 +738,7 @@ knock-out, a late joiner, a lost word healed by the digest, a reporter that
 vanishes, an heir's kill), `tests/referee_test.cpp` (the ledger's rules),
 `tests/peer_regions.sh` (two mock players apart, each kills a placed NPC:
 `tandem-peer --mode region --region-placed HEX --region-kill-at S`).
-In the game: `tools/game.sh cmd ledger`; scenarios `ledger-guest`,
+In the game: `tools/game.sh cmd ledger`; `ledger near` / `ledger goto`
+(the nearest placed, alive, non-quest NPC of our own world within 200 m,
+with how many NPCs and placed ones are there: `ledger-guest`'s); scenarios `ledger-guest`,
 `vendor-guest` (§12).

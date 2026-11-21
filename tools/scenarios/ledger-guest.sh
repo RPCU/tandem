@@ -1,23 +1,24 @@
 # As a guest: a placed NPC the host kills alone, far from us, is gone from our game too (our own copy hidden, in the session's ledger), and a body lies where it fell when we come by
 # shellcheck shell=bash disable=SC2317
 # Where: LEDGER_AT (a fixture or "X Y Z", default kabuki-market, testing.md
-# "Fixtures": a placed vendor of our own world within 200 m of it stands for
-# "a placed NPC"). The mock host stands
+# "Fixtures": the nearest placed NPC of our own world within 200 m of it,
+# not a quest's, stands for "a placed NPC": `ledger near`; a vendor is not
+# needed, and the survey found none there). The mock host stands
 # 300 m east of it (unlinked: it never sees ours, we never see its own) with
 # an NPC of that record and entity, and kills it. LEDGER_AWAY ("X Y Z", a
-# spot our V can stand on, 200 m or more from the vendor): the host stands
+# spot our V can stand on, 200 m or more from that NPC): the host stands
 # there instead, and we go there afterwards to see the body.
 ensure join
 at "${LEDGER_AT:-kabuki-market}"
-cmd vendor near
-expect 'vendor: near .* record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' 10
-line=$(since | grep -oE 'vendor: near .* record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' | tail -1)
+cmd ledger near
+expect 'ledger: near placed npc record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' 10
+line=$(since | grep -oE 'ledger: near placed npc record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' | tail -1)
 note "$line"
 record=$(sed -E 's/.* record ([^ ]+) entity .*/\1/' <<<"$line")
 entity=$(sed -E 's/.* entity ([0-9a-f]+) at .*/\1/' <<<"$line")
 read -r x y z <<<"$(sed -E 's/.* at (-?[0-9.]+) (-?[0-9.]+) (-?[0-9.]+)$/\1 \2 \3/' <<<"$line")"
-cmd vendor goto
-expect 'vendor: near ' 10
+cmd ledger goto
+expect 'ledger: near placed npc' 10
 if [ -n "${LEDGER_AWAY:-}" ]; then
   read -r ax ay az <<<"$LEDGER_AWAY"
 else
