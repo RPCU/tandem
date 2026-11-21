@@ -21,6 +21,12 @@
 //   way. Fast travel locks (combat, a vehicle, a quest) block it too.
 // - The story's "offer to join" (a far guest when a scene starts) calls
 //   TandemTravel.OfferRegroup(game, player, 2, title).
+// - The arrival: a join chosen in the co-op menu (TandemNative.ChooseArrival)
+//   was the player's yes. At its first welcome our V goes beside the host,
+//   no prompt, behind the fast travel's loading screen whatever the distance
+//   (no fast travel point needed: a new V has none), once our V is free to
+//   go (not in a locked scene, a vehicle or down). Our own fast travel locks
+//   do not hold it: they are our own story's, which waits in the session.
 
 public class TandemTravelOffer {
   public let player: Uint32;
@@ -111,6 +117,21 @@ public class TandemTravel {
   private let m_loadingListener: ref<CallbackHandle>;
   private let m_loadingEnded: Bool;
   private let m_loadingEndedAt: Float;
+  // The arrival (ArriveBeside): the host to go to (0: none), since when
+  // (real time; 0: not ticked yet), and whether the trip under way is it.
+  private let m_arrival: Uint32;
+  private let m_arrivalSince: Float;
+  private let m_arriving: Bool;
+
+  // How long the arrival waits for our V to be free to go, and how near
+  // the host it must land not to be moved again after the loading screen.
+  public static func ArrivalSeconds() -> Float {
+    return 90.0;
+  }
+
+  public static func ArrivalNearMetres() -> Float {
+    return 30.0;
+  }
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
@@ -124,6 +145,8 @@ public class TandemTravel {
     this.Hide();
     this.m_trip = false;
     this.m_joining = 0u;
+    this.m_arrival = 0u;
+    this.m_arriving = false;
     ArrayClear(this.m_arrivals);
     let blackboard = this.TravelBoard();
     if IsDefined(blackboard) && IsDefined(this.m_loadingListener) {
@@ -237,8 +260,103 @@ public class TandemTravel {
       TandemNative.Log(s"travel: offer \(this.m_offer.offer) of \(this.NameOf(this.m_offer.player)) lapsed");
       this.Decline();
     }
+    this.TryArrival();
     this.FollowTrip();
     this.WatchJump();
+  }
+
+  // ---- the arrival ----
+
+  // Our first welcome in a join the co-op menu chose: beside `host` once
+  // our V is free to go (TryArrival).
+  public func ArriveBeside(host: Uint32) -> Void {
+    this.m_arrival = host;
+    this.m_arrivalSince = 0.0;
+    TandemNative.Log(s"arrival: to \(this.NameOf(host)) once our V is free to go");
+  }
+
+  // Why our V cannot go yet ("": it can).
+  private func ArrivalWait(local: ref<PlayerPuppet>, at: Vector4) -> String {
+    if !IsDefined(local) {
+      return "no V";
+    }
+    if at.W == 0.0 {
+      return "the host is nowhere yet";
+    }
+    if VehicleComponent.IsMountedToVehicle(this.m_game, local) {
+      return "in a vehicle";
+    }
+    // A scene that holds our V (our own story's opening, a new V's
+    // lifepath start): it plays out first.
+    if PlayerPuppet.GetSceneTier(local) >= 3 {
+      return "in a scene";
+    }
+    let system = TandemSystem.Of(this.m_game);
+    if IsDefined(system) && IsDefined(system.Revive()) && system.Revive().IsDown() {
+      return "down";
+    }
+    return "";
+  }
+
+  private func TryArrival() -> Void {
+    if this.m_arrival == 0u || this.m_trip {
+      return;
+    }
+    // The session ended before we could go: nobody to go to.
+    if this.m_you == 0u {
+      this.m_arrival = 0u;
+      TandemNative.Log("arrival: dropped, out of the session");
+      return;
+    }
+    if this.m_arrivalSince <= 0.0 {
+      this.m_arrivalSince = MaxF(this.m_now, 0.001);
+    }
+    let host = this.m_arrival;
+    let name = this.NameOf(host);
+    let local = GetPlayer(this.m_game);
+    let at = TandemNative.RemotePosition(host);
+    let wait = this.ArrivalWait(local, at);
+    if StrLen(wait) > 0 {
+      if this.m_now - this.m_arrivalSince > TandemTravel.ArrivalSeconds() {
+        this.m_arrival = 0u;
+        TandemNative.Log(s"arrival: given up (\(wait)): \(name)'s marker and Join \(name) bring us there");
+        TandemText.Notice(this.m_game, "Session-JoinedOf", name);
+      }
+      return;
+    }
+    this.m_arrival = 0u;
+    at.W = 1.0;
+    let yaw = TandemNative.RemoteYaw(host);
+    let distance = Vector4.Distance(local.GetWorldPosition(), at);
+    if distance < TandemTravel.TogetherMetres() {
+      TandemNative.Log(s"arrival: beside \(name) already (\(RoundF(distance)) m)");
+      TandemText.Notice(this.m_game, "Session-JoinedOf", name);
+      return;
+    }
+    let travel = this.FastTravel();
+    if IsDefined(travel) && !travel.IsFastTravelEnabled() {
+      TandemNative.Log("arrival: our own fast travel locks are on (our story's, held in the session): not for the arrival");
+    }
+    this.m_joinAt = at;
+    this.m_joinYaw = yaw;
+    this.m_arriving = true;
+    this.BeginTrip(TDBID.None(), 0ul, host);
+    this.TeleportHidden(local, this.Behind(at, yaw), yaw);
+    TandemNative.Log(s"arrival: joining \(name) behind the fast travel's loading screen (\(RoundF(distance)) m)");
+  }
+
+  // The trip is over (FollowTrip): near enough, we stay where the loading
+  // screen left us; the host walked on meanwhile, the last metres.
+  private func Arrived(host: Uint32) -> Void {
+    this.m_arriving = false;
+    let local = GetPlayer(this.m_game);
+    let at = TandemNative.RemotePosition(host);
+    if IsDefined(local) && at.W != 0.0 && Vector4.Distance(local.GetWorldPosition(), at) > TandemTravel.ArrivalNearMetres() {
+      this.Hop(host);
+    } else {
+      TandemNative.Log(s"travel: arrived next to \(this.NameOf(host)) (the arrival)");
+    }
+    TandemText.Notice(this.m_game, "Session-JoinedOf", this.NameOf(host));
   }
 
   // A move of our V that is ours (a regroup's hop, a test's teleport, a
@@ -357,6 +475,7 @@ public class TandemTravel {
         TandemNative.Log("travel: no arrival seen in 60 s, given up");
         this.m_trip = false;
         this.m_joining = 0u;
+        this.m_arriving = false;
       }
       return;
     }
@@ -381,7 +500,11 @@ public class TandemTravel {
     if this.m_joining != 0u {
       let player = this.m_joining;
       this.m_joining = 0u;
-      this.Hop(player);
+      if this.m_arriving {
+        this.Arrived(player);
+      } else {
+        this.Hop(player);
+      }
       return;
     }
     if this.m_you == 0u {
@@ -655,14 +778,33 @@ public class TandemTravel {
       at = this.m_joinAt;
       yaw = this.m_joinYaw;
     }
-    // The game's forward is +Y turned by yaw: (-sin, cos).
-    let spot = new Vector4(at.X + SinF(yaw) * 2.0, at.Y - CosF(yaw) * 2.0, at.Z, 1.0);
+    let spot = this.Behind(at, yaw);
     let gap = Vector4.Distance(local.GetWorldPosition(), spot);
     if gap > 4.0 {
       this.Expect();
       GameInstance.GetTeleportationFacility(this.m_game).Teleport(local, spot, TandemYawAngles(Rad2Deg(yaw)));
     }
     TandemNative.Log(s"travel: arrived next to \(this.NameOf(player)) (\(gap) m hop)");
+  }
+
+  // Two metres behind a player at `at` facing `yaw`. The game's forward is
+  // +Y turned by yaw: (-sin, cos).
+  private func Behind(at: Vector4, yaw: Float) -> Vector4 {
+    return new Vector4(at.X + SinF(yaw) * 2.0, at.Y - CosF(yaw) * 2.0, at.Z, 1.0);
+  }
+
+  // A teleport hidden as a fast travel is (FastTravelSystem.PerformFastTravel,
+  // TravelToMarker): the gameplay restrictions off, the camera level, the
+  // fast travel's loading screen over the move while the world streams in
+  // around it. For a spot with no fast travel point (the arrival).
+  private func TeleportHidden(local: ref<PlayerPuppet>, spot: Vector4, yaw: Float) -> Void {
+    PlayerGameplayRestrictions.RemoveAllGameplayRestrictions(local);
+    local.GetFPPCameraComponent().ResetPitch();
+    TandemSync.WorldRebuilt(2);
+    this.Expect();
+    GameInstance.GetTeleportationFacility(this.m_game).Teleport(local, spot, TandemYawAngles(Rad2Deg(yaw)));
+    this.FastTravelLoadingScreen();
+    GameInstance.GetUISystem(this.m_game).NotifyFastTravelStart();
   }
 
   // ---- the fast travel system ----
