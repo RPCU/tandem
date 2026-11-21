@@ -165,9 +165,12 @@ grenades and every V's thrown object unseen on the other game) and the
   than 1 s in the queue (`combat::kThrowStaleUs`, a stall) is not launched.
 - **A grenade's copy follows the real one's path.** The thrower's game
   says where its grenade is and how it moves (`ThrowPath`, State channel:
-  4 times a second in flight (not at each bounce: a projectile's
-  `OnCollision` may run on a job thread, and the next sample shows it); once more when it lies still; the same for an owner's NPC's
-  grenade). A copy within 1.5 m of it (0.4 m lying still) flies on
+  4 times a second in flight; at each bounce of the thrower's own (its
+  `BaseGrenade.OnCollision` only queues the place and moment, it may run
+  on a job thread; the tick says the bounce's place with the speed it left
+  at, measured 40 ms later, at most every 0.15 s an object: a rolling
+  grenade touches the ground every frame); once more when it lies still;
+  the same for an owner's NPC's grenade, bounces aside). A copy within 1.5 m of it (0.4 m lying still) flies on
   untouched: the same arc on the same geometry. One that strayed (it
   bounced off a car one game alone has) is put on the real one's path
   (`combat::FollowPath`, `BaseGrenade.TandemFollow`: its trajectories
@@ -263,3 +266,8 @@ the guest's game, as shots were (time.md), was weighed and not done:
 - A grenade's copy put back on its path: whether the new parabola starts
   from the place given (engine/presence.md §13.93), to see in
   `combat-throw-bounce`.
+- A bounce said at its place (no scenario: the game must throw): as a host
+  with a mock guest (`task peer -- join … --mode idle`), throw a grenade
+  at a wall by hand; the mock player logs `player N's throw M is at …` at
+  the wall a moment after the bounce, and `tools/game.sh cmd throws report`
+  counts `(K at a bounce)`; a rolling grenade says at most 7 a second.
