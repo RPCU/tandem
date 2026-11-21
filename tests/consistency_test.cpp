@@ -208,6 +208,8 @@ TEST_CASE("faults never touch the handshake and never send a one-shot twice") {
   // A breach runs its daemons once; its answer is said once.
   CHECK(consistency::IsOneShot(proto::Breach{}));
   CHECK(consistency::IsOneShot(proto::BreachResult{}));
+  // A race's join, seat and reward are acted on once.
+  CHECK(consistency::IsOneShot(proto::Race{}));
   // A device's shot is fired once; its aim is state, and a break is for good.
   CHECK(consistency::IsOneShot(proto::DeviceFire{.kind = proto::DeviceFireKind::Shot}));
   CHECK_FALSE(consistency::IsOneShot(proto::DeviceFire{.kind = proto::DeviceFireKind::Aim}));

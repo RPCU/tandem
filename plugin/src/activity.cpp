@@ -71,8 +71,21 @@ void Activities::PushEvent(SkipEvent event) {
     m_events.push_back(std::move(event));
 }
 
+void Activities::PushRace(RaceNote note) {
+  std::lock_guard _(m_lock);
+  // A race says a few things a second; more than this is nobody listening.
+  if (m_races.size() < 4 * kMaxQueued)
+    m_races.push_back(std::move(note));
+}
+
+std::vector<RaceNote> Activities::TakeRaces() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_races, {});
+}
+
 void Activities::EndSession() {
   std::lock_guard _(m_lock);
+  m_races.clear();
   if (!m_remote.empty()) {
     m_remote.clear();
     ++m_remoteChanges;

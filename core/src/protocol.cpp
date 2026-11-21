@@ -321,6 +321,13 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
       death && (death->entity == 0 || (death->flags & ~kDeathKnockedOut) != 0 ||
                 (death->npc != 0) != (death->order == 0) || (death->npc != 0 && death->by != 0)))
     return std::nullopt;
+  // A race: a kind and a phase the receiver knows, its lists within their caps.
+  if (const auto *race = std::get_if<Race>(&message);
+      race &&
+      (race->kind < RaceKind::Info || race->kind > RaceKind::Reward ||
+       (race->kind == RaceKind::Info && (race->arg < kRaceGrid || race->arg > kRaceAbandoned)) ||
+       race->points.size() > kMaxRacePoints || race->entries.size() > kMaxRacers))
+    return std::nullopt;
   if (const auto *commit = std::get_if<TradeCommit>(&message);
       commit && (!Fits(commit->first) || !Fits(commit->second)))
     return std::nullopt;
@@ -449,7 +456,8 @@ bool IsCombat(const Message &message) {
          (message.index() >= kId<PlayerLevel> && message.index() <= kId<NpcLevel>) ||
          std::holds_alternative<CarLend>(message) || std::holds_alternative<NpcScale>(message) ||
          std::holds_alternative<NpcVendor>(message) || std::holds_alternative<ThrowPath>(message) ||
-         std::holds_alternative<NpcPlaced>(message) || std::holds_alternative<NpcDeath>(message);
+         std::holds_alternative<NpcPlaced>(message) || std::holds_alternative<NpcDeath>(message) ||
+         std::holds_alternative<Race>(message);
 }
 
 bool IsTrade(const Message &message) {
@@ -624,7 +632,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "NpcPlaced",
                                    "NpcDeath",
                                    "RigTracks",
-                                   "TurretHands"};
+                                   "TurretHands",
+                                   "Race"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

@@ -97,6 +97,10 @@ public class TandemStorySystem extends ScriptableSystem {
   // load. The quests we took part in (with whom, completed), the rewards
   // paid (once, whoever the host), the vehicles earned (Garage.reds).
   private persistent let m_ledger: array<Uint64>;
+  // Race rewards our own game just paid (PayRace): not passed on to the
+  // guests as our quest's (OnOurReward), for a few seconds.
+  private let m_raceRewards: array<TweakDBID>;
+  private let m_raceRewardsAt: Float;
   // Our garage, and the host's news of it (Garage.reds).
   private let m_garage: ref<TandemGarage>;
   // A guest's use of the host's objects, done by the host's game
@@ -1376,7 +1380,7 @@ public class TandemStorySystem extends ScriptableSystem {
 
   // Host: our V got a reward (PlayerPuppet.OnRewardEvent, final.reds:43468).
   public func OnOurReward(reward: TweakDBID) -> Void {
-    if !this.IsHostInSession() {
+    if !this.IsHostInSession() || this.PaidForRace(reward) {
       return;
     }
     let at = GetPlayer(this.GetGameInstance()).GetWorldPosition();
@@ -1420,6 +1424,33 @@ public class TandemStorySystem extends ScriptableSystem {
     // By our own rules: our level, our perks, our toasts (final.reds:37406).
     RPGManager.GiveReward(this.GetGameInstance(), reward);
     TandemNative.Log(s"reward: given \(TDBID.ToStringDEBUG(reward)) (quest \(questHash))");
+  }
+
+  // A street race we raced in a partner's race paid us its reward
+  // (Races.reds): once per (race quest, reward) in the ledger, like a
+  // quest's; 0 paid now, 1 already paid in co-op, 2 we finished that quest
+  // alone. `key` is the race quest's journal hash (or the race's own key).
+  public func PayRace(reward: TweakDBID, key: Uint32) -> Int32 {
+    let pay = TandemStory.CarryPay(key, reward);
+    if pay != 0 {
+      TandemNative.Log(s"races: reward \(TDBID.ToStringDEBUG(reward)) (race \(key)) not paid again (\(pay == 1 ? "already given in co-op" : "that race done alone"))");
+      return pay;
+    }
+    this.Persist();
+    if this.Now() - this.m_raceRewardsAt > 10.0 || this.m_raceRewardsAt > this.Now() {
+      ArrayClear(this.m_raceRewards);
+    }
+    ArrayPush(this.m_raceRewards, reward);
+    this.m_raceRewardsAt = this.Now();
+    RPGManager.GiveReward(this.GetGameInstance(), reward);
+    TandemNative.Log(s"races: reward given \(TDBID.ToStringDEBUG(reward)) (race \(key))");
+    return 0;
+  }
+
+  // (read only: the reward hook calls it) one of those, a moment ago.
+  private func PaidForRace(reward: TweakDBID) -> Bool {
+    let now = this.Now();
+    return now - this.m_raceRewardsAt <= 10.0 && now >= this.m_raceRewardsAt && ArrayContains(this.m_raceRewards, reward);
   }
 
   // Our own story pays a reward: not again if co-op already paid it.
@@ -1636,6 +1667,10 @@ protected cb func OnRewardEvent(evt: ref<RewardEvent>) -> Bool {
   let result = wrappedMethod(evt);
   if IsDefined(story) {
     story.OnOurReward(evt.rewardName);
+  }
+  // A street race's reward on its starter's V (Races.reds): queued.
+  if IsDefined(GetPlayer(this.GetGame())) && this.GetEntityID() == GetPlayer(this.GetGame()).GetEntityID() {
+    TandemActivity.QueueRaceReward(evt.rewardName);
   }
   return result;
 }

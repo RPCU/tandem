@@ -1989,6 +1989,48 @@ TEST_CASE("throws: each copy everywhere but the thrower's game; defences to the 
   CHECK(heard[2].size() == 4);
 }
 
+TEST_CASE("street races: each word reaches every other game, in its sender's name") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((a && b));
+  std::map<std::size_t, std::vector<proto::Race>> heard;
+  const auto collect = [&](std::size_t i, const std::vector<SessionEvent> &events) {
+    for (const auto &event : events)
+      if (const auto *combat = std::get_if<events::Combat>(&event))
+        if (const auto *race = std::get_if<proto::Race>(&combat->message))
+          heard[i].push_back(*race);
+  };
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+  heard.clear();
+  // a starts a race (in someone else's name: stamped); b joins it; the host
+  // watches.
+  CHECK(a->SendCombat(proto::Race{.player = 99,
+                                  .starter = a->You(),
+                                  .race = 1,
+                                  .kind = proto::RaceKind::Info,
+                                  .arg = proto::kRaceGrid,
+                                  .checkpoints = 5}));
+  CHECK(b->SendCombat(
+      proto::Race{.starter = a->You(), .race = 1, .kind = proto::RaceKind::Join, .arg = 1}));
+  PumpFor({host.get(), a.get(), b.get()}, 300ms, collect);
+  // The host: both. a: b's join only. b: a's race only.
+  REQUIRE(heard[0].size() == 2);
+  REQUIRE(heard[1].size() == 1);
+  CHECK(heard[1][0].kind == proto::RaceKind::Join);
+  CHECK(heard[1][0].player == b->You());
+  REQUIRE(heard[2].size() == 1);
+  CHECK(heard[2][0].kind == proto::RaceKind::Info);
+  CHECK(heard[2][0].player == a->You());
+  CHECK(heard[2][0].checkpoints == 5);
+}
+
 namespace {
 void CollectElsewhere(const std::vector<SessionEvent> &events,
                       std::vector<proto::Elsewhere> &into) {
