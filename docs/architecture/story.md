@@ -93,15 +93,24 @@
     on the HUD layer and gives each option's `DialogChoiceLogicController`
     its markers (a panel of ours put in the row that holds the option's
     text, else at the option's right edge), redrawn only when they change,
-    again after the game respawns a hub's options. To see in game: where
+    again after the game respawns a hub's options. A hub of ours (a
+    guest's stand-in, the host's test hub) is **held on the widget**: the
+    game takes a hub it did not make off the `UIInteractions` board a frame
+    later (13 ms) and the widget hears the board a frame late, so a hub only
+    written to the board was never drawn (both screens, 2026-11-21). The
+    widget keeps it (`TandemHold`, a wrap of its `OnInteractionsChanged`
+    puts it back among the hubs it draws at every redraw, the active one
+    unless a hub of the game's is) until `TandemRelease`; the story tick
+    asks again while an option is missing (the game spawns one per update).
+    Log: `choice: hub N drawn by the game's choice widget`, and
+    `choice: marks not drawn on …: WHY` once per reason. To see in game: where
     the panel sits in the option's row, the font size against the game's,
     the options of a timed hub. Test: `tandem-peer join --hover N` (the
     mock's cursor on option N of every hub), the story verb `hover ID
 INDEX` (the mock host's). The host's test hub (`cmd story hub`) is held
-    up until `story hub close` (the game takes a hub it did not make off
-    the board a frame later; the tick puts it back, the test reset drops
-    it). Scenarios (run 2026-11-21, failed on the test hub gone after 13 ms
-    and on a wrong mock line; fixed, not run again):
+    until `story hub close` (the test reset drops it). Scenarios (run
+    2026-11-21: no hub on either screen, so no mark; the hold is not run
+    in game yet, nor `tools/game.sh launches 6` for its wrap):
     `dialogue-marks-host` (the mock guest's cursor marked on our hub;
     `story-host` its suggestion's, without the notice), `dialogue-marks-guest` (the mock host's cursor
     marked on ours, following it).

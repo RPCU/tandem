@@ -110,6 +110,7 @@ VendorHubMenuGameController < gameuiMenuGameController < inkGameController < wor
 Window < Door < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 WorldMapMenuGameController < MappinsContainerController < inkProjectedHUDGameController < inkHUDGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 WorldMappinsContainerController < MappinsContainerController < inkProjectedHUDGameController < inkHUDGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+dialogWidgetGameController < InteractionUIBase < inkHUDGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 gameDestructibleSpotsSystem < worldIDestructibleSpotsSystem < IGameSystem < IScriptable
 gameuiInventoryGameController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 gameuiVehicleShopGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable

@@ -28,11 +28,18 @@ public class TandemDialogue {
   private let m_sentKey: String;
   private let m_sentTexts: array<String>;
   private let m_testLine: Uint64;
-  // (test) `story hub` holds its hub up until `story hub close`: the game
-  // takes a hub it did not make off the board a frame later (13 ms,
-  // dialogue-marks-host 2026-11-21: no guest's cursor could land on it).
+  // (test) `story hub` holds its hub up until `story hub close`.
   private let m_testHub: Bool;
-  private let m_testHubBack: Int32;
+  // Either: a hub of ours (a guest's stand-in, the host's test hub) held on
+  // the game's choice widget itself. The game takes a hub it did not make
+  // off the board a frame later (13 ms, dialogue-marks-host 2026-11-21) and
+  // the widget hears the board a frame late: a hub only written to the board
+  // was never drawn (dialogue-marks-guest's screen, 2026-11-21).
+  private let m_holds: Bool;
+  private let m_held: ListChoiceHubData;
+  private let m_holdDirty: Bool;
+  private let m_holdSaid: Int32;
+  private let m_marksWhy: String;
 
   // Guest: the host's hub as it arrives, and what we show.
   private let m_pendingHub: Int32;
@@ -247,7 +254,7 @@ public class TandemDialogue {
     }
     if this.m_sentOpen {
       if this.m_testHub && this.m_sentHub == 4242 {
-        return; // (test) held: the tick puts it back on the board
+        return; // (test) held: off the board, the choice widget still draws it
       }
       let none: array<String>;
       let noTypes: array<Int32>;
@@ -320,15 +327,57 @@ public class TandemDialogue {
   // widgets (a hub redrawn spawns new option widgets, without ours).
   public func Tick(now: Float) -> Void {
     this.m_now = now;
-    if this.m_testHub && !this.TestHubUp() {
-      this.m_testHubBack += 1;
-      if this.m_testHubBack == 1 {
-        TandemNative.Log("story: test hub put back on the board (the game took it off)");
-      }
-      this.ShowTestHub();
-    }
+    this.ApplyHold();
     if ArraySize(this.m_markPlayers) > 0 || StrLen(this.m_marksKey) > 0 {
       this.DrawMarks();
+    }
+  }
+
+  // A hub of ours on the game's choice widget until Unhold: the widget
+  // draws it whatever the board says (dialogWidgetGameController.TandemHold).
+  private func Hold(data: ListChoiceHubData) -> Void {
+    this.m_held = data;
+    this.m_holds = true;
+    this.m_holdDirty = true;
+    this.m_holdSaid = 0;
+    this.ApplyHold();
+  }
+
+  private func Unhold() -> Void {
+    if !this.m_holds {
+      return;
+    }
+    this.m_holds = false;
+    if IsDefined(this.m_widget) {
+      this.m_widget.TandemRelease();
+    }
+  }
+
+  // On the tick: again when the widget is a new one (the HUD built again),
+  // lost our hub, lacks an option of it (the game spawns one per update) or
+  // has another cursor than ours.
+  private func ApplyHold() -> Void {
+    if !this.m_holds {
+      return;
+    }
+    let widget = this.Widget();
+    if !IsDefined(widget) {
+      if this.m_holdSaid != 1 {
+        this.m_holdSaid = 1;
+        TandemNative.Log(s"choice: hub \(this.m_held.id) not drawn yet: no choice widget on the HUD layer");
+      }
+      return;
+    }
+    let selected = this.m_shown ? this.m_cursor : -1;
+    let drawn = widget.TandemHeldDrawn(this.m_held.id, selected);
+    if this.m_holdDirty || !drawn {
+      widget.TandemHold(this.m_held, selected);
+      this.m_holdDirty = false;
+      drawn = widget.TandemHeldDrawn(this.m_held.id, selected);
+    }
+    if drawn && this.m_holdSaid != 2 {
+      this.m_holdSaid = 2;
+      TandemNative.Log(s"choice: hub \(this.m_held.id) drawn by the game's choice widget (\(ArraySize(this.m_held.choices)) options)");
     }
   }
 
@@ -369,15 +418,48 @@ public class TandemDialogue {
     let widget = this.Widget();
     if !IsDefined(widget) {
       this.m_marksOnScreen = false;
+      this.MarksWhy(key, "no choice widget on the HUD layer");
       return false;
     }
-    let shown = widget.TandemMarks(hub, indexes, labels, colors);
+    let why = widget.TandemMarks(hub, indexes, labels, colors);
+    let shown = why == 0;
     if !Equals(key, this.m_marksKey) && (shown || StrLen(key) == 0) {
       TandemNative.Log(StrLen(key) > 0 ? s"choice: marks on \(key)" : "choice: marks cleared");
       this.m_marksKey = key;
     }
+    if shown {
+      this.m_marksWhy = "";
+    } else {
+      this.MarksWhy(key, TandemDialogue.WhyNot(why));
+    }
     this.m_marksOnScreen = shown && StrLen(key) > 0;
     return this.m_marksOnScreen;
+  }
+
+  // Marks that wait (asked again ten times a second): why, said once per
+  // reason.
+  private func MarksWhy(key: String, why: String) -> Void {
+    if StrLen(key) == 0 || Equals(why, this.m_marksWhy) {
+      return;
+    }
+    this.m_marksWhy = why;
+    TandemNative.Log(s"choice: marks not drawn on \(key): \(why)");
+  }
+
+  // dialogWidgetGameController.TandemMarks' answers.
+  private static func WhyNot(why: Int32) -> String {
+    switch why {
+      case 1:
+        return "the choice widget draws no hub of that id";
+      case 2:
+        return "the hub's options are not spawned yet";
+      case 3:
+        return "the hub's own widget is hidden";
+      case 4:
+        return "the choice widget is hidden";
+      default:
+        return "drawn";
+    }
   }
 
   // The game's choice widget on the HUD layer (Codeware's controllers),
@@ -573,6 +655,7 @@ public class TandemDialogue {
     }
     this.m_shown = true;
     this.m_shownHub = this.m_pendingHub;
+    this.Hold(data);
     // Where we start, marked on the host's hub (and the others').
     TandemStory.SendCursor(this.m_shownHub, 0, 0);
     TandemNative.Log(s"choice: hub shown (\(ArraySize(this.m_pendingTexts)) options)");
@@ -584,6 +667,7 @@ public class TandemDialogue {
     }
     this.m_shown = false;
     this.ClearMarks();
+    this.Unhold();
     let hubs: DialogChoiceHubs;
     let board = this.Board(false);
     board.SetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs, ToVariant(hubs), true);
@@ -622,6 +706,7 @@ public class TandemDialogue {
   // Leaving: no hub or line of the host's stays on screen.
   public func Close() -> Void {
     this.CloseHub();
+    this.Unhold();
     if ArraySize(this.m_lines) > 0 {
       let ids: array<CRUID>;
       for line in this.m_lines {
@@ -655,11 +740,8 @@ public class TandemDialogue {
         this.Command("story hub close");
       }
     } else if Equals(command, "story hub close") {
-      if this.m_testHub {
-        TandemNative.Log(s"story: test hub was put back \(this.m_testHubBack) time(s)");
-      }
       this.m_testHub = false;
-      this.m_testHubBack = 0;
+      this.Unhold();
       let hubs: DialogChoiceHubs;
       let board = this.Board(false);
       board.SetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs, ToVariant(hubs), true);
@@ -667,23 +749,9 @@ public class TandemDialogue {
       TandemNative.Log("story: test hub closed");
     } else if StrBeginsWith(command, "story hub") {
       this.m_testHub = true;
-      this.m_testHubBack = 0;
       this.ShowTestHub();
       TandemNative.Log("story: test hub shown");
     }
-  }
-
-  // (test) The test hub is the board's active hub, as we last heard it.
-  private func TestHubUp() -> Bool {
-    if this.m_activeHub != 4242 {
-      return false;
-    }
-    for hub in this.m_hubs.choiceHubs {
-      if hub.id == 4242 {
-        return true;
-      }
-    }
-    return false;
   }
 
   private func ShowTestHub() -> Void {
@@ -704,6 +772,7 @@ public class TandemDialogue {
     let board = this.Board(false);
     board.SetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs, ToVariant(hubs), true);
     board.SetInt(GetAllBlackboardDefs().UIInteractions.ActiveChoiceHubID, 4242, true);
+    this.Hold(data);
   }
 }
 
@@ -715,30 +784,143 @@ public class TandemDialogue {
 // (TandemMarkers.ColorOf), or "NAME suggests".
 
 // The markers on the hub `hub` (an id of DialogChoiceHubs), none on the
-// others. True: that hub is drawn and visible.
+// others. 0: that hub is drawn and visible; else why not (1 no hub of that
+// id, 2 its options not spawned, 3 it is hidden, 4 this widget is hidden).
 @addMethod(dialogWidgetGameController)
-public final func TandemMarks(hub: Int32, indexes: array<Int32>, labels: array<String>, colors: array<HDRColor>) -> Bool {
+public final func TandemMarks(hub: Int32, indexes: array<Int32>, labels: array<String>, colors: array<HDRColor>) -> Int32 {
   let noIndexes: array<Int32>;
   let noLabels: array<String>;
   let noColors: array<HDRColor>;
-  let shown = false;
+  let why = 1;
   for controller in this.m_hubControllers {
     if IsDefined(controller) {
       if hub >= 0 && controller.GetId() == hub {
-        if controller.TandemMarks(indexes, labels, colors) && this.GetRootWidget().IsVisible() {
-          shown = true;
+        why = controller.TandemMarks(indexes, labels, colors);
+        if why == 0 && !this.GetRootWidget().IsVisible() {
+          why = 4;
         }
       } else {
         controller.TandemMarks(noIndexes, noLabels, noColors);
       }
     }
   }
-  return shown;
+  return why;
 }
 
-// Each option's markers. True: the hub has its options and is visible.
+// ---- a hub of ours, held on the choice widget ----
+//
+// A guest's stand-in hub and the host's test hub are no visualizer of the
+// game's: it takes them off the UIInteractions board a frame after we write
+// them, and this widget hears the board a frame late, so it never drew
+// them. The widget keeps ours itself: every redraw (OnInteractionsChanged,
+// which every board update ends in) puts it back into the hubs it draws.
+
+@addField(dialogWidgetGameController)
+private let m_tandemHolds: Bool;
+
+@addField(dialogWidgetGameController)
+private let m_tandemHeld: ListChoiceHubData;
+
+// job thread safe: reads and writes this widget's own fields only (what it
+// draws: its hubs, its active hub), then the wrapped redraw; our hub is given
+// and taken back on the story tick (TandemHold, TandemRelease).
+@wrapMethod(dialogWidgetGameController)
+protected func OnInteractionsChanged() -> Void {
+  if this.m_tandemHolds {
+    this.TandemPutHeld();
+  }
+  wrappedMethod();
+}
+
+// Our hub among the hubs to draw, the active one unless a hub of the game's
+// is.
+@addMethod(dialogWidgetGameController)
+private final func TandemPutHeld() -> Void {
+  let found = false;
+  let other = false;
+  for hub in this.m_data.choiceHubs {
+    if hub.id == this.m_tandemHeld.id {
+      found = true;
+    } else if hub.id == this.m_activeHubID {
+      other = true;
+    }
+  }
+  if !found {
+    ArrayPush(this.m_data.choiceHubs, this.m_tandemHeld);
+  }
+  if !other {
+    this.m_activeHubID = this.m_tandemHeld.id;
+  }
+  if IsDefined(this.m_root) && !this.m_root.IsVisible() {
+    this.m_root.SetVisible(true);
+  }
+}
+
+@addMethod(dialogWidgetGameController)
+private final func TandemDropHeld() -> Void {
+  let i = ArraySize(this.m_data.choiceHubs) - 1;
+  while i >= 0 {
+    if this.m_data.choiceHubs[i].id == this.m_tandemHeld.id {
+      ArrayErase(this.m_data.choiceHubs, i);
+    }
+    i -= 1;
+  }
+}
+
+// Holds `data` (story tick only), our cursor on `selected` (-1: the
+// board's), and draws it.
+@addMethod(dialogWidgetGameController)
+public final func TandemHold(data: ListChoiceHubData, selected: Int32) -> Void {
+  if this.m_tandemHolds {
+    this.TandemDropHeld();
+  }
+  this.m_tandemHeld = data;
+  this.m_tandemHolds = true;
+  if selected >= 0 {
+    this.m_selectedIndex = selected;
+  }
+  this.OnInteractionsChanged();
+}
+
+// True: our hub `id` is drawn with every option, our cursor on `selected`.
+@addMethod(dialogWidgetGameController)
+public final func TandemHeldDrawn(id: Int32, selected: Int32) -> Bool {
+  if !this.m_tandemHolds || this.m_tandemHeld.id != id || (selected >= 0 && this.m_selectedIndex != selected) {
+    return false;
+  }
+  for controller in this.m_hubControllers {
+    if IsDefined(controller) && controller.GetId() == id {
+      return controller.TandemOptions() == ArraySize(this.m_tandemHeld.choices);
+    }
+  }
+  return false;
+}
+
+// Our hub goes (story tick only): the board's hubs, active hub and cursor
+// again.
+@addMethod(dialogWidgetGameController)
+public final func TandemRelease() -> Void {
+  if !this.m_tandemHolds {
+    return;
+  }
+  this.m_tandemHolds = false;
+  this.TandemDropHeld();
+  if this.m_activeHubID == this.m_tandemHeld.id && IsDefined(this.m_InteractionsBlackboard) {
+    this.m_activeHubID = this.m_InteractionsBlackboard.GetInt(this.m_InteractionsBBDefinition.ActiveChoiceHubID);
+    this.m_selectedIndex = this.m_InteractionsBlackboard.GetInt(this.m_InteractionsBBDefinition.SelectedIndex);
+  }
+  this.OnInteractionsChanged();
+}
+
 @addMethod(DialogHubLogicController)
-public final func TandemMarks(indexes: array<Int32>, labels: array<String>, colors: array<HDRColor>) -> Bool {
+public final func TandemOptions() -> Int32 {
+  return ArraySize(this.m_itemControllers);
+}
+
+// Each option's markers. 0: the hub has its options and is visible (else 2:
+// no option spawned yet, 3: hidden).
+@addMethod(DialogHubLogicController)
+public final func TandemMarks(indexes: array<Int32>, labels: array<String>, colors: array<HDRColor>) -> Int32 {
   let names: array<String>;
   let tints: array<HDRColor>;
   let i = 0;
@@ -758,7 +940,10 @@ public final func TandemMarks(indexes: array<Int32>, labels: array<String>, colo
     }
     i += 1;
   }
-  return ArraySize(this.m_itemControllers) > 0 && IsDefined(this.m_rootWidget) && this.m_rootWidget.IsVisible();
+  if ArraySize(this.m_itemControllers) == 0 {
+    return 2;
+  }
+  return IsDefined(this.m_rootWidget) && this.m_rootWidget.IsVisible() ? 0 : 3;
 }
 
 @addField(DialogChoiceLogicController)
