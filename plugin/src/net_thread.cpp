@@ -805,6 +805,8 @@ struct NetThread::Impl {
                   Story::Get().PushCamera(*camera);
                 else if (const auto *face = std::get_if<proto::RigPose>(&e.message))
                   runtime.PushRigPose(*face);
+                else if (const auto *tracks = std::get_if<proto::RigTracks>(&e.message))
+                  runtime.PushRigTracks(*tracks);
                 else
                   Story::Get().PushInbound(
                       {.kind = StoryInbound::Kind::Message, .message = e.message});
@@ -877,6 +879,8 @@ struct NetThread::Impl {
                 runtime.PushObject(e.fracture);
               } else if constexpr (std::is_same_v<E, events::DeviceFired>) {
                 runtime.PushObject(e.fire);
+              } else if constexpr (std::is_same_v<E, events::TurretHeld>) {
+                runtime.PushObject(e.hands);
               } else if constexpr (std::is_same_v<E, events::DevicesReset>) {
                 log::Info("devices: the host sends its record again");
                 runtime.PushDevice(proto::DeviceSet{});
@@ -1074,9 +1078,13 @@ struct NetThread::Impl {
         if (!Story::Get().Private())
           endpoint->SendActorPose(pose);
       for (const auto &sample : runtime.TakeRigPoses())
-        if (!Story::Get().Private() && sample.reference)
+        if (!Story::Get().Private() && sample.reference) {
           endpoint->SendRigPose(sample.npc, sample.part, sample.hash, *sample.reference,
                                 sample.pose);
+          if (sample.trackReference && !sample.tracks.empty())
+            endpoint->SendRigTracks(sample.npc, sample.part, sample.trackHash,
+                                    *sample.trackReference, sample.tracks);
+        }
       if (const auto camera = Story::Get().TakeCamera(); camera && !Story::Get().Private())
         endpoint->SendSceneCamera(*camera);
       if (auto appearance = runtime.TakeLocalAppearance()) {
@@ -1350,6 +1358,8 @@ struct NetThread::Impl {
           endpoint->SendFracture(*fracture);
         else if (const auto *fire = std::get_if<proto::DeviceFire>(&message))
           endpoint->SendDeviceFire(*fire);
+        else if (const auto *hands = std::get_if<proto::TurretHands>(&message))
+          endpoint->SendTurretHands(*hands);
       }
       for (auto &breach : runtime.TakeBreachOutbox()) {
         log::Info("breach: ours of network {:x} ({:#x}), npc {}: {} daemon(s), {} trap(s), "

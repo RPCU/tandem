@@ -265,6 +265,9 @@ Tags as in §13.30. Line numbers: the 2.50 `final.reds`.
      comes back (`objects: … echo(es)`).
   5. That an NPC or V beside a replayed break takes no damage and is not
      staggered.
+  6. A waited break (scenario `glass-latecomer`): the impulse 120 m from V
+     right after a teleport shatters a pane (its physics streamed in), and
+     `FindEntityByID` finds a placed entity's part within 60 m.
 
 #### A turret's fire
 
@@ -314,3 +317,26 @@ target's position, the target, …)`, the anim event `Shoot`, the effect
      compiles them; that the game calls the wrapped ones is to see).
   5. A friendly-turned turret: no copy locks a V; its shots at NPCs are
      drawn on the guests.
+  6. A copy's laser and light follow the host's words (scenario
+     `turret-guest`): `m_laserMesh.Toggle` and `DetermineLightScanRefs`
+     take on a copy whose own senses saw nobody.
+  7. A turret in a player's hands (scenario `turret-hands`): the camera's
+     forward is the turret's while held; `m_animFeature.Shoot` is true
+     while its trigger is held; the copy's `TandemAim` on a place turns it
+     there.
+- A turret's look: its laser is the `laserMesh` component
+  (`SecurityTurret.m_laserMesh`, toggled on in `OnCurrentTargetAppears`,
+  171416, off in `OnAllValidTargetsDisappears`, 171449); the scan light is
+  `SensorDevice.DetermineLightScanRefs(colour)` (152924, protected final:
+  green to a local player it is friendly to, else the colour asked) over
+  `m_lightColors` (`LedColors_SensorDevice`: off, red, green, blue, yellow,
+  white). Red at a target (151277), blue while it scans the local player
+  (151492), yellow when it lost it or all targets (151377, 151530).
+  [2.5-untested]
+- A turret in the player's hands: `TakeOverControlSystem` (scriptable
+  system by that name) `GetControlledObject()` (154115); the trigger
+  `ControlledDeviceInputAction(pressed)` (171464) runs `ShootStart` /
+  `ShootStop`; a controlled turret's shots are `AIWeapon.Fire` with the
+  player as owner (171601). The camera is the device's while held
+  (`OnTCSTakeOverControlActivate`, 152744) _(inferred: the active camera's
+  forward is the turret's aim)_. [2.5-untested]

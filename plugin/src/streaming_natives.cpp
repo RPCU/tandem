@@ -60,7 +60,7 @@ struct Queue {
 std::mutex g_lock;
 std::array<Queue, kKinds> g_queues;
 // The point queues (StreamingNatives.reds TandemPointKind), as the others.
-constexpr std::size_t kPointKinds = 3;
+constexpr std::size_t kPointKinds = 4;
 constexpr std::size_t kMaxPoints = 4096;
 struct PointQueue {
   std::vector<TandemStreamedPoint> events;

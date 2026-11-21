@@ -51,6 +51,7 @@ TANDEM_SAID_BY(Host, SceneLine)
 TANDEM_SAID_BY(Host, ActorPose)
 TANDEM_SAID_BY(Host, ActorFrame)
 TANDEM_SAID_BY(Host, RigPose)
+TANDEM_SAID_BY(Host, RigTracks)
 TANDEM_SAID_BY(Host, SceneCamera)
 TANDEM_SAID_BY(Host, SceneProp)
 TANDEM_SAID_BY(Host, Rules)
@@ -194,6 +195,7 @@ TANDEM_SAID_BY(Either, ThrowPath)
 // host (unstamped), the host's to everyone (stamped): Received.
 TANDEM_SAID_BY(Either, NpcPlaced)
 TANDEM_SAID_BY(Either, NpcDeath)
+TANDEM_SAID_BY(Either, TurretHands)
 // A street race: a player's word in its own name; what describes the race,
 // seats, orders and pays is its starter's alone (CheckValues).
 TANDEM_SAID_BY(Either, Race)
@@ -330,7 +332,7 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::StatusVisuals> ||
                            std::is_same_v<M, p::QuestInteract> || std::is_same_v<M, p::Fracture> ||
                            std::is_same_v<M, p::DeviceFire> || std::is_same_v<M, p::ThrowPath> ||
-                           std::is_same_v<M, p::Race>)
+                           std::is_same_v<M, p::TurretHands> || std::is_same_v<M, p::Race>)
           return &m.player;
         else
           return nullptr;
@@ -763,7 +765,8 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::SceneCast>) {
           inRange = m.actors.size() <= p::kMaxSceneActors;
         } else if constexpr (std::is_same_v<M, p::ActorPose> ||
-                             std::is_same_v<M, p::TrafficStates> || std::is_same_v<M, p::RigPose>) {
+                             std::is_same_v<M, p::TrafficStates> || std::is_same_v<M, p::RigPose> ||
+                             std::is_same_v<M, p::RigTracks>) {
           timeUs = m.timeUs;
         } else if constexpr (std::is_same_v<M, p::SceneCamera>) {
           timeUs = m.timeUs;
@@ -794,6 +797,9 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           timeUs = m.timeUs;
           // A device is named; a shot is stamped (the host clock).
           inRange = m.entity != 0 && (m.kind != p::DeviceFireKind::Shot || m.timeUs != 0);
+        } else if constexpr (std::is_same_v<M, p::TurretHands>) {
+          finite = Finite(m.at);
+          inRange = m.entity != 0;
         } else if constexpr (std::is_same_v<M, p::ThrowPath>) {
           // Nothing thrown flies faster than a launcher's round.
           finite = Finite(m.position) && Finite(m.velocity);
@@ -870,6 +876,8 @@ void Referee::CheckRate(p::PlayerId from, const p::Message &message, std::size_t
     budget = limits.noiseHz;
   else if (std::holds_alternative<p::ThrowPath>(message))
     budget = limits.throwPathHz;
+  else if (std::holds_alternative<p::TurretHands>(message))
+    budget = limits.turretHandsHz;
   if (budget > 0.f) {
     // A relayed player's states count against that player.
     auto copy = message;
@@ -1136,7 +1144,12 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
                               first->second));
           }
         } else if constexpr (std::is_same_v<M, p::Fracture>) {
-          // What broke in another player's game; never our own back.
+          // What broke in a player's game, stamped by the host. Not checked:
+          // our own comes back for the session's record, and a late joiner
+          // hears breaks by players who left before it came (devices.md,
+          // "Glass and breakable scenery").
+        } else if constexpr (std::is_same_v<M, p::TurretHands>) {
+          // A turret in another player's hands; never our own back.
           notOurs(m.player);
         } else if constexpr (std::is_same_v<M, p::DeviceFire>) {
           // The host's turret's target: a player of the session (an NPC's

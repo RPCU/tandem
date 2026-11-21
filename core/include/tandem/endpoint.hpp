@@ -368,6 +368,11 @@ struct Fractured {
 struct DeviceFired {
   proto::DeviceFire fire;
 };
+// A turret in another player's hands, linked with us: our copy turns where
+// it points and draws its fire (devices.md, "A turret in a player's hands").
+struct TurretHeld {
+  proto::TurretHands hands;
+};
 // Regions (docs/architecture/regions.md). The players our region is linked
 // with changed: we see their NPCs, they see ours.
 struct RegionsChanged {
@@ -620,7 +625,7 @@ using SessionEventVariant = std::variant<
     events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered,
     events::RemoteStatusVisuals, events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom,
     events::TrafficGive, events::TrafficTake, events::TrafficOwnerChanged, events::Fractured,
-    events::DeviceFired>;
+    events::DeviceFired, events::TurretHeld>;
 // Its copies, moves and conversions compiled in session_event.cpp only, as
 // proto::Message's (tandem/closed_variant.hpp).
 using SessionEvent = ClosedVariant<SessionEventVariant>;
@@ -690,6 +695,13 @@ public:
   // guest hears the RigPose as events::Story (it is not kept).
   void SendRigPose(proto::NpcId npc, std::uint8_t part, std::uint32_t rigHash,
                    std::span<const rig::Bone> reference, std::span<const rig::Bone> pose);
+  // Host: the float tracks of that rig (a face's wrinkles, pupils, blinks):
+  // `values` and the rig's `reference` values in its track order, `rigHash`
+  // the hash of their names. Paced as a stream of its own, half a face's
+  // weight; what goes is the tracks that moved (rig::TrackEncoder,
+  // RigTracks), heard by a guest as events::Story.
+  void SendRigTracks(proto::NpcId npc, std::uint8_t part, std::uint32_t rigHash,
+                     std::span<const float> reference, std::span<const float> values);
   // Host: the view of its game's camera in a cutscene (play, position,
   // orientation, fov, kCameraCut), as often as its game has one: paced
   // here (scene::Pacer), numbered and stamped, to every guest. A guest hears
@@ -979,11 +991,20 @@ public:
   // its network (that player's, not ours: our game applies it too).
   void SendBreach(proto::Breach breach);
   // Glass and breakable scenery: something broke in our game (`player` is
-  // filled in). To the players linked with us (a guest's: through the host,
-  // which holds it to devices::kHostFracture*).
+  // filled in). A guest's goes through the host, which holds it to
+  // devices::kHostFracture*. A piece new to the session's record goes to
+  // every player (its teller too, for its record; one away from it keeps
+  // it for when it comes), another piece of a known one to the players
+  // linked with its teller. Late joiners and a world resync get the record.
   void SendFracture(proto::Fracture fracture);
-  // Host: fractures dropped for coming too fast.
+  // A turret in our V's hands: where it points, whether it fires, or that
+  // we let go of it (`player` is filled in). To the players linked with
+  // us (a guest's: through the host).
+  void SendTurretHands(proto::TurretHands hands);
+  // Host: fractures dropped for coming too fast, or past a full record.
   std::uint64_t FracturesDropped() const { return m_fracturesDropped; }
+  // What broke in the session (host: kept; guest: as the host sent it).
+  const devices::FractureRecord &Fractures() const { return m_fractureRecord; }
   // A device's fire. Host: our turret turned to a target, shot, or went
   // idle (kinds Idle, Aim, Shot), to the guests linked with us; a shot is
   // stamped with the host clock. Guest: our copy of a turret locked our own
@@ -1433,7 +1454,12 @@ private:
     rig::Encoder encoder;
     std::uint32_t hash{};
   };
-  std::map<std::uint64_t, RigStream> m_rigStreams;           // host, by scene::StreamOf
+  std::map<std::uint64_t, RigStream> m_rigStreams; // host, by scene::StreamOf
+  struct TrackStream {
+    rig::TrackEncoder encoder;
+    std::uint32_t hash{};
+  };
+  std::map<std::uint64_t, TrackStream> m_trackStreams;       // host, by scene::TracksOf
   std::map<proto::NpcId, pose::PoseEncoder> m_actorEncoders; // host
   std::map<proto::NpcId, pose::PoseDecoder> m_actorDecoders; // guest
   // How much an actor's body matters: by how far the nearest other V is.
@@ -1779,11 +1805,18 @@ private:
                 std::vector<SessionEvent> &out);
   void SendDevicesTo(net::PeerId peer, bool resync);
   proto::DeviceDigest DeviceDigestNow() const;
+  // The world domain's hash (time, weather, rules, the dead, what broke).
+  std::uint32_t WorldDigestNow() const;
   // Glass: each guest's rate (host). A device's fire: the turrets whose
   // copy in a guest's game has that guest's V (host; at most
   // kMaxDevicesSeeing each), let go when the guest is gone.
   std::map<proto::PlayerId, comms::Limiter> m_fractureRate;
   std::uint64_t m_fracturesDropped{};
+  devices::FractureRecord m_fractureRecord;
+  // Host: a break said by `player` (ours or a guest's, stamped), past the
+  // rate: kept and relayed (devices.md).
+  void RelayFracture(const proto::Fracture &fracture, net::PeerId from,
+                     std::vector<SessionEvent> *out);
   static constexpr std::size_t kMaxDevicesSeeing = 16;
   std::map<proto::PlayerId, std::set<std::uint64_t>> m_deviceSeen;
   void OnDeviceSeen(proto::PlayerId player, proto::DeviceFire fire, std::vector<SessionEvent> &out);

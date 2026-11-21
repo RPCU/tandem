@@ -1256,6 +1256,76 @@ TEST_CASE("a rig's pose on a proxy: it follows, lets go at rest, heals a lost fr
   CHECK(healed);
 }
 
+TEST_CASE("a face's float tracks on a proxy: they follow, let go at rest, heal a lost frame") {
+  const std::vector<float> reference(50, 0.f);
+  rig::TrackEncoder encoder;
+  encoder.Reset(reference);
+  rig::TrackSet tracks;
+  const auto hash = rig::RigHash(std::vector<std::uint64_t>{7, 8});
+  std::uint32_t seq = 0;
+  std::uint64_t now = kT0;
+  const auto send = [&](const std::vector<float> &values, std::size_t cap = 200) {
+    const proto::Message message = proto::RigTracks{.npc = 7,
+                                                    .part = proto::kRigFace,
+                                                    .seq = ++seq,
+                                                    .timeUs = now,
+                                                    .rig = hash,
+                                                    .tracks = 50,
+                                                    .data = encoder.Encode(values, cap)};
+    const auto decoded = proto::Decode(proto::Encode(message)); // what goes is well formed
+    REQUIRE(decoded.has_value());
+    return tracks.Push(std::get<proto::RigTracks>(*decoded));
+  };
+  // The proxy's own: track 30 idles.
+  auto own = reference;
+  own[30] = 0.2f;
+  auto shown = own;
+  const auto draw = [&](int frames) {
+    std::size_t written = 0;
+    for (int frame = 0; frame < frames; ++frame) {
+      now += 16'000;
+      shown = own;
+      written = tracks.Apply(now, hash, reference, shown);
+    }
+    return written;
+  };
+
+  auto host = reference;
+  host[3] = 1.f;    // a blink
+  host[12] = -0.4f; // a wrinkle
+  CHECK(send(host));
+  CHECK(draw(10) >= 2);
+  CHECK(std::abs(shown[3] - 1.f) < 0.01f);
+  CHECK(std::abs(shown[12] + 0.4f) < 0.01f);
+  CHECK(shown[30] == own[30]); // not the host's to say
+  // Other tracks take nothing.
+  shown = own;
+  CHECK(tracks.Apply(now, hash + 1, reference, shown) == 0);
+
+  // Back at rest on the host: the proxy's own again, let go.
+  CHECK(send(reference));
+  draw(40);
+  CHECK(tracks.Held() == 0);
+  CHECK(shown[3] == own[3]);
+
+  // The cap holds the largest moves first; the rest come in later frames.
+  host = reference;
+  for (std::size_t track = 0; track < 40; ++track)
+    host[track] = 0.01f * static_cast<float>(track + 1);
+  CHECK(send(host, 40)); // ten entries
+  draw(1);
+  CHECK(std::abs(shown[39] - host[39]) < 0.4f);
+  bool all = false;
+  for (int frame = 0; frame < 20 && !all; ++frame) {
+    CHECK(send(host, 40));
+    draw(10);
+    all = true;
+    for (std::size_t track = 0; track < 40; ++track)
+      all = all && std::abs(shown[track] - host[track]) < 0.01f;
+  }
+  CHECK(all);
+}
+
 TEST_CASE("a face through the endpoints: the host's, of an NPC the guest knows") {
   const auto port = NextPort();
   std::string error;
@@ -1303,4 +1373,36 @@ TEST_CASE("a face through the endpoints: the host's, of an NPC the guest knows")
   CHECK(heard < 60);
   CHECK(track.Rig() == hash);
   CHECK(track.Bones() == 40);
+
+  // Its float tracks: the same path, the host's only.
+  const std::vector<float> rest(30, 0.f);
+  auto values = rest;
+  rig::TrackSet tracks;
+  int tracksHeard = 0, tracksHostHeard = 0;
+  for (int frame = 0; frame < 60; ++frame) {
+    values[4] = 0.5f + 0.5f * std::sin(static_cast<float>(frame) * 0.3f);
+    host->SendRigTracks(7, proto::kRigFace, hash, rest, values);
+    host->SendRigTracks(55, proto::kRigFace, hash, rest, values); // not shared: nothing
+    a->SendRigTracks(7, proto::kRigFace, hash, rest, values);     // a guest's word: nothing
+    Pump(
+        {host.get(), a.get()},
+        [&](std::size_t i, const auto &events) {
+          for (const auto &event : events)
+            if (const auto *story = std::get_if<events::Story>(&event))
+              if (const auto *said = std::get_if<proto::RigTracks>(&story->message)) {
+                if (i == 0) {
+                  ++tracksHostHeard;
+                } else {
+                  ++tracksHeard;
+                  CHECK(said->npc == 7);
+                  tracks.Push(*said);
+                }
+              }
+          return false;
+        },
+        8ms);
+  }
+  CHECK(tracksHostHeard == 0);
+  CHECK(tracksHeard >= 3);
+  CHECK(tracks.Rig() == hash);
 }

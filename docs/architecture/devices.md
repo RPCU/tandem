@@ -62,7 +62,7 @@ their state (on, off, friendly, destroyed, the alarm) is the host's.
 | Barrels, mines, traps (`ExplosiveDeviceControllerPS` and kin) | exploded (played as an explosion where it is in sight, a record elsewhere); status | host. The blast hurts each game's own V from its own copy, and NPCs in the host's game only |
 | Radios, TVs (`MediaDeviceControllerPS`) | on, off; the station or channel | host |
 | Lights, fuse boxes, generators, fans, vending machines, any other device | status (on, off, unpowered, disabled), broken, hacked, distracting (a glitch: on the host a real distraction, so its NPCs come and look) | host. A vending machine's sale: the buyer's own game (money and item are that V's) |
-| Glass, covers, breakable scenery | the moment a piece breaks (`Fracture`): physics destruction has no script state | nobody: a break is for good, whoever's game saw it first tells the players linked with it ("Glass and breakable scenery") |
+| Glass, covers, breakable scenery | the moment a piece breaks (`Fracture`): physics destruction has no script state; the session's record of what broke, for who was not there | nobody: a break is for good, whoever's game saw it first tells; the host keeps the record ("Glass and breakable scenery") |
 | Loot containers | nothing (per player: `loot.md`) | each player's game |
 | Spawned devices (dynamic ids), vehicles | nothing here (not the same entity in two games; vehicles have their own sync) | — |
 
@@ -84,7 +84,8 @@ file: the same in every game) and the class name of its state; its
 | `BreachResult` | host → the breacher | granted, or refused: breached first by whom |
 | `DeviceFire` | host → the guests linked with it | its turret turned to a target (said again every second), shot at it, or follows nobody. A shot at a V: Event channel (that V's game fires it for real); any other shot: State channel. At most 43 bytes |
 | `DeviceFire` | guest → host | "my copy of that turret has locked my V", "…lost it" (kept by the host: a repeat tells nothing, a vanished guest is let go) |
-| `Fracture` | any game → host → the linked | something broke: where, and the placed entity's destruction component when it is one. About 34 bytes; the host holds each guest to 48 then 24 a second |
+| `TurretHands` | the controller's game → host → the linked | a turret in a player's hands: where it points, whether it fires (5 a second while held), let go. State channel, at most 32 bytes ("A turret in a player's hands") |
+| `Fracture` | any game → host → everyone (a piece new to the record) or the linked (another piece of a known one) | something broke: where, and the placed entity's destruction component when it is one. About 34 bytes; the host holds each guest to 48 then 24 a second. The record's entries again to a late joiner and in a world resync |
 
 Sending the _state the device should be in_, not the action that was
 pressed, makes every message idempotent, makes a late joiner and a live
@@ -282,6 +283,13 @@ not run in game; engine facts §13.90. Code: `scripts/tandem/Turrets.reds`
   it, `RecognizeTarget(puppet, true)`), unless it is off, turned friendly
   or in a player's hands; `Lost` lets it go. The host's hits on the puppet
   are not forwarded (`ForwardsToPlayer`).
+- **Its look** (guest, linked with the host): the copy's laser mesh and
+  scan light show the host's turret, not the copy's own senses: laser on
+  and red at each aim (and at a shot when the last aim's hold lapsed),
+  laser off and yellow at "follows nobody" (green instead to a V it is
+  friendly to, the game's own choice). Held 1.5 s against the copy's own
+  changes (`DetermineLightScanRefs` wrapped; the laser is set again with
+  each aim, said every second).
 - **A turret the host's game does not run** (not in its world, or the
   guest is not linked with the host): after 1.5 s without a word of it
   from the host, the guest's copy fires on its own, as before; the host
@@ -295,6 +303,34 @@ not run in game; engine facts §13.90. Code: `scripts/tandem/Turrets.reds`
   `--turret-seen ENTITY[@S]` (guest) and `--turret-shots N` (host: a burst
   at whoever a copy has); in game `tools/game.sh cmd turret`, `turret aim`,
   `turret shot`, `turret engage`; scenarios `turret-host`, `turret-guest`.
+
+## A turret in a player's hands
+
+"A turret a player controls (the takeover quickhack, a device's control)
+shows its aim and shots on the others' copies; damage as today." Built
+2026-11-21, not run in game; engine facts §13.90. Code: `Turrets.reds`
+(`PollOurHands`, `OnHands`, `UpdateHands`), `Endpoint::SendTurretHands`.
+
+- **The controller's game** (host or guest): the turret the takeover
+  system holds (`TakeOverControlSystem.GetControlledObject`, a placed
+  `SecurityTurret`, not the police's) is said 5 times a second
+  (`TurretHands`): where it points (40 m along the active camera, the
+  turret's while it is held) and whether it fires (its anim feature's
+  `Shoot`); once more when V lets go. Its shots stay its own: what they
+  hit is decided there, as for V's weapon (hits on proxies and puppets go
+  the usual ways, `combat.md`).
+- **Every other game linked with it**: its copy turns there (`TandemAim`
+  on the place, held 1 s), fires nothing of its own (`ShootStart` and a
+  stray `AIWeapon.Fire` of it dropped while held), and while the
+  controller fires draws its fire every 0.12 s from its own weapon
+  (`TandemPresenceSync.Bullet`, the weapon's effects, the barrels spinning):
+  nobody is hurt by it. The host's `DeviceFire` words are not said for, and
+  not applied to, a copy in a player's hands, nor to the turret in our own.
+- **Let go**, or silent for 1 s (the controller vanished, unlinked): the
+  copy is its game's again.
+- Tests: `tests/devices_test.cpp` ("a turret in a player's hands"),
+  `tests/protocol_test.cpp`, `tests/referee_test.cpp`; the mock player's
+  `--turret-hands E[:X,Y,Z][@S]`; scenario `turret-hands`.
 
 ## Glass and breakable scenery
 
@@ -321,16 +357,35 @@ file. Code: `scripts/tandem/Objects.reds` (`TandemObjectSync`),
   within 1.5 m and 2 s of a replay, nor again within 0.75 m and 1.5 s of
   one of ours (a pane goes in several pieces). A game says 24 then 12 a
   second at most.
-- **Who hears**: the players linked with the sender (150 m: the place is in
-  their world). A late joiner, or a player who comes later, finds the
-  piece whole: open.
+- **Who hears**: a piece new to the session's record, every player, its
+  teller too (for its record; its game is not told again); another piece of
+  a known one (a pane going in several), the players linked with the
+  sender (150 m: the place is in their world).
+- **The record, for who was not there** (`devices::FractureRecord`, on the
+  host and on every guest as the host sent it): one entry per piece, a named
+  part by entity and component, a nameless one by the metre cell it broke
+  in; 2048 at most, then a new piece is neither kept nor relayed (counted in
+  `FracturesDropped`), so a guest's record never holds one the host's lacks.
+  A late joiner gets it whole at its join (world domain); it is in the world
+  digest (count and an order-free sum), and a world resync sends it again.
+  The session's only: it ends with the session.
+- **A break not in our world yet** (more than 120 m from our V, or a named
+  part whose entity is not streamed in within 60 m) waits in
+  `TandemObjectSync` (512 at most, the oldest dropped) and is tried again
+  every second: it breaks when our V comes, through the same replay
+  (`TandemObjects.Replaying` notes it first, so its echo is not told). A
+  live break between 120 and 200 m now waits too (it was replayed at
+  once).
 - **Threads**: the hooks (11 `OnPhysicalDestructionEvent` handlers, the
   spots system's notice) only queue (`TandemStreaming.QueuePoint`).
 - Tests: `tests/devices_test.cpp` ("fractures: …", "glass: …"),
   `tests/peer_devices.sh`; the mock player's `--fracture
 [ENTITY:COMPONENT:]X,Y,Z[@S]`; in game `tools/game.sh cmd glass`,
   `glass break` (the impulse at what V looks at), `glass part` (the
-  trigger on the entity V looks at); scenario `glass-guest`.
+  trigger on the entity V looks at); scenarios `glass-guest`,
+  `glass-latecomer` (the game joins a mock host that broke a pane where V
+  stands and one 300 m away: the first at the join, the second when V gets
+  there).
 
 ## Persistence: whose world it is afterwards
 
@@ -399,15 +454,17 @@ hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
   2.50 scripts and compiles; the list to verify is §13.30, "To verify in game", of the research file.
 - **Glass and breakable scenery, not run in game**: the list is §13.90,
   "To verify in game". Unknown until then: whether every pane notifies
-  (`systemsToNotifyFlags` is per node), and whether the impulse alone
-  shatters world glass. Not built: what broke while a player was away or
-  before it joined (the engine's destruction persistency system has no
-  script side).
+  (`systemsToNotifyFlags` is per node), whether the impulse alone
+  shatters world glass, and whether it does at 120 m after a pane streamed
+  in (a waited break). The session's record is ours: the engine's
+  destruction persistency system has no script side, so a guest's own
+  save's breaks and the host's from before the session are not shared.
 - **A device's fire, not run in game**: the list is §13.90, "To verify in
-  game". Known gaps: a turret a player controls is not drawn for the
-  others; the laser mesh and the scan light of a copy stay its own; a
-  guest apart from the host with another guest near: each of their copies
-  fires at its own V.
+  game". Known gap: a guest apart from the host with another guest near:
+  each of their copies fires at its own V. A turret in a player's hands:
+  its camera's aim point is 40 m out (a target nearer or farther is drawn
+  along the same line), its drawn rate is not the weapon's own, and the
+  copy's own vision cone and lights are not changed while it is held.
 - **Detection by NPCs after a camera's alarm** uses the puppet's position
   at the moment of the alarm; the camera feeding the security system
   continuously for a guest is not done.

@@ -31,6 +31,12 @@ save**.
 
 ## Tiers
 
+**Decided by the user 2026-11-21: tier 1 only.** A guest's save gets what
+its V earned (tier 1) and the ledger's records; nothing of tiers 2 and 3
+is ever applied to the guest's world (no completed gigs, no skip offers),
+so co-op stays out of the guest's own story. Stages B, C1 and C below are
+dropped; tier 2 and 3 stay recorded and credited (never paid twice).
+
 <!-- prettier-ignore -->
 | Tier | What | In the guest's own save | Risk |
 | --- | --- | --- | --- |
@@ -424,9 +430,9 @@ now (`quest` is a redscript keyword).
 | A1 | natives and script: the ledger in the save, pay rules through it (`Story.reds`, the natives above); session items removed on leave (script, persistent list) | **built** (in game: scenarios `story-session-items`, `garage-guest`); the co-op menu's "done with NAME" list is not |
 | A2 | join notes: the host's story mark in the handshake or a story message, the spoiler and ending notices (Phantom Liberty itself is required at join: the release work, protocol 7) | a story message for the mark |
 | C2 | spike on a solo game: gig phases by their journal nodes. Tooling done: `tools/game.sh cmd quest trace on` logs each phase's chain and journal nodes. The freeze by ownership (gig phases run apart, wait grouped), the journal and phone rules for owned gigs: built behind "always grouped", so nothing changes until `regions` calls `TandemStorySystem.SetApart`; scenarios `quest-trace` (the spike's log), `story-gigs-apart` (the switch by hand) | the game machine for the spike; `regions` for grouped or apart |
-| C1 | spikes on a solo game: mark a hustle done from outside (C1a); finish a gig through its own end facts (C1b) | the game machine, a day |
-| B | apply `Pending()` in the guest's world for the types that passed C1; drop duplicate iconics | C1 |
-| C | skip offers for self-contained side content | B, and a per-quest allow-list |
+| C1 | dropped (tier 1 only, 2026-11-21): spikes to mark a hustle or a gig done from outside | — |
+| B | dropped (tier 1 only, 2026-11-21): applying `Pending()` in the guest's world | — |
+| C | dropped (tier 1 only, 2026-11-21): skip offers | — |
 
 ## Decisions
 

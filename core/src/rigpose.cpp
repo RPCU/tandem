@@ -325,4 +325,136 @@ std::size_t Track::Apply(std::uint64_t nowUs, std::uint32_t rig, std::span<const
   }
   return written;
 }
+// ---- float tracks ----
+
+namespace {
+std::int16_t TrackSteps(float value) {
+  return static_cast<std::int16_t>(
+      std::clamp(std::round(value / proto::kRigTrackStep), -32767.f, 32767.f));
+}
+} // namespace
+
+void TrackEncoder::Reset(std::span<const float> reference) {
+  m_reference.assign(reference.begin(), reference.end());
+  m_said = m_reference;
+  m_next = 0;
+}
+
+std::vector<std::uint8_t> TrackEncoder::Encode(std::span<const float> values,
+                                               std::size_t maxBytes) {
+  std::vector<std::uint8_t> out;
+  const auto count = m_reference.size();
+  if (count == 0 || values.size() != count)
+    return out;
+  struct Want {
+    float error;
+    std::uint16_t track;
+  };
+  std::vector<Want> wants;
+  for (std::size_t track = 0; track < count; ++track)
+    if (std::isfinite(values[track]))
+      if (const float error = std::abs(values[track] - m_said[track]); error > kTrackTolerance)
+        wants.push_back({error, static_cast<std::uint16_t>(track)});
+  std::ranges::sort(wants, [](const Want &a, const Want &b) { return a.error > b.error; });
+  const auto most = maxBytes / proto::kRigTrackEntryBytes;
+  std::vector<std::uint8_t> picked(count, 0);
+  std::vector<std::uint16_t> chosen;
+  for (const auto &want : wants) {
+    if (chosen.size() >= most)
+      break;
+    picked[want.track] = 1;
+    chosen.push_back(want.track);
+  }
+  for (std::size_t refreshed = 0, tried = 0;
+       refreshed < kRefreshed && tried < count && chosen.size() < most; ++tried) {
+    const auto track = static_cast<std::uint16_t>(m_next);
+    m_next = (m_next + 1) % count;
+    if (picked[track] || !std::isfinite(values[track]))
+      continue;
+    picked[track] = 1;
+    chosen.push_back(track);
+    ++refreshed;
+  }
+  std::ranges::sort(chosen);
+  out.reserve(chosen.size() * proto::kRigTrackEntryBytes);
+  for (const auto track : chosen) {
+    const auto steps = TrackSteps(values[track]);
+    const auto bits = static_cast<std::uint16_t>(steps);
+    out.push_back(static_cast<std::uint8_t>(track & 0xFF));
+    out.push_back(static_cast<std::uint8_t>(track >> 8));
+    out.push_back(static_cast<std::uint8_t>(bits & 0xFF));
+    out.push_back(static_cast<std::uint8_t>(bits >> 8));
+    m_said[track] = static_cast<float>(steps) * proto::kRigTrackStep;
+  }
+  return out;
+}
+
+bool TrackSet::Push(const proto::RigTracks &tracks) {
+  if (m_haveSeq && static_cast<std::int32_t>(tracks.seq - m_lastSeq) <= 0 && tracks.rig == m_rig)
+    return false;
+  if (tracks.tracks == 0 || tracks.data.size() % proto::kRigTrackEntryBytes != 0)
+    return false;
+  if (m_told.size() != tracks.tracks || m_rig != tracks.rig) {
+    m_told.assign(tracks.tracks, {});
+    m_active.clear();
+    m_rig = tracks.rig;
+    m_appliedUs = 0;
+  }
+  m_haveSeq = true;
+  m_lastSeq = tracks.seq;
+  m_newestUs = tracks.timeUs;
+  for (std::size_t at = 0; at < tracks.data.size(); at += proto::kRigTrackEntryBytes) {
+    const auto track = static_cast<std::uint16_t>(tracks.data[at] | tracks.data[at + 1] << 8);
+    if (track >= m_told.size())
+      continue;
+    const auto steps = static_cast<std::int16_t>(
+        static_cast<std::uint16_t>(tracks.data[at + 2] | tracks.data[at + 3] << 8));
+    auto &told = m_told[track];
+    told.value = static_cast<float>(steps) * proto::kRigTrackStep;
+    if (!told.active) {
+      told.active = true;
+      m_active.push_back(track);
+    }
+  }
+  return true;
+}
+
+std::size_t TrackSet::Apply(std::uint64_t nowUs, std::uint32_t rig,
+                            std::span<const float> reference, std::span<float> values) {
+  if (rig != m_rig || m_told.empty() || reference.size() != m_told.size() ||
+      values.size() != m_told.size())
+    return 0;
+  float seconds = 0.25f;
+  if (m_appliedUs != 0 && nowUs > m_appliedUs)
+    seconds = std::min(static_cast<float>(static_cast<double>(nowUs - m_appliedUs) / 1e6), 0.25f);
+  else if (m_appliedUs != 0)
+    seconds = 0.f;
+  m_appliedUs = nowUs;
+  const float alpha = 1.f - std::exp(-seconds / Track::kBlendSeconds);
+  std::size_t written = 0;
+  for (std::size_t i = 0; i < m_active.size();) {
+    const auto track = m_active[i];
+    auto &told = m_told[track];
+    // Said at its reference value: back to the rig's own.
+    const bool rest = std::abs(told.value - reference[track]) <= proto::kRigTrackStep;
+    const float target = rest ? values[track] : told.value;
+    if (!told.started) {
+      told.shown = values[track];
+      told.started = true;
+    }
+    told.shown += (target - told.shown) * alpha;
+    if (rest && std::abs(told.shown - target) < kTrackTolerance / 2.f) {
+      told = {};
+      m_active[i] = m_active.back();
+      m_active.pop_back();
+      continue;
+    }
+    if (std::isfinite(told.shown)) {
+      values[track] = told.shown;
+      ++written;
+    }
+    ++i;
+  }
+  return written;
+}
 } // namespace tandem::rig

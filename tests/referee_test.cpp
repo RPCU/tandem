@@ -217,7 +217,8 @@ TEST_CASE("referee: a device's fire is the host's turret's, what a copy sees a g
   guest.Received(1, proto::Fracture{.player = 3}, kSecond);
   CHECK(Rules(guest).empty());
   // The host never passes on what a copy sees, a turret is named, a shot
-  // stamped, its target a player of the session; our own break never comes back.
+  // stamped, its target a player of the session. Our own break comes back
+  // (the session's record of breaks: devices.md), and is no fault.
   guest.Received(1, proto::DeviceFire{.entity = 7, .kind = Kind::Seen, .player = 3}, kSecond);
   guest.Received(1, proto::DeviceFire{.kind = Kind::Aim}, kSecond);
   guest.Received(1, proto::DeviceFire{.entity = 7, .kind = Kind::Shot}, kSecond);
@@ -227,8 +228,30 @@ TEST_CASE("referee: a device's fire is the host's turret's, what a copy sees a g
       kSecond);
   guest.Received(1, proto::Fracture{.player = 2}, kSecond);
   CHECK(Rules(guest) == std::vector<std::string>{"authority.guest-only", "value.range",
-                                                 "value.range", "ids.unknown-player",
-                                                 "authority.own-state-back"});
+                                                 "value.range", "ids.unknown-player"});
+}
+
+TEST_CASE("referee: a turret in a player's hands is that player's word") {
+  auto host = Host();
+  host.Received(2, proto::TurretHands{.player = 2, .entity = 7, .at = {1.f, 2.f, 3.f}}, kSecond);
+  CHECK(Rules(host).empty());
+  // Not in another's name, named, a real place.
+  host.Received(2, proto::TurretHands{.player = 3, .entity = 7}, kSecond);
+  host.Received(2, proto::TurretHands{.player = 2}, kSecond);
+  host.Received(2,
+                proto::TurretHands{.player = 2,
+                                   .entity = 7,
+                                   .at = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}},
+                kSecond);
+  CHECK(Rules(host) ==
+        std::vector<std::string>{"authority.not-yours", "value.range", "value.not-finite"});
+
+  auto guest = Guest();
+  guest.Received(1, proto::TurretHands{.player = 3, .entity = 7, .flags = proto::kHandsFiring},
+                 kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1, proto::TurretHands{.player = 2, .entity = 7}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
 }
 
 TEST_CASE("referee: the host may not say what only a guest asks") {
@@ -682,7 +705,8 @@ TEST_CASE("referee: a scene's props, camera and rig poses are the host's, about 
   host.Received(2, proto::SceneProp{.play = 1, .prop = 1, .record = 5, .holder = 7}, kSecond);
   host.Received(2, proto::SceneCamera{.play = 1, .fov = 60.f}, kSecond);
   host.Received(2, proto::RigPose{.npc = 7, .bones = 4}, kSecond);
-  CHECK(Rules(host) == std::vector<std::string>(3, "authority.host-only"));
+  host.Received(2, proto::RigTracks{.npc = 7, .tracks = 4}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>(4, "authority.host-only"));
 
   auto guest = Guest();
   guest.Received(1, proto::NpcSpawn{.npc = 7, .record = 10}, kSecond);

@@ -961,6 +961,36 @@ TEST_CASE("scene replay, second part: props, the camera, rig poses and actor fra
   broken = RigPose{.npc = 0, .bones = 4};
   CHECK_FALSE(Decode(Encode(broken)).has_value());
 
+  // A rig's float tracks: track 2 at 0.5, track 40 at -1.
+  RigTracks tracks{
+      .npc = 12, .part = kRigFace, .seq = 6, .timeUs = 78, .rig = 0x1234, .tracks = 41};
+  const auto track = [&](std::uint16_t index, std::int16_t steps) {
+    tracks.data.push_back(static_cast<std::uint8_t>(index & 0xFF));
+    tracks.data.push_back(static_cast<std::uint8_t>(index >> 8));
+    const auto bits = static_cast<std::uint16_t>(steps);
+    tracks.data.push_back(static_cast<std::uint8_t>(bits & 0xFF));
+    tracks.data.push_back(static_cast<std::uint8_t>(bits >> 8));
+  };
+  track(2, 2048);
+  track(40, -4096);
+  RoundTrips(tracks);
+  CHECK(ChannelOf(tracks) == Channel::State);
+  CHECK(std::string(NameOf(RigTracks{})) == "RigTracks");
+  auto badTracks = tracks;
+  badTracks.data.pop_back(); // an entry cut short
+  CHECK_FALSE(Decode(Encode(badTracks)).has_value());
+  badTracks = tracks;
+  badTracks.tracks = 40; // a track the rig does not have
+  CHECK_FALSE(Decode(Encode(badTracks)).has_value());
+  badTracks = tracks;
+  badTracks.part = 2;
+  CHECK_FALSE(Decode(Encode(badTracks)).has_value());
+  badTracks = tracks;
+  badTracks.npc = 0;
+  CHECK_FALSE(Decode(Encode(badTracks)).has_value());
+  track(1, 0); // out of order
+  CHECK_FALSE(Decode(Encode(tracks)).has_value());
+
   // An actor's frame is a pose frame with the NPC's name: the same rules.
   ActorFrame actor{.npc = 12};
   actor.frame.seq = 9;
@@ -1089,6 +1119,19 @@ TEST_CASE("the world's objects: fractures and a device's fire survive encoding, 
   CHECK(Encode(DeviceFire{}).size() <= 48);
   CHECK_FALSE(Decode(Encode(DeviceFire{.kind = static_cast<DeviceFireKind>(5)})).has_value());
   CHECK_FALSE(Decode(Encode(DeviceFire{.target = {static_cast<TargetKind>(4), 1}})).has_value());
+}
+
+TEST_CASE("a turret in a player's hands survives encoding, small, unreliable, known flags "
+          "only") {
+  RoundTrips(TurretHands{
+      .player = 2, .entity = 0x1122334455667788ULL, .at = {1.f, -2.f, 3.f}, .flags = kHandsFiring});
+  RoundTrips(TurretHands{.entity = 7, .flags = kHandsLetGo});
+  CHECK(Message(TurretHands{}).index() == Message(RigTracks{}).index() + 1); // appended
+  CHECK(std::string(NameOf(TurretHands{})) == "TurretHands");
+  CHECK(ChannelOf(TurretHands{}) == Channel::State);
+  CHECK_FALSE(IsReliable(TurretHands{}));
+  CHECK(Encode(TurretHands{}).size() <= 32);
+  CHECK_FALSE(Decode(Encode(TurretHands{.flags = 4})).has_value());
 }
 
 TEST_CASE("vehicles changing hands: survive encoding, reliable, small") {
@@ -1444,7 +1487,7 @@ TEST_CASE("street races: Race survives encoding, is reliable, kinds and lists ch
   RoundTrips(Race{
       .player = 2, .starter = 2, .to = 3, .kind = RaceKind::Reward, .arg = 1, .record = 0x42ull});
   CHECK(std::string(NameOf(Race{})) == "Race");
-  CHECK(Message(Race{}).index() == Message(NpcDeath{}).index() + 1);
+  CHECK(Message(Race{}).index() == Message(TurretHands{}).index() + 1);
   CHECK(IsCombat(Race{}));
   CHECK_FALSE(IsStory(Race{}));
   CHECK(ChannelOf(Race{}) == Channel::Event);

@@ -102,6 +102,7 @@ reliable and ordered.
 | `ActorPose`   | State   | ≤ 30 Hz per actor, unreliable       | `NpcId`, seq, host-clock time, the body pose (a `PoseState`: 68 rotations of 6 bytes and the hips, 431 bytes)                                        |
 | `SceneCamera` | State   | every frame of a cutscene, paced    | `play`, seq, host-clock time, the active camera's position, orientation (5 bytes), field of view, a cut flag; 39 bytes, never kept                   |
 | `SceneProp`   | Event   | a prop is held, changes hands, goes | `play`, the prop's number in the play, the item's TweakDB id, its holder (`NpcId` or `PlayerId`), flags (gone, left hand); a story message, 26 bytes |
+| `RigTracks`   | State   | with a face's `RigPose`, paced      | `NpcId`, rig part, seq, host-clock time, the hash and count of the rig's float tracks, the tracks that moved (4 bytes each)                          |
 
 - `play` counts the host's scenes in a session. A scene played again is
   another play; a cast or a line names its play, so what belongs to a scene
@@ -235,9 +236,15 @@ without the game); the script applies them (`Scenes.reds`):
   not shown. Whichever way the engine behaves, a line is on screen once,
   and the guest's own language wins when the game provides it.
 - A V's line (`speakerPlayer`) is queued on that player's puppet with
-  `isPlayer`. Which of the two recordings plays (the host's V may be of
-  the other body) is not controlled yet: research file §3, the `gender`
-  field.
+  `isPlayer`, in the recording of that V's body: the speaker's body as the
+  session's roster has it (1 female, 2 male; no new message) is written
+  into the event's `audioDialogLineEventData.gender` (`TandemStory.VoiceGender`: the Int32
+  Codeware adds to the RTTI, found by name and type; absent, the game
+  picks, logged once). Its values are taken to be `locVoiceTagGender`'s
+  (male 1, female 2) [inferred]; `scene_voice_gender = swapped` flips them,
+  `off` leaves the game's pick. Limit: a V's voice tone is chosen apart
+  from its body (`IsBrainGenderMale`, only reflected on the character
+  creation state); the body is what is sent.
 
 ### Faces, and bodies on other rigs
 
@@ -275,8 +282,23 @@ turns it off by itself, logged).
   nothing is written.
 - **What it costs in fidelity**: within the default budget a face gets 5
   to 10 small frames a second: the jaw and the widest lip moves follow, fine
-  shapes lag. `scene_kbps` raises it. Wrinkle maps and the eyes' tracks are
-  not copied (float tracks: §12).
+  shapes lag. `scene_kbps` raises it.
+- **Float tracks** (wrinkle maps, pupils, blinks, the lipsync envelope: a
+  face rig's `trackNames`, about 427 on an NPC): read and written at the
+  same commit, beside the bones, from the sampled pose's track pointer
+  (`[sampled+0x38]`, count at `+0x0C`, read from the code:
+  `engine/animation.md` §13.3). **Layout
+  check**: the first full sampled face decides for the session: its track
+  count is its rig's, the pointer is one, every value a finite number
+  under 64; anything else turns face tracks off, logged
+  (`pose stream: a sampled face has N float tracks …`). On the wire
+  (`RigTracks`, `rig::TrackEncoder`): each track that moved over 0.004
+  since last said, the largest first, as an index and an int16 of 1/4096,
+  within a tenth of a second of the stream's share, and three in turn; its
+  own stream in the budget, weight 1. Guest (`rig::TrackSet`): the same
+  60 ms blend; a track said at its reference value goes back to the rig's
+  own and is let go. Written before the bones: a face that solves its
+  joints from the tracks after the commit follows them.
 
 ## 6. The guest's own V
 
@@ -403,6 +425,9 @@ they change too often, and a wrong one heals with the next change.
   ("Other rigs": `BindPoseRig`, `ReadRig`, `WriteRig` on the commit hook,
   behind the same layout checks plus the rig's bone count),
   `TandemStory.FaceSource` / `FaceBind` / `SceneSpeakers`, `scene_rigs`.
+  A face's float tracks: `RigTracks` (appended), `rig::TrackEncoder`,
+  `rig::TrackSet`, `Endpoint::SendRigTracks`, `FaceTracks` in
+  `engine/posestream.cpp` (behind `FaceTracksOk`).
 - **The watch camera**: `scene::CameraTrack`, `IsCut`, `PackCamera`,
   `scene::Pacer` (`core/src/scene.cpp`), `Endpoint::SendSceneCamera` (a
   guest hears it as `events::Story`; the plugin's net thread puts it
@@ -415,14 +440,18 @@ they change too often, and a wrong one heals with the next change.
 - **Config** (`tandem.ini`): `scene_replay = on | noposes | off` (on by default);
   `scene_camera = on | off` (the watch camera); `scene_rigs = off | on`
   (faces, bodies on other rigs); `scene_kbps` (host: what a
-  scene's streams may take on a guest's link, 22 by default, 8 to 2000).
+  scene's streams may take on a guest's link, 22 by default, 8 to 2000);
+  `scene_voice_gender = on | swapped | off` (guest: a V's line in its
+  body's voice, §5).
 
 Engine access, by the rules: scripts and RTTI names (Codeware's imports);
 the two functions by address-library hash that the pose stream already
 hooks, behind its existing layout checks (`entAnimatedComponent` and
 `animRig` sizes; the source skeleton has every body bone; the target rig
 maps all 71; the first sampled pose has the rig's bone count and is in
-local space). **No new hook, hash or raw offset.**
+local space). **No new hook or hash**; one raw offset pair (a sampled
+pose's float tracks, +0x0C and +0x38), behind its own check (§5, float
+tracks).
 
 ## 10. Tests
 
@@ -523,24 +552,32 @@ speaks` and `face rig …: N bones, mapped`; `cmd story scene report` on
    To see: does the proxy's mouth move with the line, and is anything
    wrong with the face (a twisted jaw would mean the sampled pose of the
    face rig is not what the proxy's graph hands over in the same order).
-   If B > 0 and nothing moves, the face joints are solved after the commit:
-   the float tracks are the lever (§12). A drone or a robot in a scene:
+   The host's and the guest's logs say `face tracks on` once (`cmd story
+scene report`: `face tracks on (R reads, W writes)`, R > 0 on the host,
+   W > 0 on the guest while a line is spoken); `face tracks off` means the
+   sampled pose's track pointer is not as read from the code: note the
+   counts in the log line. To see: blinks and brows on the proxy as on the
+   host's NPC, eyes not rolled. If B > 0 and nothing moved before the
+   tracks, the face is solved from them after the commit. A drone or a robot in a scene:
    `not a body the stream knows` then `body rig …: mapped` on the host,
    `writes` on the guest, and the proxy moves as the host's.
-10. The earlier story scenarios still pass (`story-guest`, `story-host`,
+10. V's voice: `tools/game.sh cmd story scene voice STRINGID female`, then
+    `… male`, with the string id of a V line: the log says `body 1` /
+    `body 2`, and one listening hears the female then the male V. The other
+    way round: `scene_voice_gender = swapped` in `tandem.ini`, and the tag
+    in research file §3 becomes `[verified-2.5]` with the right values;
+    the same recording both times: the field does nothing outside a scene
+    (`off`).
+11. The earlier story scenarios still pass (`story-guest`, `story-host`,
     `story-johnny`, `story-private`): the subtitle path changed (stand-in
     ids).
 
 ## 12. Not built, and what would unblock it
 
-- **A face's float tracks** (wrinkle maps, pupils; and the whole face if
-  the game solves its joints after the commit): the commit copies them
-  from `[sampled+0x38]` (`engine/animation.md` §13.3, read from the code,
-  never from memory), their count is the rig's `trackNames`. Writing there
-  needs that pointer checked on the running game first (`tools/re/`).
-  Lipsync from the line's own animation (`m_/f_<string id>` in the
+- **Lipsync from the line's own animation** (`m_/f_<string id>` in the
   language's lipsync sets) stays out of reach: nothing reflected plays it
-  outside a scene (research file §4).
+  outside a scene (research file §4). The face's bones and float tracks are
+  copied instead (§5).
 - **Props that nobody holds** (a bottle the scene spawns on a table), and a
   held prop's exact grip: a held prop sits in the hand's attachment slot,
   not on the scene's own slot and offset (`scneventsAttachPropToPerformer`
@@ -552,12 +589,11 @@ speaks` and `face rig …: N bones, mapped`; `cmd story scene report` on
 - **The scene's section and its true clock**: `SceneState.section` is 0.
   A guest follows the host by what the host shows, so it is not needed
   for (b); it would be for (a).
-- **Whose voice V has** on another game: `audioDialogLineEventData.gender`
-  (Int32 at +0xC) is in the RTTI only through Codeware
-  (`CW/src/App/Audio/audioDialogLineEventData.hpp`), not in its script
-  import, and its values are unknown. One try in game decides (a script
-  field added to the struct, 0 and 1 with `isPlayer` on a puppet of the
-  other body); until then the game picks.
+- **A V's voice tone apart from its body**: the guest plays the recording
+  of the speaker's body (§5). The tone chosen at character creation is
+  read only from the creation state (`gameuiICharacterCustomizationState.IsBrainGenderMale`,
+  the save's `brainGender` string): a V of one body with the other voice
+  is heard in its body's.
 - **Approach (a)**, as a spike only, for scenes with no V in them.
 
 ## 13. Risks

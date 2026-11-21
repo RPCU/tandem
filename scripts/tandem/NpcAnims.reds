@@ -47,6 +47,10 @@ public final static func Fire(
   // draw it on their copy. Guest, linked with the host: our copy fires only
   // the shots the host's turret fired (the passing call), never its own.
   let turret = weaponOwner as SecurityTurret;
+  // A copy in another player's hands fires nothing of its own.
+  if IsDefined(turret) && turret.TandemInHands() && !TandemStreaming.IsPassing(turret.GetEntityID()) {
+    return;
+  }
   if IsDefined(turret) && TandemNative.IsStarted() && TandemTurrets.Follows(turret) {
     if TandemNative.IsHost() {
       let at = targetPosition;
