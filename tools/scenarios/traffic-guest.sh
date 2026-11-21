@@ -10,7 +10,7 @@ expect_peer 'street: 4 cars of .* round player' 20
 # world left among them, and the driver in its seat in the first one.
 pause 5
 cmd street count
-expect 'street count: 5 shown as proxies \(1 parked, 0 wrecks' 10
+expect 'street count: [0-9]+ \(0 run by us, 5 shown as proxies; 1 parked, 0 wrecks' 10
 expect 'npcs: proxy [0-9]+ seated in seat_front_left' 30
 shot traffic-guest
 # The first car burns, then blows up on our screen too: once, the game's way.
@@ -19,7 +19,7 @@ expect_peer 'blew up: a wreck' 15
 expect 'street: vehicle [0-9]+ blows up' 10
 pause 3
 cmd street count
-expect 'street count: 5 shown as proxies \(1 parked, 1 wrecks' 10
+expect 'street count: [0-9]+ \(0 run by us, 5 shown as proxies; 1 parked, 1 wrecks' 10
 shot traffic-guest-wreck
 # The host goes: its street goes with it, and none comes back twice.
 pkill -x tandem-peer

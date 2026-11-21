@@ -10,7 +10,7 @@ expect 'joined \(player [0-9]+' 20
 expect_peer 'street: vehicle 0x[0-9a-f]+ ' 30
 pause 3
 cmd street count
-expect 'street count: [1-9][0-9]* shared by us' 10
+expect 'street count: [0-9]+ \([1-9][0-9]* run by us' 10
 # The guest's car rams one: our game applies it to the real car (its driver
 # honks, panics or is knocked out, the game's own way).
 expect_peer 'street: rammed vehicle' 30
