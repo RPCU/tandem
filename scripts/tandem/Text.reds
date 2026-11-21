@@ -653,6 +653,8 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Phone-Cancelled", "Call to {1} cancelled");
     this.Text("Tandem-Phone-Invited", "Asked {1} to join you");
     this.Text("Tandem-Phone-Unreachable", "{1} can't be reached right now");
+    // A call between players on screen (Holocall.reds).
+    this.Text("Tandem-Holocall-Ended", "Call ended");
     this.Text("Tandem-Trade-NotNow", "You can't trade right now");
     this.Text("Tandem-Story-RestrictHolstered", "{1}'s scene: weapons away.");
     this.Text("Tandem-Story-RestrictSlow", "{1}'s scene: take it slow.");
@@ -1131,6 +1133,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Phone-Cancelled", "Appel à {1} annulé");
     this.Text("Tandem-Phone-Invited", "Proposé à {1} de vous rejoindre");
     this.Text("Tandem-Phone-Unreachable", "{1} est injoignable pour l'instant");
+    this.Text("Tandem-Holocall-Ended", "Appel terminé");
     this.Text("Tandem-Trade-NotNow", "Échange impossible pour l'instant");
     this.Text("Tandem-Story-RestrictHolstered", "Scène de {1} : armes rangées.");
     this.Text("Tandem-Story-RestrictSlow", "Scène de {1} : doucement.");

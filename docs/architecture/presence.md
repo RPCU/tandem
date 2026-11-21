@@ -153,7 +153,7 @@ toggling their root's visibility):
 | Vanilla widget | Where | Shares space with the list? | Rule |
 | --- | --- | --- | --- |
 | health bar, buffs, cyberware cooldowns (`healthbarWidgetGameController`, `inkCooldownGameController`) | top left | the list sits under them (96, 340) | fixed: the list starts below them |
-| holocall / audio call portrait (`NewHudPhoneGameController`, `HoloAudioCallLogicController`) | left column, under the health bar | **yes** | while `UI_ComDevice.PhoneCallInformation` is in its `IncomingCall` or `StartCall` phase: the list moves below the portrait (96, 1080) and turns compact |
+| holocall / audio call portrait (`NewHudPhoneGameController`, `HoloAudioCallLogicController`) | left column, under the health bar | **yes** | while `UI_ComDevice.PhoneCallInformation` is in its `IncomingCall` or `StartCall` phase, or a call between players is drawn with the same widgets (`TandemComms.HolocallUp`, comms.md): the list moves below the portrait (96, 1080) and turns compact |
 | dialogue choice hub (`dialogWidgetGameController`), subtitles | right of centre; bottom centre | no | while `UIInteractions.DialogChoiceHubs` has a hub: compact in place (a conversation needs no arrow or distance) |
 | boss health bar (`BossHealthBarGameController`) | top centre | no, at any aspect from 16:10 to 32:9 | nothing to yield: logged (its root's visibility), the partners' health stays whole in a boss fight |
 | minimap, wanted level, quest tracker and objectives, district name (`MinimapContainerController`, `WantedBarGameController`, `QuestTrackerGameController`) | top right | no | none |
