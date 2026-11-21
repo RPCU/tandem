@@ -3,7 +3,8 @@
 game (or the mock player) can write, without the game.
 
 A scenario (tools/scenarios/*.sh) reads the game's log with `expect 'RE'`,
-`reject`, `at_most N` and `since | grep`, and the mock player's with
+`reject`, `at_most N`, `since | grep` and `query` (which waits for `test
+query: WHAT ARGS = `), and the mock player's with
 `expect_peer`, `expect_peer2` and `reject_peer`. A log line reworded in the
 scripts or the plugin leaves its scenarios waiting for a line that never
 comes, found only minutes into an in-game run.
@@ -1131,6 +1132,14 @@ def patterns(path):
             if command and word in calls and k + calls[word] < len(words):
                 side = "peer" if word in PEER_CALLS else "game"
                 yield start, side, words[k + calls[word]][0]
+            # query VAR WHAT ARGS waits for "test query: WHAT ARGS = VALUE".
+            if command and word == "query" and k + 2 < len(words):
+                asked = []
+                for w, _ in words[k + 2:]:
+                    if w in COMMAND_START or w in (";", "&&", "||", ")"):
+                        break
+                    asked.append(re.sub(r"([\\.\[\]()*+?{}|^$])", r"\\\1", w))
+                yield start, "game", "test query: " + " ".join(asked) + " = "
             if word == "grep" and k >= 2 and words[k - 1][0] == "|" and words[k - 2][0] == "since":
                 rest = [w for w, _ in words[k + 1:]]
                 rest = rest[:next((n for n, w in enumerate(rest) if w in ("|", ";", ")", "&&", "||")), len(rest))]

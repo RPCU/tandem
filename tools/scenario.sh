@@ -47,6 +47,11 @@
 #   expect_peer2 REGEX [SECS] the same in the second mock player's log
 #   reject REGEX           no such game log line so far
 #   reject_peer REGEX      no such mock player log line so far
+#   query VAR WHAT [ARGS]  the game's own state (test query: health, item
+#                          RECORD, money, fact NAME, journal PATH, position,
+#                          mounted [player N|puppet], npc ID health) into VAR
+#   expect_value V OP W    V = != ~ (ERE) < <= > >= W
+#   expect_changed A B HOW B against A: down, up, same, changed, N, +N, -N
 #   pause SECS             let time pass (still watching for a stall)
 #   shot NAME              a screenshot kept with the results
 #   note TEXT              a line in the report
@@ -259,6 +264,64 @@ reject_peer() {
     echo "  ok, none (peer): $1"
   fi
 }
+# The game's own state (scripts/tandem/TestQuery.reds), not what our code
+# logged it did: `query VAR WHAT [ARGS…]` asks `test query WHAT ARGS`, waits
+# for this answer ("test query: WHAT ARGS = VALUE", 10 s) and sets VAR.
+query() {
+  local _var=$1 _asked _from _line _start=$SECONDS
+  shift
+  _asked="$*"
+  _from=$(since | grep -cF "test query: $_asked = " || true)
+  cmd test query "$_asked"
+  while ((SECONDS - _start < 10)); do
+    _line=$(since | grep -F "test query: $_asked = " | sed -n "$((_from + 1))p" || true)
+    if [ -n "$_line" ]; then
+      _line=${_line%$'\r'}
+      printf -v "$_var" '%s' "${_line#*"test query: $_asked = "}"
+      echo "  query $_asked: ${!_var}"
+      return 0
+    fi
+    if since | grep -qF "test query: unknown: $_asked"; then fail "no such query: $_asked"; fi
+    sleep 1
+  done
+  fail "no answer to 'test query $_asked' within 10 s"
+}
+# expect_value VALUE OP WANT: OP = or != (text), ~ (an ERE), < <= > >=
+# (numbers).
+expect_value() {
+  local ok=0
+  case $2 in
+  =) if [ "$1" = "$3" ]; then ok=1; fi ;;
+  !=) if [ "$1" != "$3" ]; then ok=1; fi ;;
+  '~') if grep -qE -- "$3" <<<"$1"; then ok=1; fi ;;
+  '<' | '<=' | '>' | '>=')
+    if ! numeric "$1" || ! numeric "$3"; then fail "not numbers: '$1' $2 '$3'"; fi
+    if awk -v a="$1" -v b="$3" "BEGIN { exit !(a + 0 $2 b + 0) }"; then ok=1; fi
+    ;;
+  *) fail "expect_value: no operator '$2'" ;;
+  esac
+  [ "$ok" = 1 ] || fail "value '$1', expected $2 '$3'"
+  echo "  ok: '$1' $2 '$3'"
+}
+# expect_changed BEFORE AFTER HOW: two answers of one query, as numbers;
+# HOW: down, up, same, changed, or N / +N / -N (AFTER - BEFORE, exactly).
+expect_changed() {
+  if ! numeric "$1" || ! numeric "$2"; then fail "not numbers: '$1' -> '$2'"; fi
+  case $3 in
+  down | up | same | changed | [+-][0-9]* | [0-9]*) ;;
+  *) fail "expect_changed: no such change '$3'" ;;
+  esac
+  awk -v b="$1" -v a="$2" -v how="$3" 'BEGIN {
+    d = a - b
+    if (how == "down") exit !(d < 0)
+    if (how == "up") exit !(d > 0)
+    if (how == "same") exit !(d == 0)
+    if (how == "changed") exit !(d != 0)
+    exit !(d - how < 0.005 && how - d < 0.005)
+  }' || fail "'$1' -> '$2' is not $3"
+  echo "  ok: '$1' -> '$2' ($3)"
+}
+numeric() { [[ $1 =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; }
 # The thread probe (docs/architecture/testing.md): no script hook ran beside
 # the script tick (on another thread while it ran) since the mark; each is
 # logged the first time, then summed up.

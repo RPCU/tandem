@@ -11,12 +11,17 @@ an in-game run. Checked here:
 - the first word of every `cmd ...` is a command the scripts take (a string
   literal that is, or begins with, that word in scripts/tandem);
 - every helper a scenario calls is a function of tools/scenario.sh (or a
-  shell word).
+  shell word);
+- every `query VAR WHAT` and `cmd test query WHAT` asks a query
+  scripts/tandem/TestQuery.reds answers, every `expect_value` has a known
+  operator and `expect_changed` a known change, and the variables they
+  compare are set in the scenario.
 
 Usage: tools/scenarios-check.py   (exit 1 on a finding)
 """
 
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -46,6 +51,52 @@ def code_lines(path: Path):
         pending = ""
 
 
+CHANGES = re.compile(r"down|up|same|changed|[+-]?[0-9]+(\.[0-9]+)?|\$\{?\w+\}?|\$\(\(.*\)\)")
+OPERATORS = {"=", "!=", "~", "<", "<=", ">", ">="}
+
+
+def check_queries(where: str, line: str, queries: set, assigned: set, globals_: set) -> int:
+    """`query VAR WHAT`, `cmd test query WHAT`, `expect_value`, `expect_changed`:
+    a query the scripts answer, into none of the harness's own variables ($out
+    is the evidence folder), a known operator or change, and variables the
+    scenario sets (a typo'd one would compare an empty value)."""
+    try:
+        words = shlex.split(line, comments=True)
+    except ValueError:
+        return 0
+    if not words:
+        return 0
+    problems, what = 0, None
+    if words[0] == "query":
+        if len(words) < 3 or not re.fullmatch(r"[A-Za-z_]\w*", words[1]):
+            print(f"{where}: query VAR WHAT [ARGS]: {' '.join(words[1:])}", file=sys.stderr)
+            return 1
+        if words[1] in globals_:
+            print(f"{where}: query {words[1]} would overwrite tools/scenario.sh's own ${words[1]}", file=sys.stderr)
+            problems += 1
+        what = words[2]
+    elif words[:3] == ["cmd", "test", "query"] and len(words) > 3:
+        what = words[3]
+    if what is not None and what not in queries:
+        print(f"{where}: no query '{what}' in scripts/tandem/TestQuery.reds ({', '.join(sorted(queries))})", file=sys.stderr)
+        problems += 1
+    if words[0] in ("expect_value", "expect_changed"):
+        if len(words) != 4:
+            print(f"{where}: {words[0]} takes 3 arguments", file=sys.stderr)
+            return problems + 1
+        if words[0] == "expect_value" and words[2] not in OPERATORS:
+            print(f"{where}: expect_value has no operator '{words[2]}' ({' '.join(sorted(OPERATORS))})", file=sys.stderr)
+            problems += 1
+        if words[0] == "expect_changed" and not CHANGES.fullmatch(words[3]):
+            print(f"{where}: expect_changed has no change '{words[3]}' (down, up, same, changed, N, +N, -N)", file=sys.stderr)
+            problems += 1
+        for name in re.findall(r"\$\{?(\w+)", " ".join(words[1:])):
+            if name not in assigned and not name.isdigit():
+                print(f"{where}: ${name} is set nowhere in the scenario (query {name} ...?)", file=sys.stderr)
+                problems += 1
+    return problems
+
+
 def main() -> int:
     literals = set()
     for folder, pattern in (("peer", "*.cpp"), ("peer", "*.hpp"), ("tools/pilot", "*.go"), ("tools", "*.sh"), ("tools", "*.py")):
@@ -59,9 +110,19 @@ def main() -> int:
             commands.add(text)
     harness = (ROOT / "tools/scenario.sh").read_text()
     helpers = set(re.findall(r"^\s*(\w+)\(\)\s*\{", harness, re.M))
+    queries = set(re.findall(r'Equals\(what, "([a-z]+)"\)', (ROOT / "scripts/tandem/TestQuery.reds").read_text()))
+    harness_vars = set(re.findall(r"(?:^|[\s;])(\w+)=", harness))
+    globals_ = {name for line in harness.splitlines() if re.match(r"\w+=", line)
+                for name in re.findall(r"(?:^|\s)(\w+)=", line)}
     problems = 0
     for path in sorted((ROOT / "tools/scenarios").glob("*.sh")):
-        own = set(re.findall(r"^\s*(\w+)\(\)\s*\{", path.read_text(), re.M))
+        text = path.read_text()
+        own = set(re.findall(r"^\s*(\w+)\(\)\s*\{", text, re.M))
+        assigned = harness_vars | set(re.findall(r"(?:^|[\s;])(\w+)=", text))
+        assigned |= set(re.findall(r"^\s*query\s+(\w+)\s", text, re.M))
+        for names in re.findall(r"\bread\s+(?:-\w+\s+)*([\w ]+)", text):
+            assigned |= set(names.split())
+        assigned |= set(re.findall(r"\bfor\s+(\w+)\s+in\b", text))
         heredoc = None
         for number, line in code_lines(path):
             if heredoc:
@@ -86,6 +147,7 @@ def main() -> int:
                 if re.fullmatch(r"[a-z][a-z0-9-]*", word) and word not in commands:
                     print(f"{where}: no script takes the command '{word}' (cmd {' '.join(words[1:3])})", file=sys.stderr)
                     problems += 1
+            problems += check_queries(where, line, queries, assigned, globals_)
             if re.fullmatch(r"[a-z_][a-z0-9_]*", first) and "=" not in first:
                 if first not in helpers and first not in own and first not in SHELL and not line.lstrip().startswith(first + "="):
                     print(f"{where}: '{first}' is no helper of tools/scenario.sh", file=sys.stderr)
