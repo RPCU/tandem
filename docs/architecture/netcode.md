@@ -110,8 +110,10 @@ events, taps and recordings above it see `PlayerState`, `PoseState`,
   from these places.
 - **Still**: a V or a car that does not move goes 5 times a second; when it
   moves again the last held state goes first with its own time, so it
-  leaves from where and when it stood. The receiver's interval estimate
-  skips still gaps, so the delay does not grow.
+  leaves from where and when it stood; not one held over a pause in the
+  states (our V elsewhere: a state 4.4 s old, refused by the referee's
+  clock rule, 2026-11-21). The receiver's interval estimate skips still
+  gaps, so the delay does not grow.
 - **Coalescing**: the net thread holds our V's state or pose up to 8 ms for
   the other (they come from the script tick and the animation job a few ms
   apart): one datagram per frame instead of two. A broadcast is encoded
