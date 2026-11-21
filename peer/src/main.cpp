@@ -212,6 +212,7 @@ struct Options {
   bool hitYouMelee{false}; // --hit-you: a melee hit (blockable, held for the proxy's swing)
   int shootYouSeconds{0};  // host: one of its NPCs fires at each guest's V this often
   std::string shotWeapon{"Items.Preset_Lexington_Default"}; // --shoot-you: its weapon
+  bool shotSmart{}; // --shoot-you: a smart gun's guided rounds (kShotAtTracked)
   // --hit-npcs: what each hit carries besides its damage (plain, nonlethal,
   // cap, poise, head, blade).
   std::string strike{"plain"};
@@ -257,7 +258,9 @@ struct Options {
   // Status effects that show on our V (StatusVisuals): REC@FROM-TO[,...], in
   // seconds after another player is in (TO 0 or missing: kept).
   std::string statusVisuals;
-  int shootSeconds{0}; // join: a gunshot (shot + noise) this often (0: never)
+  int shootSeconds{0};  // join: a gunshot (shot + noise) this often (0: never)
+  bool ricochet{};      // --shoot: each bullet ricochets on (a Ricochet cue)
+  int chargeSeconds{0}; // a tech weapon's charged shot this often (0: never)
   // Quickhacks: join: upload --hack-action on a host NPC every N s, then land
   // --hack-effect; host: one of our NPCs hacks the guest (--npc-hack) every
   // N s; either: hack the car another player drives every N s.
@@ -642,6 +645,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     seconds: the guest's game fires it and decides the hit\n"
          "  --shot-weapon REC  --shoot-you: the NPC's weapon (default\n"
          "                     Items.Preset_Lexington_Default)\n"
+         "  --shot-smart       --shoot-you: a smart gun's rounds, locked on the V: guided\n"
+         "                     there (give a smart --shot-weapon: Items.Preset_Yukimura_Default)\n"
          "  --strike KIND      --hit-npcs: what each hit carries: plain (35 health), nonlethal\n"
          "                     (a blunt hit: knocks out), cap (leave 1 HP), poise (10 health,\n"
          "                     40 poise), head (a headshot), blade (a katana on the left arm)\n"
@@ -693,6 +698,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     kept): the others' puppet of it plays their visuals\n"
          "  --shoot N          fire a gunshot every N seconds: the shot, where its bullet\n"
          "                     ended (a cue: 6 m past the other V), and as a guest its noise\n"
+         "  --ricochet         --shoot: each bullet ricochets on, 3 m aside and 1.5 m up (a cue)\n"
+         "  --charge N         every N seconds our V charges its weapon (a tech one: --hold)\n"
+         "                     for 2.5 s, said as it goes (charging, ready, full), and fires\n"
          "  --hurt N           our V is hit every N seconds: its health falls a quarter (the\n"
          "                     others' puppet of it grunts and flinches), then is full again\n"
          "  --melee N          swing a melee weapon every N seconds, and land it (a cue)\n"
@@ -1327,6 +1335,14 @@ Options Parse(int argc, char **argv) {
       options.footsteps = true;
       continue;
     }
+    if (flag == "--shot-smart") {
+      options.shotSmart = true;
+      continue;
+    }
+    if (flag == "--ricochet") {
+      options.ricochet = true;
+      continue;
+    }
     if (i + 1 >= args.size())
       Usage(std::format("{} needs a value", flag));
     const auto value = args[++i];
@@ -1618,6 +1634,8 @@ Options Parse(int argc, char **argv) {
       options.statusVisuals = value;
     else if (flag == "--shoot")
       options.shootSeconds = std::max(1, Number<int>(value));
+    else if (flag == "--charge")
+      options.chargeSeconds = std::max(4, Number<int>(value));
     else if (flag == "--hurt")
       options.hurtSeconds = std::max(1, Number<int>(value));
     else if (flag == "--melee")
@@ -4324,6 +4342,10 @@ int main(int argc, char **argv) {
   auto nextShot = std::chrono::steady_clock::now();
   // Presence: --melee, --hurt, --menu-at, --react-npcs.
   auto nextMelee = nextShot, nextHurt = nextShot, nextReaction = nextShot;
+  // --charge: when the current charge began, the step last said and when.
+  auto nextCharge = nextShot, chargeSaid = nextShot;
+  std::optional<std::chrono::steady_clock::time_point> chargeFrom;
+  int chargeStep = -1;
   float ourHealth = 1.f;
   bool ourMenu = false, presenceSent = false;
   std::size_t reactionStep = 0;
@@ -4853,9 +4875,13 @@ int main(int argc, char **argv) {
               Log("player {} status visuals: {} record(s)", e.visuals.player,
                   e.visuals.records.size());
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteCue>) {
-              Log("player {} cue: {} to ({:.1f}, {:.1f}, {:.1f}), flags {:#x}", e.cue.player,
-                  e.cue.kind == tandem::proto::CueKind::Trace ? "bullet" : "melee hit", e.cue.at.x,
-                  e.cue.at.y, e.cue.at.z, e.cue.arg);
+              using Kind = tandem::proto::CueKind;
+              const char *kind = e.cue.kind == Kind::Trace      ? "bullet"
+                                 : e.cue.kind == Kind::Ricochet ? "ricochet"
+                                 : e.cue.kind == Kind::Charge   ? "charge"
+                                                                : "melee hit";
+              Log("player {} cue: {} to ({:.1f}, {:.1f}, {:.1f}), flags {:#x}", e.cue.player, kind,
+                  e.cue.at.x, e.cue.at.y, e.cue.at.z, e.cue.arg);
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcReaction>) {
               // Twitches come by the dozen under fire: the others are said.
               if (e.reaction.type != tandem::proto::kReactionTwitch)
@@ -7327,8 +7353,13 @@ int main(int argc, char **argv) {
                                      .weapon = npcWeapons[shooter],
                                      .tbh = lands ? 0.f : 1.f,
                                      .trigger = 4, // SemiAuto
-                                     .factor = 1.f}))
-          Log("npc {} fires at player {}{}", shooter, id, lands ? " (may land)" : "");
+                                     .factor = 1.f,
+                                     .flags = options.shotSmart ? static_cast<std::uint8_t>(
+                                                                      tandem::proto::kShotAtSmart |
+                                                                      tandem::proto::kShotAtTracked)
+                                                                : std::uint8_t{0}}))
+          Log("npc {} fires at player {}{}{}", shooter, id, options.shotSmart ? " (guided)" : "",
+              lands ? " (may land)" : "");
     }
     // Seconds since another player was first in the session with us.
     if (!sharedSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
@@ -7581,11 +7612,53 @@ int main(int argc, char **argv) {
     if (options.shootSeconds && endpoint->IsJoined() && now >= nextShot) {
       nextShot = now + std::chrono::seconds(options.shootSeconds);
       endpoint->SendLocalShot({.hand = tandem::proto::Hand::Right, .effect = 16});
-      if (const auto at = beyond())
+      if (const auto at = beyond()) {
         endpoint->SendLocalCue({.kind = tandem::proto::CueKind::Trace, .at = *at});
+        // --ricochet: it bounced off where it ended and hit something there.
+        if (options.ricochet) {
+          endpoint->SendLocalCue(
+              {.kind = tandem::proto::CueKind::Ricochet, .at = {at->x + 3.f, at->y, at->z + 1.5f}});
+          Log("ricochet");
+        }
+      }
       if (!options.host)
         endpoint->SendNoise({.stim = 28, .radius = 25.f});
       Log("gunshot");
+    }
+    // --charge: charging for 1 s, ready for 0.5 s, full for 1 s, said on
+    // each change and every 0.25 s with how charged; then the shot and the
+    // charge's end.
+    if (options.chargeSeconds && endpoint->IsJoined()) {
+      if (!chargeFrom && now >= nextCharge)
+        chargeFrom = now;
+      if (chargeFrom) {
+        namespace proto = tandem::proto;
+        const double in = std::chrono::duration<double>(now - *chargeFrom).count();
+        const int step = in < 1.0   ? proto::kChargeCharging
+                         : in < 1.5 ? proto::kChargeReady
+                         : in < 2.5 ? proto::kChargeFull
+                                    : proto::kChargeIdle;
+        if (step != chargeStep || now - chargeSaid >= std::chrono::milliseconds(250)) {
+          if (step != chargeStep)
+            Log("charge step {}", step);
+          chargeStep = step;
+          chargeSaid = now;
+          const float charged =
+              step == proto::kChargeIdle ? 0.f : std::min(1.f, static_cast<float>(in) / 1.5f);
+          endpoint->SendLocalCue({.kind = proto::CueKind::Charge,
+                                  .arg = static_cast<std::uint8_t>(step),
+                                  .at = {charged, 0.f, 0.f}});
+        }
+        if (step == proto::kChargeIdle) {
+          endpoint->SendLocalShot({.hand = proto::Hand::Right, .effect = 16});
+          if (const auto at = beyond())
+            endpoint->SendLocalCue({.kind = proto::CueKind::Trace, .at = *at});
+          Log("charged shot");
+          chargeFrom.reset();
+          chargeStep = -1;
+          nextCharge = now + std::chrono::seconds(options.chargeSeconds);
+        }
+      }
     }
     // --melee: a swing (Shot 200), and it lands (a Cue).
     if (options.meleeSeconds && endpoint->IsJoined() && now >= nextMelee) {
