@@ -290,6 +290,45 @@ TEST_CASE("every replacement is told: grouped per player and kind, never silent"
   CHECK(resolver.TakeTold().empty());
 }
 
+TEST_CASE(
+    "a record checked outside the resolver's lock: the check is the caller's, the memo wins") {
+  // The plugin keeps the resolver under a lock the net thread takes every
+  // pass: the game's checks (TweakDB, the depot) are made before it, never
+  // by the resolver under it.
+  int checks = 0;
+  mods::Resolver resolver([&](mods::Kind, std::uint64_t) {
+    ++checks;
+    return false;
+  });
+  const std::uint64_t now = 1'000'000;
+  const std::set<std::uint64_t> here = {kHandgun};
+  const auto known = [&](mods::Kind, std::uint64_t record) { return here.contains(record); };
+  CHECK(resolver.Memoized(mods::Kind::Weapon, 0, {}));
+  CHECK_FALSE(resolver.Memoized(mods::Kind::Weapon, 77, {}));
+  const auto decided = mods::Resolve(mods::Kind::Weapon, 77, {}, known);
+  REQUIRE(decided.outcome != mods::Outcome::Same);
+  CHECK(resolver.Resolve(mods::Kind::Weapon, 77, {}, 2, "Judy", now, decided) == decided);
+  CHECK(checks == 0);
+  CHECK(resolver.Memoized(mods::Kind::Weapon, 77, {}));
+  // Told and listed as any other replacement.
+  CHECK(resolver.TakeLog().size() == 1);
+  CHECK(resolver.List().size() == 1);
+  CHECK(resolver.TakeNotices(now + mods::Resolver::kGatherUs).size() == 1);
+  // Another thread's answer came first: it stays (one record, one answer).
+  CHECK(resolver.Resolve(mods::Kind::Weapon, 77, {}, 2, "Judy", now, {77, mods::Outcome::Same}) ==
+        decided);
+  // Memoized: the plain Resolve makes no check either.
+  CHECK(resolver.Resolve(mods::Kind::Weapon, 77, {}, 2, "Judy", now) == decided);
+  CHECK(checks == 0);
+  // A record this game has: nothing to tell.
+  CHECK(resolver
+            .Resolve(mods::Kind::Weapon, kHandgun, {}, 2, "Judy", now,
+                     mods::Resolve(mods::Kind::Weapon, kHandgun, {}, known))
+            .outcome == mods::Outcome::Same);
+  CHECK(resolver.TakeLog().empty());
+  CHECK(checks == 0);
+}
+
 TEST_CASE("two games say their mods at a join; names only when asked") {
   const auto port = test::NextPort();
   std::string error;

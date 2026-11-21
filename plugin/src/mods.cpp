@@ -12,6 +12,8 @@
 #include <RED4ext/TweakDB.hpp>
 
 #include <format>
+#include <string>
+#include <vector>
 
 namespace tandem::plugin {
 ModRecords &ModRecords::Get() {
@@ -29,11 +31,12 @@ std::vector<proto::ModEntry> ModRecords::OursForIdentity() {
   return mods::ToWire(m_ours, true);
 }
 
-// Called with m_mutex held (from the resolver).
+// The game's own checks: never under m_mutex (the net thread takes it every
+// pass; an engine call that waits must not stop it too).
 bool ModRecords::Known(mods::Kind kind, std::uint64_t record) {
   switch (kind) {
   case mods::Kind::LookPiece: {
-    if (m_depot != Depot::Trusted)
+    if (m_depot.load() != Depot::Trusted)
       return true;
     auto *depot = RED4ext::ResourceDepot::Get();
     return !depot || depot->ResourceExists(RED4ext::ResourcePath(record));
@@ -50,8 +53,7 @@ bool ModRecords::Known(mods::Kind kind, std::uint64_t record) {
 }
 
 void ModRecords::CheckDepot(const std::vector<proto::AppearanceKey> &ours) {
-  std::scoped_lock lock(m_mutex);
-  if (m_depot != Depot::Unchecked || ours.empty())
+  if (m_depot.load() != Depot::Unchecked || ours.empty())
     return;
   auto *depot = RED4ext::ResourceDepot::Get();
   std::size_t found = 0;
@@ -60,10 +62,13 @@ void ModRecords::CheckDepot(const std::vector<proto::AppearanceKey> &ours) {
       ++found;
   // Our own V's look is on our disk by definition: a depot that denies it
   // answers something else, and its answers are not used.
-  m_depot = found == ours.size() ? Depot::Trusted : Depot::Ignored;
+  const auto verdict = found == ours.size() ? Depot::Trusted : Depot::Ignored;
+  auto unchecked = Depot::Unchecked;
+  if (!m_depot.compare_exchange_strong(unchecked, verdict))
+    return; // another thread checked first
   log::Info("mods: the resource depot {} our own look ({} of {} pieces): {}",
-            m_depot == Depot::Trusted ? "has" : "does not see", found, ours.size(),
-            m_depot == Depot::Trusted ? "a partner's look piece we lack is left off"
+            verdict == Depot::Trusted ? "has" : "does not see", found, ours.size(),
+            verdict == Depot::Trusted ? "a partner's look piece we lack is left off"
                                       : "look pieces are never left off");
 }
 
@@ -72,9 +77,29 @@ std::uint64_t ModRecords::Resolve(mods::Kind kind, std::uint64_t record,
   if (record == 0)
     return 0;
   const auto who = Runtime::Get().PlayerName(player);
-  std::scoped_lock lock(m_mutex);
-  const auto resolved = m_resolver.Resolve(kind, record, hint, player, who, net::NowUs());
-  for (const auto &line : m_resolver.TakeLog())
+  bool memoized = false;
+  {
+    std::scoped_lock lock(m_mutex);
+    memoized = m_resolver.Memoized(kind, record, hint);
+  }
+  // The game's checks (TweakDB, the depot) outside the lock, and the log
+  // lines after it.
+  const auto decided =
+      memoized ? mods::Resolved{}
+               : mods::Resolve(kind, record, hint,
+                               [this](mods::Kind k, std::uint64_t r) { return Known(k, r); });
+  mods::Resolved resolved;
+  std::vector<std::string> lines;
+  {
+    std::scoped_lock lock(m_mutex);
+    // (Memoized, then the session's resolver cleared since: the plain
+    // Resolve checks again, under the lock, as it always did.)
+    resolved = memoized
+                   ? m_resolver.Resolve(kind, record, hint, player, who, net::NowUs())
+                   : m_resolver.Resolve(kind, record, hint, player, who, net::NowUs(), decided);
+    lines = m_resolver.TakeLog();
+  }
+  for (const auto &line : lines)
     log::Info("{}", line);
   return resolved.record;
 }
@@ -82,55 +107,63 @@ std::uint64_t ModRecords::Resolve(mods::Kind kind, std::uint64_t record,
 void ModRecords::Note(mods::Kind kind, std::uint64_t record, std::uint64_t shown,
                       proto::PlayerId player) {
   const auto who = Runtime::Get().PlayerName(player);
-  std::scoped_lock lock(m_mutex);
-  m_resolver.Note(kind, record,
-                  {shown, shown == 0 ? mods::Outcome::Skipped : mods::Outcome::Default}, player,
-                  who, net::NowUs());
-  for (const auto &line : m_resolver.TakeLog())
+  std::vector<std::string> lines;
+  {
+    std::scoped_lock lock(m_mutex);
+    m_resolver.Note(kind, record,
+                    {shown, shown == 0 ? mods::Outcome::Skipped : mods::Outcome::Default}, player,
+                    who, net::NowUs());
+    lines = m_resolver.TakeLog();
+  }
+  for (const auto &line : lines)
     log::Info("{}", line);
 }
 
 void ModRecords::OnCompared(const events::RemoteMods &mods) {
-  std::scoped_lock lock(m_mutex);
-  auto &theirs = m_theirs[mods.player];
-  theirs.name = mods.name;
-  theirs.comparison = mods.comparison;
+  {
+    std::scoped_lock lock(m_mutex);
+    auto &theirs = m_theirs[mods.player];
+    theirs.name = mods.name;
+    theirs.comparison = mods.comparison;
+    if (mods.comparison.Differ())
+      m_notices.push_back(
+          {.what = ModNotice::What::Compared, .player = mods.player, .name = mods.name});
+  }
   log::Info("mods: {}", mods::Describe(mods.comparison, mods.name).empty()
                             ? std::format("{} has the same mods as we do ({})", mods.name,
                                           mods.comparison.shared)
                             : mods::Describe(mods.comparison, mods.name));
-  if (mods.comparison.Differ())
-    m_notices.push_back(
-        {.what = ModNotice::What::Compared, .player = mods.player, .name = mods.name});
 }
 
 void ModRecords::OnNames(const events::ModNamesFrom &names) {
-  std::scoped_lock lock(m_mutex);
-  auto &theirs = m_theirs[names.player];
-  theirs.names.clear();
+  std::string all;
   for (const auto &mod : names.mods)
-    theirs.names.push_back(mod.name);
-  log::Info("mods: {}'s mods we lack: {}", names.name, [&] {
-    std::string all;
-    for (const auto &name : theirs.names)
-      all += (all.empty() ? "" : ", ") + name;
-    return all;
-  }());
-  m_notices.push_back({.what = ModNotice::What::NamesCame,
-                       .player = names.player,
-                       .name = names.name,
-                       .count = static_cast<std::int32_t>(names.mods.size())});
+    all += (all.empty() ? "" : ", ") + mod.name;
+  {
+    std::scoped_lock lock(m_mutex);
+    auto &theirs = m_theirs[names.player];
+    theirs.names.clear();
+    for (const auto &mod : names.mods)
+      theirs.names.push_back(mod.name);
+    m_notices.push_back({.what = ModNotice::What::NamesCame,
+                         .player = names.player,
+                         .name = names.name,
+                         .count = static_cast<std::int32_t>(names.mods.size())});
+  }
+  log::Info("mods: {}'s mods we lack: {}", names.name, all);
 }
 
 void ModRecords::OnSeen(const events::SubstitutesFrom &seen) {
-  std::scoped_lock lock(m_mutex);
+  {
+    std::scoped_lock lock(m_mutex);
+    m_notices.push_back({.what = ModNotice::What::Seen,
+                         .player = seen.substitutes.seer,
+                         .name = seen.name,
+                         .kind = seen.substitutes.kinds,
+                         .count = seen.substitutes.count});
+  }
   log::Info("mods: {}'s game shows substitutes for {} of ours (kinds {:#x})", seen.name,
             seen.substitutes.count, seen.substitutes.kinds);
-  m_notices.push_back({.what = ModNotice::What::Seen,
-                       .player = seen.substitutes.seer,
-                       .name = seen.name,
-                       .kind = seen.substitutes.kinds,
-                       .count = seen.substitutes.count});
 }
 
 void ModRecords::Ended() {

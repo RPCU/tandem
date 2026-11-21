@@ -130,6 +130,9 @@ build slots) and copies the DLL, `.pdb` and `tandem-peer` back; then
 - The game thread never touches the socket. Exchange data through queues.
 - Engine callbacks reached from redscript may run on job threads: enqueue
   only; change state on the game thread's frame tick.
+- No lock of ours is held across an engine call: one that waits stops
+  every thread taking that lock, the net thread too (`ModRecords`). An
+  engine hook logs after releasing its lock (`engine/quests.cpp`).
 
 ### Plugin sources and scripts
 
