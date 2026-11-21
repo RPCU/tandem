@@ -1202,6 +1202,7 @@ public class TandemDevices extends ScriptableSystem {
       let far = Vector4.Length(back);
       let to = far > 0.1 ? there + back * (1.5 / far) : there + new Vector4(1.5, 0.0, 0.0, 0.0);
       to.W = 1.0;
+      TandemTravel.ExpectMove(game);
       GameInstance.GetTeleportationFacility(game).Teleport(player, to, player.GetWorldOrientation().ToEulerAngles());
       TandemNative.Log(s"devices: at \(what) \(TandemDevices.Name(device)): (\(to.X), \(to.Y), \(to.Z)), \(TandemDevices.Describe(status, flags, value))");
       return;

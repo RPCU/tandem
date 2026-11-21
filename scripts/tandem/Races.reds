@@ -1231,6 +1231,7 @@ public class TandemRaces {
       let spot = this.SlotAt(this.m_slot);
       let side = this.Right();
       let stand = new Vector4(spot.X + side.X * 3.0, spot.Y + side.Y * 3.0, spot.Z + 0.5, 1.0);
+      TandemTravel.ExpectMove(this.m_game);
       GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, stand, TandemYawAngles(this.m_theirHeading));
       let spec = new DynamicEntitySpec();
       spec.recordID = record;

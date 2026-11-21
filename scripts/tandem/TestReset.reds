@@ -123,6 +123,7 @@ public class TandemTestReset {
         if IsDefined(this.m_system) {
           this.m_system.ClearTestCars();
         }
+        TandemTravel.ExpectMove(this.m_game);
         GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, TandemTestReset.Field(), TandemYawAngles(0.0));
         this.m_step = 2;
         this.m_since = now;

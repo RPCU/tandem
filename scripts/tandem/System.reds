@@ -1711,6 +1711,8 @@ public class TandemSystem extends ScriptableSystem {
           yaw = StringToFloat(w);
         }
       }
+      // A test's move: not offered to the others (Travel.reds WatchJump).
+      TandemTravel.ExpectMove(this.GetGameInstance());
       GameInstance.GetTeleportationFacility(this.GetGameInstance()).Teleport(GetPlayer(this.GetGameInstance()), to, TandemYawAngles(yaw));
       TandemNative.Log(s"teleport: (\(to.X), \(to.Y), \(to.Z)) yaw \(yaw)");
     } else if Equals(command, "vehicle ride") {

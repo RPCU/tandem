@@ -63,11 +63,29 @@ public class TandemTravel {
     return 1500.0;
   }
 
+  // How far our V may be taken in a moment, with nothing to explain it,
+  // before the others are offered to join it (WatchJump).
+  public static func JumpMetres() -> Float {
+    return 50.0;
+  }
+
   private let m_game: GameInstance;
   private let m_you: Uint32;
+  // Real time (the offers' lapses) and the world's (our trip's waits: a
+  // loading screen stops it), this tick (TandemClock).
   private let m_now: Float;
-  // Our trip under way: since when, from where, by which point; for whom
-  // (0: our own fast travel, offered to the others on arrival).
+  private let m_world: Float;
+  // Our V's place at the last tick, on the world's time (WatchJump); until
+  // when (real time) a move of ours is expected; a jump nothing explained,
+  // waiting for our V to stand (world time, 0: none); our last offer.
+  private let m_lastAt: Vector4;
+  private let m_lastAtWorld: Float;
+  private let m_ownMoveUntil: Float;
+  private let m_jumpedAt: Float;
+  private let m_offeredAt: Float;
+  // Our trip under way: since when (world time), from where, by which
+  // point; for whom (0: our own fast travel, offered to the others on
+  // arrival).
   private let m_trip: Bool;
   private let m_tripSince: Float;
   private let m_tripFrom: Vector4;
@@ -175,6 +193,9 @@ public class TandemTravel {
       marker = this.m_lastMarker;
     }
     let offer = TandemNative.SendRegroup(player, reason, point, TandemNative.NodeRefOf(marker), at, local.GetWorldOrientation(), label);
+    if player == 0u {
+      this.m_offeredAt = this.m_now;
+    }
     let whom = player == 0u ? "everyone" : this.NameOf(player);
     TandemNative.Log(s"travel: offered \(whom) to join us (offer \(offer), reason \(reason))");
     return offer;
@@ -203,6 +224,7 @@ public class TandemTravel {
 
   public func Tick(now: Float, you: Uint32) -> Void {
     this.m_now = now;
+    this.m_world = TandemClock.World(this.m_game);
     this.m_you = you;
     for item in TandemNative.TakeRegroups() {
       if item.kind == 1 {
@@ -216,6 +238,76 @@ public class TandemTravel {
       this.Decline();
     }
     this.FollowTrip();
+    this.WatchJump();
+  }
+
+  // A move of our V that is ours (a regroup's hop, a test's teleport, a
+  // race's grid): not a jump to offer (WatchJump).
+  public static func ExpectMove(game: GameInstance) -> Void {
+    let travel = TandemTravel.Of(game);
+    if IsDefined(travel) {
+      travel.Expect();
+    }
+  }
+
+  public func Expect() -> Void {
+    this.m_ownMoveUntil = TandemClock.Real(this.m_game) + 3.0;
+  }
+
+  // Host: our V taken more than JumpMetres in a moment (faster than it can
+  // run, drive or fall) with nothing to explain it: a quest's teleport or
+  // fade outside a shared moment. Once it has stood a second of the world's
+  // time there (a quest may move it twice), the others are offered to join
+  // it (reason 3, "NAME was taken somewhere else"; shown only to the far
+  // ones). Explained: a fast travel or a regroup of ours, a move we expect,
+  // a vehicle or a ride, the host's moment (the guests beside it watch it,
+  // Spectate.reds), an offer of ours still on their screens.
+  private func WatchJump() -> Void {
+    let local = GetPlayer(this.m_game);
+    if !IsDefined(local) {
+      return;
+    }
+    let at = local.GetWorldPosition();
+    let moved = this.m_lastAtWorld > 0.0 ? Vector4.Distance(at, this.m_lastAt) : 0.0;
+    let elapsed = MaxF(this.m_world - this.m_lastAtWorld, 0.0);
+    this.m_lastAt = at;
+    this.m_lastAtWorld = this.m_world;
+    if this.m_you == 0u || !TandemNative.IsHost() || this.JumpExplained(local) {
+      this.m_jumpedAt = 0.0;
+      return;
+    }
+    if moved > TandemTravel.JumpMetres() + 100.0 * elapsed {
+      this.m_jumpedAt = MaxF(this.m_world, 0.001);
+      TandemNative.Log(s"travel: our V was taken \(RoundF(moved)) m with no travel of ours");
+      return;
+    }
+    if this.m_jumpedAt > 0.0 && this.m_world - this.m_jumpedAt >= 1.0 {
+      this.m_jumpedAt = 0.0;
+      let others = TandemNative.OtherPlayers();
+      if ArraySize(others) > 0 {
+        this.Offer(0u, 3, "");
+      }
+    }
+  }
+
+  private func JumpExplained(local: ref<PlayerPuppet>) -> Bool {
+    if this.m_trip || this.m_now < this.m_ownMoveUntil || this.m_now - this.m_offeredAt < TandemTravel.OfferSeconds() {
+      return true;
+    }
+    if VehicleComponent.IsMountedToVehicle(this.m_game, local) {
+      return true;
+    }
+    let system = TandemSystem.Of(this.m_game);
+    if IsDefined(system) && IsDefined(system.Transit()) && system.Transit().OurKind() != 0 {
+      return true;
+    }
+    // Down, and a moment after: a respawn places our V (Revive.reds).
+    if IsDefined(system) && IsDefined(system.Revive()) && system.Revive().IsDown() {
+      this.m_ownMoveUntil = this.m_now + 3.0;
+      return true;
+    }
+    let story = TandemStorySystem.Get(this.m_game);
+    return IsDefined(story) && IsDefined(story.Spectate()) && story.Spectate().HostMoment();
   }
 
   // ---- our own fast travel ----
@@ -234,7 +326,7 @@ public class TandemTravel {
       return;
     }
     this.m_trip = true;
-    this.m_tripSince = this.m_now;
+    this.m_tripSince = this.m_world;
     this.m_tripFrom = local.GetWorldPosition();
     this.m_tripPoint = point;
     this.m_tripMarker = marker;
@@ -260,8 +352,8 @@ public class TandemTravel {
     }
     if this.m_landedAt == 0.0 {
       if Vector4.Distance(local.GetWorldPosition(), this.m_tripFrom) > 30.0 {
-        this.m_landedAt = this.m_now;
-      } else if this.m_now - this.m_tripSince > 60.0 {
+        this.m_landedAt = this.m_world;
+      } else if this.m_world - this.m_tripSince > 60.0 {
         TandemNative.Log("travel: no arrival seen in 60 s, given up");
         this.m_trip = false;
         this.m_joining = 0u;
@@ -269,12 +361,12 @@ public class TandemTravel {
       return;
     }
     if this.m_loadingEnded {
-      let since = EngineTime.ToFloat(GameInstance.GetSimTime(this.m_game)) - this.m_loadingEndedAt;
-      if since < 1.5 || this.m_now - this.m_landedAt < 1.5 {
+      let since = this.m_world - this.m_loadingEndedAt;
+      if since < 1.5 || this.m_world - this.m_landedAt < 1.5 {
         return;
       }
       TandemNative.Log("travel: screen restored (the loading screen ended)");
-    } else if this.m_now - this.m_landedAt < 30.0 {
+    } else if this.m_world - this.m_landedAt < 30.0 {
       return; // the loading screen's end may not have reached us yet
     } else {
       TandemNative.Log("travel: still black? no end of the fast travel's loading screen in 30 s since the jump");
@@ -296,6 +388,7 @@ public class TandemTravel {
       return; // not in a session: nobody to offer it to
     }
     let offer = TandemNative.SendRegroup(0u, 0, this.m_tripPoint, TandemNative.NodeRefOf(this.m_tripMarker), at, local.GetWorldOrientation(), "");
+    this.m_offeredAt = this.m_now;
     TandemNative.Log(s"travel: arrived at \(this.PointName(this.m_tripPoint)), offered the others to join (offer \(offer))");
   }
 
@@ -566,6 +659,7 @@ public class TandemTravel {
     let spot = new Vector4(at.X + SinF(yaw) * 2.0, at.Y - CosF(yaw) * 2.0, at.Z, 1.0);
     let gap = Vector4.Distance(local.GetWorldPosition(), spot);
     if gap > 4.0 {
+      this.Expect();
       GameInstance.GetTeleportationFacility(this.m_game).Teleport(local, spot, TandemYawAngles(Rad2Deg(yaw)));
     }
     TandemNative.Log(s"travel: arrived next to \(this.NameOf(player)) (\(gap) m hop)");
@@ -686,6 +780,19 @@ public class TandemTravel {
       this.Decline();
     } else if Equals(command, "regroup offer") {
       this.Offer(0u, 1, "");
+    } else if StrBeginsWith(command, "regroup jump ") {
+      // (test) regroup jump X Y Z: our V taken there as a quest's teleport
+      // would (no travel of ours to explain it).
+      let words = StrSplit(command, " ");
+      let local = GetPlayer(this.m_game);
+      if ArraySize(words) >= 5 && IsDefined(local) {
+        let x = words[2];
+        let y = words[3];
+        let z = words[4];
+        let to = new Vector4(StringToFloat(x), StringToFloat(y), StringToFloat(z), 1.0);
+        GameInstance.GetTeleportationFacility(this.m_game).Teleport(local, to, TandemYawAngles(0.0));
+        TandemNative.Log(s"travel: (test) our V taken to (\(to.X), \(to.Y), \(to.Z))");
+      }
     } else if StrBeginsWith(command, "regroup") {
       let player = this.PlayerNamed(StrLen(command) > 8 ? StrAfterFirst(command, " ") : "");
       if player == 0u {
