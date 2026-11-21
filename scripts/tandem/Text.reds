@@ -377,6 +377,14 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Scene-LeaveCamera", "Leave the camera");
     this.Text("Tandem-Spectate-Watching", "Watching through {1}'s eyes.");
     this.Text("Tandem-Spectate-Leave", "Stop watching");
+    // Quest prefabs and story gates (StoryWorld.reds).
+    this.Text("Tandem-Prefabs-Missing", "{1}'s quest is somewhere your game cannot load: follow them, or watch through their eyes when the story allows.");
+    this.Text("Tandem-Gates-WatsonBehind", "{1}'s story has lifted the Watson lockdown, yours has not: you cannot leave Watson on foot. Ride in {1}'s car to go with them.");
+    this.Text("Tandem-Gates-WatsonBehindHost", "{1}'s story is still in the Watson lockdown: they cannot leave Watson on foot. Pick them up in your car.");
+    this.Text("Tandem-Gates-DogtownBehind", "{1}'s story has opened Dogtown, yours has not: its gate stays shut for you. Ride in {1}'s car to go in with them.");
+    this.Text("Tandem-Gates-DogtownBehindHost", "Dogtown is not open yet in {1}'s story: its gate stays shut for them. Pick them up in your car.");
+    this.Text("Tandem-Gates-WatsonMet", "{1} is past the Watson lockdown your story still keeps. Ride in {1}'s car to follow.");
+    this.Text("Tandem-Gates-DogtownMet", "{1} is in Dogtown, still shut in your story. Ride in {1}'s car to follow.");
     // Quest interactions: a guest's use of the host's objects.
     this.Text("Tandem-Interact-HostOnly", "{1} must do this");
     this.Text("Tandem-Interact-Taken", "{1}'s world: someone else got there first");
@@ -839,6 +847,13 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Scene-LeaveCamera", "Quitter la caméra");
     this.Text("Tandem-Spectate-Watching", "Vous regardez par les yeux de {1}.");
     this.Text("Tandem-Spectate-Leave", "Arrêter de regarder");
+    this.Text("Tandem-Prefabs-Missing", "La quête de {1} se passe dans un lieu que votre jeu ne peut pas charger : suivez {1}, ou regardez par ses yeux quand l'histoire le permet.");
+    this.Text("Tandem-Gates-WatsonBehind", "L'histoire de {1} a levé le confinement de Watson, pas la vôtre : vous ne pouvez pas quitter Watson à pied. Montez dans la voiture de {1} pour l'accompagner.");
+    this.Text("Tandem-Gates-WatsonBehindHost", "L'histoire de {1} en est encore au confinement de Watson : {1} ne peut pas quitter Watson à pied. Passez le ou la prendre en voiture.");
+    this.Text("Tandem-Gates-DogtownBehind", "L'histoire de {1} a ouvert Dogtown, pas la vôtre : sa porte reste fermée pour vous. Montez dans la voiture de {1} pour y entrer ensemble.");
+    this.Text("Tandem-Gates-DogtownBehindHost", "Dogtown n'est pas encore ouvert dans l'histoire de {1} : sa porte reste fermée pour {1}. Passez le ou la prendre en voiture.");
+    this.Text("Tandem-Gates-WatsonMet", "{1} a franchi le confinement de Watson que votre histoire maintient. Montez dans la voiture de {1} pour suivre.");
+    this.Text("Tandem-Gates-DogtownMet", "{1} est à Dogtown, encore fermé dans votre histoire. Montez dans la voiture de {1} pour suivre.");
     this.Text("Tandem-Interact-HostOnly", "{1} doit le faire");
     this.Text("Tandem-Interact-Taken", "Monde de {1} : quelqu'un d'autre a été plus rapide");
     this.Text("Tandem-Interact-TooFar", "Trop loin dans le monde de {1}");
