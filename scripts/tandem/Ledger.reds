@@ -304,6 +304,8 @@ public class TandemLedger {
     let here = player.GetWorldPosition();
     let best: ref<NPCPuppet>;
     let bestAt = 200.0;
+    let shop: ref<NPCPuppet>;
+    let shopAt = 200.0;
     let seen = 0;
     let placed = 0;
     // What the spot has instead, when it has none: the NPCs that are not
@@ -328,12 +330,25 @@ public class TandemLedger {
         if EntityID.IsDefined(TandemPlaced.IdOf(body)) && !(IsDefined(npcs) && npcs.IsProxyEntity(id)) {
           placed += 1;
           let far = Vector4.Distance(here, body.GetWorldPosition());
-          if far <= bestAt && !TandemLedger.QuestNpc(body) {
-            best = body;
-            bestAt = far;
+          if !TandemLedger.QuestNpc(body) {
+            // A vendor only where nobody else stands: ours is hidden once
+            // its twin dies, and vendor-guest needs it (Viktor, 2026-11-21).
+            if body.IsVendor() {
+              if far <= shopAt {
+                shop = body;
+                shopAt = far;
+              }
+            } else if far <= bestAt {
+              best = body;
+              bestAt = far;
+            }
           }
         }
       }
+    }
+    if !IsDefined(best) {
+      best = shop;
+      bestAt = shopAt;
     }
     if !IsDefined(best) {
       let nearest = IsDefined(other) ? s"record \(TDBID.ToStringDEBUG(other.GetRecordID())) entity \(TandemNative.EntityHex(other.GetEntityID())) at \(otherAt) m, static \(EntityID.IsStatic(other.GetEntityID())), \(TandemPlaced.Why(other)), a quest's \(TandemLedger.QuestNpc(other))" : "none";

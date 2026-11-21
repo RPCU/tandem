@@ -189,7 +189,9 @@ decided: a guest keeps its own vendors; `scripts/tandem/Vendors.reds`,
    copy of that entity until the session ends, even apart from the host,
    and again whenever it streams in. A guest's own save is untouched (it
    never saves in a session; a hidden NPC is not saved): back in its own
-   world after the session the vendor stands again, as in its own story.
+   world after the session the vendor stands again, as in its own story,
+   once it has streamed out (Viktor's desk was still empty 2 min after a
+   session hid him, our V beside it: `vendor near` found none, 2026-11-21).
 6. **No vendor for a proxy.** A vendor NPC's body attaching to the world
    asks `MarketSystem` for a vendor of its own (`NPCPuppet.PrepareVendor`):
    for a proxy that would be a new entry in the saved list under a dynamic
