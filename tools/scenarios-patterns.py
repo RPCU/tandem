@@ -557,7 +557,7 @@ class Source:
         returns = self.world.returns.get((self.reds, name))
         if returns and depth < 6:
             vals = []
-            for source, ret in returns[:12]:
+            for source, ret in returns[:24]:
                 key = (name, id(ret))
                 if key in source.busy:
                     vals.append(WILD)
@@ -565,7 +565,7 @@ class Source:
                 source.busy.add(key)
                 vals.append(source.value(ret, depth + 2))
                 source.busy.discard(key)
-            if len(returns) > 12:
+            if len(returns) > 24:
                 vals.append(WILD)
             return either(vals)
         kinds = self.world.funcs.get(name, set())
