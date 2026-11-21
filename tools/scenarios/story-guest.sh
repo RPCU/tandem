@@ -1,10 +1,11 @@
 # As a guest of a scripted host story: frozen, saves locked, journal, call, lines, hub, offer, reward; put back when the host leaves
-# shellcheck shell=bash disable=SC2317
+# shellcheck shell=bash disable=SC2317,SC2154
 # The freeze is off by default (not yet proven in game): this scenario turns
 # it on; without it the journal is not mirrored.
 ensure join quest_freeze=on
 peer host --mode idle --body male --story tools/scenarios/story-host.story
 expect 'in the session as player' 30
+query money money
 expect 'save: locked \(tandem\)' 20
 expect 'quest: own quests frozen' 10
 expect 'journal: snapshot [0-9]+ entries' 20
@@ -20,6 +21,9 @@ expect 'story: join offer shown' 10
 cmd story join
 expect 'story: join offer accepted' 5
 expect 'reward: given' 15
+# The reward (QuestRewards.MinigameMoney) reached our inventory.
+query rewarded money
+expect_changed "$money" "$rewarded" up
 cmd story state
 expect 'story: you [0-9]+, host 1, frozen true, save locked true' 5
 cmd quest report

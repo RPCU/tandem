@@ -8,9 +8,14 @@ play drive --mode drive --body female --drive-seconds 15
 # 86 s, in again at 99 s): the copy comes when the recording says so.
 if [ "$played" = 1 ]; then expect 'copy spawning' 120; else expect 'copy spawning' 30; fi
 expect 'seated in seat_front_left' 30
+# The puppet is mounted in the copy, at the wheel, as the game holds it.
+query seat mounted puppet
+expect_value "$seat" '~' '^Vehicle\.[^ ]+ seat_front_left [0-9]+$'
 if [ "$played" = 1 ]; then expect 'on foot' 600; else expect 'on foot' 40; fi
 expect 'car left parked' 10
 expect 'movement controller back' 10
+query afoot mounted puppet
+expect_value "$afoot" = none
 # The copy its driver sat in can be deleted (it crashed while our Mount
 # released the car once per mount: engine-knowledge §13.6).
 cmd vehicle clear
