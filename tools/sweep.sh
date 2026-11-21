@@ -372,6 +372,13 @@ sweep_slice() {
       timeout 90 "$game" stop </dev/null >/dev/null 2>&1 || true
       echo "  harness: not in its test state: the game stopped, the next one starts it" >>"$log"
     fi
+    # A co-op menu choice (a join, a host) lasts for the game's run and no
+    # test reset takes it back: one that failed before its own restore would
+    # leave the game joining an address for every later scenario.
+    if [ "${state%% *}" = ok ] && grep -qE '^[^#]*cmd coop (join|pick|host|new)' "$(file_of "$name")"; then
+      timeout 90 "$game" stop </dev/null >/dev/null 2>&1 || true
+      echo "  harness: a co-op menu choice may be left: the game stopped, the next one starts it" >>"$log"
+    fi
     line=$(grep -m1 -E '^  (FAIL|ABORT): ' "$log" | sed 's/^  //' | tr '\t' ' ' | cut -c1-300 || true)
     [ -n "$line" ] || line="exit $rc$([ "$rc" = 124 ] && echo ", stopped after $limit s")"
     printf '%s\tFAIL\t%s\t%s\t%s\t%s%s\n' "$name" "$seconds" "$class" "$line" "${ev:--}" "$extra" >>"$results"

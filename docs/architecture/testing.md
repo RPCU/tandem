@@ -159,6 +159,10 @@ output, `NAME.log`. Build first (`tools/build.sh`, or `tools/remote.sh` and
   thread's backtrace first (`tools/game.sh bt` into the evidence folder,
   `bt.txt`; REDGraph's lines in `crash.txt`, the output in
   `scenario.log`), then `tools/game.sh stop`; the next `ensure` starts it.
+- **A failed scenario that made a co-op menu choice** (`cmd coop join|pick|host|new`):
+  the game is stopped (a `harness:` repair). The choice lasts for the
+  game's run and no reset takes it back; left, the game kept joining an
+  address for every later scenario (rerun 10, 2026-11-21).
 - **A failed test reset** (class `reset`) in a game that runs: stopped too
   (a `harness:` repair). What the last one left (an open phone stops the
   tick) would fail every later one; `test reset` closes the phone.
