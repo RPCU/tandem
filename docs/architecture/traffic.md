@@ -60,8 +60,10 @@ same rules and the same thresholds:
   status, gone, damage, chases) goes to the host, which checks the sender
   runs the vehicle, keeps the record and passes it to the players linked
   with that owner (`ShareTraffic`); its own game shows the vehicle when it is
-  linked too. A guest linked with nobody sends no states, only its reliable
-  record (the host has it whole the moment a link forms). Requests (`TrafficHit`,
+  linked too. A guest linked with nobody sends its reliable record and its
+  states once a second (`regions::kApartStatesUs`), which the host keeps
+  and passes to nobody: the record is whole, and where its vehicles are, the
+  moment a link forms. Requests (`TrafficHit`,
   `TrafficClaim`, a tyre's `VehicleHit`, an `NpcRam` on a rider) go to the
   vehicle's owner, whoever it is, through the host; the owner answers a claim
   and every game hears `TrafficGone{taken}`.

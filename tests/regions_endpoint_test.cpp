@@ -30,6 +30,7 @@ struct Game {
   std::set<proto::NpcId> proxies, running;
   std::map<proto::NpcId, proto::NpcHandoverState> took;
   std::map<proto::NpcId, proto::Vec3> where;   // the NPCs we run
+  std::map<proto::NpcId, proto::Vec3> shownAt; // where each proxy was spawned
   std::map<proto::NpcId, std::uint8_t> scales; // NpcScale heard (enemy scaling)
   int scaleWords{};
   std::vector<proto::NpcId> asked;
@@ -60,9 +61,10 @@ struct Game {
 
   void See(const std::vector<SessionEvent> &events) {
     for (const auto &event : events) {
-      if (const auto *spawn = std::get_if<events::HostNpcSpawn>(&event))
+      if (const auto *spawn = std::get_if<events::HostNpcSpawn>(&event)) {
         duplicateSpawns += proxies.insert(spawn->spawn.npc).second ? 0 : 1;
-      else if (const auto *gone = std::get_if<events::HostNpcGone>(&event))
+        shownAt[spawn->spawn.npc] = spawn->spawn.position;
+      } else if (const auto *gone = std::get_if<events::HostNpcGone>(&event))
         strayGones += proxies.erase(gone->gone.npc) > 0 ? 0 : 1;
       else if (const auto *s = std::get_if<events::HostNpcStates>(&event))
         states += static_cast<int>(s->states.npcs.size());
@@ -464,6 +466,45 @@ TEST_CASE("players apart share no NPC; meeting shows both sets; parting drops th
   CHECK(s->h.duplicateSpawns + s->ga.duplicateSpawns == 0);
   s->For(400ms);
   CHECK(s->a->Checks().Requests() == 0);
+}
+
+TEST_CASE("a link shows an owner's NPCs where they are, not where it announced them") {
+  // regions-meet: a guest announced its NPCs 400 m out and walked up with
+  // them. Linked with nobody, it sent no states, so the link showed them
+  // from the spawn's place: the host's game ignored a spawn beyond 250 m and
+  // its consistency check made the proxies 2.5 s later.
+  auto s = Start(true);
+  Place(*s->host, 0);
+  Place(*s->b, 0);
+  Place(*s->a, 1000);
+  const auto a = s->a->You();
+  REQUIRE(s->Until([&] { return s->a->Apart() && !s->host->LinkedWith(a); }));
+  s->ga.Announce(1, {1000.f, 0.f, 0.f});
+  const auto theirs = MakeNpcId(a, 1);
+  REQUIRE(s->Until([&] { return s->host->SharedNpcs().contains(theirs); }));
+
+  // It walks to 400 m with its NPC, still apart, its game saying where the
+  // NPC is ten times a second: the host's record follows, nobody shows it.
+  Place(*s->a, 400);
+  REQUIRE(s->Until(
+      [&] {
+        s->ga.Move(theirs, {405.f, 0.f, 0.f});
+        return s->host->SharedNpcs().at(theirs).position.x == doctest::Approx(405.f);
+      },
+      3s));
+  CHECK(s->a->Apart());
+  CHECK(s->h.proxies.empty());
+  CHECK(s->gb.proxies.empty());
+  CHECK(s->h.states == 0);
+  CHECK(s->gb.states == 0);
+
+  // Linked: the host's game and b show it where it was last said to be.
+  Place(*s->a, 100);
+  REQUIRE(
+      s->Until([&] { return s->h.proxies.contains(theirs) && s->gb.proxies.contains(theirs); }));
+  CHECK(s->h.shownAt[theirs].x == doctest::Approx(405.f));
+  CHECK(s->gb.shownAt[theirs].x == doctest::Approx(405.f));
+  CHECK(s->h.duplicateSpawns + s->gb.duplicateSpawns == 0);
 }
 
 TEST_CASE("a lost Regions is healed by the players digest: the owner's states flow again") {

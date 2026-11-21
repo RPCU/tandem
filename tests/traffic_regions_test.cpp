@@ -180,6 +180,8 @@ TEST_CASE("a guest that owns its area shares its vehicles with the players linke
   REQUIRE(s->Until([&] { return s->host->SharedTraffic().size() == 2; }));
   s->ga.Drive(one, {600.f, 12.f, 0.f});
   s->For(300ms);
+  // Where it is, all the same (once a second): a link shows it from there.
+  CHECK(s->host->SharedTraffic().at(one).position.y == doctest::Approx(12.f));
   CHECK(s->h.proxies.empty());
   CHECK(s->gb.proxies.empty());
   CHECK(s->host->ProxiedTraffic().empty());

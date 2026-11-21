@@ -2287,10 +2287,19 @@ void Endpoint::SendNpcStates(proto::NpcStates states) {
       it->second.position = entry.position;
       it->second.yaw = entry.yaw;
     }
-  // Linked with nobody: nobody shows them.
   if (!IsHost()) {
-    if (!Linked().empty())
-      SayNpc(states);
+    // Linked with nobody: nobody shows them, but the host keeps where they
+    // are, once a second: a link shows them from its record, and a spawn
+    // from where they first stood would be put where they no longer are
+    // (Npcs.reds ignores one beyond 250 m: the consistency check spawned
+    // them seconds later, regions-meet).
+    if (Linked().empty()) {
+      const auto now = net::NowUs();
+      if (now - m_apartNpcStatesUs < regions::kApartStatesUs)
+        return;
+      m_apartNpcStatesUs = now;
+    }
+    SayNpc(states);
     return;
   }
   // Ours, as the host: only what changed, quantized (netcode.md); whole when
