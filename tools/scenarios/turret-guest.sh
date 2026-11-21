@@ -9,13 +9,17 @@
 # own tracers and sounds; V's health falls by our own game's hits.
 ensure join
 at "${TURRET_AT:-arasaka-park}"
-peer host --mode idle --body female --turret-shots 10
+peer host --mode idle --body female --turret-shots 10 --device-answer on
 expect 'in the session as player' 30
 mark
 cmd device near turret
 expect 'devices: nearest turret [0-9a-f]+ SecurityTurretControllerPS at ' 10
 turret=$(since | grep -oE 'devices: nearest turret [0-9a-f]+' | tail -1 | awk '{ print $4 }')
 note "turret $turret"
+# On: a save may hold it off (every fixture's was); the host says yes.
+cmd device on turret
+expect 'devices: on [0-9a-f]+ SecurityTurretControllerPS at ' 10
+pause 3
 # The levers alone: the host's aim and one drawn shot on our copy.
 cmd turret shot
 expect "turrets: $turret draws a shot there \(drawn [1-9]" 5
