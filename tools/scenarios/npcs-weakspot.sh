@@ -2,7 +2,11 @@
 # shellcheck shell=bash disable=SC2317
 # WEAKSPOT_RECORD: a character with weak spots (default
 # Character.main_boss_adam_smasher; its proxy, brain off, stands 20 m off).
-# To look at: the weak spot shows its damage, then breaks on the third hit.
+# The hits are real bullets of the gun V draws (`npc weakspot shot`, one at
+# each open weak spot: a built hit has no hit shapes and took nothing of
+# one). V's save needs a gun in a weapon slot.
+# To look at: V draws, tracers go to the boss's weak spots, which show
+# their damage.
 ensure join
 peer host --mode region --region-far 20 --region-walk-at -1 --region-npcs 1 \
   --region-record "${WEAKSPOT_RECORD:-Character.main_boss_adam_smasher}" --region-immortal said
@@ -10,12 +14,15 @@ expect 'in the session as player' 30
 expect 'regions: linked with player 1' 30
 expect 'puppet [0-9]+: controller handed to the engine' 30
 pause 3
-cmd npc weakspot 40
-expect 'npc weakspot: [0-9]+ of [0-9]+, [0-9.]+% whole' 10
+cmd npc weakspot draw
+expect 'npc weakspot: our V (draws its weapon|holds [^ ]+)' 5
+pause 4
+cmd npc weakspot shot
+expect 'npc weakspot: a shot of [^ ]+ at each of [1-9][0-9]* open weak spots of [0-9]+ ' 10
 expect 'combat: our hit took [0-9.]+% of weak spot [0-9]+ \([^)]+\) of proxy [0-9]+, for its owner' 5
 expect_peer "player [0-9]+'s fire took [1-9][0-9]*% of weak spot [0-9]+ \(0x[0-9a-f]+\) of npc [0-9]+" 10
-cmd npc weakspot 40
-cmd npc weakspot 40
+cmd npc weakspot shot
+cmd npc weakspot shot
 pause 2
 shot npcs-weakspot
 reject 'watchdog: game thread silent'

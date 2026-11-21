@@ -178,7 +178,10 @@ the first group session.
   guest's fire damages breaks on its screen as alone, and the share of its
   health each hit took drains the owner's real one (`TandemWeakSpots`:
   its index and record), whose destruction sets its fact and moves the
-  boss on (`npcs-weakspot`). An NPC netrunner's trace that runs to its end
+  boss on (`npcs-weakspot`). The share is the `WeakspotHealth` pool's: read
+  before and after the hit, else measured (`TandemWeakSpots.Measure`:
+  what `StatPoolsManager.ApplyDamage` would drain of that pool through the
+  hit's shapes; the spot's `Health` pool gave 0, 2026-11-21). An NPC netrunner's trace that runs to its end
   on the traced V's game sets the netrunner and its squad on that V's
   puppet on the owner's game, as the game does for its own V (the guest's
   wrap of `UploadFromNPCToPlayerListener.OnStatPoolMaxValueReached` skips
