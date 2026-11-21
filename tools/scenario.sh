@@ -20,7 +20,8 @@
 #                          only when needed: tools/game.sh ensure)
 #   peer ARGS...           (re)start the mock player
 #   peer2 ARGS...          a second mock player beside the first (more than
-#                          two players; its log .cache/peer2.log)
+#                          two players; its log .cache/peer2.log; an
+#                          instance's .cache/instances/NAME/peer2.log)
 #   play NAME ARGS...      the mock player joins and replays a real V's play,
 #                          recordings/play/NAME.tplay (tools/game.sh
 #                          fetch-play), our V first teleported beside where it
@@ -70,21 +71,60 @@
 # The game restarts only when the build or the role changed (scripts
 # are hot-reloaded: RedHotTools is installed on anya). Never run this while
 # someone plays (AGENTS.md).
-# shellcheck disable=SC2029,SC2034 # (SC2034: $played is read by the scenarios it sources)
+#
+# TANDEM_INSTANCE=NAME runs them on instance NAME of tools/instance.sh
+# (tools/game.sh): its folder and port, the mock players' logs in
+# .cache/instances/NAME/, evidence in .cache/scenarios/NAME-TIME-on-NAME/. A
+# scenario's ADDRESS:27450 for the mock player becomes this game's port; its
+# `pkill` stops only this game's mock players (with TANDEM_PARALLEL too).
+# shellcheck disable=SC2029,SC2034 # (SC2034: $played, $peer_log are read by the scenarios it sources)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 game=tools/game.sh
 host=${GAME_HOST:-anya}
-dir=${GAME_DIR:-/data/Steam/steamapps/common/Cyberpunk 2077}
+# Which game: instance, dir, port, cache (the local folder of its mock
+# players' logs), scoped (stop only its own mock players).
+instance='' dir='' port='' cache='' scoped=''
+where=$($game where) || exit 2
+eval "$where"
+export GAME_DIR=$dir TANDEM_PEER_OF=$instance
+peer_log=$cache/peer.log
+suffix=''
+[ "$instance" = main ] || suffix=-on-$instance
 
 remote() { ssh "$host" "$@"; }
+
+# This game's mock players (pgrep ARGS), as tools/game.sh's own_peers.
+own_peers() {
+  local p
+  for p in $(pgrep "$@" 2>/dev/null); do
+    tr '\0' '\n' <"/proc/$p/environ" 2>/dev/null | grep -qxF "TANDEM_PEER_OF=$instance" && echo "$p"
+  done
+  return 0
+}
+# Scenarios stop their mock players with pkill -x tandem-peer (or -f a
+# pattern): scoped, only this game's, with pkill's exit status.
+pkill() {
+  [ -n "$scoped" ] || {
+    command pkill "$@"
+    return
+  }
+  local pids
+  pids=$(own_peers "$@")
+  [ -n "$pids" ] || return 1
+  # shellcheck disable=SC2086 # a list of pids
+  kill $pids
+}
+peers_running() {
+  if [ -n "$scoped" ]; then [ -n "$(own_peers -x tandem-peer)" ]; else pgrep -x tandem-peer >/dev/null 2>&1; fi
+}
 
 # The game log's lines since the mark (its file and line count at the start).
 mark_file='' mark_line=0 referee_from=0 peer_mark=0
 mark() {
   read -r mark_file mark_line < <(remote "cd '$dir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); echo \"\$f \$(wc -l < \"\$f\")\"")
-  peer_mark=$(wc -l <.cache/peer.log 2>/dev/null || echo 0)
+  peer_mark=$(wc -l <"$peer_log" 2>/dev/null || echo 0)
 }
 # (Not the test reset's own lines: "test reset: ready (on foot, …)" would
 # answer a scenario's 'on foot'.)
@@ -95,16 +135,16 @@ fail() {
   echo "  FAIL: $1"
   mkdir -p "$out"
   since >"$out/game.log" 2>/dev/null || true
-  tail -n +$((peer_mark + 1)) .cache/peer.log >"$out/peer.log" 2>/dev/null || true
-  [ -z "$piloted" ] || cp .cache/pilot.log "$out/pilot.log" 2>/dev/null || true
-  $game shot "scenario-fail" >/dev/null 2>&1 && cp .cache/shots/scenario-fail.png "$out/" || true
+  tail -n +$((peer_mark + 1)) "$peer_log" >"$out/peer.log" 2>/dev/null || true
+  [ -z "$piloted" ] || cp "$cache/pilot.log" "$out/pilot.log" 2>/dev/null || true
+  $game shot "scenario-fail" >/dev/null 2>&1 && cp "$cache/shots/scenario-fail.png" "$out/" || true
   # The stall report (plugin/src/stall.hpp): the net thread stopped too, so
   # no watchdog line came; its stacks are in it.
   remote "cat '$dir/red4ext/plugins/tandem/stall.log'" >"$out/stall.log" 2>/dev/null || true
   [ -s "$out/stall.log" ] || rm -f "$out/stall.log"
   if grep -q 'watchdog: game thread silent' "$out/game.log" 2>/dev/null ||
     { [ -f "$out/stall.log" ] && ! tail -1 "$out/stall.log" | grep -q ' is back after '; }; then
-    $game bt >/dev/null 2>&1 && cp .cache/re/bt.txt "$out/bt.txt" || true
+    $game bt >/dev/null 2>&1 && cp "$cache/re/bt.txt" "$out/bt.txt" || true
     echo "  the game thread stopped: backtraces in $out/bt.txt"
   fi
   echo "  evidence: $out"
@@ -150,22 +190,28 @@ peer() {
   peer_mark=0 referee_from=0
 }
 peer2() {
-  mkdir -p .cache
-  nohup build/linux/peer/tandem-peer "$@" >.cache/peer2.log 2>&1 &
-  echo "  second mock player: $* (.cache/peer2.log)"
+  local args=("$@") i
+  mkdir -p "$cache"
+  # This game's port, as tools/game.sh peer gives the first.
+  if [ "$port" != 27450 ]; then
+    for i in "${!args[@]}"; do args[i]=${args[i]/%:27450/:$port}; done
+    [ "${args[0]:-}" != host ] || [[ " ${args[*]} " == *' --port '* ]] || args+=(--port "$port")
+  fi
+  nohup build/linux/peer/tandem-peer "${args[@]}" >"$cache/peer2.log" 2>&1 &
+  echo "  second mock player: ${args[*]} ($cache/peer2.log)"
 }
 cmd() { $game cmd "$*" >/dev/null || fail "command not taken: $*"; }
 # The pilot's own log (each step, its checks, the pad's safety) is kept in
-# .cache/pilot.log and goes with a failure's evidence.
+# $cache/pilot.log (.cache/pilot.log) and goes with a failure's evidence.
 piloted=''
 pilot() {
   local status=0
   piloted=1
-  mkdir -p .cache
+  mkdir -p "$cache"
   echo "  pilot: $*"
-  $game pilot run "$@" >.cache/pilot.log 2>&1 || status=$?
-  grep -E 'WARN|PASS|FAIL|SAVE' .cache/pilot.log | sed 's/^/  /' || true
-  [ "$status" = 0 ] || fail "the pilot's routine $1 did not pass (.cache/pilot.log)"
+  $game pilot run "$@" >"$cache/pilot.log" 2>&1 || status=$?
+  grep -E 'WARN|PASS|FAIL|SAVE' "$cache/pilot.log" | sed 's/^/  /' || true
+  [ "$status" = 0 ] || fail "the pilot's routine $1 did not pass ($cache/pilot.log)"
 }
 reset() {
   local result status=0
@@ -210,7 +256,7 @@ play() {
   if [ ! -f "$file" ]; then
     echo "  no $file (tools/game.sh fetch-play $name): synthetic motion"
     played=0
-    peer join "$address:27450" "$@"
+    peer join "$address:$port" "$@"
     return
   fi
   beside=$(build/linux/peer/tandem-peer play-info "$file" | sed -n 's/^beside: //p')
@@ -221,7 +267,7 @@ play() {
   # A far teleport loads the world around V before the replay walks it.
   pause 5
   played=1
-  peer join "$address:27450" --play "$file" "$@"
+  peer join "$address:$port" --play "$file" "$@"
 }
 note() { echo "  $*"; }
 # Named spots in the world (tools/scenarios/fixtures.txt, testing.md
@@ -269,7 +315,7 @@ at() {
   done
   fail "our V did not come to $1 ($where) within 45 s (last: ${line:-no position})"
 }
-shot() { mkdir -p "$out" && $game shot "$1" >/dev/null && cp ".cache/shots/$1.png" "$out/"; }
+shot() { mkdir -p "$out" && $game shot "$1" >/dev/null && cp "$cache/shots/$1.png" "$out/"; }
 
 expect() {
   local pattern=$1 timeout=${2:-30} start=$SECONDS
@@ -286,7 +332,7 @@ expect() {
   fail "no '$pattern' in the game log within $timeout s"
 }
 expect_peer() {
-  local pattern=$1 timeout=${2:-30} start=$SECONDS log=${3:-.cache/peer.log} from=${4:-$peer_mark}
+  local pattern=$1 timeout=${2:-30} start=$SECONDS log=${3:-$peer_log} from=${4:-$peer_mark}
   while ((SECONDS - start < timeout)); do
     if tail -n +$((from + 1)) "$log" 2>/dev/null | grep -qE "$pattern"; then
       echo "  ok ($(basename "$log" .log)): $pattern"
@@ -296,7 +342,7 @@ expect_peer() {
   done
   fail "no '$pattern' in $log within $timeout s"
 }
-expect_peer2() { expect_peer "$1" "${2:-30}" .cache/peer2.log 0; }
+expect_peer2() { expect_peer "$1" "${2:-30}" "$cache/peer2.log" 0; }
 reject() {
   if since | grep -qE "$1"; then
     fail "unexpected: $(since | grep -E "$1" | head -1 | cut -c1-160)"
@@ -306,8 +352,8 @@ reject() {
 }
 reject_peer() {
   local from=${2:-$peer_mark}
-  if tail -n +$((from + 1)) .cache/peer.log 2>/dev/null | grep -qE "$1"; then
-    fail "unexpected (peer): $(tail -n +$((from + 1)) .cache/peer.log | grep -E "$1" | head -1 | cut -c1-160)"
+  if tail -n +$((from + 1)) "$peer_log" 2>/dev/null | grep -qE "$1"; then
+    fail "unexpected (peer): $(tail -n +$((from + 1)) "$peer_log" | grep -E "$1" | head -1 | cut -c1-160)"
   else
     echo "  ok, none (peer): $1"
   fi
@@ -456,7 +502,7 @@ repair() {
       echo "  harness: co-op is off as a guest and tandem.ini has no address: left as it is"
       return 0
     fi
-    words="coop join $address:27450"
+    words="coop join $address:$port"
     echo "  harness: co-op was left off as a guest (an earlier scenario's coop leave): $words"
     ;;
   host)
@@ -479,7 +525,7 @@ run() {
     echo "no scenario $name" >&2
     return 2
   }
-  out=.cache/scenarios/$name-$(date +%H%M%S)
+  out=.cache/scenarios/$name-$(date +%H%M%S)$suffix
   echo "== $name: $(sed -n 's/^# //p;q' "$file")"
   local start=$SECONDS
   # The first failed step ends the scenario (fail exits this subshell; set -e
@@ -492,7 +538,7 @@ run() {
     # The last scenario's player leaves, its session ends in the game, what
     # it left is repaired, and the game comes to its test state.
     local had_peer=''
-    pgrep -x tandem-peer >/dev/null 2>&1 && had_peer=1
+    peers_running && had_peer=1
     pkill -x tandem-peer 2>/dev/null || true
     if $game healthy >/dev/null 2>&1; then
       if [ -n "$had_peer" ]; then teardown | sed 's/^/  /'; fi
@@ -502,7 +548,7 @@ run() {
       mark
       reset
     fi
-    referee_from=$(wc -l <.cache/peer.log 2>/dev/null || echo 0)
+    referee_from=$(wc -l <"$peer_log" 2>/dev/null || echo 0)
     # shellcheck source=/dev/null
     source "$file"
     # What the mock player heard broke no protocol or authority rule.

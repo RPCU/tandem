@@ -96,29 +96,80 @@
 #                              threads (the thread probe: hooks seen beside the
 #                              script tick, inside it, between ticks; tools/game.sh
 #                              threads reads it)
+#   tools/game.sh where        this game's instance, folder, port and local
+#                              cache folder, as shell assignments (for
+#                              tools/scenario.sh and tools/sweep.sh)
 #
 # The game machine runs Steam in a Sway session (headless output for Sunshine)
 # and ydotoold for input; GAME_HOST and GAME_DIR override the defaults.
+#
+# TANDEM_INSTANCE=NAME: instance NAME of tools/instance.sh instead of the
+# Steam game (unset, 0 or main: the Steam game; PILOT_INSTANCE is the older
+# name). Everything follows: its game folder (logs, tandem.cmd, tandem.ini,
+# the deploy), its processes (found by the mark tools/instance.sh puts in
+# their environment, the Steam game's by having none: never every
+# Cyberpunk2077.exe by name), started and stopped by tools/instance.sh, its
+# port (TANDEM_GAME_PORT, default 27550; the Steam game's 27450), keys and
+# screenshots on its own gamescope display, the mock player's log and
+# screenshots under .cache/instances/NAME/. launches and threads are the
+# Steam game's only. docs/architecture/two-instances.md, "Sweeps on two games".
 # Commands in single quotes run, and expand, on the game machine.
 # shellcheck disable=SC2016,SC2029
 set -euo pipefail
 
 host=${GAME_HOST:-anya}
 dir=${GAME_DIR:-/data/Steam/steamapps/common/Cyberpunk 2077}
-# PILOT_INSTANCE=NAME: an instance of tools/instance.sh instead of the Steam
-# game (docs/architecture/autopilot.md, "Two real games").
-instance=${PILOT_INSTANCE:-main}
+instance=${TANDEM_INSTANCE:-${PILOT_INSTANCE:-main}}
+[ "$instance" != 0 ] || instance=main
 if [ "$instance" != main ] && [ -z "${GAME_DIR:-}" ]; then
   dir=$(tools/instance.sh dir "$instance") || exit 1
 fi
-shots=.cache/shots
+# The mark in an instance's processes (TANDEM_INSTANCE_ID: its folder, the
+# game folder's parent); the Steam game's carry none.
+mark='' port=${TANDEM_GAME_PORT:-27450} cache=.cache
+if [ "$instance" != main ]; then
+  mark=$(dirname "$dir")
+  port=${TANDEM_GAME_PORT:-27550}
+  cache=.cache/instances/$instance
+fi
+shots=$cache/shots
+# The mock players this game's harness starts carry its name: beside another
+# game's sweep (TANDEM_PARALLEL, tools/sweep.sh --instances) or on an
+# instance, only those are stopped, never every tandem-peer.
+export TANDEM_PEER_OF=$instance
+scoped=''
+[ "$instance" = main ] && [ -z "${TANDEM_PARALLEL:-}" ] || scoped=1
 
 remote() { ssh "$host" "$@"; }
 
-running() { remote 'pgrep -f "[C]yberpunk2077.exe" >/dev/null'; }
+# For the game machine's shell: game_pids PGREP-ARGS, this game's processes
+# among those pgrep finds (by the mark in their environment).
+pids_fn="mark=$(printf %q "$mark"); "'game_pids() { local p; for p in $(pgrep "$@"); do [ "$(tr "\0" "\n" <"/proc/$p/environ" 2>/dev/null | sed -n "s/^TANDEM_INSTANCE_ID=//p" | head -1)" = "$mark" ] && echo "$p"; done; return 0; }; '
+
+running() { remote "$pids_fn"'[ -n "$(game_pids -f "[C]yberpunk2077.exe")" ]'; }
+
+# This game's mock players, here (pgrep ARGS: -x tandem-peer, -f PATTERN).
+own_peers() {
+  local p
+  for p in $(pgrep "$@" 2>/dev/null); do
+    tr '\0' '\n' <"/proc/$p/environ" 2>/dev/null | grep -qxF "TANDEM_PEER_OF=$instance" && echo "$p"
+  done
+  return 0
+}
+
+# An instance's keys go to its own X server (gamescope's Xwayland, focused
+# or not) as X keycodes: the Linux code + 8, Esc by name (a lone 9 would be
+# the digit's keysym). Physical keys, as ydotool's; what the instance's
+# keymap makes of them is not anya's AZERTY session's (two-instances.md).
+xkey() { if [ "$1" = 1 ]; then echo Escape; else echo $(($1 + 8)); fi; }
 
 keys() {
   local args=()
+  if [ "$instance" != main ]; then
+    for code in "$@"; do args+=("$(xkey "$code")"); done
+    tools/instance.sh xdo "$instance" key "${args[@]}" >/dev/null
+    return
+  fi
   for code in "$@"; do args+=("$code:1" "$code:0"); done
   remote "YDOTOOL_SOCKET=/run/ydotoold/socket ydotool key ${args[*]}"
 }
@@ -143,24 +194,39 @@ pilot_dir=.cache/tandem/pilot/$instance # on the game machine, under $HOME
 pilot_bin=build/linux/pilot/tandem-pilot
 
 own() {
-  remote "mkdir -p $pilot_dir; p=\$(pgrep -f '^[A-Z]:.*Cyberpunk2077[.]exe' | head -1); [ -n \"\$p\" ] || exit 1; \
+  remote "$pids_fn mkdir -p $pilot_dir; p=\$(game_pids -f '^[A-Z]:.*Cyberpunk2077[.]exe' | head -1); [ -n \"\$p\" ] || exit 1; \
     echo \"\$p \$(sed 's/.*) //' /proc/\$p/stat | awk '{ print \$20 }')\" > $pilot_dir/game.owner"
 }
 unown() { remote "rm -f $pilot_dir/game.owner" || true; }
 
 # (keep_pilot: start's own stop leaves a serving pilot up, with its pad:
-# the game about to start must see it.)
+# the game about to start must see it.) Only this game's processes: an
+# instance's through tools/instance.sh (its scope, its marked processes,
+# gamescope too), the Steam game's by pid, those without a mark.
 stop() {
   [ -n "${keep_pilot:-}" ] || pilot_stop >/dev/null 2>&1 || true
   unown
+  if [ "$instance" != main ]; then
+    local was=''
+    running && was=1
+    tools/instance.sh stop "$instance" >/dev/null 2>&1 || return 1
+    [ -z "$was" ] || echo "game stopped"
+    return 0
+  fi
   if running; then
-    remote 'pkill -KILL -f "[C]yberpunk2077.exe"; for i in $(seq 1 15); do pgrep -f "[C]yberpunk2077.exe" >/dev/null || exit 0; sleep 1; done; exit 1'
+    remote "$pids_fn"'kill -KILL $(game_pids -f "[C]yberpunk2077.exe") 2>/dev/null; for i in $(seq 1 15); do [ -n "$(game_pids -f "[C]yberpunk2077.exe")" ] || exit 0; sleep 1; done; exit 1'
     echo "game stopped"
   fi
 }
 
-# Through the running Steam, in its session.
+# Through the running Steam, in its session; an instance outside Steam, by
+# tools/instance.sh (beside the Steam game only with INSTANCE_ALLOW_FOREIGN=1,
+# which tools/sweep.sh --instances sets: that game is then a test game too).
 launch() {
+  if [ "$instance" != main ]; then
+    tools/instance.sh start "$instance"
+    return
+  fi
   remote 'pid=$(pgrep -f "steam.sh" | head -1)
     eval "$(tr "\0" "\n" < /proc/$pid/environ | grep -E "^(DISPLAY|WAYLAND_DISPLAY|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|SWAYSOCK)=" | sed "s/^/export /")"
     nohup steam steam://rungameid/1091500 >/dev/null 2>&1 &'
@@ -170,6 +236,15 @@ start() {
   keep_pilot=1 stop
   local since
   since=$(remote "cd '$dir'; ls -t red4ext/logs/tandem-*.log 2>/dev/null | head -1")
+  # Beside another game (TANDEM_PARALLEL): one start at a time, until it
+  # plays. A start under load passed the engine's 120 s watchdog
+  # (two-instances.md); the lock goes with this process.
+  if [ -n "${TANDEM_PARALLEL:-}" ]; then
+    mkdir -p .cache
+    exec 9>.cache/game-start.lock
+    echo "waiting for the other games' starts" >&2
+    flock 9
+  fi
   launch
   echo "launched, loading the latest save"
   # Scripts compile within a minute of launch; a compile error disables
@@ -190,13 +265,23 @@ start() {
   # the title screen, the mod warning and the load screen's prompt. When it
   # does not load the save within 25 s of the menu, Continue by keys.
   # (Solo logs neither: only "playing (solo)".)
-  if ! wait_log 'main menu world|in game|\] playing' 240 "$since" >/dev/null; then
+  # (An instance: 3.5 min to the menu beside another game, two-instances.md.)
+  local menu=240
+  [ "$instance" = main ] || menu=360
+  if ! wait_log 'main menu world|in game|\] playing' "$menu" "$since" >/dev/null; then
     echo "the game did not start (redscript error?):" >&2
     remote "grep -A4 '\\[ERROR' '$dir/r6/logs/redscript_rCURRENT.log' | head -20" >&2 || true
     exit 1
   fi
   # The game process exists now: it is ours, for the pilot.
   own || echo "the game's process was not found: the pilot will refuse this game" >&2
+  if [ "$instance" != main ]; then
+    # Its own mouse and keys: a click on Continue, Space at the loading screen.
+    tools/instance.sh load "$instance" || exit 1
+    [ -z "${TANDEM_PARALLEL:-}" ] || flock -u 9
+    echo "in game"
+    return
+  fi
   if ! wait_log 'in game' 25 "$since" >/dev/null; then
     start_by_keys
   fi
@@ -211,6 +296,7 @@ start() {
       exit 1
     fi
   done
+  [ -z "${TANDEM_PARALLEL:-}" ] || flock -u 9
   echo "in game"
 }
 
@@ -223,6 +309,7 @@ start() {
 # menus; Space answers the loading screen's prompt. A launch whose log names
 # a hook that ran beside the script tick (the thread probe) fails the check too.
 launches() {
+  steam_game_only launches
   local n=${1:-5} crashes=0 playing=0 neither=0 i result t0 off=''
   for i in $(seq 1 "$n"); do
     keep_pilot=1 stop >/dev/null
@@ -272,9 +359,17 @@ launches() {
   [ "$crashes" -eq 0 ] && [ "$playing" -gt 0 ]
 }
 
+# launches and threads check the Steam game, alone on the machine.
+steam_game_only() {
+  [ "$instance" = main ] && [ -z "${TANDEM_PARALLEL:-}" ] && return 0
+  echo "$1: the Steam game's only, alone (not TANDEM_INSTANCE=$instance, not in a sweep beside others)" >&2
+  exit 2
+}
+
 # The thread probe (plugin/src/threads.hpp): what the newest log says of the
 # script hooks' threads, a running game asked first.
 threads() {
+  steam_game_only threads
   if running; then
     cmd threads >/dev/null || true
     sleep 1
@@ -308,6 +403,11 @@ hold() {
   local seconds=${1:?hold SECONDS CODE...}
   shift
   local down=() up=()
+  if [ "$instance" != main ]; then
+    for code in "$@"; do down+=("$(xkey "$code")"); done
+    tools/instance.sh xdo "$instance" keydown "${down[@]}" sleep "$seconds" keyup "${down[@]}" >/dev/null
+    return
+  fi
   for code in "$@"; do
     down+=("$code:1")
     up+=("$code:0")
@@ -315,11 +415,17 @@ hold() {
   remote "export YDOTOOL_SOCKET=/run/ydotoold/socket; ydotool key ${down[*]}; sleep $seconds; ydotool key ${up[*]}"
 }
 
+# The Steam game's output (grim, Sway's headless output); an instance's own
+# screen (gamescope takes it: tools/instance.sh shot, in its run/ folder).
 shot() {
-  local name=${1:?shot NAME}
+  local name=${1:?shot NAME} file=/tmp/tandem-shot.png
   mkdir -p "$shots"
-  remote 'XDG_RUNTIME_DIR=/run/user/$(id -u) WAYLAND_DISPLAY=wayland-1 grim -s 0.5 /tmp/tandem-shot.png'
-  scp -q "$host:/tmp/tandem-shot.png" "$shots/$name.png"
+  if [ "$instance" != main ]; then
+    file=$(tools/instance.sh shot "$instance" tandem-shot.png) && [ -n "$file" ] || return 1
+  else
+    remote 'XDG_RUNTIME_DIR=/run/user/$(id -u) WAYLAND_DISPLAY=wayland-1 grim -s 0.5 /tmp/tandem-shot.png'
+  fi
+  scp -q "$host:$file" "$shots/$name.png"
   echo "$shots/$name.png"
 }
 
@@ -345,23 +451,48 @@ reload() {
 
 peer() {
   # The old one must be gone, and its port free, before the new one binds.
-  pkill -x tandem-peer || true
+  if [ -n "$scoped" ]; then
+    # shellcheck disable=SC2046 # a list of pids
+    kill $(own_peers -x tandem-peer) 2>/dev/null || true
+  else
+    pkill -x tandem-peer || true
+  fi
   for _ in $(seq 1 30); do
-    pgrep -x tandem-peer >/dev/null || break
+    if [ -n "$scoped" ]; then
+      [ -n "$(own_peers -x tandem-peer)" ] || break
+    else
+      pgrep -x tandem-peer >/dev/null || break
+    fi
     sleep 0.1
   done
-  local args=("$@")
+  local args
+  mapfile -t args < <(on_port "$@")
   if [ ${#args[@]} -eq 0 ]; then
     # ENet speaks IPv4; the name does not always resolve to it here: ask the
     # game machine for its own address then.
     local address
     address=$(getent ahostsv4 "$host" | awk 'NR == 1 { print $1 }')
     [ -n "$address" ] || address=$(remote "ip -4 -o route get 1.1.1.1" | awk '{ for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1) }')
-    args=(join "$address:27450" --mode front --body female)
+    args=(join "$address:$port" --mode front --body female)
   fi
-  mkdir -p .cache
-  nohup build/linux/peer/tandem-peer "${args[@]}" >.cache/peer.log 2>&1 &
-  echo "mock player: ${args[*]} (.cache/peer.log)"
+  mkdir -p "$cache"
+  nohup build/linux/peer/tandem-peer "${args[@]}" >"$cache/peer.log" 2>&1 &
+  echo "mock player: ${args[*]} ($cache/peer.log)"
+}
+
+# The mock player's arguments for this game's port, one per line: the
+# scenarios name the Steam game's (ADDRESS:27450); a mock host binds this
+# game's (--port, unless given). The Steam game's: as they are.
+on_port() {
+  local arg host_mode='' last='' given='' first=1
+  for arg in "$@"; do
+    [ "$port" = 27450 ] || arg=${arg/%:27450/:$port}
+    if [ "$arg" = host ] && { [ -n "$first" ] || [ "$last" = --role ]; }; then host_mode=1; fi
+    [ "$arg" != --port ] || given=1
+    printf '%s\n' "$arg"
+    last=$arg first=''
+  done
+  [ "$port" = 27450 ] || [ -z "$host_mode" ] || [ -n "$given" ] || printf '%s\n' --port "$port"
 }
 
 # tandem reads (and removes) tandem.cmd twice a second while in a game.
@@ -510,17 +641,17 @@ pilot_session() {
   local name=${1:?pilot session NAME ROUTINE} status=0 address guest
   shift
   address=$(getent ahostsv4 "$host" | awk 'NR == 1 { print $1 }')
-  mkdir -p recordings/session .cache
-  build/linux/peer/tandem-peer join "$address:27450" --mode watch --name watcher \
-    --record-session "recordings/session/$name.tsession" >.cache/pilot-session.log 2>&1 &
+  mkdir -p recordings/session "$cache"
+  build/linux/peer/tandem-peer join "$address:$port" --mode watch --name watcher \
+    --record-session "recordings/session/$name.tsession" >"$cache/pilot-session.log" 2>&1 &
   guest=$!
   for _ in $(seq 1 20); do
-    grep -q 'recording the session' .cache/pilot-session.log && break
+    grep -q 'recording the session' "$cache/pilot-session.log" && break
     sleep 0.5
   done
-  if ! grep -q 'recording the session' .cache/pilot-session.log; then
+  if ! grep -q 'recording the session' "$cache/pilot-session.log"; then
     kill "$guest" 2>/dev/null || true
-    echo "the recording guest did not join (.cache/pilot-session.log)" >&2
+    echo "the recording guest did not join ($cache/pilot-session.log)" >&2
     exit 1
   fi
   cmd "ride hide" >/dev/null
@@ -528,7 +659,7 @@ pilot_session() {
   kill -INT "$guest" 2>/dev/null || true
   wait "$guest" 2>/dev/null || true
   cmd "ride show" >/dev/null
-  grep 'session saved' .cache/pilot-session.log || echo "no session saved (.cache/pilot-session.log)" >&2
+  grep 'session saved' "$cache/pilot-session.log" || echo "no session saved ($cache/pilot-session.log)" >&2
   return "$status"
 }
 
@@ -571,12 +702,18 @@ log() {
 
 # winedbg from the game's own Proton, run in the game's pressure-vessel
 # namespaces (its wineserver and libraries); attaches, dumps, detaches.
+# This game's process and wineserver (each game has its own), into
+# $cache/re/bt.txt.
 bt() {
-  mkdir -p .cache/re
-  remote 'bash -s' >.cache/re/bt.txt <<'REMOTE'
-p=$(pgrep -f "^[A-Z]:.*Cyberpunk2077[.]exe" | head -1)
+  local file=$cache/re/bt.txt
+  mkdir -p "$cache/re"
+  {
+    echo "$pids_fn"
+    cat
+  } <<'REMOTE' | remote 'bash -s' >"$file"
+p=$(game_pids -f "^[A-Z]:.*Cyberpunk2077[.]exe" | head -1)
 [ -n "$p" ] || { echo "no game" >&2; exit 1; }
-w=$(dirname "$(readlink -f "/proc/$(pgrep -x wineserver | head -1)/exe")")
+w=$(dirname "$(readlink -f "/proc/$(game_pids -x wineserver | head -1)/exe")")
 # The game's whole environment (its prefix, libraries, sync mode), in its
 # namespaces and root: the same wineserver as the game.
 env=()
@@ -589,9 +726,9 @@ pid=$(run --command "info process" 2>/dev/null | awk '/Cyberpunk2077.exe/ {print
 printf 'attach 0x%s\nbt all\ndetach\nquit\n' "$pid" | run 2>&1 |
   grep -v "could not attach\|can.t debug several\|Either .detach"
 REMOTE
-  echo ".cache/re/bt.txt: $(grep -c '^Backtracing' .cache/re/bt.txt) threads"
-  grep -n ' in tandem ' .cache/re/bt.txt | grep -v 'enet_\|Session::Poll\|Endpoint::Update\|NetThread\|stop_token\|_Invoke\|thread.cpp\|vector:' | head -20 || true
-  bt_known .cache/re/bt.txt
+  echo "$file: $(grep -c '^Backtracing' "$file") threads"
+  grep -n ' in tandem ' "$file" | grep -v 'enet_\|Session::Poll\|Endpoint::Update\|NetThread\|stop_token\|_Invoke\|thread.cpp\|vector:' | head -20 || true
+  bt_known "$file"
 }
 
 # Known crash sites (game 2.50) among a backtrace's game frames: the
@@ -631,12 +768,12 @@ role() {
   local ini="$dir/red4ext/plugins/tandem/tandem.ini" text
   case ${1:-} in
   # log = debug: the scenarios read per-puppet, per-hit lines (log.hpp).
-  host) text=$'role = host\nport = 27450\nname = V\nlog = debug\n' ;;
-  off) text=$'role = off\nport = 27450\nname = V\nlog = debug\n' ;;
+  host) text="role = host"$'\n'"port = $port"$'\nname = V\nlog = debug\n' ;;
+  off) text="role = off"$'\n'"port = $port"$'\nname = V\nlog = debug\n' ;;
   join)
     local address=${2:-}
     [ -n "$address" ] || address=$(here)
-    text="role = join"$'\n'"address = $address"$'\nport = 27450\nname = V\nlog = debug\n'
+    text="role = join"$'\n'"address = $address"$'\n'"port = $port"$'\nname = V\nlog = debug\n'
     ;;
   player)
     # Testing is over: no pilot, no pad left behind.
@@ -754,8 +891,21 @@ skip_choices() {
 
 # TANDEM_PREBUILT=1: install the DLL already in build/ (tools/remote.sh
 # built it on the game machine) instead of building it here.
+# Into this game's folder. Beside another game (TANDEM_PARALLEL): one deploy
+# at a time (a build, scripts:check's copy of the game's scripts).
 deploy() {
-  if [ -n "${TANDEM_PREBUILT:-}" ]; then task deploy:files >/dev/null; else task deploy >/dev/null; fi
+  if [ -n "${TANDEM_PARALLEL:-}" ]; then
+    mkdir -p .cache
+    exec 8>.cache/deploy.lock
+    flock 8
+  fi
+  if [ -n "${TANDEM_PREBUILT:-}" ]; then GAME_DIR=$dir task deploy:files >/dev/null; else GAME_DIR=$dir task deploy >/dev/null; fi
+  [ -z "${TANDEM_PARALLEL:-}" ] || flock -u 8
+}
+
+# Which game this is, for tools/scenario.sh and tools/sweep.sh (eval).
+where() {
+  printf '%s=%q\n' instance "$instance" dir "$dir" port "$port" cache "$cache" mark "$mark" scoped "$scoped" pids_fn "$pids_fn"
 }
 
 # The game runs and its game thread ticks (no watchdog line since the last
@@ -811,6 +961,7 @@ cmd)
   shift
   cmd "$@"
   ;;
+where) where ;;
 *)
   sed -n '2,21p' "$0" >&2
   exit 2
