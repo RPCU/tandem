@@ -5,12 +5,14 @@
 - **Co-op menu** (`scripts/tandem/Coop.reds`, milestone 7): the session is
   chosen at runtime. The main menu gets a "Co-op" entry whose pages live in
   the menu's own list (wraps of `SingleplayerMenuGameController`'s
-  `PopulateMenuItemList` / `HandleMenuItemActivate`): Host a game → the
+  `PopulateMenuItemList` / `HandleMenuItemActivate`): Start a new co-op
+  game (New co-op game, below); Host a saved game → the
   vanilla Continue or Load game (the game's own load list,
   `SpawnEvent(n"OnLoadGame")`); Join a game → recent hosts (`recent.txt`
-  next to the DLL, written when a host welcomes us) or "Enter an address"
+  next to the DLL, written when a host welcomes us) or "Enter a join code"
   (the game's message popup with Codeware's text field,
-  `GenericMessageNotification.ShowInput`), then the V's save; Play solo
+  `GenericMessageNotification.ShowInput`; an address typed there works
+  too), then the V (a new one, or a save); Play solo
   drops the choice. **Join by address** (both menus' Co-op page, after
   Join a game; for a LAN or a VPN such as Tailscale or NetBird, without the
   relay): the same popup asks for `host[:port]` (port: tandem.ini's,
@@ -61,11 +63,77 @@
   **Not yet verified in game** (scenario `coop` for the runtime switches;
   the menus by hand or with `coop menu` / `coop pick`).
 
+### New co-op game
+
+Two friends starting a campaign together, in the fewest steps, the game's
+own screens doing the rest (`Coop.reds`, `Travel.reds`, 2026-11-21, **not
+yet run in game**).
+
+- **Host**: main menu Co-op → **Start a new co-op game** (the name popup
+  first, the first time) → the game's own New Game (`SpawnEvent(n"OnNewGame")`,
+  as the menu's New game: Phantom Liberty's start choice, difficulty,
+  lifepath, character creation; engine facts §13.130), the session chosen
+  before it (`StartHost`). It starts as the new V's world loads, as a load
+  does (`TandemSystem.OnPlayerAttach`). Through a relay the host's game
+  says nothing at the start; as soon as the relay registers the code, the
+  HUD's message shows it, 12 s, "Co-op join code: K7Q-2M9" (`Session-Code`,
+  `TandemSystem.ShowCode`), again when it changes (New join code); without
+  a code, the relay's problem once ("No join code yet: …", `Session-NoCode`).
+  It stays on the pause menu's status panel and in Invite, which with a
+  code says the code alone ("friends enter it in Co-op, Join a game"; the
+  addresses only without a relay). No relay set: the old notice with this
+  machine's addresses.
+- **Guest**: Co-op → **Join a game** → the code's popup at once when there
+  is no recent host to pick (else the recent hosts' page, then Enter a join
+  code) → the V page: **Create a new V** (the game's own New Game, as the
+  host's), Continue or Load game (a saved V). Picking one chooses the join
+  (`JoinByCode` / `Join`) and its **arrival** (`TandemNative.ChooseArrival`,
+  `SessionChoice::arrive`, kept by the plugin across the New Game flow and
+  the load like the choice itself, taken once at the welcome:
+  `TakeArrival`). Every join the co-op menu makes arrives, in game too
+  (`TandemSystem.CoopJoin`: the pause menu, `coop join`); tandem.ini's
+  `role = join` and a checkpoint's rejoin do not.
+- **The arrival** (`TandemTravel.ArriveBeside`, travel.md): at the welcome
+  the joined notice waits; once our V is free to go (not in a scene of tier
+  3 and up, a vehicle, or down; 90 s at most, then the notice and the
+  regroup's usual ways), it goes 2 m behind the host **behind the fast
+  travel's loading screen** whatever the distance, no prompt, no fast
+  travel point needed; within 60 m it stays. Then one notice, "Joined
+  NAME's session".
+- **A fresh guest's prologue** (the guest's own story, `story.md`): a join
+  the menu chose holds the guest's own quests **from the load**, not from
+  the welcome (`TandemStorySystem.HoldEarly`: the quest freeze and the save
+  lock), so the new V's lifepath start does not run on while it connects;
+  a session that ends before the welcome gives them back (`ReleaseEarly`).
+  What is known and what is not (engine facts §13.130):
+  - nodes that ran before the player's attach (the lifepath's opening
+    scene, its first items and restrictions) have run: a scene already
+    playing plays out (it is not a quest node), and the arrival waits for
+    it;
+  - the arrival takes every gameplay restriction off our V, as vanilla's
+    fast travel does (no weapons, no sprint, forced walk of the opening are
+    the frozen prologue's, never lifted otherwise while frozen); the host's
+    own moments put theirs on again (`Restrictions.reds`);
+  - the new V has what its lifepath gave it by then (maybe no weapon, no
+    money, no cyberdeck); the prologue's later gifts wait in its own story;
+  - the new V's world is in the Watson lockdown (§13.112): the arrival
+    crosses it as a ride in the host's car does (the gates' notices still
+    say so);
+  - arriving inside a host's quest interior relies on the prefab mirror
+    (`story.md`) loading it first; a Phantom Liberty start (`ep1_standalone`,
+    Songbird's holocall) is not tried.
+    To see in game: scenarios `coop-new-host`, `coop-new-guest` (by hand: the
+    character creation), `coop-arrive`, `coop-arrive-load`, `coop-code`
+    (needs a relay: `RELAY=HOST:PORT`).
+- **Level gap**: a level-1 guest beside a veteran host: progression.md,
+  "Levels" (`level_gap`).
+
 ### Settings
 
-- **The pages' entries** (`TandemCoopMenu.Build`): main menu Co-op → Host a
-  game, Join a game, Join by address, Play solo (once one is chosen), Write
-  a bug report, Co-op settings, Back; pause menu Co-op → Host this game,
+- **The pages' entries** (`TandemCoopMenu.Build`): main menu Co-op → Start
+  a new co-op game, Host a saved game, Join a game, Join by address, Play
+  solo (once one is chosen), Write a bug report, Co-op settings, Back; the
+  join's V page: Create a new V, Continue, Load game, Back; pause menu Co-op → Host this game,
   Join a game, Join by address, or in a session Invite and New join code
   (host), Partners' mods, Leave session; then Write a bug report, Co-op
   settings, Back. No entry reads as one of the game's own or another mod's
@@ -79,7 +147,7 @@
   what the row under the cursor (hovered, else selected) does
   (`Settings-About-*`, `TandemSettings.About`). Its arrays (`Keys`,
   `Labels`, `Abouts`, `Kinds`, `Whens`) have one entry per setting in the
-  page's order: name, friendly_fire, enemy_scaling, notices, markers,
+  page's order: name, friendly_fire, enemy_scaling, level_gap, notices, markers,
   nameplates, party_hud, link, pings, recorder, relay, code, direct, story,
   quest_freeze, scene_privacy, time_host, race_car. `tools/menu-check.py`
   (`task menu:check`, run by `scripts:check` and CI) checks them aligned,
@@ -103,7 +171,7 @@
   (`Comms::Configure`: in a session a new link default replaces our
   consents and is sent at once; pings off stops new pings, a team target
   still shows; `comms.md`);
-  `name`, `relay`, `relay_token`, `story`, `time_host` are what a running
+  `name`, `relay`, `relay_token`, `story`, `time_host`, `level_gap` are what a running
   session was set up with, so a change during one waits for its end (the
   label says "from the next session"); `quest_freeze` and `scene_privacy`
   choose hooks installed at launch ("after a restart").

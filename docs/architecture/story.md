@@ -21,6 +21,12 @@
     2026-11-21 (the 11 `story-*` and `quest-trace` scenarios passed in game
     against the mock player; the two-game pass is next); `quest_freeze = off`
     gives a guest calls, lines, hubs and rewards but not the journal or texts.
+  - _From the load_ (2026-11-21, not yet run in game): a join the co-op
+    menu chose holds the guest's own quests and saving from the world's
+    load, not from the host's welcome (`HoldEarly`), so a new V's prologue
+    or a save's quest does not run on while it connects; a session that
+    ends before the welcome gives both back (`ReleaseEarly`). A fresh
+    guest's prologue: `coop-menu.md`, New co-op game.
   - _Saves_: a guest in a session never saves (`TandemStorySystem` overrides
     `IsSavingLocked`, plus a `SaveLocksManager` lock and dropped autosaves).
     Every journal entry the mirror changes keeps its state from before; on

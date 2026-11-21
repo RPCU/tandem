@@ -51,7 +51,8 @@ tandem does, with the scenario that checks it in game.
    (`PlayerLevel`; `TandemLevels.Tick`). The level is never relayed: it is
    its player's business.
 2. The host's endpoint keeps everyone's and works out the mean, rounded
-   (`progress::MeanLevel`); when it changes (a join, a leave, a vanish, a
+   (`progress::MeanLevel`), capped at **`level_gap`** levels above the
+   lowest player (`progress::SessionLevelOf`, below); when it changes (a join, a leave, a vanish, a
    level-up) it tells everyone (`SessionLevel{level, players}`, kept for
    late joiners). A player that has not said its level yet is left out.
 3. The host's game, for each NPC it shares (`TandemLevels.Host`, once per
@@ -79,6 +80,23 @@ tandem does, with the scenario that checks it in game.
 
 Alone, or with everyone at the host's level, nothing is touched. Guests are
 told once ("Co-op: enemies are scaled to level N").
+
+**The level gap** (`level_gap`, the host's tandem.ini and settings page,
+from the next session; default 8, `off` for the plain mean; 2026-11-21,
+not yet run in game; tests "level_gap keeps the session's level…", "the
+host's level_gap caps…", `tests/progress_test.cpp`). A new V (level 1)
+beside a level-40 host: the mean is 21, enemies 20 levels above the new V,
+whose health and damage are a level-1 V's (the levels act only through the
+stats, §13.38.1): it is downed in a hit or two, while the host meets
+enemies half its level. Capped, the session's level is 9: the new V can
+fight and earn (skill XP is worth the target's level), the host's fights
+are easy, its own enemy scaling (`npcs.md`) still adds health per player.
+The cap favours the weaker player on purpose: a co-op game the new player
+cannot survive is no co-op game; the veteran can turn it off. Two new Vs
+(a new co-op game) are at the same level: nothing changes. One cap for all
+the NPCs a host shares; a guest's own NPCs follow the same session level.
+To see in game: whether 8 is the right number (scenario `levels-host`
+with `--level 1`).
 
 Enemy scaling for the players near an NPC (`npcs.md`) is another
 modifier on the same NPCs, a Multiplier on health, poise and armour: it

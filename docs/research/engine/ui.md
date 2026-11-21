@@ -153,6 +153,50 @@ in game.
   full-screen interactive widget would take the menu's input (NCO d6240d9d),
   so the panel is never interactive.
 
+### 13.130 A new game from the main menu, and a fresh V's first moments (2026-11-21, read in final.reds, not run)
+
+Line numbers are `~/.cache/tandem/ref/gamescripts/vanilla/final.reds` (2.50).
+All [2.5-untested] unless tagged otherwise.
+
+- The main menu's New game is the item `OnNewGame` (`:386515`), an event
+  on `m_menuEventDispatcher` like Load game's `OnLoadGame`. The pre-game
+  scenario's `OnNewGame` (`:376634`) closes the sub-menu and switches to
+  `MenuScenario_ExpansionNewGame` when `IsAdditionalContentEnabled(n"EP1")`
+  (the "start from the beginning or at Phantom Liberty" choice, whose
+  `OnAccept` goes on to `MenuScenario_Difficulty`, `:378373`), else
+  straight to `MenuScenario_Difficulty` (`:376639`); then the lifepath,
+  body, attributes and summary screens (`BaseCharacterCreationController`s:
+  `DifficultySelectionMenu` `:363336`, `CharacterCreationBackstorySelectionMenu`
+  `:363544`, `characterCreationSummaryMenu` `:363107`). The summary's
+  `OnOutroComplete` (`:363291`) calls `FinalizeState()` and
+  `GetSystemRequestsHandler().StartNewGame(state)` (`:363294`): the new
+  world loads from there. Backing out returns to `MenuScenario_SingleplayerMenu`
+  (`:374022`), a new `SingleplayerMenuGameController`.
+- So a session chosen before the event (`TandemNative.StartHost` / `Join`,
+  kept in the plugin until a game loads) is still chosen when the new
+  world attaches its player, as for a load. That `IsPreGame()` is false at
+  that attach (`TandemSystem.OnPlayerAttach`), as after a load, is [I]: to
+  see in game.
+- Vanilla's fast travel takes every gameplay restriction off first:
+  `FastTravelSystem.PerformFastTravel` (`:50415`) calls
+  `PlayerGameplayRestrictions.RemoveAllGameplayRestrictions` (`:179037`:
+  `RemoveStatusEffectsWithTag(target, n"GameplayRestriction")`), then
+  `TeleportToNode` and `SetFastTravelStarted` (`UISystem.NotifyFastTravelStart`,
+  `:50332`). A restriction tagged `BlockFastTravel` is itself a fast travel
+  lock (`OnGameplayRestrictionAdded` → `ChangeFastTravelSystemState`,
+  `:179061`). That the fast travel's loading screen also covers a plain
+  `TeleportationFacility.Teleport` to a position (no node) and ends once
+  the world there has streamed in is [I]: tandem's arrival relies on it.
+- What a new V's first minutes hold is quest data, not script: the
+  lifepath openings (`q000` phases: a scene, the lifepath's items, the
+  restrictions the scene puts on V, its interiors) run from the gamedef's
+  root quest as the world starts. Which nodes run before the player's
+  attach, and so before any script can hold them, is [native]. The
+  prologue (q000 to q005) is also the Watson lockdown (§13.112). A
+  Phantom Liberty start (`SetIsExpansionStandalone`) is another gamedef
+  (`ep1_standalone`, §7) with Songbird's opening holocall, which froze a
+  fresh character in the campaign fork on 2.31 (§7). [2.31-only]
+
 ### 13.37 Phantom Liberty: the game's own check (2026-11-19, read in final.reds, not run)
 
 Line numbers are `~/.cache/tandem/ref/gamescripts/vanilla/final.reds` (2.50).
