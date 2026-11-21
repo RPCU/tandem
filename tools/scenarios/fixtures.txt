@@ -1,0 +1,12 @@
+# The scenarios' named spots (tools/scenario.sh: `at NAME`, `spot NAME`;
+# docs/architecture/testing.md, "Fixtures": sources and what each serves).
+# NAME X Y Z YAW. Unverified until `tools/scenario.sh fixtures-survey` has
+# run in game and the table says so.
+test-field     -915.00  1879.50   36.19 0
+h10           -1397.31  1278.07  123.08 0
+v-door        -1389.66  1271.12  123.08 0
+kabuki-market -1158.78  2014.22   12.06 0
+h11-basement  -1390.79  1963.74  -25.02 0
+arasaka-park   -209.26 -1454.22    7.60 0
+drake-ave     -1608.11  1772.70   18.38 0
+niwaki-plaza   -230.49   306.01   29.55 0

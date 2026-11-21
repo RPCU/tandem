@@ -33,6 +33,9 @@
 #                          start, else the NPC recording REPLAY (- for none); the
 #                          scenario's own ARGS on top. $sessioned says which
 #   cmd TEXT               a tandem command in the game
+#   at NAME|"X Y Z [YAW]"  our V teleported to a named spot (fixture:
+#                          tools/scenarios/fixtures.txt) and settled there;
+#                          spot NAME prints its X Y Z YAW, fixtures the names
 #   pilot ROUTINE [FLAGS]  the test pilot plays ROUTINE on our real V
 #                          (tools/pilot/routines/ROUTINE.pilot, through
 #                          tools/game.sh pilot run): it walks, drives, fights
@@ -221,6 +224,51 @@ play() {
   peer join "$address:27450" --play "$file" "$@"
 }
 note() { echo "  $*"; }
+# Named spots in the world (tools/scenarios/fixtures.txt, testing.md
+# "Fixtures"). `spot NAME` prints its "X Y Z YAW" ("X Y Z [YAW]" given as
+# it is passes through: a scenario's *_AT variable may hold either);
+# `fixtures` the names. `at NAME|"X Y Z [YAW]"` teleports our V there and
+# waits until it stands there: a far teleport goes through a loading screen
+# (up to 30 s), so its position is asked every 2 s until it is within 4 m of
+# the spot, then 3 s more for the world around it to stream in. A loading
+# screen silences the game thread (the watchdog's "silent" line, which the
+# scenarios reject): when one came, the log is marked after it.
+fixture_file=tools/scenarios/fixtures.txt
+spot() {
+  if [[ $1 =~ ^-?[0-9.]+\ +-?[0-9.]+\ +-?[0-9.]+ ]]; then
+    echo "$1"
+    return 0
+  fi
+  awk -v n="$1" '$1 == n { print $2, $3, $4, $5; found = 1; exit } END { exit !found }' "$fixture_file"
+}
+fixtures() { awk '!/^#/ && NF >= 4 { print $1 }' "$fixture_file"; }
+at() {
+  local where x y z start=$SECONDS line silent
+  where=$(spot "$1") || fail "no fixture '$1' in $fixture_file"
+  read -r x y z _ <<<"$where"
+  silent=$(since | grep -c 'watchdog: game thread silent' || true)
+  cmd teleport "$where"
+  while ((SECONDS - start < 45)); do
+    sleep 2
+    if stalled; then fail "game thread silent after the teleport to $1"; fi
+    cmd test query position
+    sleep 1
+    line=$(since | grep -F 'test query: position = ' | tail -1 || true)
+    line=${line%$'\r'}
+    if [ -n "$line" ] && awk -v w="${line#*position = }" -v x="$x" -v y="$y" -v z="$z" 'BEGIN {
+      split(w, p, " "); dx = p[1] - x; dy = p[2] - y; dz = p[3] - z
+      exit !(dx * dx + dy * dy + dz * dz < 16) }'; then
+      echo "  at $1 ($where) in $((SECONDS - start)) s"
+      pause 3
+      if [ "$(since | grep -c 'watchdog: game thread silent' || true)" != "$silent" ]; then
+        echo "  (a loading screen on the way: the log marked after it)"
+        mark
+      fi
+      return 0
+    fi
+  done
+  fail "our V did not come to $1 ($where) within 45 s (last: ${line:-no position})"
+}
 shot() { mkdir -p "$out" && $game shot "$1" >/dev/null && cp ".cache/shots/$1.png" "$out/"; }
 
 expect() {
