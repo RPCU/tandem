@@ -201,7 +201,8 @@ public class TandemTime {
     this.EndTest(times, now);
     this.SendOurs(times, player);
     // Alone in the session, single player rules: nothing is shared.
-    let together = ArraySize(system.PuppetPlayers()) > 0;
+    let others = system.PuppetPlayers();
+    let together = ArraySize(others) > 0;
     if together && TandemNative.IsHost() && !TandemNative.IsTimeHostFull() {
       this.TakeBack(times);
     } else {

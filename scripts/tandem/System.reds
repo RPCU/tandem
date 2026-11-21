@@ -2856,7 +2856,8 @@ public class TandemSystem extends ScriptableSystem {
         }
         let ps = (entity as GameObject).GetPS() as GamePuppetPS;
         TandemNative.Log(s"inspect player \(puppet.player): slots\(slots), tpp \(IsDefined(ps) && ps.GetTpp()), crouch \(IsDefined(ps) && ps.IsCrouch())");
-        TandemNative.Log(s"inspect player \(puppet.player): cutscene template \(cutscene), at (\(position.X), \(position.Y), \(position.Z)), \(ArraySize(entity.GetComponents())) components, \(meshes) meshes, \(enabled) on:\(names)");
+        let components = entity.GetComponents();
+        TandemNative.Log(s"inspect player \(puppet.player): cutscene template \(cutscene), at (\(position.X), \(position.Y), \(position.Z)), \(ArraySize(components)) components, \(meshes) meshes, \(enabled) on:\(names)");
       }
     }
   }
@@ -3104,8 +3105,14 @@ public class TandemSystem extends ScriptableSystem {
       if report && IsDefined(npc) {
         let player = GetPlayer(this.GetGameInstance());
         let tracker = npc.GetTargetTrackerComponent();
-        let threats = IsDefined(tracker) ? ArraySize(tracker.GetHostileThreats(false)) : -1;
-        let all = IsDefined(tracker) ? ArraySize(tracker.GetThreats(false)) : -1;
+        let threats = -1;
+        let all = -1;
+        if IsDefined(tracker) {
+          let hostile = tracker.GetHostileThreats(false);
+          let every = tracker.GetThreats(false);
+          threats = ArraySize(hostile);
+          all = ArraySize(every);
+        }
         let towards = "";
         for puppet in this.m_puppets {
           let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;

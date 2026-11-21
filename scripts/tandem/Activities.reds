@@ -368,7 +368,8 @@ public class TandemActivities {
           gained += s" \(TDBID.ToStringDEBUG(buff))";
         }
       }
-      let clothes = ArraySize(TandemOutfit.Shown(player));
+      let shown = TandemOutfit.Shown(player);
+      let clothes = ArraySize(shown);
       let clock = TandemWorld.GameSeconds(this.m_game) - this.m_interClock;
       TandemNative.Log(s"activities: interaction over after \(this.m_now - this.m_interSince) s (scene \(this.m_interScene), apartment \(TandemActivity.ApartmentScene(this.m_interScene)), workspot \(this.m_interSpot), tier up to \(this.m_interTier), clothes \(this.m_interClothes) -> \(this.m_interFewest) -> \(clothes), clock +\(clock) s, buffs gained:\(StrLen(gained) > 0 ? gained : " none"))");
     }

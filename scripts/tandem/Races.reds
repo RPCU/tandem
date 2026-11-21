@@ -1279,7 +1279,8 @@ public class TandemRaces {
     if Equals(TandemNative.Setting("race_car"), "copy") {
       return theirs;
     }
-    let own = GameInstance.GetVehicleSystem(this.m_game).GetActivePlayerVehicle(gamedataVehicleType.Car).recordID;
+    let active = GameInstance.GetVehicleSystem(this.m_game).GetActivePlayerVehicle(gamedataVehicleType.Car);
+    let own = active.recordID;
     if TDBID.IsValid(own) && IsDefined(TweakDBInterface.GetVehicleRecord(own)) {
       return own;
     }

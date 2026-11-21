@@ -15,7 +15,7 @@
 | sim | simulated games against each other, refereed (`sim.md`) | `task test`, `task sim:fuzz` |
 | regions | links, owners, hand-over (also with a third lost), a vanishing owner, digests both ways; two mock players meeting | `task test` |
 | natives | each `*Natives.reds` matches its `*natives.cpp` (plain, story, combat, sync, elsewhere, region, street, presence, activity) | `task natives:check` |
-| scripts | `scripts/tandem` compiles with the game's redscript, bundle and mods | `task scripts:check` |
+| scripts | `scripts/tandem` compiles with the game's redscript, bundle and mods; no method defined twice, no bare value local, no array intrinsic or struct field on a call's result (`tools/scripts-temporaries.py`, also in CI) | `task scripts:check` |
 | co-op menu | the settings page's arrays aligned, each row's label and description in English and French, keys the plugin takes, no duplicate or vanilla-looking entry (`tools/menu-check.py`) | `task menu:check` |
 | threads | every script hook that may run on a job thread (per-entity, component and persistent-state wraps, `cb func`s, lifecycle methods, `Entity/*` callbacks) and all it calls: reads, the wrapped method, natives; no write to a system's state (`tools/scripts-threads.py`; `.known`: 82 hooks older than the check, unproven, each with the thread probe's call) | `task threads:check` |
 | references | every `TandemX.Name(…)` call names a declared function, every record of ours the scripts name is in `tweaks/tandem` (`tools/scripts-refs.py`: what scc and the game would say, in CI); every scenario's `--flags` exist in the mock player, its `cmd` words in the scripts, its helpers in `tools/scenario.sh` (`tools/scenarios-check.py`) | `task refs:check`, `task scenarios:check` |

@@ -105,6 +105,22 @@ TweakDBID;` then `SendSeat(record, …)` on foot sent
   measure later: a script function reading a bare `Int32` and `Bool`
   right after another left non-zero values in the same frame slots.
   [2.5-untested]
+- **An array intrinsic or a struct field on a call's result reads
+  something else.** `ArrayContains(system.PuppetPlayers(), p)` was false
+  for a player in the list on every police tick (2026-11-21: each remote
+  V's level was forgotten on the tick it was learnt), and
+  `Labels()[i]` read an empty String (2026-11-20). The VM takes these
+  operands by address and a returned value has none. redscript knows it:
+  its `INVALID_TEMP_USE` diagnostic
+  (`compiler/src/diagnostics/invalid_temp_use.rs`, 0.5.32) refuses
+  `ArraySize`, `ArrayContains`, `ArrayCount`, `ArrayFindFirst`,
+  `ArrayFindLast`, `ArrayLast`, `ArrayPop` on a temporary, and a struct
+  field or an element of one; but the game's scc runs no diagnostic pass
+  (`scc/lib/src/lib.rs`: `CompilationUnit::new(…, vec![])`), and the
+  vanilla scripts never write either. `tools/scripts-temporaries.py`
+  (run by `task scripts:check` and CI) refuses both. The array cases are
+  [2.5-verified]; a struct field of a call's result (`GetWorldPosition().X`)
+  is refused on redscript's word alone [2.5-untested].
 - **A native declared with other types than the DLL's breaks the VM.**
   redscript never sees the DLL: `SendNpcSpawn(…, orientation: Quaternion)`
   against a C++ `float yaw` compiled with 0 errors and stopped the game on

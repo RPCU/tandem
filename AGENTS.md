@@ -162,6 +162,12 @@ build slots) and copies the DLL, `.pdb` and `tandem-peer` back; then
   `tools/scripts-uninitialized.py`). A local assigned on every path before
   any read may keep its bare declaration with the comment
   `// assigned on every path` on that line.
+- **No array intrinsic or struct field on a call's result**: put it in a
+  local first (`let players = system.PuppetPlayers();`). The VM reads
+  `ArrayContains(f(), x)`, `ArraySize(f())`, `f()[i]` or
+  `GetWorldPosition().X` from some other variable: the police forgot
+  every remote V's level on the tick it was learnt (2026-11-21;
+  `tools/scripts-temporaries.py`).
 - **A hook that may run on a job thread only reads, calls the wrapped
   method and enqueues** (`TandemStreaming.QueueStreamed`, or another native
   that only enqueues); its system acts on the tick. Such hooks: a wrap of a

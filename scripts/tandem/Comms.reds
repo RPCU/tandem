@@ -698,8 +698,11 @@ public class TandemComms {
   private func PingSeconds(root: ref<GameObject>) -> Int32 {
     let longest = 0.0;
     for effect in StatusEffectHelper.GetAppliedEffects(root) {
-      if IsDefined(effect) && ArrayContains(effect.GetRecord().GameplayTags(), n"Ping") {
-        longest = MaxF(longest, effect.GetRemainingDuration());
+      if IsDefined(effect) {
+        let tags = effect.GetRecord().GameplayTags();
+        if ArrayContains(tags, n"Ping") {
+          longest = MaxF(longest, effect.GetRemainingDuration());
+        }
       }
     }
     return longest > 0.0 ? Cast<Int32>(longest) + 1 : 30;

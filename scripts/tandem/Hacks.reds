@@ -381,7 +381,8 @@ public class TandemHacks extends ScriptableSystem {
     if !TandemOwn.Entity(npc.GetGame(), npc.GetEntityID()) || !evt.isFinalRemoval || !IsDefined(evt.staticData) {
       return;
     }
-    if !ArrayContains(evt.staticData.GameplayTags(), n"Quickhack") && !TandemBreach.IsDaemonEffect(evt.staticData.GetID()) {
+    let tags = evt.staticData.GameplayTags();
+    if !ArrayContains(tags, n"Quickhack") && !TandemBreach.IsDaemonEffect(evt.staticData.GetID()) {
       return;
     }
     let id = TandemHacks.NpcOf(npc.GetGame(), npc.GetEntityID());

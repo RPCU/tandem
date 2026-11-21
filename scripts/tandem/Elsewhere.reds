@@ -66,7 +66,8 @@ public class TandemElsewhere {
   // The scene took our V away from its body: the NPCs around it are the
   // other world's.
   public static func AwayFromBody(game: GameInstance) -> Bool {
-    return (TandemAway.Ours().flags & 1) != 0;
+    let ours = TandemAway.Ours();
+    return (ours.flags & 1) != 0;
   }
 
   // A player in another world (not the city), and one away from its body.

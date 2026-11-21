@@ -298,7 +298,8 @@ public class TandemInteract {
       return 6;
     }
     what = s"\(NameToString(e.choice)) on \(NameToString(object.GetClassName())) \(EntityID.ToDebugString(e.entity))";
-    if !TandemStory.InteractInReach(e.player, e.hash, object.GetWorldPosition().X, object.GetWorldPosition().Y, object.GetWorldPosition().Z) {
+    let at = object.GetWorldPosition();
+    if !TandemStory.InteractInReach(e.player, e.hash, at.X, at.Y, at.Z) {
       return 5;
     }
     let loot = (e.flags & 4) != 0;

@@ -173,7 +173,8 @@ public class TandemCoop {
   // The session in a few lines, then who is in it.
   public static func StatusLines(opt english: Bool) -> array<String> {
     let lines: array<String>;
-    if ArraySize(TandemNative.CompatProblems()) > 0 {
+    let problems = TandemNative.CompatProblems();
+    if ArraySize(problems) > 0 {
       ArrayPush(lines, "Co-op is off: a startup check failed");
       return lines;
     }
@@ -241,7 +242,8 @@ public class TandemCoop {
         }
       }
     }
-    let differences = ArraySize(TandemNative.CompatWarnings());
+    let warnings = TandemNative.CompatWarnings();
+    let differences = ArraySize(warnings);
     if differences > 0 {
       ArrayPush(lines, s"\(differences) difference(s) between your games: see tandem's log");
     }
@@ -519,6 +521,8 @@ public class TandemCoopMenu {
       this.Add("Menu-Coop", TandemCoopAction.OpenCoop);
       return;
     }
+    let problems = TandemNative.CompatProblems();
+    let status = TandemNative.SessionStatus();
     if Equals(this.page, TandemCoopPage.Join) {
       for host in TandemNative.RecentHosts() {
         let address = s"\(host.address):\(host.port)";
@@ -531,12 +535,12 @@ public class TandemCoopMenu {
         let item = this.Add("", TandemCoopAction.Setting, TandemSettings.Label(key, inSession || TandemNative.IsStarted()));
         item.target = key;
       }
-    } else if ArraySize(TandemNative.CompatProblems()) > 0 {
+    } else if ArraySize(problems) > 0 {
       // Co-op is off: nothing to host or join, only the report.
       this.Add("Menu-Report", TandemCoopAction.Report);
     } else if this.inGame {
       if inSession {
-        if TandemNative.SessionStatus().role == 1 {
+        if status.role == 1 {
           this.Add("Menu-Invite", TandemCoopAction.Invite);
           // Another join code (a kept one: the next, kept from now on).
           if StrLen(TandemNative.RelayCode()) > 0 {
@@ -555,7 +559,7 @@ public class TandemCoopMenu {
       this.Add("Menu-Host", TandemCoopAction.HostPage);
       this.Add("Menu-Join", TandemCoopAction.JoinPage);
       this.Add("Menu-JoinAddress", TandemCoopAction.JoinAddress);
-      if TandemNative.SessionStatus().fromMenu {
+      if status.fromMenu {
         this.Add("Menu-Solo", TandemCoopAction.Solo);
       }
       this.Add("Menu-Report", TandemCoopAction.Report);
