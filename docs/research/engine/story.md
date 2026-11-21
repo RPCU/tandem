@@ -878,3 +878,46 @@ Disable)`**. Both under the +0x30 lock. [2.5-untested]
   (`final.reds:138920`): `District.IsDogTown()` (`:193970`), and the
   district record's `Type()` up its `ParentDistrict()` chain (`:51044`)
   for `gamedataDistrict.Watson` (128). [2.5-untested]
+
+### 13.131 The campaign's quest ids, as the 2.50 scripts name them (2026-11-21, read in final.reds, not run)
+
+The scripts name no quest resource, but their facts, records and sound
+events carry the quests' ids (`final.reds` line numbers), enough to name
+the audit's moments (`architecture/scripted-moments.md`). The phase and
+scene resource paths behind them are read in game (`tools/game.sh cmd quest
+trace on`, `cmd story moments`). [2.5-untested]
+
+- **q000, the prologue**: the lifepaths (`q000_corpo_scrollbar_office`,
+  `_mirror`, `_disconnect`, `_after_meeting`: the Corpo office's scroll
+  bars, `:379891`) and the VR tutorial (`q000_vr_*`; its V is a replacer,
+  `Character.q000_vr_replacer`, `:39349`, `:39778`, which Elsewhere.reds
+  counts as "playing as someone else", §13.26).
+- **q001, The Rescue and The Ripperdoc**: the morning in V's room
+  (`q001_in_v_room`, `q001_get_dressed`, `q001_took_vroom_jacket`), T-Bug's
+  hack before the mission (sound `q001_sc_00a_before_mission_tbug_hack`,
+  `:166154`), Viktor's visit (`q001_ripperdoc_done`, read by the
+  cyberware capacity tutorial, `:42352`).
+- **q003, The Pickup**: Royce (`Character.q003_royce_boss`, `:285074`), the
+  plant's weapon containers (`q003_*_container`).
+- **q005, The Heist**: Johnny's chip (`q005_johnny_chip_acquired`,
+  `:362336`), Saburo's dog tag, `q005_done`.
+- **q101, Playing for Time**: `q101_done` opens Act 2 (§13.112).
+- **q112, Play It Safe**: Oda's fight (`q112_oda_*`, his `Oda.Masked`
+  effect, `:294473`).
+- **Bosses by quest** (`:285067-285083`): `q110_animals_boss`,
+  `q113_boss_smasher`, `q114_main_boss_sasquatch`, `q116_boss_smasher`;
+  `q104_turret_broken` (`:384488`), `q108_active` (`:379493`),
+  `q115_thruster_start` (a sound, `:556838`). Which quests these are is not
+  in the scripts.
+- **q201 to q204, the endings' epilogues**: the achievement art each
+  `q20N_done` picks, `:388490`: q201 the Devil, q202 the Star, q203 the Sun,
+  q204 Temperance.
+- **Phantom Liberty, q301 to q307**: Songbird's Blackwall holocall
+  (`q301_holocall_blackwall`, `:381148`), the Chimera (`q302_sc_02_chimera_*`
+  rumble cases, `:43549`), server cores (`q303_server_core*`), Farida
+  (`q304_04d_farida_done`), Cynosure's shutdown and MaxTac
+  (`q305_*_shutdown_*`, `q305_maxtac`, `:24066`), and q307's hub locked but
+  for the journal (`q307_hub_disabled_except_journal`, `:332662`: the
+  endings' sequence).
+- **Side quests**: a braindance (`sq030_braindance_active`, `:380271`), the
+  street races (`sq024_*`).

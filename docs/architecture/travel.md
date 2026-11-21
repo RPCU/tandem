@@ -54,7 +54,15 @@
   watch it, `story.md`), an offer of ours in the last 15 s. Once V has
   stood there a second of the world's time, the others get `Regroup`
   reason 3 ("NAME was taken somewhere else"), shown to the far ones only
-  (`tools/game.sh cmd regroup jump X Y Z`: such a teleport).
+  (`tools/game.sh cmd regroup jump X Y Z`: such a teleport). **A guest that
+  stood beside the host** (grouped, within 40 m in the last 8 s:
+  `NoteBeside`) is not asked: it goes along at once (`TakenAlong`, the
+  user's rule of 2026-11-21: shared play resumes with no prompt), behind a
+  black of its own (`Curtain.reds`), then the join's usual way (the fast
+  travel's loading screen, or a hop under the black); the game's fast
+  travel locks, or a story gate between the two (`StoryWorld.reds`), keep
+  the offer as before. Not yet run in game (by hand: the mock player sends
+  no reason 3).
 
 - **The arrival** (`Travel.reds` `ArriveBeside`, 2026-11-21, not yet run
   in game; scenarios `coop-arrive`, `coop-arrive-load`): a join the co-op
