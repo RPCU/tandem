@@ -586,6 +586,9 @@ public class TandemLoot extends ScriptableSystem {
     TandemNative.Log(s"loot: session over, \(ArraySize(this.m_items)) world item(s) forgotten");
     ArrayClear(this.m_items);
     ArrayClear(this.m_seen);
+    // A gift that never arrived is not on its way any more: a later loot of
+    // the same item is ours, not swallowed as co-op's.
+    ArrayClear(this.m_giving);
   }
 
   // Every stack gone: nothing left to track.

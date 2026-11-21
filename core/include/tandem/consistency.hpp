@@ -151,6 +151,14 @@ std::size_t DropStale(std::vector<Timed<T>> &items, std::uint64_t nowUs, std::ui
 // never replayed; state messages are, by resyncs, and must be idempotent.
 bool IsOneShot(const proto::Message &message);
 
+// A new session (a guest joining again, docs/architecture/session.md): the
+// seat and the ride of our V that the plugin says again to it carry over
+// only when they name no other player. A seat in a copy of another
+// player's car, or a ride that player's car carries, names them by the old
+// session's number, which the next session may give to someone else.
+bool CarriesOver(const proto::Seat &seat);
+bool CarriesOver(const proto::Transit &transit);
+
 // Faults injected on sends (tests, tandem-peer --drop/--dup), to show that
 // the session converges anyway. `drop`: a message is not sent at all, even a
 // reliable one (as if a bug lost it: only a digest and a resync can bring it

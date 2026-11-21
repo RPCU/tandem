@@ -71,6 +71,9 @@ public class TandemLeaving {
   public let car: EntityID;
   public let since: Float;
   public let bodyGone: Bool;
+  // Left as its session ended: `player` is that session's number, which
+  // the next one may give someone else (its car is nobody's then).
+  public let ended: Bool;
 }
 
 // A player who joined before V's bodies were ready.
@@ -441,6 +444,7 @@ public class TandemSystem extends ScriptableSystem {
     this.m_inGame = false;
     this.m_you = 0u;
     this.RemoveAllPuppets();
+    this.ForgetCarOwners();
     this.EndStreet();
     if !worldStays {
       // Nothing left to delete step by step.
@@ -2476,7 +2480,7 @@ public class TandemSystem extends ScriptableSystem {
       return owner;
     }
     for leaving in this.m_leaving {
-      if EntityID.IsDefined(leaving.car) && leaving.car == id {
+      if EntityID.IsDefined(leaving.car) && leaving.car == id && !leaving.ended {
         return leaving.player;
       }
     }
@@ -2492,7 +2496,7 @@ public class TandemSystem extends ScriptableSystem {
       return car;
     }
     for leaving in this.m_leaving {
-      if leaving.player == player && EntityID.IsDefined(leaving.car) {
+      if leaving.player == player && EntityID.IsDefined(leaving.car) && !leaving.ended {
         car = leaving.car;
       }
     }
@@ -2698,6 +2702,7 @@ public class TandemSystem extends ScriptableSystem {
             this.m_transit.End();
           }
           this.RemoveAllPuppets();
+          this.ForgetCarOwners();
           this.EndStreet();
           if IsDefined(this.m_npcs) {
             this.m_npcs.End();
@@ -3631,11 +3636,12 @@ public class TandemSystem extends ScriptableSystem {
         // (2026-11-18, two hang dumps; engine-knowledge.md §13.6). It stays
         // parked where the driver left it; parked cars belong to the host
         // later (ARCHITECTURE authority table).
-        this.EmptyCar(leaving.car, leaving.player);
+        let owner = leaving.ended ? 0u : leaving.player;
+        this.EmptyCar(leaving.car, owner);
         ArrayPush(this.m_parked, leaving.car);
         // Still theirs while they are in the session (a partner may drive it).
-        ArrayPush(this.m_parkedOwner, IsDefined(this.PuppetOf(leaving.player)) ? leaving.player : 0u);
-        ArrayPush(this.m_parkedOwners, leaving.player);
+        ArrayPush(this.m_parkedOwner, owner != 0u && IsDefined(this.PuppetOf(owner)) ? owner : 0u);
+        ArrayPush(this.m_parkedOwners, owner);
         TandemNative.Log(s"player \(leaving.player): car left parked");
       } else {
         TandemNative.Log(s"removed player \(leaving.player)");
@@ -3669,6 +3675,25 @@ public class TandemSystem extends ScriptableSystem {
       this.Leave(puppet);
     }
     ArrayClear(this.m_puppets);
+  }
+
+  // The session is over, its player numbers with it: the next session may
+  // give them to others, who must not inherit these cars, their damage or
+  // their hits' blame (Wheels.reds). The cars stay parked, nobody's.
+  private func ForgetCarOwners() -> Void {
+    for leaving in this.m_leaving {
+      leaving.ended = true;
+    }
+    let i = 0;
+    while i < ArraySize(this.m_parkedOwners) {
+      this.m_parkedOwners[i] = 0u;
+      i += 1;
+    }
+    i = 0;
+    while i < ArraySize(this.m_parkedOwner) {
+      this.m_parkedOwner[i] = 0u;
+      i += 1;
+    }
   }
 
 }

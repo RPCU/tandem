@@ -57,6 +57,21 @@ plugin (`Runtime::ForgetRemote`), so a recycled id starts afresh. Tests:
 (`tests/endpoint_test.cpp`); scenario `three-players` (two mock players
 and the game).
 
+**One session after another** (a guest dropped by its host that joins the
+next one without a reload, `TandemSystem`'s session-ended event): what the
+old session named by its numbers goes when it ends, as a reused player or
+NPC id is someone else's (2026-11-21, not yet run in game). The plugin
+drops its combat book (vendors, car lends, the host's rules:
+`Combat::EndSession`), the host's clock and weather, the player names and
+the scenes' NPC poses and rig tracks (`Runtime::ResetSession`), and says
+our seat and ride to the next session only when they name no other
+player's car (`consistency::CarriesOver`). The scripts make the parked car
+copies nobody's (`ForgetCarOwners`: a new player 3 does not inherit the old
+one's car, its damage or its hits' blame) and forget the important items
+still on their way (`Loot.reds`). Test: "a new session gets our seat and
+ride again only when they name no other player"
+(`tests/consistency_test.cpp`).
+
 **Reaching each other**: direct first (LAN, Tailscale/NetBird — already on
 every nixbook machine), then the relay when NAT blocks UDP. A host with a
 relay configured is reachable both ways at once: directly on its port, and

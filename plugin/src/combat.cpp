@@ -87,6 +87,15 @@ void Combat::ClearVendors() {
   m_vendors.Clear();
 }
 
+void Combat::EndSession() {
+  {
+    std::lock_guard _(m_lock);
+    m_vendors.Clear();
+    m_lends.clear();
+  }
+  SetRules({});
+}
+
 void Combat::Send(proto::Message message) {
   std::lock_guard _(m_lock);
   if (m_outbound.size() < kMaxQueued)

@@ -186,6 +186,17 @@ TEST_CASE("stale time-sensitive events are dropped, the rest kept in order") {
   CHECK(consistency::DropStale(hits, 3'000'000, 1'500'000) == 0);
 }
 
+TEST_CASE("a new session gets our seat and ride again only when they name no other player") {
+  // Our own car, or on foot: ours in any session.
+  CHECK(consistency::CarriesOver(proto::Seat{.vehicle = 0x1234, .seat = 7}));
+  CHECK(consistency::CarriesOver(proto::Seat{}));
+  // A copy of player 3's car: the next session's player 3 is someone else.
+  CHECK_FALSE(consistency::CarriesOver(proto::Seat{.vehicle = 0x1234, .seat = 7, .owner = 3}));
+  CHECK(consistency::CarriesOver(proto::Transit{.kind = proto::TransitKind::Ride, .vehicle = 9}));
+  CHECK_FALSE(consistency::CarriesOver(
+      proto::Transit{.kind = proto::TransitKind::Along, .vehicle = 9, .carrier = 2}));
+}
+
 TEST_CASE("faults never touch the handshake and never send a one-shot twice") {
   consistency::FaultyLink link;
   link.Set({.drop = 0.0, .dup = 1.0});
