@@ -140,6 +140,16 @@
   (the user: no duplicated settings menu), even when it is installed: this
   page is the only one ([`mod-compat.md`](mod-compat.md)).
 
+### Shared campaign
+
+- With `campaign = on`, both menus' Co-op page has **Shared campaign**
+  (`TandemCoopPage.Campaign`, `TandemCampaign.Build` in `Campaign.reds`):
+  in game, the session's choice of copy (Continue from, Go on from), Make
+  this a shared campaign or Export campaign (not as a guest in a session);
+  in both menus, one Import item per zip in `campaigns/` and Campaign
+  folder. Each asks first (a YesNo popup); a job's end is a popup on the
+  menu's clock, or a notice in game. [`campaign.md`](campaign.md).
+
 ### Mods
 
 - In a session the pause menu's Co-op page has **Partners' mods**

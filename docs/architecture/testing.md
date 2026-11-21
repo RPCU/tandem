@@ -536,6 +536,15 @@ REC@X,Y,Z#ENTITY` shares one NPC of REC standing at X,Y,Z once a guest
   hears of vendors is logged. In game: `tools/game.sh cmd vendor`,
   `vendor near`, `vendor goto`, `vendor open`, `vendor close`; scenario
   `vendor-guest`.
+- **A shared campaign** (any mode; `campaign.md`): `--campaign
+C:COPY:GEN[:ANCESTORS]` says our copy (hex ids, ancestors parent first,
+  no more than its generation), `--campaign-quest TEXT` its last quest,
+  `--campaign-saved S` when it was saved (default: now); every copy it
+  hears, how it stands to ours, and the verdict (same, a fast-forward, a
+  fork, ours or the host's behind) are logged. In game: `tools/game.sh cmd
+campaign` (and `list`, `start`, `export`, `import N`, `choose N`);
+  scenarios `campaign-fastforward`, `campaign-fork`, `campaign-host-behind`
+  (each plants a record in the game's `campaigns/lineage/` and removes it).
 - **Quest interactions** (any mode): `--interact
 ENTITY:CHOICE[:DETAIL][@SECONDS]` has a guest's V use the host's object
   (asked of the host; a known host-only or local one is answered at once);

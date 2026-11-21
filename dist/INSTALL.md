@@ -166,6 +166,30 @@ A relayed session is a little slower than a direct one: everything makes a
 detour through the relay. With a relay set, a host is still reachable
 directly on its port too.
 
+### Playing a shared campaign
+
+With `campaign = on` in `tandem.ini`, a group can share one campaign save:
+whoever hosts it plays its V, the others join with their own V as usual,
+and anyone can also play it alone. Saves cannot be merged, so tandem keeps
+each copy's history and says, when you join, whether someone's copy is
+newer ("Continue from Judy's save (2026-11-21 18:40, after The Heist)?"),
+or whether two of you went on separately (both are shown; you choose which
+continues, the other stays a normal save its owner can still play).
+
+- **Start one**: load the save, pause menu, Co-op, Shared campaign, Make
+  this a shared campaign (a new save is made).
+- **Pass it on**: Export campaign (the same page) writes a new save of it
+  and one file, `campaign-NAME-DATE-gN.zip`, in
+  `red4ext/plugins/tandem/campaigns/` (the page's Campaign folder says
+  where). Send that file to the next player any way you like.
+- **Take it**: put the file in your own `campaigns/` folder, then Co-op,
+  Shared campaign, Import (main menu or pause menu). It is installed as a
+  new manual save, never over one of yours; the question names the mods
+  its game had that yours lacks. Load it with Load game.
+
+Nothing of this has been tried in game yet: keep a copy of your saves
+folder (`Saved Games\CD Projekt Red\Cyberpunk 2077`) before you import.
+
 ## Settings: `tandem.ini`
 
 `red4ext/plugins/tandem/tandem.ini`, read when the game starts. Unknown
@@ -217,6 +241,7 @@ keys and bad values are reported in tandem's log and ignored.
 | `vehicle_rewards`          | `credit`                              | Guest: a vehicle a host's quest gives while you took part is noted as earned; `keep` also unlocks it in your garage.                                                                                                                                           |
 | `lend`                     | `crew`                                | Who may drive your cars: `crew` any partner in the session; `owner` only a partner riding with you; `never` nobody but you. Your garage stays yours.                                                                                                           |
 | `trade`                    | `off`                                 | `on`: trade items and eddies with the player beside you (their interaction prompt, out of combat). Off until checked in game.                                                                                                                                  |
+| `campaign`                 | `off`                                 | `on`: a shared campaign, one campaign save your group shares (Playing a shared campaign, above). Off until checked in game.                                                                                                                                    |
 | `race_car`                 | `own`                                 | Joining a partner's street race: `own`, you line up in your own car (the one you summon); `copy`, in a copy of the starter's (also when you have no car).                                                                                                      |
 | `recorder`                 | `off`                                 | `on`: record your play in `recordings/auto/` next to `tandem.ini`, for tandem's developers. Changes nothing in game.                                                                                                                                           |
 | `recorder_max_mb`          | `2048`                                | Megabytes of recordings kept; the oldest go first.                                                                                                                                                                                                             |

@@ -308,3 +308,34 @@ VehicleSystem.reds`) [R]. Whether enabling twice is a no-op, and whether
   (F:223600), which the game's own menus and loot use (F:35670, F:371063)
   [R]; the release work checks it at join. `TransactionSystem.RemoveItem(obj,
 itemID, amount)` (F:52042) [R]: what the session items' removal uses.
+
+#### 13.38.10 Save slots on disk (a shared campaign)
+
+For [`docs/architecture/campaign.md`](../../architecture/campaign.md), 2026-11-21, read offline:
+
+- A manual save is asked with `ManualSave("ManualSave-")` (F:272627; the
+  save screen, F:371156, when `HasFreeSaveSlot("ManualSave-")`): the game
+  picks the slot's number itself [R]. `OverrideSave(saveId)` writes over an
+  existing slot (F:272631) [R]; tandem never calls it.
+- `SaveMetadataInfo` (F:363894) names a slot by `internalName`
+  ("ManualSave-12" style), with `saveType`, `timestamp`, `trackedQuest`,
+  `gameVersion`, `isModded` and `additionalContentIds` (`EP1`: Phantom
+  Liberty) [R]; it comes to the save screens' `OnSaveMetadataReady`
+  (F:373901) after `RequestSavesForLoad`, which answers `OnSavesForLoadReady(saves:
+[String])` (F:373871) [R]. `GetLatestSaveMetadata()` (F:272670) returns a
+  `LatestSaveMetadataInfo` (F:320801) without the slot's name [R].
+- On disk (PC, 2.x): one folder per slot under `%USERPROFILE%\Saved
+Games\CD Projekt Red\Cyberpunk 2077` (under Proton, the prefix's
+  `steamuser`), named as `internalName` (`ManualSave-N`, `AutoSave-N`,
+  `QuickSave-N`, `PointOfNoReturnSave-N`, `EndGameSave`), holding
+  `sav.dat`, `metadata.9.json` and `screenshot.png` [I] (common knowledge
+  of the PC game, not read in its code; to check on anya). The metadata
+  naming its own folder, and whether the game lists a folder it did not
+  write itself (an import) without a restart, are [I].
+- Whether `OnSavingComplete` reaches a listener for autosaves too, not only
+  for the saves the handler was asked for, is [I]: the campaign's worker
+  finds a new save by its `sav.dat`'s time instead.
+- A new `ScriptableSystem` with a `persistent` field is saved and restored
+  with every save, as `TandemStorySystem.m_ledger` is (quest-carryover.md);
+  `OnPlayerAttach` sees the restored value [I] (the ledger relies on it,
+  not yet run in game).
