@@ -6,7 +6,7 @@ expect 'in the session as player' 30
 expect 'puppet 6[0-9]{4}: controller handed to the engine' 30
 # Linked from the start (link = auto both sides).
 expect 'comms: link with tandem-peer: [0-9] -> 3' 20
-expect 'comms: showing ping [0-9]+ of tandem-peer \(Enemy, 15 s\) on the entity, registered true' 40
+expect 'comms: showing ping [0-9]+ of tandem-peer \(Enemy, 15(\.0+)? s\) on the entity, registered true' 40
 shot comms-enemy-ping
 cmd comms report
 expect 'comms: ping [0-9]+ of player 1 \(Enemy\) at ' 5
