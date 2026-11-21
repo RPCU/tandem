@@ -966,8 +966,11 @@ public class TandemRaces {
     if head.starter != head.player {
       return;
     }
-    // A race of another starter while we are in one: not ours to follow.
-    if this.m_starter != 0u && this.m_starter != head.starter && this.m_joined != 0 && this.m_joined != 4 {
+    // One race at a time: the first starter heard keeps us until its race
+    // is over or goes quiet (TickTheirs), joined or not. Another starter's
+    // meanwhile is not followed (two starters flapped the offer and its
+    // notices).
+    if this.m_starter != 0u && this.m_starter != head.starter {
       return;
     }
     let fresh = this.m_starter != head.starter || this.m_theirRace != head.race;
