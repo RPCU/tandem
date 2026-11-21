@@ -1,5 +1,5 @@
 # As host: our V is out and no spot beside the mock player fits (a test: as with no navmesh there): it gets up at Viktor's clinic at once instead of waiting
-# shellcheck shell=bash disable=SC2317
+# shellcheck shell=bash disable=SC2317,SC2154
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female
 expect 'joined \(player [0-9]+' 20
@@ -16,6 +16,9 @@ expect "revive: respawn at Viktor's clinic \(out of combat\)" 5
 expect 'revive: there, the loading screen ended' 60
 expect 'coop notice: Vik patched you up' 5
 expect 'revive: our V is up at 40 %' 15
+# Up in the clinic (Viktor's spot -1546.73 1227.39 11.52, within 10 m).
+query at position
+expect_value "$at" '~' '^-15(3[6-9]|4[0-9]|5[0-6])\.[0-9]+ 12(1[7-9]|2[0-9]|3[0-7])\.'
 expect 'revive: up: the state machine is past its death state' 10
 expect_peer 'player 1 is up' 10
 cmd revive nospot off
