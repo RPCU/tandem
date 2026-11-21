@@ -2,7 +2,7 @@
 
 // The host's quest prefabs in a guest's world, and every player's story
 // gates (docs/architecture/story.md, "Quest prefabs" and "Story gates";
-// engine facts: engine-knowledge §13.103, §13.104). Rules only: the plugin
+// engine facts: engine-knowledge §13.111, §13.112). Rules only: the plugin
 // reads and changes the engine's prefab modes, the scripts read the facts.
 
 #include "tandem/protocol.hpp"

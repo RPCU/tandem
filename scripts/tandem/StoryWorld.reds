@@ -1,6 +1,6 @@
 // The host's quest interiors in a guest's world, and the story's gates
 // (docs/architecture/story.md, "Quest prefabs" and "Story gates";
-// engine-knowledge §13.103, §13.104). Once a second, in a session, from
+// engine-knowledge §13.111, §13.112). Once a second, in a session, from
 // Story.reds' tick (the game thread):
 // - Quest prefabs: the host's game reads which prefabs its quests have
 //   loaded (the quests system's prefab handler) and sends them when they

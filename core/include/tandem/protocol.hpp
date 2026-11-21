@@ -3030,7 +3030,7 @@ struct ScenePlace {
 // props a quest phase streams in: Konpeki Plaza, the All Foods plant): their
 // world node refs (GlobalNodeRef hashes, the same in every game of the same
 // world data), as the host's questQuestPrefabsHandler lists them in
-// ForceLoad (engine-knowledge §13.103). Host to guests, the whole set on
+// ForceLoad (engine-knowledge §13.111). Host to guests, the whole set on
 // every change (sorted; empty: none), a story message: kept for late
 // joiners, in the story digest, an explicit "none" in a story resync. A
 // guest grouped with the host loads the same ones in its own world while

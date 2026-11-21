@@ -126,6 +126,8 @@ found through this table, each number once.
 | 13.101 | Removing a car copy: the stub path, and what crashed                                    | `vehicles.md`       |
 | 13.102 | The strategy pre-check needs all seven strategies                                       | `traffic-police.md` |
 | 13.110 | Viktor's clinic: where, and when the story has it                                       | `revive.md`         |
+| 13.111 | Quest prefabs: how a phase loads an interior, and how another game can                  | `story.md`          |
+| 13.112 | The story's gates: the Watson lockdown and Dogtown's gate                               | `story.md`          |
 
 ## Top traps (one line each)
 

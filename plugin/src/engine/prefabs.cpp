@@ -1,4 +1,4 @@
-// Quest prefabs (engine-knowledge §13.103, read offline on the 2.50 exe with
+// Quest prefabs (engine-knowledge §13.111, read offline on the 2.50 exe with
 // tools/re, the handler's place checked live on 2.50).
 //
 //   questQuestsSystem (RTTI 0x300): +0x100 Handle<questQuestPrefabsHandler>

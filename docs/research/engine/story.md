@@ -782,3 +782,99 @@ Seen in game (2026-11-21, `story-gigs-apart`, before the fix): 176 own
 gig entries given back in reverse order, 174 found again; 91 of 1150
 entries not as before after the leave, 19 of 1318 the next session.
 [2.5-untested]
+
+### 13.111 Quest prefabs: how a phase loads an interior, and how another game can (2026-11-21, decompiled; the handler's place read live)
+
+Read with `tools/re` on the 2.50 exe (`decompile`, `xref.py`, `asm.py`,
+RTTI); one live read of a running 2.50 game confirmed the system's field.
+Used by `plugin/src/engine/prefabs.cpp` (`docs/architecture/story.md`,
+"Quest prefabs").
+
+- **What a quest prefab is.** World sectors are tagged with the prefab
+  they belong to (`worldStreamingSectorDescriptor.questPrefabNodeRef`,
+  `worldNodeEditorData.questPrefabRefHash`); a phase lists the prefabs it
+  needs (`questPhaseNodeDefinition.phaseInstancePrefabs`,
+  `questQuestPhaseResource.phasePrefabs`: `questQuestPrefabEntry
+{prefabNodeRef}`). The mode is `worldQuestPrefabLoadingMode` {Disable 0,
+  ForceLoad 1}. [2.5-rtti]
+- **The handler.** `questQuestsSystem` (0x300) creates a
+  `questQuestPrefabsHandler` (0xF0) in its init (`0x140697564`) and holds
+  it at **+0x100** (a handle; seen live: the object there is of that
+  class). Its fields: +0x30 a `SharedSpinLock` (every phase change holds
+  it); +0x38 the requests (id → prefabs, pending); +0x60 a sorted map
+  GlobalNodeRef → count of phases asking (keys `DynArray<u64>` +0x60/+0x6C,
+  counts +0x70); +0x88 the set not loaded yet (its listener's); **+0xB0
+  `DynArray<{u64 ref, u8 mode}>`**, 16 bytes each (the layout of
+  `questQuestPrefabsEntry`, what CDPR's cancelled multiplayer replicated as
+  `questQuestsSystemReplicatedState.replicatedQuestPrefabs`): every prefab
+  ever set, its mode now; +0xC8 the world streaming system;
+  +0xD0 the next request id. [2.5-untested]
+- **A phase's prefabs.** A phase instance's creation (`0x1402b13f0`)
+  resolves its prefabs' NodeRefs and asks the handler (`0x140699f78`,
+  request id kept at phase +0x84); each prefab's count goes up
+  (`0x1406996c0`) and **0→1 calls `SetMode(handler, ref, ForceLoad)`**. The
+  phase's end (`0x1402b1d30`) releases the request (`0x140698e24`): each
+  count goes down (`0x140698f24`) and **1→0 calls `SetMode(ref,
+Disable)`**. Both under the +0x30 lock. [2.5-untested]
+- **`SetMode`** (hash **660547284**, `0x140699498`): looks the ref up in
+  +0xB0; the same mode: nothing; else sets it (adds the pair when new) and
+  queues `{ref, mode}` for the streaming system (`0x140699520`: under its
+  SRW lock at +0x2E8, into its array at +0x2D8). No other effect, no
+  check. The MP leftover that applied a replicated state (`0x142c9f548`)
+  called it for every pair it was given: the engine's own "load another
+  game's prefabs". [2.5-untested]
+- **The streaming side** (`worldRuntimeSystemWorldStreaming`, 0x3E0; its
+  update `0x14069b1fc` → `0x14069b450`): each queued pair finds the
+  prefab's sectors (a map at +0x128 built from the sector descriptors); an
+  unknown ref only tells the listeners "unknown" (state 2) and loads
+  nothing; a new mode marks the sectors to stream in (ForceLoad) or out
+  (Disable) and keeps the mode (+0x2A8). Listeners
+  (`worldIQuestPrefabStateListener` vfunc +0xD8, `(listener, ref, state)`)
+  hear 0 loaded, 1 not loaded, 2 unknown. The phone's holocall prefabs
+  (`questPhonePrefabsListener`) and photo mode queue to the streaming
+  system directly, not through the handler, so +0xB0 holds the quests'
+  only. [2.5-untested]
+- **Persistence.** Nothing above was seen being saved: a loaded save's
+  phases start again and ask again. A guest never saves in a session, and
+  its leave turns off what it turned on. [unverified]
+- **What this makes possible.** The host reads +0xB0 (mode ForceLoad) under
+  the lock once a second; a guest calls `SetMode` for the host's, under the
+  same lock, as a phase does; off again only for those it turned on and no
+  phase of its own counts (+0x60). One its own phase releases later goes
+  Disable by the engine; the guest's next check puts it back while the
+  host still has it. GlobalNodeRefs are hashes of the world data: the same
+  in every game of the same version and DLC (Phantom Liberty is required).
+  [2.5-untested]
+- **What is inside.** Devices placed in a prefab's sectors have static ids
+  (the same in every game) and follow the host's word like any placed
+  device once streamed in (`devices.md`); its NPCs come from the host's
+  quest spawners (`questSpawnManager` nodes the guest never runs), so the
+  guest sees the host's as proxies; a population spawner set to spawn on
+  start in such a sector would spawn the guest's own copy (a twin,
+  `regions.md` §3). Not yet seen in game. [unverified]
+
+### 13.112 The story's gates: the Watson lockdown and Dogtown's gate (2026-11-21, scripts and data read offline, not run)
+
+- **Watson lockdown.** Act 1 (the data's `prologue` quests, q000 to q005)
+  and Playing for Time (`act_01/q101_resurrection`) keep V in Watson; the
+  journal names it ("Take part in more fights after the Watson lockdown is
+  lifted", `mq025_psycho_brawl/psycho_brawl/barricade`). Vanilla reads
+  `q005_done` as "past the prologue" (`RPGManager`'s minor activity XP,
+  `final.reds:37349`) and `q101_done` (`HubMenuUtility.CreateMenuData`,
+  `:332681`). tandem takes **`q101_done >= 1` as the lockdown lifted**.
+  [inferred: when exactly the barricades go, to see in game]
+- **What the barrier is.** Players report road barricades and blocked
+  bridges (physical, placed world nodes) that a glitch can get past, not a
+  kill zone; `gameWorldBoundarySystem` has no script functions and the
+  boundary is per player (`coop-quests-world.md` §6.3). The game's archives
+  were not read here (no unpacker): which nodes, and whether they are
+  prefab variants or quest prefabs, is open. [unverified]
+- **Dogtown's gate.** Fact **`ep1_side_content >= 1`**, the pause condition
+  of `ep1\openworld\combat_zone_gate\combat_zone_gate.questphase` (NCO,
+  §7, on 2.31); the gate's entities in the resource list
+  (`ep1\openworld\combat_zone_gate\entities\dogtown_gate_border_scanner.ent`,
+  `loc_q303_combat_zone_gate_*` meshes). [2.31-only]
+- **Where a V is.** `PreventionSystem.GetCurrentDistrict()`
+  (`final.reds:138920`): `District.IsDogTown()` (`:193970`), and the
+  district record's `Type()` up its `ParentDistrict()` chain (`:51044`)
+  for `gamedataDistrict.Watson` (128). [2.5-untested]
