@@ -10,6 +10,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <functional>
 
 using namespace std::chrono_literals;
@@ -725,4 +726,74 @@ TEST_CASE("each player's lending reaches everyone once, late joiners too, and go
     return !host->CarLends().contains(aId) && !b->CarLends().contains(aId);
   }));
   CHECK(b->CarLends().size() == 1);
+}
+
+TEST_CASE("a car's custom paint reaches everyone once, late joiners too, and goes with its owner") {
+  using namespace proto;
+  const CarPaint red{.vehicle = 9, .flags = kPaintPrimary, .primaryR = 255};
+  const CarPaint blue{.vehicle = 9, .flags = kPaintPrimary, .primaryB = 255};
+  CHECK_FALSE(consistency::IsOneShot(red)); // state: a repeat is applied nowhere
+
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  REQUIRE_MESSAGE(host, error);
+  // What the wire would refuse is not said; stock paint is kept nowhere.
+  CHECK_FALSE(host->SendCombat(CarPaint{.vehicle = 9, .flags = kPaintSecondary}));
+  CHECK(host->SendCombat(CarPaint{.vehicle = 9}));
+  CHECK(host->CarPaints().empty());
+  CHECK(host->SendCombat(CarPaint{.player = 77, .vehicle = 9, .flags = kPaintLights})); // stamped
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  REQUIRE_MESSAGE(a, error);
+  // Said before it is in: kept, said as it joins.
+  CHECK_FALSE(a->SendCombat(red));
+  Heard heard;
+  const auto paints = [&](std::size_t game) {
+    std::vector<CarPaint> out;
+    for (const auto &message : heard.at[game])
+      if (const auto *paint = std::get_if<CarPaint>(&message))
+        out.push_back(*paint);
+    return out;
+  };
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return host->CarPaints().size() == 2 && a->CarPaints().size() == 1;
+  }));
+  CHECK(host->CarPaints().at(host->You()).flags == kPaintLights);
+  CHECK(host->CarPaints().at(a->You()).primaryR == 255); // a's own id
+  CHECK(a->CarPaints().at(host->You()).flags == kPaintLights);
+  CHECK_FALSE(a->CarPaints().contains(a->You()));
+  // Said again: nothing new anywhere.
+  CHECK(a->SendCombat(red));
+  CHECK(host->SendCombat(CarPaint{.vehicle = 9, .flags = kPaintLights}));
+  PumpFor({host.get(), a.get()}, 150ms, std::ref(heard));
+  CHECK(paints(0).size() == 1); // the host's game heard a's once
+  CHECK(paints(1).size() == 1); // a's game heard the host's once
+
+  // A late joiner hears both; a repaints; the host goes back to stock paint
+  // (said to everyone, kept nowhere); a vanishes.
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error, kFast);
+  REQUIRE_MESSAGE(b, error);
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return b->CarPaints().size() == 2;
+  }));
+  CHECK(a->SendCombat(blue));
+  CHECK(host->SendCombat(CarPaint{.vehicle = 9}));
+  const auto hostId = host->You();
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return b->CarPaints().size() == 1 && b->CarPaints().contains(a->You()) &&
+           b->CarPaints().at(a->You()).primaryB == 255 && !a->CarPaints().contains(hostId);
+  }));
+  CHECK(host->CarPaints().size() == 1);
+  // Stock paint is said as nothing but whose car it is.
+  CHECK(std::ranges::count(paints(2), CarPaint{.player = hostId}) == 1);
+  const auto aId = a->You();
+  a.reset();
+  REQUIRE(Pump({host.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return !host->CarPaints().contains(aId) && !b->CarPaints().contains(aId);
+  }));
+  CHECK(b->CarPaints().empty());
 }

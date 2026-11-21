@@ -993,8 +993,9 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   if (const auto ended = m_skips.Left(player))
     EndTimeSkip(*ended, true, out);
   m_lives.erase(player);
-  // Its cars are no one's to lend any more.
+  // Its cars are no one's to lend any more, nor to paint.
   m_lends.erase(player);
+  m_paints.erase(player);
   // The session's level is the mean of those who are left.
   m_levels.erase(player);
   UpdateSessionLevel(out);
@@ -1191,6 +1192,7 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
     others(m_transits);      // who rides what (only rides that are on)
     others(m_heat);          // who is wanted (only levels above 0)
     others(m_lends);         // who may drive whose cars
+    others(m_paints);        // whose car has a custom paint (only those that have)
     others(m_commsLinks);    // whom each shares tags with
     others(m_waypoints);
     // Who is in their pause menu (the newcomer itself is not), and in a
@@ -1486,6 +1488,11 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
         NoteLend(*lend, out);
       return;
     }
+    if (const auto *paint = std::get_if<proto::CarPaint>(&message)) {
+      if (paint->player != m_you && paint->player != proto::kNoPlayer)
+        NotePaint(*paint, out);
+      return;
+    }
     if (const auto *session = std::get_if<proto::SessionLevel>(&message)) {
       if (m_sessionLevel == *session)
         return;
@@ -1581,6 +1588,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             SendLocalHeatNow();
             SendLocalLevelNow();
             SendLocalLendNow();
+            SendLocalPaintNow();
             SendLocalLinkNow();
             SendLocalWaypointNow();
             SendLocalVehicleCombatNow();
@@ -1652,6 +1660,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 m_transits.erase(id);
                 EndHeatOf(id, out, false);
                 m_lends.erase(id);
+                m_paints.erase(id);
                 ForgetVehiclesOf(id, out, false);
                 m_lives.erase(id);
                 m_holders.erase(id);
@@ -4123,6 +4132,11 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     auto mine = *lend;
     mine.player = player;
     NoteLend(mine, out);
+  } else if (const auto *paint = std::get_if<proto::CarPaint>(&message)) {
+    // Its own car's paint: who says is the connection, never the message.
+    auto mine = *paint;
+    mine.player = player;
+    NotePaint(mine, out);
   } else if (const auto *placed = std::get_if<proto::NpcPlaced>(&message)) {
     // An owner's word on its NPC, for who sees it.
     if (!m_npcs.contains(placed->npc) || NpcOwner(placed->npc) != player)
@@ -4250,6 +4264,49 @@ bool Endpoint::NoteLend(const proto::CarLend &lend, std::vector<SessionEvent> &o
   return true;
 }
 
+namespace {
+// Stock paint has one form: nothing but whose it is.
+proto::CarPaint Plain(const proto::CarPaint &paint) {
+  return paint.flags == 0 ? proto::CarPaint{.player = paint.player} : paint;
+}
+} // namespace
+
+void Endpoint::SendLocalPaintNow() {
+  if (!m_localPaint || !IsJoined() || m_ended)
+    return;
+  auto paint = *m_localPaint;
+  paint.player = m_you;
+  if (IsHost()) {
+    const auto it = m_paints.find(m_you);
+    if ((it == m_paints.end() ? proto::CarPaint{.player = m_you} : it->second) == paint)
+      return;
+    if (paint.flags == 0)
+      m_paints.erase(m_you);
+    else
+      m_paints[m_you] = paint;
+    Broadcast(paint);
+  } else {
+    Send(m_hostPeer, paint);
+  }
+}
+
+bool Endpoint::NotePaint(const proto::CarPaint &said, std::vector<SessionEvent> &out) {
+  const auto paint = Plain(said);
+  const auto it = m_paints.find(paint.player);
+  if ((it == m_paints.end() ? proto::CarPaint{.player = paint.player} : it->second) == paint)
+    return false;
+  // Stock paint is what nobody said: not kept (a late joiner is told nothing).
+  if (paint.flags == 0)
+    m_paints.erase(paint.player);
+  else
+    m_paints[paint.player] = paint;
+  // Host: to every other game, never back to the one that said it.
+  if (IsHost())
+    Broadcast(paint, PeerOf(paint.player).value_or(0));
+  out.push_back(events::Combat{paint});
+  return true;
+}
+
 void Endpoint::UpdateSessionLevel(std::vector<SessionEvent> &out) {
   if (!IsHost() || m_ended)
     return;
@@ -4288,6 +4345,14 @@ bool Endpoint::SendCombat(proto::Message message) {
       return false;
     m_localLend = lend->lend;
     SendLocalLendNow();
+    return IsJoined() && !m_ended;
+  }
+  if (const auto *paint = std::get_if<proto::CarPaint>(&message)) {
+    // Our car's: kept, and said as soon as we are in the session.
+    if (!proto::Fits(*paint))
+      return false;
+    m_localPaint = Plain(*paint);
+    SendLocalPaintNow();
     return IsJoined() && !m_ended;
   }
   if (!IsJoined() || m_ended || !proto::IsCombat(message))

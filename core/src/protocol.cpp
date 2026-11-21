@@ -17,6 +17,28 @@ namespace tandem::proto {
 // variant compiles std::variant's emplace for every alternative.
 static_assert(std::variant_size_v<MessageVariant> <= 256, "a message's id is one byte");
 
+bool Fits(const CarPaint &paint) {
+  if ((paint.flags & ~kPaintFlags) != 0 || !std::isfinite(paint.lightsHue))
+    return false;
+  // A unique template is a record and nothing else; colours name none.
+  if ((paint.flags & kPaintUnique) != 0 ? paint.flags != kPaintUnique || paint.unique == 0
+                                        : paint.unique != 0 || paint.model != 0)
+    return false;
+  // A second colour is the two-tone of a first.
+  if ((paint.flags & kPaintSecondary) != 0 && (paint.flags & kPaintPrimary) == 0)
+    return false;
+  if ((paint.flags & kPaintLights) != 0 ? paint.lightsHue < 0.f || paint.lightsHue > 360.f
+                                        : paint.lightsHue != 0.f)
+    return false;
+  if ((paint.flags & kPaintPrimary) == 0 &&
+      (paint.primaryR != 0 || paint.primaryG != 0 || paint.primaryB != 0))
+    return false;
+  if ((paint.flags & kPaintSecondary) == 0 &&
+      (paint.secondaryR != 0 || paint.secondaryG != 0 || paint.secondaryB != 0))
+    return false;
+  return paint.flags == 0 || paint.vehicle != 0;
+}
+
 std::vector<std::byte> Encode(const Message &message) {
   std::vector<std::byte> bytes;
   auto out = zpp::bits::out(bytes);
@@ -321,6 +343,8 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *lend = std::get_if<CarLend>(&message); lend && lend->lend > Lend::Never)
     return std::nullopt;
+  if (const auto *paint = std::get_if<CarPaint>(&message); paint && !Fits(*paint))
+    return std::nullopt;
   // A live vendor names its NPC; a dead one only its entity.
   if (const auto *vendor = std::get_if<NpcVendor>(&message);
       vendor && (vendor->entity == 0 || (vendor->flags & ~kVendorDead) != 0 ||
@@ -484,10 +508,11 @@ bool IsCombat(const Message &message) {
   return (message.index() >= kId<NpcStrike> && message.index() <= kId<AreaHit>) ||
          (message.index() >= kId<Throw> && message.index() <= kId<Defended>) ||
          (message.index() >= kId<PlayerLevel> && message.index() <= kId<NpcLevel>) ||
-         std::holds_alternative<CarLend>(message) || std::holds_alternative<NpcScale>(message) ||
-         std::holds_alternative<NpcVendor>(message) || std::holds_alternative<ThrowPath>(message) ||
-         std::holds_alternative<NpcPlaced>(message) || std::holds_alternative<NpcDeath>(message) ||
-         std::holds_alternative<Race>(message) || std::holds_alternative<WeakSpotHit>(message) ||
+         std::holds_alternative<CarLend>(message) || std::holds_alternative<CarPaint>(message) ||
+         std::holds_alternative<NpcScale>(message) || std::holds_alternative<NpcVendor>(message) ||
+         std::holds_alternative<ThrowPath>(message) || std::holds_alternative<NpcPlaced>(message) ||
+         std::holds_alternative<NpcDeath>(message) || std::holds_alternative<Race>(message) ||
+         std::holds_alternative<WeakSpotHit>(message) ||
          std::holds_alternative<HackTraced>(message);
 }
 
@@ -672,7 +697,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "WeakSpotHit",
                                    "HackTraced",
                                    "TurretBusy",
-                                   "TrafficHack"};
+                                   "TrafficHack",
+                                   "CarPaint"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }
