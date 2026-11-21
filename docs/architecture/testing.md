@@ -457,9 +457,11 @@ same), then pass on a rerun. Since 2026-11-19:
 
 ## Driving the game and the builds
 
-- `tools/scenario.sh` deploys first. Scripts alone would be hot-reloaded
-  with RedHotTools, which is not installed on anya: a script change restarts
-  the game too. A failure's evidence is kept under `.cache/scenarios/`.
+- `tools/scenario.sh` deploys first. Scripts and tweaks alone are
+  hot-reloaded with RedHotTools (1.3.0-rc.7, MIT, installed on anya
+  2026-11-21: `red4ext/plugins/RedHotTools`, its CET mod beside it;
+  `tools/game.sh reload`); a new DLL or role restarts the game. A failure's
+  evidence is kept under `.cache/scenarios/`.
   After a fresh start the reset runs as `ensure`; it also clears test
   abilities and the revive cooldown.
 - `task deploy` installs the DLL, scripts and tweaks on the game machine. A

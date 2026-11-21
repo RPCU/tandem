@@ -57,7 +57,7 @@
 # thread's backtrace (tools/game.sh bt).
 #
 # The game restarts only when the build or the role changed (scripts would
-# be hot-reloaded if RedHotTools were installed). Never run this while
+# are hot-reloaded: RedHotTools is installed on anya). Never run this while
 # someone plays (AGENTS.md).
 # shellcheck disable=SC2029,SC2034 # (SC2034: $played is read by the scenarios it sources)
 set -euo pipefail
