@@ -991,6 +991,31 @@ TEST_CASE("scene replay, second part: props, the camera, rig poses and actor fra
   track(1, 0); // out of order
   CHECK_FALSE(Decode(Encode(tracks)).has_value());
 
+  // A prop set down.
+  const ScenePlace place{.play = 2,
+                         .prop = 3,
+                         .entity = 0xE1,
+                         .appearance = 0xA1,
+                         .position = {1.f, 2.f, 3.f},
+                         .orientation = {0.f, 0.f, 0.7071f, 0.7071f}};
+  RoundTrips(place);
+  CHECK(ChannelOf(place) == Channel::Event);
+  CHECK(IsStory(place));
+  CHECK(std::string(NameOf(ScenePlace{})) == "ScenePlace");
+  RoundTrips(ScenePlace{.play = 2, .prop = 3, .flags = kPropGone}); // gone: no template needed
+  auto badPlace = place;
+  badPlace.entity = 0; // nothing to spawn
+  CHECK_FALSE(Decode(Encode(badPlace)).has_value());
+  badPlace = place;
+  badPlace.prop = 0;
+  CHECK_FALSE(Decode(Encode(badPlace)).has_value());
+  badPlace = place;
+  badPlace.flags = kPropLeftHand; // a hand: that is a SceneProp
+  CHECK_FALSE(Decode(Encode(badPlace)).has_value());
+  badPlace = place;
+  badPlace.position.z = std::numeric_limits<float>::infinity();
+  CHECK_FALSE(Decode(Encode(badPlace)).has_value());
+
   // An actor's frame is a pose frame with the NPC's name: the same rules.
   ActorFrame actor{.npc = 12};
   actor.frame.seq = 9;

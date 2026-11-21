@@ -285,6 +285,11 @@ slotId: TweakDBID +0x5C, itemId: TweakDBID +0x64 }` (an attachment slot)
   scene's prop is a `gameItemObject` and whether `IsEntityInScene` answers
   yes for it are [unknown]: tandem's host tries both (`Scenes.reds`,
   `HostProps`). [2.5-untested]
+- A prop nobody holds is copied as an entity: Codeware's
+  `Entity.GetTemplatePath()` names its `.ent` (a path hash, the same in
+  every game), `GetCurrentAppearanceName()` its look; a guest spawns that
+  template with `DynamicEntitySpec.templatePath`. Whether an item object's
+  template spawns well without its item data is [unknown]. [2.5-untested]
 - Effects: `scneventsVFXEvent { effectEntry, action: Play/Break/Kill,
 performerId, nodeRef }`: an effect by name on a performer, which a script
   can start on any `GameObject` (`GameObjectEffectHelper.StartEffectEvent`,

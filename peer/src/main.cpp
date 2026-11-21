@@ -2629,6 +2629,11 @@ std::string Describe(const tandem::proto::Message &message) {
                        prop->holderPlayer ? std::format("player {}", prop->holderPlayer)
                                           : std::format("npc {}", prop->holder),
                        prop->flags & proto::kPropLeftHand ? ", left hand" : "", prop->play);
+  if (const auto *place = std::get_if<proto::ScenePlace>(&message))
+    return std::format("scene prop: {} ({:#x}) {} at ({:.2f}, {:.2f}, {:.2f}) (play {})",
+                       place->prop, place->entity,
+                       place->flags & proto::kPropGone ? "gone" : "set down", place->position.x,
+                       place->position.y, place->position.z, place->play);
   if (const auto *use = std::get_if<proto::QuestInteract>(&message))
     return std::format("quest interaction: player {} on {:x} ({:#x}/{:#x}), question {}: {}",
                        use->player, use->target, use->choice, use->detail, use->seq,

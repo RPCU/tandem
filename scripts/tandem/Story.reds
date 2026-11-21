@@ -474,6 +474,10 @@ public class TandemStorySystem extends ScriptableSystem {
         case 54:
         case 55:
         case 56:
+        case 57:
+        case 58:
+        case 62:
+        case 63:
           if !this.m_isHost {
             this.m_scenes.OnEvent(event);
           }

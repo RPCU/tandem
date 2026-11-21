@@ -37,6 +37,16 @@ struct PropSample {
   bool leftHand{};
 };
 
+// An item entity of the scene that nobody holds, where it is. `key` as a
+// PropSample's.
+struct PlaceSample {
+  std::uint64_t key{};
+  std::uint64_t entity{};     // its template's resource path hash
+  std::uint64_t appearance{}; // CName hash
+  proto::Vec3 position;
+  proto::Quat orientation;
+};
+
 // What the host's game knows now (sampled a few times a second).
 struct HostSample {
   std::uint64_t scene{}; // the scene resource playing (0: none)
@@ -48,12 +58,17 @@ struct HostSample {
   float hostYaw{};
   std::vector<ActorSample> actors;
   std::vector<PropSample> props;
+  std::vector<PlaceSample> placed;
 };
 
 // A staging area that moved less than this, and not longer ago than
 // kStageEveryUs, is not said again.
 inline constexpr float kStageMoveMetres = 0.75f;
 inline constexpr std::uint64_t kStageEveryUs = 500'000;
+// A prop set down is said again once it moved this far, at most this often.
+inline constexpr float kPlaceMoveMetres = 0.03f;
+inline constexpr float kPlaceTurnRadians = 0.05f;
+inline constexpr std::uint64_t kPlaceEveryUs = 500'000;
 // A line hidden this long before its end was cut; later, it just ended.
 inline constexpr float kCutSeconds = 0.4f;
 // A speaker's face is streamed this long after its line.
@@ -61,7 +76,8 @@ inline constexpr std::uint64_t kSpeakerTailUs = 500'000;
 
 class Stage {
 public:
-  // What to send for this sample (SceneState, SceneCast, SceneProp), in order.
+  // What to send for this sample (SceneState, SceneCast, SceneProp,
+  // ScenePlace), in order.
   std::vector<proto::Message> Update(const HostSample &sample, std::uint64_t hostNowUs);
   // A voiced line begins. Nothing while no scene is announced and the line
   // is the scene's (a private scene's lines are its own); barks
@@ -90,6 +106,11 @@ private:
   bool m_private{};
   std::map<std::uint64_t, proto::SceneLine> m_lines; // spoken now
   std::map<std::uint64_t, proto::SceneProp> m_props; // by the sample's key, as last said
+  struct Placed {
+    proto::ScenePlace said;
+    std::uint64_t saidUs{};
+  };
+  std::map<std::uint64_t, Placed> m_placed; // by the sample's key
   std::uint32_t m_propCount{};
 };
 
@@ -114,12 +135,15 @@ struct Cue {
     VoiceStop, // stop it (line)
     Prop,      // someone holds a prop, or it changed hands (prop)
     PropGone,  // it is no longer there (prop)
+    Place,     // a prop nobody holds is there, or moved (place)
+    PlaceGone, // it is no longer there (place)
   };
   Kind kind{};
   proto::SceneState state;
   proto::SceneActor actor;
   proto::SceneLine line;
   proto::SceneProp prop;
+  proto::ScenePlace place;
   float seconds{};
 };
 
@@ -142,6 +166,9 @@ public:
   float Seconds(std::uint64_t hostNowUs) const;
   std::uint32_t Stale() const { return m_stale; } // lines too late to play
   std::size_t Props() const { return m_props.size(); }
+  std::size_t Placed() const { return m_placed.size(); }
+  // A prop set down in the play now, by its number (null: none).
+  const proto::ScenePlace *PlaceOf(std::uint32_t prop) const;
   // An actor (or a V, with npc 0) holds a prop now.
   bool Holds(proto::NpcId npc, proto::PlayerId player) const;
 
@@ -156,7 +183,8 @@ private:
     std::uint64_t endUs{};
   };
   std::map<std::uint64_t, Spoken> m_lines;
-  std::map<std::uint32_t, proto::SceneProp> m_props; // held now, by prop number
+  std::map<std::uint32_t, proto::SceneProp> m_props;   // held now, by prop number
+  std::map<std::uint32_t, proto::ScenePlace> m_placed; // set down now, by prop number
   std::uint32_t m_stale{};
 };
 

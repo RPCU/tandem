@@ -24,6 +24,12 @@ float YawTo(const proto::Vec3 &from, const proto::Vec3 &to) {
   return std::atan2(-(to.x - from.x), to.y - from.y);
 }
 
+// The angle between two orientations (unit ones: a prop's, as its game says).
+float PlaceTurn(const proto::Quat &a, const proto::Quat &b) {
+  const float dot = std::abs(a.i * b.i + a.j * b.j + a.k * b.k + a.r * b.r);
+  return 2.f * std::acos(std::min(dot, 1.f));
+}
+
 bool IsScenes(const proto::SceneLine &line) {
   return (line.flags & (proto::kVoiceOverhead | proto::kVoiceHolocall)) == 0;
 }
@@ -55,6 +61,7 @@ std::vector<proto::Message> Stage::Update(const HostSample &sample, std::uint64_
       m_cast = {};
       m_lines.clear();
       m_props.clear();
+      m_placed.clear();
     }
     return out;
   }
@@ -68,6 +75,7 @@ std::vector<proto::Message> Stage::Update(const HostSample &sample, std::uint64_
     next.startUs = hostNowUs;
     m_lines.clear();
     m_props.clear();
+    m_placed.clear();
     m_propCount = 0;
   }
   next.tier = sample.tier;
@@ -158,6 +166,51 @@ std::vector<proto::Message> Stage::Update(const HostSample &sample, std::uint64_
       out.push_back(now);
   }
   m_props = std::move(held);
+
+  // What nobody holds: said where it is, again once it moved, gone when no
+  // longer seen (or held: then it is a SceneProp).
+  std::map<std::uint64_t, Placed> placed;
+  for (const auto &sampled : sample.placed) {
+    if (sampled.key == 0 || sampled.entity == 0 || placed.size() >= proto::kMaxSceneProps ||
+        placed.contains(sampled.key) || m_props.contains(sampled.key))
+      continue;
+    proto::ScenePlace said{.play = m_play,
+                           .entity = sampled.entity,
+                           .appearance = sampled.appearance,
+                           .position = sampled.position,
+                           .orientation = sampled.orientation};
+    const auto was = m_placed.find(sampled.key);
+    if (was != m_placed.end() && was->second.said.entity == sampled.entity) {
+      const auto &before = was->second.said;
+      const float dx = said.position.x - before.position.x,
+                  dy = said.position.y - before.position.y,
+                  dz = said.position.z - before.position.z;
+      const bool moved = std::sqrt(dx * dx + dy * dy + dz * dz) > kPlaceMoveMetres ||
+                         PlaceTurn(said.orientation, before.orientation) > kPlaceTurnRadians ||
+                         said.appearance != before.appearance;
+      if (!moved || hostNowUs - was->second.saidUs < kPlaceEveryUs) {
+        placed.emplace(sampled.key, was->second);
+        continue;
+      }
+      said.prop = before.prop;
+    } else
+      said.prop = ++m_propCount;
+    placed.emplace(sampled.key, Placed{said, hostNowUs});
+  }
+  for (const auto &[key, was] : m_placed) {
+    const auto now = placed.find(key);
+    if (now == placed.end() || now->second.said.prop != was.said.prop) {
+      auto gone = was.said;
+      gone.flags |= proto::kPropGone;
+      out.push_back(gone);
+    }
+  }
+  for (const auto &[key, now] : placed) {
+    const auto was = m_placed.find(key);
+    if (was == m_placed.end() || was->second.said != now.said)
+      out.push_back(now.said);
+  }
+  m_placed = std::move(placed);
   return out;
 }
 
@@ -249,6 +302,9 @@ void Replay::Leave(std::vector<Cue> &out, std::uint8_t flags) {
   for (const auto &[id, prop] : m_props)
     out.push_back({.kind = Cue::Kind::PropGone, .prop = prop});
   m_props.clear();
+  for (const auto &[id, place] : m_placed)
+    out.push_back({.kind = Cue::Kind::PlaceGone, .place = place});
+  m_placed.clear();
   for (const auto &actor : m_cast)
     out.push_back({.kind = Cue::Kind::ActorGone, .actor = actor});
   m_cast.clear();
@@ -256,6 +312,11 @@ void Replay::Leave(std::vector<Cue> &out, std::uint8_t flags) {
   ended.flags = flags;
   m_state = {};
   out.push_back({.kind = Cue::Kind::End, .state = ended});
+}
+
+const proto::ScenePlace *Replay::PlaceOf(std::uint32_t prop) const {
+  const auto it = m_placed.find(prop);
+  return it == m_placed.end() ? nullptr : &it->second;
 }
 
 std::vector<Cue> Replay::Reset() {
@@ -324,6 +385,24 @@ std::vector<Cue> Replay::Note(const proto::Message &message, std::uint64_t hostN
       return out; // a repeat (a resync), or more than a scene holds
     m_props[prop->prop] = *prop;
     out.push_back({.kind = Cue::Kind::Prop, .prop = *prop});
+    return out;
+  }
+  if (const auto *place = std::get_if<proto::ScenePlace>(&message)) {
+    if (!On() || place->play != m_state.play)
+      return out;
+    const auto it = m_placed.find(place->prop);
+    if (place->flags & proto::kPropGone) {
+      if (it != m_placed.end()) {
+        out.push_back({.kind = Cue::Kind::PlaceGone, .place = it->second});
+        m_placed.erase(it);
+      }
+      return out;
+    }
+    if ((it != m_placed.end() && it->second == *place) ||
+        (it == m_placed.end() && m_placed.size() >= proto::kMaxSceneProps))
+      return out; // a repeat (a resync), or more than a scene holds
+    m_placed[place->prop] = *place;
+    out.push_back({.kind = Cue::Kind::Place, .place = *place});
     return out;
   }
   if (const auto *line = std::get_if<proto::SceneLine>(&message)) {

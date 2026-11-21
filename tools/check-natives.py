@@ -74,6 +74,7 @@ SCALARS = {
     "Red::Quaternion": "Quaternion",
     "Red::CRUID": "CRUID",
     "Red::NodeRef": "NodeRef",
+    "Red::ResourcePath": "ResRef",
 }
 # 16-byte aligned types: never fields of a native struct.
 ALIGNED16 = {"Red::Vector4", "Red::Quaternion"}

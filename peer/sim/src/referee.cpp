@@ -54,6 +54,7 @@ TANDEM_SAID_BY(Host, RigPose)
 TANDEM_SAID_BY(Host, RigTracks)
 TANDEM_SAID_BY(Host, SceneCamera)
 TANDEM_SAID_BY(Host, SceneProp)
+TANDEM_SAID_BY(Host, ScenePlace)
 TANDEM_SAID_BY(Host, Rules)
 TANDEM_SAID_BY(Host, SessionLevel)
 TANDEM_SAID_BY(Host, TradeCommit)
@@ -774,6 +775,9 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           inRange = !finite || (m.fov > 0.f && m.fov <= 180.f);
         } else if constexpr (std::is_same_v<M, p::SceneProp>) {
           inRange = m.prop != 0 && (m.flags & ~p::kPropFlags) == 0;
+        } else if constexpr (std::is_same_v<M, p::ScenePlace>) {
+          finite = Finite(m.position) && Finite(m.orientation);
+          inRange = !finite || (m.prop != 0 && (m.flags & ~p::kPropGone) == 0);
         } else if constexpr (std::is_same_v<M, p::TrafficStatus>) {
           finite = std::isfinite(m.health);
           inRange = !finite || (m.health >= 0.f && m.health <= 1.001f);
