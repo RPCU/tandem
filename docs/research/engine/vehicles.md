@@ -134,7 +134,7 @@ because of its past occupant, and the next pass uses it. The hang dumps
 were the game's report queue waiting on that crash. Next: name that table
 (decompile `sub_140dbb958`'s caller and the job's owner), then either take
 the car out of it before deleting, or reuse parked copies (a pool) rather
-than delete them. [2.5-verified] (Decompiled since: §13.99.)
+than delete them. [2.5-verified] (Decompiled since: §13.101.)
 
 **The full vehicle loop runs** (mock player `--mode drive`): copy spawned
 from the record, the driver's puppet mounted in `seat_front_left`
@@ -420,7 +420,7 @@ the wheel, no AI driver):
   branch for it, `:179041`); `NoCombat` does (`ForceEmptyHands`,
   `:540418`): `TandemTransit.Restrict` now puts both on. [2.5-untested]
 
-### 13.99 Removing a car copy: the stub path, and what crashed (2026-11-21, game 2.50, exe read)
+### 13.101 Removing a car copy: the stub path, and what crashed (2026-11-21, game 2.50, exe read)
 
 Lead: a study of another co-op mod (NightCoop), facts only: it spawns its
 vehicle mirrors with a transient id (`gameIDynamicEntityIDSystem`
