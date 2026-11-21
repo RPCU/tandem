@@ -397,6 +397,9 @@ public class TandemComms {
         case 10:
           this.HideHack(e, false, e.effect);
           break;
+        case 11:
+          this.LinkDeclined(e.player, e.type);
+          break;
         default:
           break;
       }
@@ -844,6 +847,13 @@ public class TandemComms {
       TandemNative.Log(s"comms: link request of \(name) shown without its hint (a regroup offer has the key)");
       return;
     }
+    // One request rings at a time: the one already ringing is declined,
+    // and its asker told why (else it waited on a call nobody could take).
+    if this.m_offerFrom != 0u && this.m_offerFrom != player {
+      let first = this.m_offerFrom;
+      TandemCommsNative.DeclineLink(first, 1);
+      TandemNative.Log(s"comms: the link request of \(this.NameOf(first)) declined: \(name)'s came after it");
+    }
     this.HideOffer();
     this.m_offerFrom = player;
     this.m_offerAt = this.m_now;
@@ -863,6 +873,15 @@ public class TandemComms {
       this.m_offerHeld = false;
     }
     TandemNative.Log(s"comms: showing the link request of \(name)\(this.m_ringing ? " (ringing)" : "")");
+  }
+
+  // Our request to `player` was not taken there (reason 1: another came
+  // after it and took the call). Our consent stands, as for a request left
+  // unanswered: they can call us back.
+  private func LinkDeclined(player: Uint32, reason: Int32) -> Void {
+    let name = this.NameOf(player);
+    TandemNative.Log(s"comms: \(name) did not take our link request (reason \(reason))");
+    this.Notice("Comms-LinkBusy", name);
   }
 
   private func HideOffer() -> Void {

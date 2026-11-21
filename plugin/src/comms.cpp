@@ -167,6 +167,12 @@ void Comms::Apply(const proto::Message &message, std::uint64_t nowUs) {
                         .player = waypoint->player,
                         .type = static_cast<std::int32_t>(waypoint->kind),
                         .position = waypoint->position});
+  } else if (const auto *decline = std::get_if<proto::LinkDecline>(&message)) {
+    if (decline->to != m_you || decline->from == m_you)
+      return;
+    m_events.push_back({.kind = CommsEvent::Kind::LinkDeclined,
+                        .player = decline->from,
+                        .type = static_cast<std::int32_t>(decline->reason)});
   }
 }
 
@@ -303,6 +309,14 @@ bool Comms::SetConsent(proto::PlayerId player, bool on) {
   m_own = next;
   m_outbound.push_back(m_own);
   Queue(m_links.SetOwn(m_own));
+  return true;
+}
+
+bool Comms::Decline(proto::PlayerId player, std::uint8_t reason) {
+  std::lock_guard _(m_lock);
+  if (m_you == proto::kNoPlayer || player == m_you || player == proto::kNoPlayer)
+    return false;
+  m_outbound.push_back(proto::LinkDecline{.to = player, .reason = reason});
   return true;
 }
 

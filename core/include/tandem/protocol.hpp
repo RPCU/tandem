@@ -2176,6 +2176,18 @@ struct Link {
   friend bool operator==(const Link &, const Link &) = default;
 };
 
+// A link request its receiver's game did not take, and why: to the asker
+// only (Event channel; a one-shot; the host stamps `from` and delivers it to
+// `to`). The asker's consent stands, as for a request left unanswered.
+// kLinkDeclineOther: another request came after it and took the call.
+inline constexpr std::uint8_t kLinkDeclineOther = 1;
+struct LinkDecline {
+  PlayerId from{};
+  PlayerId to{};
+  std::uint8_t reason{}; // kLinkDecline*
+  friend bool operator==(const LinkDecline &, const LinkDecline &) = default;
+};
+
 // Where a player's own waypoint is (the map pin it placed, or the map point
 // it tracks; with neither, its tracked quest objective), shown to the others
 // as "NAME's waypoint" ("NAME's objective"). Sent by its game when it
@@ -3045,7 +3057,7 @@ using MessageVariant = std::variant<
     BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
-    ScenePlace>;
+    ScenePlace, LinkDecline>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,

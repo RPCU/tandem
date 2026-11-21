@@ -56,6 +56,9 @@ public native class TandemCommsNative extends IScriptable {
   // entity, to linked players.
   public static native func Tag(reason: Int32, on: Bool, seconds: Int32, npc: Uint32, entity: EntityID)
   public static native func SetLink(player: Uint32, on: Bool) -> Bool
+  // Their link request not taken (reason 1: another came after it): they
+  // are told why.
+  public static native func DeclineLink(player: Uint32, reason: Int32) -> Bool
   public static native func LinkState(player: Uint32) -> Int32
   public static native func AnyLinked() -> Bool
   // tandem.ini: link (0 auto, 1 ask, 2 off), pings

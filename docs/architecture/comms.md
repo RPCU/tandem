@@ -48,7 +48,12 @@ recommendation below as built, and no text chat (6).
    [`travel.md`](travel.md)) and "Decline" on `PhoneReject` (held, as for
    a holocall), for 15 s. Declining stops the ring and links nothing; the
    caller is not told (no message for it: their consent stands, as an
-   unanswered request's does, until they hang up). Linked players share their
+   unanswered request's does, until they hang up). One request rings at a
+   time: a second one declines the first, whose caller is told why
+   (`LinkDecline`, reason `kLinkDeclineOther`, host-stamped and delivered
+   to the caller alone: "NAME took another link request: call again
+   later"; their consent stands; 2026-11-21, not yet run in game; test
+   "comms in a session…", `tests/comms_test.cpp`). Linked players share their
    scanner tags (outlined, in the tag list, as one's own) and the Ping
    quickhack's reveals (outlined for the hack's length). Default `auto`:
    two to four friends who join each other want shared

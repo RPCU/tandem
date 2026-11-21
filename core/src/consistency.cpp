@@ -291,6 +291,7 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<NpcActionReply>(message) ||
          std::holds_alternative<NpcCue>(message) || std::holds_alternative<Regroup>(message) ||
          std::holds_alternative<RegroupAnswer>(message) ||
+         std::holds_alternative<LinkDecline>(message) ||
          std::holds_alternative<WorldItem>(message) ||
          std::holds_alternative<WorldItemTaken>(message) ||
          std::holds_alternative<SharedItem>(message) || std::holds_alternative<Revive>(message) ||

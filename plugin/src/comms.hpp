@@ -21,7 +21,7 @@ struct CommsInbound {
   enum class Kind { InSession, Ended, Joined, Left, Message };
   Kind kind{};
   proto::PlayerId player{}; // InSession: us; Joined, Left: who
-  proto::Message message;   // Message: Mark, Tag, Link, Waypoint
+  proto::Message message;   // Message: Mark, Tag, Link, Waypoint, LinkDecline
 };
 
 // One change for the script.
@@ -40,6 +40,8 @@ struct CommsEvent {
     HideUpload = 8,
     ShowEffect = 9,
     HideEffect = 10,
+    // `player` did not take our link request (type: proto::kLinkDecline*).
+    LinkDeclined = 11,
   };
   Kind kind{};
   proto::PlayerId player{};
@@ -98,6 +100,9 @@ public:
   void Tag(proto::TagReason reason, bool on, std::uint8_t seconds, const proto::TargetRef &target);
   // We link with `player` (on) or break it.
   bool SetConsent(proto::PlayerId player, bool on);
+  // We did not take `player`'s link request (proto::kLinkDecline*): they
+  // are told why. False: not in a session, or not a player.
+  bool Decline(proto::PlayerId player, std::uint8_t reason);
   comms::LinkState StateOf(proto::PlayerId player);
   bool AnyLinked();
   // Our waypoint (kind None: none); sent when it changes (comms::Moved).

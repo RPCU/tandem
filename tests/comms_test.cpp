@@ -387,6 +387,7 @@ struct Heard {
   std::map<proto::PlayerId, proto::Link> links;
   std::map<proto::PlayerId, proto::Waypoint> waypoints;
   std::vector<proto::PlayerId> left;
+  std::vector<proto::LinkDecline> declines;
 };
 
 void Run(const std::vector<Endpoint *> &endpoints, std::vector<Heard> &heard,
@@ -409,6 +410,8 @@ void Run(const std::vector<Endpoint *> &endpoints, std::vector<Heard> &heard,
           heard[i].waypoints[waypoint->waypoint.player] = waypoint->waypoint;
         else if (const auto *left = std::get_if<events::PlayerLeft>(&event))
           heard[i].left.push_back(left->player);
+        else if (const auto *decline = std::get_if<events::LinkDeclined>(&event))
+          heard[i].declines.push_back(decline->decline);
       }
   }
 }
@@ -531,5 +534,19 @@ TEST_CASE("comms in a session: pings to everyone, tags to the linked only, state
     CHECK_FALSE(b->Waypoints().contains(2));
     CHECK_FALSE(c->CommsLinks().contains(2));
     CHECK(c->Waypoints().contains(1));
+  }
+  SUBCASE("a link request not taken: its asker alone hears why, in the decliner's name") {
+    // b declines a's request (another took the call), in nobody else's name.
+    b->SendLinkDecline({.from = 1, .to = 2, .reason = proto::kLinkDeclineOther});
+    // The host declines b's; nobody declines their own.
+    host->SendLinkDecline({.to = 3, .reason = proto::kLinkDeclineOther});
+    a->SendLinkDecline({.to = 2, .reason = proto::kLinkDeclineOther});
+    Run(all, heard, [&] { return !heard[1].declines.empty() && !heard[2].declines.empty(); });
+    REQUIRE(heard[1].declines.size() == 1);
+    CHECK(heard[1].declines[0].from == 3);
+    CHECK(heard[1].declines[0].reason == proto::kLinkDeclineOther);
+    REQUIRE(heard[2].declines.size() == 1);
+    CHECK(heard[2].declines[0].from == 1);
+    CHECK(heard[0].declines.empty());
   }
 }

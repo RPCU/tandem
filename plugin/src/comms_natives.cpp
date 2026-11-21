@@ -135,6 +135,11 @@ struct TandemCommsNative : Red::IScriptable {
 
   // Link with a player (on) or break it; false: link = off, or not a player.
   static bool SetLink(std::uint32_t player, bool on) { return Comms::Get().SetConsent(player, on); }
+  // Their link request not taken (reason: proto::kLinkDecline*): they are
+  // told why; false: not in a session, or not a player.
+  static bool DeclineLink(std::uint32_t player, std::int32_t reason) {
+    return Comms::Get().Decline(player, static_cast<std::uint8_t>(std::clamp(reason, 0, 255)));
+  }
   // 0 none, 1 we asked, 2 they ask us, 3 linked.
   static std::int32_t LinkState(std::uint32_t player) {
     return static_cast<std::int32_t>(Comms::Get().StateOf(player));
@@ -188,6 +193,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemCommsNative, "TandemCommsNative", {
   RTTI_METHOD(PartnerDevice);
   RTTI_METHOD(Tag);
   RTTI_METHOD(SetLink);
+  RTTI_METHOD(DeclineLink);
   RTTI_METHOD(LinkState);
   RTTI_METHOD(AnyLinked);
   RTTI_METHOD(LinkSetting);

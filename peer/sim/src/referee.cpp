@@ -113,6 +113,7 @@ TANDEM_SAID_BY(Either, NpcHold)
 TANDEM_SAID_BY(Either, NpcCue)
 TANDEM_SAID_BY(Either, Regroup)
 TANDEM_SAID_BY(Either, RegroupAnswer)
+TANDEM_SAID_BY(Either, LinkDecline)
 TANDEM_SAID_BY(Either, WorldItem)
 TANDEM_SAID_BY(Either, WorldItemTaken)
 TANDEM_SAID_BY(Either, SharedItem)
@@ -295,7 +296,7 @@ p::PlayerId *SenderOf(p::Message &message) {
       [](auto &m) -> p::PlayerId * {
         using M = std::decay_t<decltype(m)>;
         if constexpr (std::is_same_v<M, p::AreaHit> || std::is_same_v<M, p::Regroup> ||
-                      std::is_same_v<M, p::RegroupAnswer> ||
+                      std::is_same_v<M, p::RegroupAnswer> || std::is_same_v<M, p::LinkDecline> ||
                       std::is_same_v<M, p::NpcHandoverState> ||
                       std::is_same_v<M, p::TrafficHandoverState> || std::is_same_v<M, p::Mark> ||
                       std::is_same_v<M, p::Tag> || std::is_same_v<M, p::TimeSkip> ||
@@ -778,6 +779,9 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::ScenePlace>) {
           finite = Finite(m.position) && Finite(m.orientation);
           inRange = !finite || (m.prop != 0 && (m.flags & ~p::kPropGone) == 0);
+        } else if constexpr (std::is_same_v<M, p::LinkDecline>) {
+          // A known reason, to a player.
+          inRange = m.reason == p::kLinkDeclineOther && m.to != p::kNoPlayer;
         } else if constexpr (std::is_same_v<M, p::TrafficStatus>) {
           finite = std::isfinite(m.health);
           inRange = !finite || (m.health >= 0.f && m.health <= 1.001f);
@@ -1036,6 +1040,8 @@ void Referee::FromGuest(p::PlayerId from, const p::Message &message) {
     NeedPlayer(area->player, name);
   } else if (const auto *offer = std::get_if<p::Regroup>(&message)) {
     NeedPlayer(offer->to, name);
+  } else if (const auto *decline = std::get_if<p::LinkDecline>(&message)) {
+    NeedPlayer(decline->to, name);
   } else if (const auto *answer = std::get_if<p::RegroupAnswer>(&message)) {
     NeedPlayer(answer->to, name);
     if (answer->to == m_self && answer->offer > m_offers)
@@ -1264,6 +1270,9 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
         } else if constexpr (std::is_same_v<M, p::Regroup>) {
           if (m.to != p::kNoPlayer)
             forUs(m.to);
+          notOurs(m.from);
+        } else if constexpr (std::is_same_v<M, p::LinkDecline>) {
+          forUs(m.to);
           notOurs(m.from);
         } else if constexpr (std::is_same_v<M, p::RegroupAnswer>) {
           forUs(m.to);

@@ -293,6 +293,27 @@ TEST_CASE("referee: a scripted moment is the host's V's, spectating a guest's") 
   CHECK(Rules(told) == std::vector<std::string>{"authority.host-only"});
 }
 
+TEST_CASE("referee: a link request not taken goes to its asker only, in its decliner's name") {
+  auto guest = Guest();
+  guest.Received(1, proto::LinkDecline{.from = 3, .to = 2, .reason = proto::kLinkDeclineOther},
+                 kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1, proto::LinkDecline{.from = 1, .to = 3, .reason = proto::kLinkDeclineOther},
+                 kSecond);
+  guest.Received(1, proto::LinkDecline{.from = 2, .to = 2, .reason = proto::kLinkDeclineOther},
+                 kSecond);
+  guest.Received(1, proto::LinkDecline{.from = 3, .to = 2, .reason = 9}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.misdelivered",
+                                                 "authority.own-state-back", "value.range"});
+
+  auto host = Host();
+  host.Received(2, proto::LinkDecline{.to = 3, .reason = proto::kLinkDeclineOther}, kSecond);
+  CHECK(Rules(host).empty());
+  host.Received(2, proto::LinkDecline{.from = 3, .to = 1, .reason = proto::kLinkDeclineOther},
+                kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.not-yours"});
+}
+
 TEST_CASE("referee: the host may not say what only a guest asks") {
   auto referee = Guest();
   referee.Received(1, proto::ResyncRequest{1}, kSecond);
