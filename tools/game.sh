@@ -189,7 +189,8 @@ start() {
   # [LoadBegone.LoadBegoneConfig]: enabled, skipRecapVideos) skips the intro,
   # the title screen, the mod warning and the load screen's prompt. When it
   # does not load the save within 25 s of the menu, Continue by keys.
-  if ! wait_log 'main menu world|in game' 240 "$since" >/dev/null; then
+  # (Solo logs neither: only "playing (solo)".)
+  if ! wait_log 'main menu world|in game|\] playing' 240 "$since" >/dev/null; then
     echo "the game did not start (redscript error?):" >&2
     remote "grep -A4 '\\[ERROR' '$dir/r6/logs/redscript_rCURRENT.log' | head -20" >&2 || true
     exit 1
