@@ -406,6 +406,11 @@ protected cb func OnUpdate() -> Bool {
   if player != 0u && (TandemSettings.NameplateMode() == 2 || TandemPartyHud.PlateShown(GetGameInstance(), player)) {
     if inkWidgetRef.IsValid(this.displayName) {
       inkWidgetRef.SetVisible(this.displayName, false);
+    } else if inkWidgetRef.IsValid(this.distanceText) {
+      // The distance alone, written by us too: once we wrote this text (the
+      // name before it), the game's own distance lost its number and showed
+      // "{0, number, 0}M".
+      inkTextRef.SetText(this.distanceText, TandemText.F("Marker-Metres", s"\(RoundF(this.GetDistanceToPlayer()))"));
     }
   } else if NotEquals(name, "") {
     if inkWidgetRef.IsValid(this.displayName) {
