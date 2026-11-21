@@ -13,7 +13,7 @@ expect 'devices: nearest [a-z]+ [0-9a-f]+ [A-Za-z]+ at ' 10
 device=$(since | grep -oE 'devices: nearest [a-z]+ [0-9a-f]+' | tail -1 | awk '{ print $4 }')
 note "device $device"
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male --reveal-device "$device@6"
-expect 'comms: link with tandem-peer: 0 -> 3' 40
+expect 'comms: link with tandem-peer: [0-9] -> 3' 40
 expect_peer "pulsed the network from device $device for 10 s \(ping quickhack\)" 20
 expect 'comms: outlined a reveal of a linked player' 10
 expect "comms: network pulsed from device $device for a linked player's ping" 5

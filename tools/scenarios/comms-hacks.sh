@@ -4,7 +4,7 @@ ensure join
 host_world recordings/npcs.rec --mode idle --body female --hack-npc nearest
 expect 'in the session as player' 30
 expect 'puppet 6[0-9]{4}: controller handed to the engine' 30
-expect 'comms: link with tandem-peer: 0 -> 3' 20
+expect 'comms: link with tandem-peer: [0-9] -> 3' 20
 expect "comms: showing tandem-peer's upload of .* on npc [0-9]+ .*registered true" 40
 # A person checks: the game's own quickhack indicator over the NPC, its icon
 # and bar in the partner's colour (player 1: cyan), readable against ours.

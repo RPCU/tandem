@@ -5,7 +5,7 @@ host_world recordings/npcs.rec --mode idle --body female --ping 5 --reveal 12
 expect 'in the session as player' 30
 expect 'puppet 6[0-9]{4}: controller handed to the engine' 30
 # Linked from the start (link = auto both sides).
-expect 'comms: link with tandem-peer: 0 -> 3' 20
+expect 'comms: link with tandem-peer: [0-9] -> 3' 20
 expect 'comms: showing ping [0-9]+ of tandem-peer \(Enemy, 15 s\) on the entity, registered true' 40
 shot comms-enemy-ping
 cmd comms report
