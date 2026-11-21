@@ -28,7 +28,7 @@ reject 'devices: [0-9a-f]+ [A-Za-z]+ will not become'
 # V opens it again and leaves the session: our own save's door comes back (closed).
 cmd device open door
 expect 'devices: [0-9a-f]+ [A-Za-z]+ changed here' 10
-pause 2
+# Before the host's answer (3 s): left open, it has something to put back.
 cmd coop leave
 expect 'devices: session over, [0-9]+ followed, [1-9][0-9]* put back as our own save had them' 15
 pause 2
