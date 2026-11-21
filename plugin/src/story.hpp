@@ -74,6 +74,8 @@ public:
   std::vector<scene::ActorSample> &Actors() { return m_actors; }
   // Host: what the scene's actors hold, as the script lists it for the next sample.
   std::vector<scene::PropSample> &Props() { return m_props; }
+  // Host: what the scene set down that nobody holds, for the next sample.
+  std::vector<scene::PlaceSample> &Placed() { return m_placed; }
 
   // The watch camera (scene-replay.md, "The watch camera"). Host, game
   // thread: our game's view now, for the guests (the newest only; the net
@@ -127,6 +129,7 @@ private:
   std::vector<proto::Vec3> m_bodies;
   std::vector<scene::ActorSample> m_actors;
   std::vector<scene::PropSample> m_props;
+  std::vector<scene::PlaceSample> m_placed;
   story::Restrictions m_restrictions;
   bool m_inMoment{};
   std::vector<std::uint64_t> m_removals;

@@ -74,6 +74,7 @@ bool Record::Note(const proto::Message &message) {
     if (!next || !m_scene || m_scene->play != next->play) {
       m_cast.reset();
       m_props.clear();
+      m_placed.clear();
       std::erase_if(m_lines, [](const proto::SceneLine &line) { return line.play != 0; });
     }
     // An end always says so (the guest lets its proxies go).
@@ -99,6 +100,19 @@ bool Record::Note(const proto::Message &message) {
     if (it == m_props.end() && m_props.size() >= proto::kMaxSceneProps)
       return false;
     m_props[prop->prop] = *prop;
+    return true;
+  }
+  if (const auto *place = std::get_if<proto::ScenePlace>(&message)) {
+    if (!m_scene || m_scene->play != place->play)
+      return false; // of a play that is over
+    if (place->flags & proto::kPropGone)
+      return m_placed.erase(place->prop) > 0;
+    const auto it = m_placed.find(place->prop);
+    if (it != m_placed.end() && it->second == *place)
+      return false;
+    if (it == m_placed.end() && m_placed.size() >= proto::kMaxSceneProps)
+      return false;
+    m_placed[place->prop] = *place;
     return true;
   }
   if (const auto *line = std::get_if<proto::SceneLine>(&message)) {
@@ -137,6 +151,9 @@ std::uint32_t Record::Digest() const {
         .Add(std::uint64_t{prop.holder})
         .Add(std::uint64_t{prop.holderPlayer})
         .Add(std::uint64_t{prop.flags});
+  // The props set down: which ones (where they are moves too often).
+  for (const auto &[id, place] : m_placed)
+    hash.Add(static_cast<std::uint64_t>(id) | std::uint64_t{1} << 32).Add(place.entity);
   // The host's restrictions: a lift lost would hold a guest for good.
   hash.Add(std::uint64_t{m_restrictions.effects.size()});
   for (const auto effect : m_restrictions.effects)
@@ -175,6 +192,8 @@ std::vector<proto::Message> Record::ForJoiner() const {
       out.push_back(*m_cast);
     for (const auto &[id, prop] : m_props)
       out.push_back(prop);
+    for (const auto &[id, place] : m_placed)
+      out.push_back(place);
   }
   for (const auto &line : m_lines)
     out.push_back(line);

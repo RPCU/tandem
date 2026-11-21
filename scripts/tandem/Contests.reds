@@ -38,6 +38,8 @@ public class TandemContests {
   private let m_lastNotice: Float;
   private let m_dropped: Int32;
   private let m_test: Int32;
+  // Street races: joining a partner's, its standings (Races.reds).
+  private let m_races: ref<TandemRaces>;
 
   public static func DuelSort() -> Int32 {
     return 1;
@@ -59,6 +61,12 @@ public class TandemContests {
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
+    this.m_races = new TandemRaces();
+    this.m_races.Start(game);
+  }
+
+  public func Races() -> ref<TandemRaces> {
+    return this.m_races;
   }
 
   public static func Of(game: GameInstance) -> ref<TandemContests> {
@@ -85,7 +93,7 @@ public class TandemContests {
       sort = this.m_test;
     } else if TandemContests.InFight(player) && !TandemStory.RestrictOurs(TandemContests.FightEffect()) {
       sort = TandemContests.DuelSort();
-    } else if GameInstance.GetRacingSystem(this.m_game).IsRaceInProgress() {
+    } else if GameInstance.GetRacingSystem(this.m_game).IsRaceInProgress() || (IsDefined(this.m_races) && this.m_races.Racing()) {
       sort = TandemContests.RaceSort();
     } else if StatusEffectSystem.ObjectHasStatusEffectWithTag(player, n"ShootingRangeCompetition") {
       sort = TandemContests.RangeSort();
@@ -131,6 +139,9 @@ public class TandemContests {
   // Once a second: the NPCs we run that wear the fist fight's mark, said
   // for the games that show their proxies (and unsaid when it comes off).
   public func Tick(now: Float, you: Uint32) -> Void {
+    if IsDefined(this.m_races) {
+      this.m_races.Tick(now, you);
+    }
     if you == 0u {
       ArrayClear(this.m_marked);
       ArrayClear(this.m_others);
@@ -190,7 +201,10 @@ public class TandemContests {
         let before = this.Find(state.player);
         if !IsDefined(before) || before.sort != contest.sort {
           TandemNative.Log(s"contests: player \(state.player) is in \(TandemContests.SortName(contest.sort)) (opponent npc \(contest.opponent)): we watch");
-          this.Notice(TandemContests.StartKey(contest.sort), state.player);
+          // A race says itself (Races.reds: its offer, its standings).
+          if contest.sort != TandemContests.RaceSort() {
+            this.Notice(TandemContests.StartKey(contest.sort), state.player);
+          }
         }
       }
     }
@@ -203,7 +217,9 @@ public class TandemContests {
       }
       if !still {
         TandemNative.Log(s"contests: player \(before.player) is no longer in \(TandemContests.SortName(before.sort))");
-        this.Notice("Contest-Over", before.player);
+        if before.sort != TandemContests.RaceSort() {
+          this.Notice("Contest-Over", before.player);
+        }
       }
     }
     this.m_others = now;
@@ -347,9 +363,15 @@ public class TandemContests {
     TandemText.NoticeAs(this.m_game, SimpleMessageType.Neutral, 4.0, key, name);
   }
 
-  // tools/game.sh cmd contest duel|race|range|off|report
+  // tools/game.sh cmd contest duel|race|range|off|report|races|join|leave
   public func Command(command: String) -> Void {
     let what = StrAfterFirst(command, " ");
+    if Equals(what, "races") || Equals(what, "join") || Equals(what, "leave") {
+      if IsDefined(this.m_races) {
+        this.m_races.Command(command);
+      }
+      return;
+    }
     if Equals(what, "duel") {
       this.m_test = 1;
     } else if Equals(what, "race") {

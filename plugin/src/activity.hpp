@@ -39,6 +39,16 @@ struct SkipAnswer {
 struct SkipWithdraw {};
 using SkipOut = std::variant<SkipAsk, SkipAnswer, SkipWithdraw>;
 
+// A street race (Races.reds): a word of the session's, or what our own
+// game said (our race HUD's mode, a reward our V got), queued for the tick.
+struct RaceNote {
+  enum class Kind : std::int32_t { Heard = 1, Ui = 2, Reward = 3 };
+  Kind kind{};
+  proto::Race race;                                     // Heard
+  std::int32_t mode{}, maxPosition{}, maxCheckpoints{}; // Ui (vehicleRaceUI)
+  std::uint64_t reward{};                               // Reward (TweakDB id)
+};
+
 class Activities {
 public:
   static Activities &Get();
@@ -50,6 +60,10 @@ public:
   void Send(SkipOut message);
   std::map<proto::PlayerId, proto::Activity> Remote(std::uint32_t &changes);
   std::vector<SkipEvent> TakeEvents();
+  // Any thread (net thread, or a script hook that only queues): a race's
+  // note; the game thread takes them on its tick.
+  void PushRace(RaceNote note);
+  std::vector<RaceNote> TakeRaces();
 
   // Net thread.
   std::optional<proto::Activity> TakeLocal();
@@ -67,5 +81,6 @@ private:
   std::map<proto::PlayerId, proto::Activity> m_remote;
   std::uint32_t m_remoteChanges{};
   std::vector<SkipEvent> m_events;
+  std::vector<RaceNote> m_races;
 };
 } // namespace tandem::plugin

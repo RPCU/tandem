@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <functional>
 #include <type_traits>
 #include <utility>
@@ -207,6 +208,15 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
       prop && (prop->play == 0 || prop->prop == 0 || (prop->flags & ~kPropFlags) != 0 ||
                (prop->holder != 0 && prop->holderPlayer != kNoPlayer)))
     return std::nullopt;
+  // A placed prop: of a play, numbered, somewhere real; what to spawn unless it goes.
+  if (const auto *place = std::get_if<ScenePlace>(&message);
+      place && (place->play == 0 || place->prop == 0 || (place->flags & ~kPropGone) != 0 ||
+                (place->entity == 0 && (place->flags & kPropGone) == 0) ||
+                !std::isfinite(place->position.x) || !std::isfinite(place->position.y) ||
+                !std::isfinite(place->position.z) || !std::isfinite(place->orientation.i) ||
+                !std::isfinite(place->orientation.j) || !std::isfinite(place->orientation.k) ||
+                !std::isfinite(place->orientation.r)))
+    return std::nullopt;
   if (const auto *motion = std::get_if<NpcMotion>(&message);
       motion && motion->npcs.size() > kMaxNpcsPerState)
     return std::nullopt;
@@ -320,6 +330,13 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *death = std::get_if<NpcDeath>(&message);
       death && (death->entity == 0 || (death->flags & ~kDeathKnockedOut) != 0 ||
                 (death->npc != 0) != (death->order == 0) || (death->npc != 0 && death->by != 0)))
+    return std::nullopt;
+  // A race: a kind and a phase the receiver knows, its lists within their caps.
+  if (const auto *race = std::get_if<Race>(&message);
+      race &&
+      (race->kind < RaceKind::Info || race->kind > RaceKind::Reward ||
+       (race->kind == RaceKind::Info && (race->arg < kRaceGrid || race->arg > kRaceAbandoned)) ||
+       race->points.size() > kMaxRacePoints || race->entries.size() > kMaxRacers))
     return std::nullopt;
   if (const auto *commit = std::get_if<TradeCommit>(&message);
       commit && (!Fits(commit->first) || !Fits(commit->second)))
@@ -439,6 +456,7 @@ bool IsStory(const Message &message) {
          std::holds_alternative<StoryRestrictions>(message) ||
          std::holds_alternative<QuestInteract>(message) ||
          std::holds_alternative<SceneProp>(message) ||
+         std::holds_alternative<ScenePlace>(message) ||
          (message.index() >= kId<SceneState> && message.index() <= kId<SceneLine>) ||
          std::holds_alternative<VehicleUnlock>(message);
 }
@@ -449,7 +467,8 @@ bool IsCombat(const Message &message) {
          (message.index() >= kId<PlayerLevel> && message.index() <= kId<NpcLevel>) ||
          std::holds_alternative<CarLend>(message) || std::holds_alternative<NpcScale>(message) ||
          std::holds_alternative<NpcVendor>(message) || std::holds_alternative<ThrowPath>(message) ||
-         std::holds_alternative<NpcPlaced>(message) || std::holds_alternative<NpcDeath>(message);
+         std::holds_alternative<NpcPlaced>(message) || std::holds_alternative<NpcDeath>(message) ||
+         std::holds_alternative<Race>(message);
 }
 
 bool IsTrade(const Message &message) {
@@ -624,7 +643,9 @@ const char *NameOfKind(std::size_t kind) {
                                    "NpcPlaced",
                                    "NpcDeath",
                                    "RigTracks",
-                                   "TurretHands"};
+                                   "TurretHands",
+                                   "Race",
+                                   "ScenePlace"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

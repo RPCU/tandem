@@ -526,7 +526,11 @@ struct NetThread::Impl {
                 // An older guest's hit: applied as a strike (Outcomes.reds).
                 Combat::Get().PushInbound(combat::FromHit(e.hit));
               } else if constexpr (std::is_same_v<E, events::Combat>) {
-                Combat::Get().PushInbound(e.message);
+                // A street race's word: Races.reds (activity.hpp), not the hits'.
+                if (const auto *race = std::get_if<proto::Race>(&e.message))
+                  Activities::Get().PushRace({.kind = RaceNote::Kind::Heard, .race = *race});
+                else
+                  Combat::Get().PushInbound(e.message);
               } else if constexpr (std::is_same_v<E, events::Trade>) {
                 TradeLink::Get().PushInbound(e.message);
               } else if constexpr (std::is_same_v<E, events::NpcActionBy>) {

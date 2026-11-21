@@ -107,3 +107,4 @@ WorldMappinsContainerController < MappinsContainerController < inkProjectedHUDGa
 gameDestructibleSpotsSystem < worldIDestructibleSpotsSystem < IGameSystem < IScriptable
 gameuiInventoryGameController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 gameuiVehicleShopGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+hudCarRaceController < inkHUDGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable

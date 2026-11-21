@@ -706,7 +706,8 @@ TEST_CASE("referee: a scene's props, camera and rig poses are the host's, about 
   host.Received(2, proto::SceneCamera{.play = 1, .fov = 60.f}, kSecond);
   host.Received(2, proto::RigPose{.npc = 7, .bones = 4}, kSecond);
   host.Received(2, proto::RigTracks{.npc = 7, .tracks = 4}, kSecond);
-  CHECK(Rules(host) == std::vector<std::string>(4, "authority.host-only"));
+  host.Received(2, proto::ScenePlace{.play = 1, .prop = 2, .entity = 5}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>(5, "authority.host-only"));
 
   auto guest = Guest();
   guest.Received(1, proto::NpcSpawn{.npc = 7, .record = 10}, kSecond);
@@ -760,4 +761,48 @@ TEST_CASE("referee: the death ledger is stamped by the host, reported by an NPC'
   CHECK(Rules(host) == std::vector<std::string>{"authority.not-owner"});
   host.Received(2, first, kSecond);
   CHECK(Rules(host) == std::vector<std::string>{"authority.host-only"});
+}
+
+TEST_CASE("referee: a street race is described, seated, ordered and paid by its starter only") {
+  // A guest hears its host's race and another guest's progress in it.
+  auto guest = Guest();
+  guest.Received(1,
+                 proto::Race{.player = 1,
+                             .starter = 1,
+                             .race = 1,
+                             .kind = proto::RaceKind::Info,
+                             .arg = proto::kRaceGrid,
+                             .checkpoints = 4},
+                 kSecond);
+  guest.Received(1,
+                 proto::Race{.player = 3,
+                             .starter = 1,
+                             .race = 1,
+                             .kind = proto::RaceKind::Progress,
+                             .checkpoint = 2,
+                             .metres = 40.f},
+                 kSecond);
+  CHECK(Rules(guest).empty());
+  // Another player's word on the host's race order: not its to say.
+  guest.Received(
+      1, proto::Race{.player = 3, .starter = 1, .race = 1, .kind = proto::RaceKind::Standings},
+      kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(
+      1, proto::Race{.player = 1, .starter = 1, .kind = proto::RaceKind::Progress, .metres = -1.f},
+      kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+
+  // The host hears a guest join its race, in the guest's own name.
+  auto host = Host();
+  host.Received(2, proto::Race{.starter = 1, .race = 1, .kind = proto::RaceKind::Join, .arg = 1},
+                kSecond);
+  CHECK(Rules(host).empty());
+  host.Received(2, proto::Race{.player = 3, .starter = 1, .kind = proto::RaceKind::Join, .arg = 1},
+                kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.not-yours"});
+  // A guest seating players in the host's race: refused.
+  host.Received(2, proto::Race{.starter = 1, .to = 3, .kind = proto::RaceKind::Seat, .arg = 1},
+                kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"value.range"});
 }

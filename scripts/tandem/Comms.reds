@@ -588,6 +588,18 @@ public class TandemComms {
     return mappin;
   }
 
+  // A marker another part of tandem places (Races.reds: the next checkpoint
+  // of a partner's race), drawn as our pings are, in `player`'s colour.
+  // Unregistered by its placer.
+  public func PlaceMarker(at: Vector4, icon: CName, label: String, player: Uint32) -> NewMappinID {
+    let data = new TandemCommsMappinData();
+    data.icon = icon;
+    data.label = label;
+    data.description = "";
+    data.player = player;
+    return this.RegisterAt(at, data);
+  }
+
   private func RegisterAt(at: Vector4, data: ref<TandemCommsMappinData>) -> NewMappinID {
     return GameInstance.GetMappinSystem(this.m_game).RegisterMappin(this.Data(data), at);
   }
