@@ -137,13 +137,21 @@ HUD as it is played; scenario `hud-layout` screenshots every case for a
 person to check, and `presence hud at X Y` / `call-at X Y` move the two
 places without a rebuild.
 
-**Units.** The HUD layer's virtual window, in the HUD's own units: the
-window at the UI scale (`UISystem.GetCurrentWindowSize()` x
-`GetInverseUIScale()`): 3840 x 2160 at 16:9, wider at 21:9 (5160 x 2160 at
-3440 x 1440), taller at 16:10. The list is anchored top left, as the
-health bar is, so it keeps to the left edge at every aspect and scales with
-the UI. The nameplates are placed in the same units with the screen's own
-aspect (they assumed 16:9 before).
+**Units.** Places and sizes are in the HUD's own units: 3840 x 2160 at
+16:9, wider at 21:9 (5160 x 2160 at 3440 x 1440), taller at 16:10. The HUD
+layer's virtual window, where the widgets are, is in the **game window's
+pixels** (seen 2026-11-21 on two 1280 x 720 games: the full entry at 96
+340 px with its 420 px bar, mid-screen and three times too large; the
+layout was "under the health bar (full)", no holocall involved). So the
+list is drawn at the window's scale (`TandemPartyHud.WindowScale`:
+min(width / 3840, height / 2160) of `UISystem.GetCurrentWindowSize()`,
+1 at 2160p, 1/3 at 720p): its root scaled about its top left corner, its
+place times the scale; the nameplates are placed in window pixels and
+scaled the same; the race standings (`Races.reds`) too, when built. The
+list is anchored top left, as the health bar is, so it keeps to the left
+edge at every aspect. The log's layout line says the scale, the window
+and the game's own `GetInverseUIScale()` beside it. **Not yet run in
+game.**
 
 **The vanilla widgets, by place, and the rule for each** (2.50 scripts:
 the controllers named, `inkHUDGameController.ShowRequest` / `HideRequest`
@@ -181,7 +189,8 @@ page is the toggle.
 on|off|auto` force a case (auto: the game's word), `presence hud at X Y`,
 `presence hud call-at X Y`, `presence report` (the layout and why the list
 is hidden), `coop set party_hud on|off`. Each change of layout is logged:
-`hud: layout below the holocall (compact) at 96 1080, HUD 3840 x 2160,
+`hud: layout below the holocall (compact) at 96 1080, HUD 3840 x 2160
+drawn at 0.333 (window 1280 x 720, the game's inverse UI scale N),
 holocall up`; `hud: party list hidden (party_hud off)`.
 
 ### 6. Small presence details
@@ -327,7 +336,7 @@ Scenarios (`tools/scenario.sh NAME`), each checking the game's log:
 | `presence-moves` | jump, landing, climb, the blade's swing and its impact |
 | `presence-swim` | into the water, strokes, a dive, back up, out: each heard on the puppet, its water gone with it |
 | `presence-hud` | the entry, health, menu, down, off screen with its arrow, the nameplate; logs the camera's projection |
-| `hud-layout` | screenshots of each case: the list under the health bar, below a holocall (compact), with the boss bar, with the choice hub (compact), the game's HUD hidden, `party_hud = off` |
+| `hud-layout` | screenshots of each case: the list under the health bar, below a holocall (compact), with the boss bar, with the choice hub (compact), the game's HUD hidden, `party_hud = off`; the layout line with its scale. After a call between players, `phone-holocall-ring` asks that the list is back under the health bar, full (not yet run) |
 | `hud-linked` | a linked partner's entry with health, its plate the name alone; the link broken from its side: no entry, the plate stays; `nameplates = always`; a vanish takes plate and marker |
 | `names-prompt` | the pause menu's Host this game asks for a name while it is V; a bad one asked again; a good one saved, then hosting |
 | `names-duplicate` | two mock players named V and v beside our V: shown as V (2) and v (3), each told its own, markers and HUD entries under those names |

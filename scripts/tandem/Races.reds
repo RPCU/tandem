@@ -1710,7 +1710,12 @@ public class TandemRaces {
     root.SetFitToContent(true);
     root.SetAnchor(inkEAnchor.TopRight);
     root.SetAnchorPoint(new Vector2(1.0, 0.0));
-    root.SetMargin(new inkMargin(0.0, 760.0, 120.0, 0.0));
+    // HUD units (3840 x 2160) in a window of pixels: drawn at the window's
+    // scale, about its top right corner (PartyHud.reds, WindowScale).
+    let scale = TandemPartyHud.WindowScale(this.m_game);
+    root.SetRenderTransformPivot(new Vector2(1.0, 0.0));
+    root.SetScale(new Vector2(scale, scale));
+    root.SetMargin(new inkMargin(0.0, 760.0 * scale, 120.0 * scale, 0.0));
     root.SetInteractive(false);
     root.Reparent(window);
     this.m_hud = root;

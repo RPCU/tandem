@@ -10,10 +10,12 @@ cmd presence hud holocall off
 cmd presence hud choices off
 expect 'hud: layout under the health bar \(full\) at [0-9.]+ [0-9.]+' 30
 expect 'hud: the game.s HUD modules followed: [0-9]+' 10
+# To look at: small, right under the health bar and buffs at any window
+# size (drawn at window height / 2160: three times too large at 720p before).
 shot hud-layout-default
 # A holocall: below the portrait, compact (to look at: clear of the holo).
 cmd presence hud holocall on
-expect 'hud: layout below the holocall \(compact\) at [0-9.]+ [0-9.]+, HUD [0-9]+ x [0-9]+, holocall up' 5
+expect 'hud: layout below the holocall \(compact\) at [0-9.]+ [0-9.]+, HUD [0-9]+ x [0-9]+ drawn at [0-9.]+ \(window [0-9]+ x [0-9]+, .*\), holocall up' 5
 shot hud-layout-holocall
 cmd presence hud holocall off
 expect 'hud: layout under the health bar \(full\)' 5
