@@ -10,13 +10,13 @@
 #                              or the game crashes, then kill it: "N launches,
 #                              0 crashes". The first thing to run after a
 #                              script or plugin change that touches wraps.
-#                              Fails too on a hook that ran off the game
-#                              thread (the thread probe, below), and names it
+#                              Fails too on a hook that ran beside the
+#                              script tick (the thread probe, below), and names it
 #   tools/game.sh threads      the thread probe (docs/architecture/testing.md):
 #                              the newest log's "threads:" lines (asked of a
 #                              running game first, cmd threads); fails when a
-#                              script hook ran off the game thread (not when
-#                              the script tick runs on the job workers)
+#                              script hook ran beside the script tick (on
+#                              another thread while it ran)
 #   tools/game.sh shot NAME    screenshot to .cache/shots/NAME.png
 #   tools/game.sh key CODE...  press keys (Linux input codes: 57 Space, 28 Enter, 1 Esc)
 #   tools/game.sh hold SECONDS CODE...  hold keys down together, then release
@@ -92,8 +92,9 @@
 #                              coop name [reset] (the name; reset: the menu asks again) |
 #                              coop name answer TEXT | coop name cancel (the open name popup) |
 #                              perf (the frame cost, queues and traffic now) |
-#                              threads (the thread probe: hooks seen off the game
-#                              thread, and on it only; tools/game.sh threads reads it)
+#                              threads (the thread probe: hooks seen beside the
+#                              script tick, inside it, between ticks; tools/game.sh
+#                              threads reads it)
 #
 # The game machine runs Steam in a Sway session (headless output for Sunshine)
 # and ydotoold for input; GAME_HOST and GAME_DIR override the defaults.
@@ -218,7 +219,7 @@ start() {
 # the heap corruption of 2026-11-20 (wraps on job threads while the save
 # loaded: 5 launches in 6 with them, 0 in 7 without). Load Begone passes the
 # menus; Space answers the loading screen's prompt. A launch whose log names
-# a hook that ran off the game thread (the thread probe) fails the check too.
+# a hook that ran beside the script tick (the thread probe) fails the check too.
 launches() {
   local n=${1:-5} crashes=0 playing=0 neither=0 i result t0 off=''
   for i in $(seq 1 "$n"); do
@@ -249,14 +250,10 @@ launches() {
       echo "$res after $(($(date +%s) - t0)) s"
       [ "$res" = crash ] && [ -n "$rg" ] && grep -m3 "\[crash\]" "$rg" | cut -c1-200
       tl=$(find . -name "tandem-*.log" -newermt "@$t0" | head -1)
-      [ -n "$tl" ] && sed -n "s/.*threads: hook \([^ ]*\) ran off the game thread.*/off the game thread: \1/p" "$tl"
-      [ -n "$tl" ] && grep -qE "threads: the script tick (moved from thread|runs on thread [0-9]+, the frame update on [0-9]+: not the same)" "$tl" && echo "tick moved"
+      [ -n "$tl" ] && sed -n "s/.*threads: hook \([^ ]*\) ran beside the script tick.*/beside the tick: \1/p" "$tl"
       true')
     echo "launch $i: $result"
-    # The tick on the job workers (moved, or off the frame's thread): no
-    # thread is the game's, nothing judged.
-    grep -qx 'tick moved' <<<"$result" ||
-      off+=$(sed -n 's/^off the game thread: / /p' <<<"$result" | tr -d '\n')
+    off+=$(sed -n 's/^beside the tick: / /p' <<<"$result" | tr -d '\n')
     case $result in
     crash*) crashes=$((crashes + 1)) ;;
     playing*) playing=$((playing + 1)) ;;
@@ -267,7 +264,7 @@ launches() {
   remote 'pkill -KILL -f "[C]rashReporter.exe"; true'
   echo "$n launches, $crashes crashes ($playing playing, $neither neither within 240 s)"
   if [ -n "$off" ]; then
-    echo "hooks that ran off the game thread (queue them, testing.md):$(tr ' ' '\n' <<<"$off" | sort -u | tr '\n' ' ')"
+    echo "hooks that ran beside the script tick (queue them, testing.md):$(tr ' ' '\n' <<<"$off" | sort -u | tr '\n' ' ')"
     return 1
   fi
   [ "$crashes" -eq 0 ] && [ "$playing" -gt 0 ]
@@ -287,8 +284,7 @@ threads() {
     return 1
   fi
   echo "$lines"
-  grep -qE 'the script tick (moved from thread|runs on thread [0-9]+, the frame update on [0-9]+: not the same)' <<<"$lines" && return 0
-  ! grep -q 'ran off the game thread' <<<"$lines"
+  ! grep -qE 'ran beside the script tick|[1-9][0-9]* hooks beside the script tick' <<<"$lines"
 }
 
 # Without Load Begone: through the title screen and the menu with keys.

@@ -842,6 +842,15 @@ public class TandemSystem extends ScriptableSystem {
     if gen != this.m_tickGen || !this.m_attached {
       return;
     }
+    // The thread probe's bracket (plugin/src/threads.hpp): a hook of
+    // tools/scripts-threads.known that runs on another thread between these
+    // two ran beside the tick.
+    TandemNative.ScriptTickBegin();
+    this.TickOnce();
+    TandemNative.ScriptTickEnd();
+  }
+
+  private func TickOnce() -> Void {
     // What the world streamed in and out since, session or not (queued by
     // wraps that may run on job threads: StreamingNatives.reds).
     this.DrainStreamed();
@@ -1110,7 +1119,7 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     // The thread probe (tools/game.sh cmd threads): the hooks seen so far,
-    // off the game thread and on it only (testing.md), solo too.
+    // beside the script tick, inside it, between ticks (testing.md), solo too.
     if Equals(command, "threads") {
       TandemNative.ThreadsReport();
       return;

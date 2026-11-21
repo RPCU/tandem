@@ -560,11 +560,14 @@ public native class TandemNative extends IScriptable {
   public static native func Log(text: String)
   public static native func LogDebug(text: String)
   // The thread probe (plugin/src/threads.hpp; docs/architecture/testing.md).
-  // Any thread: are we on the game thread (the script tick's)?
+  // TandemSystem.OnTick begins and ends (its thread: the game thread).
+  public static native func ScriptTickBegin()
+  public static native func ScriptTickEnd()
+  // Any thread: are we on the game thread (the last script tick's)?
   public static native func OnGameThread() -> Bool
   // Any thread, the first statement of a hook tools/scripts-threads.known
-  // lists (n"File.Class.Method"): counted, and logged the first time it runs
-  // off the game thread.
+  // lists (n"File.Class.Method"): counted (beside the tick, inside it,
+  // between ticks), and logged the first time it runs beside the tick.
   public static native func HookRan(name: CName)
   // tools/game.sh cmd threads, and a session's end: the hooks seen so far.
   public static native func ThreadsReport()
