@@ -31,6 +31,8 @@ public class TandemStorySystem extends ScriptableSystem {
   // worn while in the host's moment.
   private let m_restrictions: ref<TandemRestrictions>;
   private let m_spectate: ref<TandemSpectate>;
+  // The host's quest prefabs in our world, the story's gates (StoryWorld.reds).
+  private let m_world: ref<TandemStoryWorld>;
 
   // Host: the journal snapshot is owed (sent once the world plays), and the
   // changes since the last tick, sent together.
@@ -188,6 +190,8 @@ public class TandemStorySystem extends ScriptableSystem {
     this.m_spectate.Start(this.GetGameInstance(), this);
     this.m_interact = new TandemInteract();
     this.m_interact.Start(this.GetGameInstance(), this);
+    this.m_world = new TandemStoryWorld();
+    this.m_world.Start(this.GetGameInstance(), this);
     // Journal changes: the host sends them; every game keeps the last quest
     // that moved (rewards, below).
     this.Listen();
@@ -268,6 +272,9 @@ public class TandemStorySystem extends ScriptableSystem {
       }
       if IsDefined(this.m_interact) {
         this.m_interact.Tick();
+      }
+      if IsDefined(this.m_world) {
+        this.m_world.Tick(this.Now(), this.m_isHost, this.Grouped());
       }
     }
     this.Schedule();
@@ -418,6 +425,9 @@ public class TandemStorySystem extends ScriptableSystem {
           if this.m_isHost {
             this.m_scenes.HostEnd();
             this.m_spectate.HostEnd();
+            if IsDefined(this.m_world) {
+              this.m_world.Leave(false);
+            }
           }
           this.EndPrivate();
           this.m_you = 0u;
@@ -434,6 +444,9 @@ public class TandemStorySystem extends ScriptableSystem {
           ArrayRemove(this.m_hiddenPuppets, event.player);
           this.SetBusy(event.player, false);
           this.m_spectate.OnPlayerGone(event.player);
+          if IsDefined(this.m_world) {
+            this.m_world.OnPlayerGone(event.player);
+          }
           break;
         case 3:
           if !ArrayContains(this.m_others, event.player) {
@@ -490,6 +503,17 @@ public class TandemStorySystem extends ScriptableSystem {
           // its moment, Restrictions.reds).
           if !this.m_isHost {
             TandemNative.Log(s"story: the host has \(event.index) story restriction(s) on");
+          }
+          break;
+        case 45:
+          // The host's world prefabs (made true in ours at the next check).
+          if !this.m_isHost && IsDefined(this.m_world) {
+            this.m_world.OnHostPrefabs(event.index);
+          }
+          break;
+        case 46:
+          if IsDefined(this.m_world) {
+            this.m_world.OnGates(event.player, event.flags);
           }
           break;
         case 50:
@@ -1002,6 +1026,10 @@ public class TandemStorySystem extends ScriptableSystem {
     this.m_dialogue.Close();
     this.m_scenes.Leave();
     this.m_spectate.Leave();
+    // What we loaded of the host's world (its quest interiors), off again.
+    if IsDefined(this.m_world) {
+      this.m_world.Leave(true);
+    }
     this.ReleaseHolds();
     this.TakeOffEffects();
     // Back to the default before the journal is put back (our own gig
@@ -1820,6 +1848,10 @@ public class TandemStorySystem extends ScriptableSystem {
     } else if Equals(command, "quest apart") || Equals(command, "quest grouped") {
       // (test, until regions) as if we were apart from the host, or back.
       this.SetApart(Equals(command, "quest apart"));
+    } else if Equals(command, "story prefabs") || Equals(command, "story gates") {
+      if IsDefined(this.m_world) {
+        this.m_world.Report(StrAfterFirst(command, "story "));
+      }
     } else if Equals(command, "story items") {
       TandemNative.Log(s"story: \(ArraySize(this.m_sessionItems)) session item record(s) held");
     } else if StrBeginsWith(command, "story item ") {

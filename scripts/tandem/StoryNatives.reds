@@ -55,6 +55,10 @@ public native struct TandemStoryEvent {
   // on, 0: gone);
   // 44 the host's story restrictions changed (player: the host, index: how
   // many; the set itself: TandemStory.RestrictHostSet);
+  // 45 the host's world prefabs changed (player: the host, index: how many;
+  // made true in our world by TandemStory.PrefabsTick);
+  // 46 a player's story gates (player, flags: 1 the Watson lockdown lifted,
+  // 2 Dogtown open, 4 its V in Watson, 8 in Dogtown);
   // scene replay (a guest; docs/architecture/scene-replay.md):
   // 50 the host's scene begins (line: the scene, hash: its play, state: the
   // host's tier, flags: 1 skipping 2 held 8 staged, duration: seconds it has
@@ -147,6 +151,21 @@ public native class TandemStory extends IScriptable {
   public static native func CarryReport() -> String;
   public static native func SendEffect(effect: TweakDBID, applied: Bool) -> Void;
   public static native func SendRestrictions(effects: array<TweakDBID>) -> Bool;
+  // Quest prefabs (docs/architecture/story.md, "Quest prefabs"), once a
+  // second: (host) ours sent when they changed, how many are on; (guest)
+  // the host's on in our world while grouped, how many of ours are on (-1
+  // unavailable). The leave: ours off (how many). A line for the logs.
+  public static native func PrefabsTick(host: Bool, grouped: Bool) -> Int32;
+  public static native func PrefabsLift() -> Int32;
+  public static native func PrefabsReport() -> String;
+  // Story gates (docs/architecture/story.md, "Story gates"): ours sent when
+  // they changed; a player's as heard (-1 never); the gates the host's story
+  // has open and the guest's closed (1 Watson, 2 Dogtown); (guest) the gate
+  // whose closed side we stand at with the host past it, once per crossing.
+  public static native func SendGates(flags: Int32) -> Bool;
+  public static native func GatesOf(player: Uint32) -> Int32;
+  public static native func GatesBehind(host: Int32, guest: Int32) -> Int32;
+  public static native func GateMet(host: Int32, ours: Int32, distance: Float) -> Int32;
   // Quest interactions: tandem.ini quest_interact; a CName as a number;
   // (guest) ask the host about our V's choice on its object (the question's
   // number), what it answered this session (-1 never asked); (host) answer
