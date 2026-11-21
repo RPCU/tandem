@@ -53,7 +53,8 @@
   rule needs no list of mods (OverclockOverheat's optional
   `OverclockDilation` asked for it, [`mod-compat.md`](mod-compat.md)). The
   exceptions stay as they were: melee hit stop (`meleeHit`,
-  `meleeHitStrong`) and deflect local, menus (`WorldMap`, the TweakDB
+  `meleeHitStrong`) and deflect local, menus (`WorldMap`, `VendorStash`,
+  `UI_TutorialPopup`, `minigame`, `TimeSkip`, `NetworkBreach`, the TweakDB
   profiles' reasons of `radialMenu`, `hubMenu`, `vehicleRadioMenu`,
   `nanoWireBreach`, `settings`; a shop's or the stash's screen, the
   vendor hub menu, whose 0.05 has no reason scripts can name: while
@@ -62,6 +63,47 @@
   never taken for one. A host cannot take it back (no reason to hold): its
   world stays slowed and the NPCs it shares are exempted, as with
   `time_host = full`. Tests: `tests/timebubble_test.cpp`.
+- **Menus** (`Time.reds`, 2026-11-21, not yet run in game; scenario
+  `time-menus`). A guest's menus, popups and screens slow or stop its own
+  world, as in single player: nobody else's. The host's world is the
+  shared one (every NPC and turret it runs crawled on the guests' screens
+  while its weapon wheel was open, free kills), so while another player is
+  in the session (`TandemTime.HostKeepsWorld`: hosting, `OtherPlayers`
+  not empty) none of the host's slows it, and alone the host's menus are
+  single player's:
+  - through a `TimeDilationHelper` profile (the weapon and vehicle wheels,
+    the phone and its message popup, the hub menu: inventory, perks,
+    crafting, journal; the radio, list popups): the wrap of
+    `SetTimeDilationWithProfile` refuses to start it, as vanilla's own
+    `IsMultiplayer()` branch does (its close then finds nothing to unset
+    and returns, as in multiplayer); other mods' wraps of it are skipped
+    with it;
+  - set by name (`TandemTime.MenuReasons`: the map's `WorldMap`, a shop's,
+    the stash's, the ripperdoc's and the wardrobe's `VendorStash`, the
+    world's and V's, a tutorial popup's `UI_TutorialPopup`, the breach
+    screen's `minigame`, research `coop-time.md` §3.4): unset on the next
+    script tick, which runs on real time (`DropMenus`; a frame of it at
+    most, logged once a session each). A shop's or the stash's screen
+    showed a 0.05 under no reason scripts could name (2026-11-21): if it is
+    not one of these, `time: a shop's screen still slows the shared world`
+    says so once a screen, and the NPCs shared stay exempted as before;
+  - a shard's popup (`ShardNotificationController.PauseGameState`, the
+    handler's `PauseGame`): unpaused at once, unless a player is in their
+    pause menu (the co-op pause holds then, `Pause.reds`).
+
+  Kept on the host: the time-skip wheel (`TimeSkip`: a skip is asked of
+  everyone, `activities.md`) and the breach's dive (`NetworkBreach`: a
+  listener waits for its end, `research/coop-time.md` §8 question 6). The
+  host in a menu stays in the world and can be hurt; the others see it
+  "In a menu" in the party HUD (`Tandem-Party-Menu`) and busy, idling.
+  Tests: `tools/game.sh cmd time menu NAME SECONDS` (`wheel`, `hub`, `map`,
+  `stash`, `tutorial`, `breach`: the menu's own slow motion set as the game
+  sets it, without the menu; the world speed logged a second in); scenario
+  `time-menus` (each menu at full speed with the mock player in, and the
+  host's clock as the mock player hears it at 8 game seconds a second
+  while the map is held; if the clock does not follow the world's slow
+  motion, `coop-time.md` §8 question 9, that part proves nothing).
+
 - **The scanner's slow time is a bubble too** (`scripts/tandem/Time.reds`,
   2026-11-19, not yet run in game; the user: "the scanner has a bubble
   slow time too so it's standard"). It was switched off while another V
@@ -217,15 +259,15 @@ slow-motion cue on (…)`, `time: the slow-motion cue off`. Tested in
   wardrobe, vendors) does **not** pause in co-op: the others keep playing
   while one levels perks or changes weapons, as in other co-op games. The
   player in such a menu stays in the world, vulnerable, and the others see
-  them standing there (later: a small "in menu" sign over their V).
+  them standing there ("In a menu" in the party HUD; later: a small sign
+  over their V).
   Scanning slow-motion, braindances and the like follow their own notes.
   Done (2026-11-18, to verify in game with scenario `pause`): the pause
   menu, see Inside the plugin. (`World.timePaused` still carries only the
-  host's own time-system state.) Still to do: the other menus keep pausing
-  their own game (vanilla:
-  `MenuHubGameController`/`RadialMenuHubGameController` set the `hubMenu`
-  time dilation profile and the `HubMenu` menu mode; `TimeDilationHelper`
-  gives up when `IsMultiplayer()`), and the "in menu" sign.
+  host's own time-system state.) Done (2026-11-21, not yet run in game,
+  scenario `time-menus`): the host's menus slow nothing while another
+  player is in the session (Inside the plugin, Menus). A guest's menus
+  still slow its own game, which only it sees.
 - **Slowed and stopped time.** The single-player game bends time for one V,
   who in a shared world is not alone. Everything that does it needs a
   deliberate co-op rule:

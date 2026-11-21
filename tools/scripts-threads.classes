@@ -94,6 +94,7 @@ StimBroadcasterComponent < ScriptableComponent < GameComponent < IComponent < IS
 TakedownGameEffectHelper < IScriptable
 TakedownReleasePreyEvents < LocomotionTakedownEvents < LocomotionEventsTransition < LocomotionTransition < DefaultTransition < StateFunctor < IScriptable
 ThrowEvents < CarriedObjectEvents < CarriedObjectTransition < DefaultTransition < StateFunctor < IScriptable
+TimeDilationHelper < IScriptable
 TimeskipGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 UpdateWhistlePosition < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
 VehicleComponent < ScriptableDeviceComponent < DeviceComponent < GameComponent < IComponent < IScriptable
