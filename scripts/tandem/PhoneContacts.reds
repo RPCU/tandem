@@ -25,6 +25,9 @@ public class TandemPhoneContacts {
   // What a row asked for, done on the next tick (0: nothing).
   private let m_player: Uint32;
   private let m_action: Int32;
+  // (test) `phone open` wants the Contacts tab, whatever the phone would
+  // open on (Messages while texts are unread, the game's own rule).
+  private let m_wantContacts: Bool;
 
   public func Start(game: GameInstance, system: ref<TandemSystem>) -> Void {
     this.m_game = game;
@@ -209,6 +212,12 @@ public class TandemPhoneContacts {
 
   // ---- what a row does ----
 
+  public func TakeWantContacts() -> Bool {
+    let want = this.m_wantContacts;
+    this.m_wantContacts = false;
+    return want;
+  }
+
   public func Bind(phone: ref<NewHudPhoneGameController>) -> Void {
     this.m_phone = phone;
   }
@@ -278,6 +287,7 @@ public class TandemPhoneContacts {
     let rest = ArraySize(words) > 2 ? StrAfterFirst(StrAfterFirst(command, " "), " ") : "";
     if Equals(verb, "open") {
       // As the phone key's hold (NewHudPhoneGameController.OnAction).
+      this.m_wantContacts = true;
       GameInstance.QueueScriptableSystemRequest(this.m_game, n"PhoneSystem", new UsePhoneRequest());
       TandemNative.Log("phone: opening the contacts list");
     } else if Equals(verb, "close") {
@@ -386,9 +396,14 @@ private let m_tandemPlayer: Uint32;
 // as it sorted them.
 @wrapMethod(NewHudPhoneGameController)
 public final func SetScreenType(type: PhoneScreenType) {
-  wrappedMethod(type);
+  let screen = type;
+  let contacts = TandemPhoneContacts.Of(GetGameInstance());
+  if IsDefined(contacts) && contacts.TakeWantContacts() {
+    screen = PhoneScreenType.Contacts;
+  }
+  wrappedMethod(screen);
   this.m_tandemPlayer = 0u;
-  if Equals(type, PhoneScreenType.Contacts) {
+  if Equals(screen, PhoneScreenType.Contacts) {
     this.TandemPlayersFirst();
   }
 }

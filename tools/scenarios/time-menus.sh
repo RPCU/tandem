@@ -9,7 +9,7 @@ pause 3
 mark
 cmd time menu wheel 3
 expect 'time: the radialMenu menu would slow the shared world: refused' 5
-expect 'time: test menu wheel for 3 s \(its slow motion refused\)' 5
+expect 'time: test menu wheel for 3(\.0+)? s \(its slow motion refused\)' 5
 expect 'time: world speed (0\.9[5-9]|1\.0)[0-9]* over the test' 5
 expect 'time: test menu over' 5
 mark
