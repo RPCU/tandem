@@ -992,6 +992,8 @@ Options::DeviceOrder DeviceOrderOf(std::string_view spec) {
   return order;
 }
 
+Vec3 Point(std::string_view flag, std::string_view value);
+
 // --fracture [ENTITY:COMPONENT:]X,Y,Z[@SECONDS]
 Options::FractureOrder FractureOrderOf(std::string_view spec) {
   Options::FractureOrder order;

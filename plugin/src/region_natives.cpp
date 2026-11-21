@@ -7,6 +7,8 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include <RED4ext/Scripting/Natives/Generated/ent/EntityID.hpp>
+
 #include "combat.hpp"
 #include "mods.hpp"
 #include "regions.hpp"
