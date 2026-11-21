@@ -370,7 +370,8 @@ public class TandemTransit {
         TandemVehicles.Unseat(this.m_game, body, puppet.transitTrain, puppet.seatedSlot);
         puppet.seatedIn = none;
       }
-      puppet.reattachAt = EngineTime.ToFloat(GameInstance.GetSimTime(this.m_game)) + 0.5;
+      // On TandemSystem's clock, which compares it: real time.
+      puppet.reattachAt = TandemClock.Real(this.m_game) + 0.5;
     }
     puppet.transitTrain = none;
   }

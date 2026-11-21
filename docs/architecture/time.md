@@ -213,6 +213,29 @@ slow-motion cue on (…)`, `time: the slow-motion cue off`. Tested in
     `--sandevistan-scale`); scenario `time-scan`; the endpoint test keeps
     a scanning scale (`tests/endpoint_test.cpp`).
 
+- **Timers** (`TandemClock`, `System.reds`, 2026-11-21, not yet run in
+  game). Two clocks: real time (engine time), what a player waits through,
+  and the world's (sim time), which slow motion stretches (a menu, the
+  scanner's bubble, a time bubble: a shop's screen made commands 20× slow)
+  and a loading screen stops. `TandemSystem`'s `Now()` is real time and
+  feeds the ticks: revive (the 300 s cooldown, the 120 s wait for a lost
+  host), trade's lapses, comms (the 15 s link request, a partner's upload
+  bar), activities (the skip-time prompt, as core's `kSkipAnswerUs`),
+  travel's 15 s offer (as its notice), hacks' uploads, breaches, stealth's
+  samples, the street, vehicles, the radio, presence, the test reset; and
+  `Interact.reds`'s 3 s wait for the host's answer. On the world's time
+  (`WorldNow()`): the "playing" check (two seconds of the world running
+  after the loading screen), takedowns (their waits are the animations'),
+  the police's dispatch, the world's clock and weather (`World.reds`: 8
+  game seconds a world second), a fast travel's waits (`Travel.reds`: 60 s
+  to land, 30 s for the loading screen's end, 1.5 s after it). With clocks
+  of their own on world time: a stealth noise's rate, a turret's shot
+  (`TandemFireAt`: `AIWeapon.Fire` takes sim time), the ragdoll delays
+  (the delay system's), the story's systems (scenes, restrictions,
+  spectating), loot's bag binding, markers, the bodies' donors. A field is
+  only compared with the clock that set it (the metro's reattach time,
+  `Transit.reds`, was sim time against `TandemSystem`'s).
+
 ## Open problems
 
 - **What the partner lives with when a V scans.** The scanner is opened

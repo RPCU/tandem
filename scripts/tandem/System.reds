@@ -303,7 +303,7 @@ public class TandemSystem extends ScriptableSystem {
     // starts if it is on (now, or when the co-op menu switches it on).
     this.m_recordReady = false;
     this.m_playing = false;
-    this.m_attachedAt = this.Now();
+    this.m_attachedAt = this.WorldNow();
     TandemNative.RecorderStart(Equals(player.GetResolvedGenderName(), n"Male") ? 2 : 1);
     if TandemNative.IsConfigured() {
       this.BeginSession();
@@ -339,7 +339,7 @@ public class TandemSystem extends ScriptableSystem {
     this.m_sentAppearance = false;
     this.m_sentHeld = false;
     this.m_sentSeat = false;
-    this.m_attachedAt = this.Now();
+    this.m_attachedAt = this.WorldNow();
     // Who may drive our cars (tandem.ini lend): said once, kept by the
     // endpoint for whoever joins.
     TandemProgress.SendCarLend(TandemProgress.OwnLend());
@@ -816,7 +816,7 @@ public class TandemSystem extends ScriptableSystem {
     this.SendAppearance();
     this.SendHeld();
     this.SendSeat();
-    this.m_recordWorld.RecordTick(now);
+    this.m_recordWorld.RecordTick(this.WorldNow());
     this.m_recordNpcs.RecordTick(now);
     // Down or dead is a death for the index (0 up, 2 out: proto::Life).
     let life = player.IsDead() ? 2 : 0;
@@ -999,7 +999,7 @@ public class TandemSystem extends ScriptableSystem {
         this.m_saves.Tick();
       }
       // As in a session (tools/game.sh waits for this line).
-      if !this.m_playing && this.Now() - this.m_attachedAt > 2.0 {
+      if !this.m_playing && this.WorldNow() - this.m_attachedAt > 2.0 {
         this.m_playing = true;
         TandemNative.Log("playing (solo)");
       }
@@ -1023,7 +1023,7 @@ public class TandemSystem extends ScriptableSystem {
     }
     // The world's clock stands still behind the loading screen: two seconds
     // of it mean the player is in (tools/game.sh waits for this line).
-    if !this.m_playing && this.Now() - this.m_attachedAt > 2.0 {
+    if !this.m_playing && this.WorldNow() - this.m_attachedAt > 2.0 {
       this.m_playing = true;
       TandemNative.Log("playing");
       if IsDefined(this.m_pause) {
@@ -1038,8 +1038,9 @@ public class TandemSystem extends ScriptableSystem {
     this.SendHeld();
     this.SendSeat();
     TandemNative.PerfMark(1);
+    // The world's clock and weather: on the world's time, as the clock runs.
     if IsDefined(this.m_world) {
-      this.m_world.Tick(this.Now());
+      this.m_world.Tick(this.WorldNow());
     }
     TandemNative.PerfMark(2);
     // Not behind the loading screen: listing NPCs while the world streams in
@@ -1049,7 +1050,7 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_npcs) && this.m_playing && this.m_you != 0u {
       // On real time: under our own slow motion (Time.reds) the world's
       // clock runs slower, and the others must hear of our NPCs as often.
-      this.m_npcs.Tick(EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())), this.m_you);
+      this.m_npcs.Tick(this.Now(), this.m_you);
     }
     TandemNative.PerfMark(3);
     if IsDefined(this.m_stealth) && this.m_playing && this.m_you != 0u {
@@ -1060,7 +1061,8 @@ public class TandemSystem extends ScriptableSystem {
     TandemBreach.Tick(this.GetGameInstance(), this.Now(), this.m_playing ? this.m_you : 0u);
     TandemNative.PerfMark(5);
     // Grapples, takedowns, carried bodies (Takedowns.reds); 0: not in a session.
-    TandemTakedowns.Get(this.GetGameInstance()).Tick(this.Now(), this.m_playing && IsDefined(this.m_npcs) ? this.m_you : 0u);
+    // On the world's time: their waits are the animations'.
+    TandemTakedowns.Get(this.GetGameInstance()).Tick(this.WorldNow(), this.m_playing && IsDefined(this.m_npcs) ? this.m_you : 0u);
     TandemNative.PerfMark(6);
     if IsDefined(this.m_revive) && this.m_playing {
       this.m_revive.Tick(this.Now(), this.m_you);
@@ -1068,7 +1070,7 @@ public class TandemSystem extends ScriptableSystem {
     // Devices (Devices.reds); 0: not in a session yet, or the world loads.
     let devices = TandemDevices.Get(this.GetGameInstance());
     if IsDefined(devices) {
-      devices.Tick(EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())), this.m_playing ? this.m_you : 0u);
+      devices.Tick(this.Now(), this.m_playing ? this.m_you : 0u);
     }
     TandemNative.PerfMark(7);
     if IsDefined(this.m_bodies) {
@@ -1087,8 +1089,9 @@ public class TandemSystem extends ScriptableSystem {
       if IsDefined(this.m_traffic) {
         this.m_traffic.Tick(this.Now(), this.m_you, this);
       }
+      // The police dispatch at the world's pace, as the game's own does.
       if IsDefined(this.m_police) {
-        this.m_police.Tick(this.Now(), this.m_you, this);
+        this.m_police.Tick(this.WorldNow(), this.m_you, this);
       }
       if IsDefined(this.m_wheels) {
         this.m_wheels.Tick(this.Now(), this.m_you, this);
@@ -1099,7 +1102,7 @@ public class TandemSystem extends ScriptableSystem {
     // What the puppets are heard doing, their flinches, the party HUD
     // (Presence.reds), on real time as the NPCs are.
     if IsDefined(this.m_presence) && this.m_playing {
-      this.m_presence.Tick(EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())), this, this.m_you);
+      this.m_presence.Tick(this.Now(), this, this.m_you);
     }
     this.FollowLentCars();
     this.Rebuild();
@@ -3526,8 +3529,14 @@ public class TandemSystem extends ScriptableSystem {
     }
   }
 
+  // Real time: what a player waits through (TandemClock).
   private func Now() -> Float {
-    return EngineTime.ToFloat(GameInstance.GetSimTime(this.GetGameInstance()));
+    return TandemClock.Real(this.GetGameInstance());
+  }
+
+  // The world's time: for what the world paces (TandemClock).
+  private func WorldNow() -> Float {
+    return TandemClock.World(this.GetGameInstance());
   }
 
   private func NoticeLeft(player: Uint32) -> Void {
@@ -3662,6 +3671,23 @@ public class TandemSystem extends ScriptableSystem {
     ArrayClear(this.m_puppets);
   }
 
+}
+
+// The two clocks, in seconds (docs/architecture/time.md, "Timers"). Real
+// (engine) time is what a player waits through: a prompt, an offer's lapse,
+// a cooldown, an answer from another game; no slow motion stretches it.
+// The world's (sim) time is slowed by a menu, the scanner or a time bubble
+// and stands still behind a loading screen: for what the world paces (an
+// animation, the police, the clock). A field set from one is only ever
+// compared with the same one.
+public abstract class TandemClock {
+  public static func Real(game: GameInstance) -> Float {
+    return EngineTime.ToFloat(GameInstance.GetEngineTime(game));
+  }
+
+  public static func World(game: GameInstance) -> Float {
+    return EngineTime.ToFloat(GameInstance.GetSimTime(game));
+  }
 }
 
 // A rotation about the vertical axis only. EulerAngles is a native struct
