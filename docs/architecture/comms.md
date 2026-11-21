@@ -378,7 +378,7 @@ yet**. `scripts/tandem/PhoneContacts.reds`.
   - Test commands: `comms holocall` (what is shown), `comms hangup` (as the
     key). Scenarios (not run yet): `phone-holocall-ring` (their call rings
     with the widget and their name, answered, the view closes, the link
-    stays), `phone-holocall-call` (our call connecting, answered, hung up
+    stays, the party list back under the health bar), `phone-holocall-call` (our call connecting, answered, hung up
     with the call's button).
 - **How, in the game's scripts** (`final.reds:408140`, wrapped, each a
   `public final func` of the HUD controller, reached from its own input

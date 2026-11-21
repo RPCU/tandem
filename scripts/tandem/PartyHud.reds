@@ -29,7 +29,10 @@
 // The list's place (presence.md, Layout): top left under the game's health
 // bar and buffs; below the holocall, compact, while a call is up; compact
 // while the dialogue choice hub is up; hidden when there is no room. The
-// HUD's units are the window's at the UI scale, so the list keeps to the
+// places and sizes here are in the HUD's units (3840 x 2160 at 16:9), but
+// the layer's window is in the game window's pixels: the list and the
+// nameplates are drawn at the window's scale (Measure), so they are the
+// same share of the screen at 720p as at 2160p, and the list keeps to the
 // left edge at any aspect, as the health bar does.
 
 public class TandemPartyEntry {
@@ -93,6 +96,13 @@ public class TandemPartyHud {
   private let m_width: Float;
   private let m_height: Float;
   private let m_aspect: Float;
+  // The game's window in pixels, which are the HUD layer window's units,
+  // and a HUD unit in them (1 at 2160p, 1/3 at 720p).
+  private let m_windowWidth: Float;
+  private let m_windowHeight: Float;
+  private let m_scale: Float;
+  // What the game says of its own UI scale (logged beside ours).
+  private let m_inverse: Float;
 
   public static func BarWidth() -> Float {
     return 420.0;
@@ -115,6 +125,9 @@ public class TandemPartyHud {
     this.m_width = 3840.0;
     this.m_height = 2160.0;
     this.m_aspect = 16.0 / 9.0;
+    this.m_windowWidth = 3840.0;
+    this.m_windowHeight = 2160.0;
+    this.m_scale = 1.0;
     this.m_fovVertical = true;
   }
 
@@ -209,6 +222,8 @@ public class TandemPartyHud {
     root.SetName(n"tandem_party");
     root.SetFitToContent(true);
     root.SetAnchor(inkEAnchor.TopLeft);
+    // Scaled about its top left corner (Layout).
+    root.SetRenderTransformPivot(new Vector2(0.0, 0.0));
     root.SetMargin(new inkMargin(this.m_left, this.m_top, 0.0, 0.0));
     root.SetInteractive(false);
     root.Reparent(window);
@@ -489,17 +504,36 @@ public class TandemPartyHud {
     return true;
   }
 
-  // The HUD's size in its own units (the window at the UI scale: 3840 x
-  // 2160 at 16:9, wider at 21:9, taller at 16:10) and the screen's aspect.
+  // A HUD unit in the game window's pixels: the HUD is 2160 units tall
+  // (3840 wide on a screen narrower than 16:9). The HUD layer's virtual
+  // window, where our widgets are, is in pixels: at 1280 x 720 the list
+  // was drawn three times too large, 96 340 at mid-screen (two games,
+  // 2026-11-21).
+  public static func WindowScale(game: GameInstance) -> Float {
+    let window = GameInstance.GetUISystem(game).GetCurrentWindowSize();
+    if window.X <= 0.0 || window.Y <= 0.0 {
+      return 1.0;
+    }
+    return MinF(window.X / 3840.0, window.Y / 2160.0);
+  }
+
+  // The window, the scale, and the HUD's size in its own units (3840 x
+  // 2160 at 16:9, wider at 21:9, taller at 16:10) with the screen's aspect.
   private func Measure() -> Void {
     let ui = GameInstance.GetUISystem(this.m_game);
     let window = ui.GetCurrentWindowSize();
-    let inverse = ui.GetInverseUIScale();
-    if window.X > 0.0 && window.Y > 0.0 && inverse > 0.0 {
+    this.m_inverse = ui.GetInverseUIScale();
+    if window.X > 0.0 && window.Y > 0.0 {
+      this.m_scale = TandemPartyHud.WindowScale(this.m_game);
+      this.m_windowWidth = window.X;
+      this.m_windowHeight = window.Y;
       this.m_aspect = window.X / window.Y;
-      this.m_width = window.X * inverse;
-      this.m_height = window.Y * inverse;
+      this.m_width = window.X / this.m_scale;
+      this.m_height = window.Y / this.m_scale;
     } else {
+      this.m_scale = 1.0;
+      this.m_windowWidth = 3840.0;
+      this.m_windowHeight = 2160.0;
       this.m_aspect = 16.0 / 9.0;
       this.m_width = 3840.0;
       this.m_height = 2160.0;
@@ -523,10 +557,11 @@ public class TandemPartyHud {
     }
     this.m_compact = compact;
     this.m_listOn = Equals(why, "");
-    this.m_root.SetMargin(new inkMargin(left, top, 0.0, 0.0));
+    this.m_root.SetScale(new Vector2(this.m_scale, this.m_scale));
+    this.m_root.SetMargin(new inkMargin(left * this.m_scale, top * this.m_scale, 0.0, 0.0));
     let place = call ? "below the holocall" : "under the health bar";
     let yields = (call ? ", holocall up" : "") + (choices ? ", choice hub up" : "") + (boss ? ", boss bar up (top centre: nothing to yield)" : "");
-    let layout = s"\(place) (\(compact ? "compact" : "full")) at \(left) \(top), HUD \(RoundF(this.m_width)) x \(RoundF(this.m_height))\(yields)";
+    let layout = s"\(place) (\(compact ? "compact" : "full")) at \(left) \(top), HUD \(RoundF(this.m_width)) x \(RoundF(this.m_height)) drawn at \(this.m_scale) (window \(RoundF(this.m_windowWidth)) x \(RoundF(this.m_windowHeight)), the game's inverse UI scale \(this.m_inverse))\(yields)";
     if NotEquals(layout, this.m_layout) {
       this.m_layout = layout;
       TandemNative.Log(s"hud: layout \(layout)");
@@ -707,9 +742,9 @@ public class TandemPartyHud {
       entry.plateNow = plateOn;
       if plateOn {
         let scale = TandemPresence.NameplateScale(bearing.distance, mode);
-        entry.plate.SetMargin(new inkMargin(point.x * this.m_width, point.y * this.m_height, 0.0, 0.0));
+        entry.plate.SetMargin(new inkMargin(point.x * this.m_windowWidth, point.y * this.m_windowHeight, 0.0, 0.0));
         entry.plate.SetOpacity(opacity);
-        entry.plate.SetScale(new Vector2(scale, scale));
+        entry.plate.SetScale(new Vector2(scale * this.m_scale, scale * this.m_scale));
         entry.plateName.SetText(TandemPartyHud.NameOf(player));
       }
 
@@ -793,7 +828,7 @@ public class TandemPartyHud {
       this.m_left = StringToFloat(StrBeforeFirst(rest, " "));
       this.m_top = StringToFloat(StrAfterFirst(rest, " "));
       if IsDefined(this.m_root) {
-        this.m_root.SetMargin(new inkMargin(this.m_left, this.m_top, 0.0, 0.0));
+        this.m_root.SetMargin(new inkMargin(this.m_left * this.m_scale, this.m_top * this.m_scale, 0.0, 0.0));
       }
       TandemNative.Log(s"hud: party widget at \(this.m_left) \(this.m_top)");
     } else if Equals(command, "fov v") || Equals(command, "fov h") {

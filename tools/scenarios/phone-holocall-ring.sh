@@ -17,6 +17,12 @@ expect 'holocall: the call view of tandem-peer closed, the link stays' 15
 pause 5
 cmd comms holocall
 expect 'holocall: mode 0 with nobody, drawn 0' 5
+# The call view gone: the party list is back under the health bar, full
+# (it went below the portrait, compact, while the call was drawn).
+expect 'hud: layout below the holocall \(compact\)' 5
+cmd presence report
+expect 'hud: layout under the health bar \(full\) .*; list shown' 5
+shot holocall-over-party-list
 cmd phone
 expect 'phone: tandem-peer \(Linked\): Hang up \| ' 10
 reject 'holocall: a call of the game.s'
