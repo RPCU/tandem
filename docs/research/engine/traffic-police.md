@@ -240,11 +240,11 @@ characterRecords: [TweakDBID], unitCount: Uint32) -> Int32` on the
   scriptable (`TrySpawnPoliceOnFootFallback`, `SpawnFallbackUnits`,
   `:140949-141006`). **The origins are arguments**: units can be asked
   around any point, a remote V's puppet included. `[S]`
-- Chase vehicles, roadblocks and the AV search are written around "the
+- Chase vehicles, roadblocks and the AV search are **placed** around "the
   player" inside the native system (`IsPlayerOnHighway`,
   `GetIntersectionInFrontOfPlayerPos`, the strategies
-  `DriveTowardsPlayer`…): they cannot be aimed at a puppet from scripts.
-  `[S]` `[I]`
+  `DriveTowardsPlayer`…). `[S]` `[I]` What a chase car then **does** is an
+  AI command with any target ("Police cars and the AV for someone else").
 - Every finished request comes back as
   `PreventionSpawnSystem.SpawnRequestFinished(result)` →
   `PreventionUnitSpawnedRequest` → `PreventionSystem.OnPreventionUnitSpawnedRequest`
@@ -267,6 +267,63 @@ policeStrategy, vehicleType, spawnedObjects, success}`. `[S]`
   2026-11-21). `Police.reds` draws from the district's pool instead.
   [2.5-verified]
 
+### Police cars and the AV for someone else
+
+Read on 2026-11-21 for `Police.reds`'s cars and AV for a remote V; none of
+it has run in game. [2.5-untested]
+
+- `RequestChaseVehicle(vehicle, passengers, strategy)` (`:189170`) spawns
+  a car with its crew seated; the prevention system picks the car by
+  weight from the level's `PreventionHeatData.VehicleRecordPool`
+  (`GetVehicleRecordFromPool`, `:139139`), the crew from the car's
+  `Vehicle_Record.PreventionPassengers`, between its
+  `Min/MaxVehiclePassengersCount` (`:139301`, `SpawnPoliceVehicle`
+  `:141278-141356`). The strategy request carries only ranges
+  (`BaseStrategyRequest{distanceRange, minDirectDistance}` and an
+  `angleRange` for some, `:199187-199280`), made from the level's
+  `PreventionHeatTable.StrategyN()` (`CreateStrategyRequest`, `:141228`).
+  `[S]`
+- **Strategies are only available while asked for**: the spawn system
+  checks the ones given to `SetStrategyPreCheckRequests` (`IsStrategyAvailable`,
+  `GetRandomAvailableStrategy`), and the prevention system gives them only
+  while V is chased and clears them otherwise (`UpdateStrategyPreCheckRequests`,
+  `:141167`). `[S]` That a car spawns for a script that sets them itself
+  while V is not chased is `[I]`.
+- The car's behaviour is a vehicle AI command sent as
+  `AICommandEvent{command}` to the car and kept as
+  `AIVehicleAgent.SetInitCmd` (`:160847`). The police's own chase:
+  `AIVehicleChaseCommand{target, distanceMin 3, distanceMax 10,
+forcedStartSpeed}` with the local V as target (`ChasePlayer`, `:142449`);
+  the dynamic spawn system's chase cars add `ignoreChaseVehiclesLimit` and
+  `boostDrivingStats` (`DynamicSpawnSystem.SpawnCallback`, `:189617-189633`).
+  `target` is any `GameObject`. Standing a car down: the spawn system's
+  `InterruptAllActionAndCommands(car)` and an `AIVehiclePanicCommand`
+  (`StartVehicleDeescalationBehavior`, `:142670`, sent by `execInstructionSafe`, `:142654`); taking it away,
+  `RequestDespawnVehicleAndPassengers` (`:193565`). No
+  `AINPCCommandEvent` in 2.50's scripts. `[S]`
+- A crew gets out near its target by `AITargetInUnmountingRangeCond`
+  (`:163458-163488`): the spawn system's unmounting range for the player,
+  **15 m from any other target**. `[S]`
+- `NavGenAgentSize` is `Human 0, Vehicle 1` in the RTTI (RED4ext.SDK's
+  generated `NavGenAgentSize.hpp`); the scripts declare `Human` alone. `[R]`
+- The AV: `RequestAVSpawnAtLocation(record, location)` (`:189220`); the
+  prevention system's first wave is `Vehicle.max_tac_av1/2/3`, the second
+  `Vehicle.max_tac_av_2nd_wave*`, one AV at a time, at five stars only
+  (`CanRequestAVSpawn`, `RequestAVSpawnAtPosition`, `:140016`, `:141117`).
+  `RequestAVSpawnAtPosition` also stops the local V's car
+  (`PreventionSystemHackerLoop.ForceCarToStop`). `[S]`
+- From a study of another co-op mod (NightCoop, on 2.31, facts only): its
+  host gives a wanted guest chase cars at points found with agent size
+  "vehicle", skipping the points inside the guest's camera view, crewed,
+  each given an `AIVehicleChaseCommand` on the guest's body (`target`,
+  `distanceMin`, `distanceMax`, `forcedStartSpeed`,
+  `ignoreChaseVehiclesLimit`, `boostDrivingStats`) as an event and as its
+  init command; at five stars one AV per guest by
+  `RequestAVSpawnAtLocation` near the guest's body; units on foot when no
+  car can be placed. It also reports that a unit spawned off the spawning
+  game's screen may not see a remote V: its sensor stays where it spawned,
+  its skeleton not being updated off screen. [2.5-untested]
+
 ## 13.34 Traffic and police: open questions (need the game)
 
 1. Does `ChangeDensityModifier(0.0)` remove the crowd's **parked** cars,
@@ -284,9 +341,23 @@ policeStrategy, vehicleType, spawnedObjects, success}`. `[S]`
 6. Does a unit spawned by `RequestUnitSpawn` whose ticket the script
    registry does not know behave (it is not registered as a police agent:
    no `StartPoliceBehaviour`), and does it chase a puppet it was made
-   hostile to?
+   hostile to? Another co-op mod reports units spawned off the
+   spawning game's screen not seeing a remote V (the sensor stays where it
+   spawned, the skeleton not being updated off screen, §13.33 "Police cars
+   and the AV"): `Police.reds` injects the puppet as a threat into every
+   unit it spawns, which needs no sight; whether they keep it is the test.
 7. Does `AIReactionData.stimTarget` name the puppet when the stimulus was
    broadcast from it (`Stealth.reds` broadcasts a guest's noise from its
    puppet)?
 8. Do a guest's hits on police proxies raise its own heat (the proxies'
    `IsPrevention()` and `IsCrowd()` on a dynamic entity)?
+9. Does `RequestChaseVehicle` spawn a car when the script set the strategy
+   pre-checks itself while the local V is not chased (§13.33 "Police cars
+   and the AV")? Does the result list the crew with the car?
+10. Does a fresh chase car teleported once to a point found with
+    `NavGenAgentSize` 1 (with its crew seated) drive on from there, and
+    does its `AIVehicleChaseCommand` on a puppet bring it to the puppet,
+    its crew out within 15 m?
+11. Does `RequestAVSpawnAtLocation` land the AV at a navmesh point 15–40 m
+    from a puppet, and do its MaxTac come back as passengers or in the
+    spawn result?
