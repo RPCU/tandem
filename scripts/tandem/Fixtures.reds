@@ -55,7 +55,7 @@ public class TandemFixtures {
         if inside {
           near += 1;
         }
-        if npc.IsVendor() && EntityID.IsDefined(TandemPlaced.IdOf(npc)) {
+        if Equals(TandemVendors.Lacks(npc), "") {
           if inside {
             vendors += 1;
           }
@@ -81,6 +81,9 @@ public class TandemFixtures {
       TandemNative.Log(s"fixture: nearest vendor \(TDBID.ToStringDEBUG(vendor.GetRecordID())) entity \(TandemNative.EntityHex(vendor.GetEntityID())) at \(vendorAt) m (\(at.X) \(at.Y) \(at.Z))");
     } else {
       TandemNative.Log("fixture: no vendor within 200 m");
+    }
+    if vendors == 0 {
+      TandemVendors.LogLacking(player, "fixture", radius);
     }
     if IsDefined(sitter) {
       let at = sitter.GetWorldPosition();
