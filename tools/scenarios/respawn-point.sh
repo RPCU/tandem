@@ -21,4 +21,8 @@ cmd revive fresh
 expect 'revive fresh: no recent revive' 5
 reject "respawn at Viktor's clinic"
 reject 'no end of the loading screen'
+# The respawn's loading screen stalls the game thread (the watchdog says so,
+# then that it is back): only what comes after it.
+mark
+pause 3
 reject 'watchdog: game thread silent'
