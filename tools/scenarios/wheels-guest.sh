@@ -14,7 +14,7 @@ expect 'wheels: vehicle 0x1 of player 1: health 0\.85' 10
 # Our V on its gun: the host gives the seat, our aim goes to it.
 cmd wheels gun
 expect 'wheels: vehicle 1: gunner [0-9]+' 10
-expect_peer 'vehicle 0x1: gunner [0-9]+ ' 10
+expect_peer 'vehicle 0x1: gunner [1-9][0-9]*' 10
 pause 3
 cmd wheels ungun
 expect_peer 'vehicle 0x1: gunner 0 \(free\)' 10
