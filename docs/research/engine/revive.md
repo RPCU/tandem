@@ -61,9 +61,17 @@ RegisterInputListener(listener, n"Choice1")` (11423) and the listener's
   (525154): `Vitals = 0`, the vitals and death anim features reset,
   `global_death_exit`; `GroundDeathEvents.OnEnter` (528540) blocks movement
   and sets the death camera's parameters first. The `dying` screen effect
-  is started only when V enters the death state already dead (527775) and
-  stopped by its exit; `GameObjectEffectHelper.BreakEffectLoopEvent(V,
-n"dying")` (106053) ends it by hand. [2.5-untested]
+  is started when V enters a death state with `Vitals` already 1 and the
+  death menu not blocked (`IsDeathMenuBlocked` 283760: the
+  `block_death_menu` fact; 527764-527775) and stopped by that state's
+  exit; `GameObjectEffectHelper.BreakEffectLoopEvent(V, n"dying")`
+  (106053) ends it by hand. `DeathEvents` is the events class of the high
+  level death state and, through `GroundDeathEvents` (528540), `Air…` and
+  `Swimming…`, of the locomotion ones: whichever enters second finds
+  `Vitals` 1, so every death starts it. Suspected to be the fade to black
+  under the death menu: a V held down saw black until its revive (two
+  games, 1280 x 720, 2026-11-21), and a run of 2026-11-19 stayed dark
+  after getting up until `dying` was broken. [2.5-untested]
 - `BaseStatusEffect.PlayerInvulnerable` is what Bloodswell puts on V
   (307839). `PlayerPuppet.SetInvisible` (43505) toggles V's visible object
   (what NPC senses see). [2.5-untested]

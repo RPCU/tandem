@@ -67,6 +67,26 @@ revive down|hold|fresh|report` (`fresh` forgets the 5-minute cooldown of
   an earlier test and stands a downed V up); scenarios `revive-peer`,
   `revive-game`, `revive-out` (also: the mock player leaving an up V
   changes nothing), `revive-lost`. **Not yet verified in game.**
+- **What a downed V sees** (2026-11-21, after the first session between
+  two games: the guest's screen was black from its fall to its revive, HUD
+  aside). Suspected cause, read in the scripts (engine facts §13.20): the
+  death screen's fade, the `dying` screen effect, which a death state
+  starts when it is entered with the vitals already dead and the death
+  menu not blocked, and which only that state's exit stops; vanilla holds
+  it 3 s, our hold on the resurrection kept it for good. Fix: while our V
+  is down or out and not dying for real, `HighLevelTransition.
+IsDeathMenuBlocked` (wrapped, `TandemRevive.KeepsWorld`) says blocked, so
+  no state starts the fade, and `dying` is broken once a second while down
+  should one start it all the same; a real death from down (`RealDeath`)
+  starts it itself. The downed V then sees the world through the game's
+  death camera, on the ground where it fell, with the low-health look of
+  health at the floor and the "You are down. NAME can revive you" notice;
+  1 s in, the log says `revive: downed view: the world stays on screen
+(the death screen's fade held off), the camera N m over where V lies`
+  (scenario `revive-peer`, with a screenshot). **Not yet run in game**: to
+  see there, that the black was that effect and not the death animation's
+  own camera, and whether the death camera lets the player look around
+  (if not: a camera of ours).
 - **Down in a car** (2026-11-21; engine facts §13.20). Vanilla's V dies in
   its seat (the death state runs beside the vehicle state machine, with a
   vehicle death camera; the one death exit is a bike's, for a V that is

@@ -58,6 +58,8 @@ public class TandemRevive {
   private let m_madeInvisible: Bool;
   private let m_downAt: Float;
   private let m_revivedAt: Float;
+  // Down: what our V sees was logged (WhileDown, 1 s in).
+  private let m_viewSaid: Bool;
   // The state machine may resurrect V (a revive or a respawn), and the next
   // resurrection is ours (its health is ours to set).
   private let m_release: Bool;
@@ -314,6 +316,21 @@ public class TandemRevive {
     return IsDefined(revive) && revive.m_life != 0 && !revive.m_release;
   }
 
+  // Our V lies down or out and is not dying for real: the game's death
+  // screen is not coming, so its fade to black must not start either
+  // (IsDeathMenuBlocked's wrap, at the end of this file). Only reads.
+  public static func KeepsWorld(owner: wref<GameObject>) -> Bool {
+    if !IsDefined(owner) {
+      return false;
+    }
+    let system = GameInstance.GetScriptableSystemsContainer(owner.GetGame()).Get(n"TandemSystem") as TandemSystem;
+    if IsDefined(system) && system.LeftDown() {
+      return false;
+    }
+    let revive = TandemRevive.Of(owner.GetGame());
+    return IsDefined(revive) && revive.m_life != 0 && !revive.m_dying;
+  }
+
   // Our V got up (PlayerPuppet.OnResurrected): from a revive or a respawn
   // (ours), or from Second Heart.
   public static func Resurrected(player: ref<PlayerPuppet>) -> Void {
@@ -472,6 +489,7 @@ public class TandemRevive {
     this.m_downAt = this.m_now;
     this.m_release = false;
     this.m_ours = false;
+    this.m_viewSaid = false;
     this.ClearRevivers();
     this.m_calmSince = -1.0;
     this.m_aloneSince = -1.0;
@@ -523,6 +541,13 @@ public class TandemRevive {
       this.m_lastDrop = this.m_now;
       this.DropThreats(player, player);
       this.Invulnerable(player);
+      // The death screen's fade, should a state have started it all the
+      // same (KeepsWorld holds it off): a downed V sees the world.
+      GameObjectEffectHelper.BreakEffectLoopEvent(player, n"dying");
+    }
+    if !this.m_viewSaid && this.m_now - this.m_downAt >= 1.0 {
+      this.m_viewSaid = true;
+      this.SayView(player);
     }
     // On the way to a far respawn: nothing else until we are up there (a
     // partner leaving meanwhile takes nothing from it).
@@ -583,6 +608,20 @@ public class TandemRevive {
     if this.m_life == 2 {
       this.MaybeRespawn(player, others);
     }
+  }
+
+  // What a downed V sees, for the log (scenarios read it): the game's death
+  // camera, where it is over V's feet, and no fade to black.
+  private func SayView(player: ref<PlayerPuppet>) -> Void {
+    let feet = player.GetWorldPosition();
+    let frame = Transform.Create(feet);
+    let cameras = GameInstance.GetCameraSystem(this.m_game);
+    let height = 0.0;
+    let known = IsDefined(cameras) && cameras.GetActiveCameraWorldTransform(frame);
+    if known {
+      height = Transform.GetPosition(frame).Z - feet.Z;
+    }
+    TandemNative.Log(s"revive: downed view: the world stays on screen (the death screen's fade held off), the camera \(known ? s"\(height) m over where V lies" : "unknown")");
   }
 
   // Someone's revive of our V: started, given up, done (their game ran the
@@ -1475,6 +1514,11 @@ public class TandemRevive {
 
   // The game's own death from where V lies: the death screen, a reload.
   private func RealDeath(player: ref<PlayerPuppet>) -> Void {
+    // Held off while V lay down (KeepsWorld): the game's fade into its
+    // death screen, as DeathEvents.OnEnter starts it.
+    if this.m_life != 0 && !this.m_dying {
+      GameObjectEffectHelper.StartEffectEvent(player, n"dying", false, null);
+    }
     this.m_dying = true;
     this.m_life = 2;
     this.SendOurs(player);
@@ -1991,6 +2035,22 @@ protected const final func ToResurrect(const stateContext: ref<StateContext>, co
     return false;
   }
   return wrappedMethod(stateContext, scriptInterface);
+}
+
+// The death screen's fade to black: a death state entered by a V whose
+// vitals already say dead starts the `dying` screen effect unless the death
+// menu is blocked (DeathEvents.OnEnter, final.reds 527764: the locomotion
+// machine's GroundDeathEvents after the high level's DeathEvents, or the
+// other way round), and only that state's exit stops it. Vanilla holds it
+// 3 s (Second Heart) or until the death menu; our downed V stayed in it:
+// a black screen until revived (two games, 2026-11-21). No menu comes for
+// a V that is down or out, so no fade either. Only reads.
+@wrapMethod(HighLevelTransition)
+protected const final func IsDeathMenuBlocked(scriptInterface: ref<StateGameScriptInterface>) -> Bool {
+  if TandemRevive.KeepsWorld(scriptInterface.executionOwner) {
+    return true;
+  }
+  return wrappedMethod(scriptInterface);
 }
 
 // Swimming leaves for the death state only at the health minimum

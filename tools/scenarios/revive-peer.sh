@@ -11,6 +11,11 @@ cmd revive down
 expect 'revive: our V is down \(revivable\)' 10
 expect 'our V: life 1' 5
 query down health
+# A downed V sees the world from where it lies: the death screen's fade to
+# black is held off (to look at: no black screen, the partner in view, the
+# "You are down" notice; whether the mouse still looks around).
+expect 'revive: downed view: the world stays on screen' 5
+shot revive-downed-view
 expect_peer 'player 1 is down' 10
 expect_peer 'reviving player 1' 10
 expect 'revive: tandem-peer is reviving us' 5
