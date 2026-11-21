@@ -293,13 +293,13 @@ public class TandemActivities {
       flags = 1;
     }
     if settled && (kind == 1 || kind == 2 || kind == 4 || kind == 5) {
-      let instance = spots.GetWorkspotInstance(player.GetEntityID());
-      if IsDefined(instance) && IsDefined(instance.resource) {
-        let path = instance.resource.path;
-        let reference = path.resource;
-        workspot = ResourceAsyncRef.GetHash(reference);
-        entry = Cast<Int32>(instance.entryId.id);
-        anim = IsNameValid(instance.idleAnim) ? instance.idleAnim : instance.animName;
+      // The game's own instance map (Codeware's GetWorkspotInstance finds
+      // none on 2.50: TandemActivity.Workspot).
+      let spot = TandemActivity.Workspot(player.GetEntityID());
+      if spot.state == 1 {
+        workspot = spot.path;
+        entry = spot.entry;
+        anim = IsNameValid(spot.idle) ? spot.idle : spot.anim;
       }
     }
     if kind != 0 && this.StandsStill() {

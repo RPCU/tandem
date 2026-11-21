@@ -139,6 +139,7 @@ found through this table, each number once.
 | 13.131 | The campaign's quest ids, as the 2.50 scripts name them | `story.md` |
 | 13.132 | Whether the game lets V fast travel now | `story.md` |
 | 13.133 | Tracers, ricochets, a charge's glow, an NPC's guided round | `presence.md` |
+| 13.134 | Which workspot an actor plays: the game's instance map | `npcs.md` |
 
 ## Top traps (one line each)
 

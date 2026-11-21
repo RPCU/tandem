@@ -20,6 +20,18 @@ public native struct TandemBusyState {
   native let yaw: Float;
 }
 
+// The workspot an actor plays in, read from the game's workspot system
+// (Codeware's GetWorkspotInstance finds none on 2.50).
+public native struct TandemWorkspot {
+  // 0 none, 1 found, 2 an instance with no resource, 3 not laid out as measured
+  native let state: Int32;
+  // the workspot resource's path hash, its tree entry, the animations
+  native let path: Uint64;
+  native let entry: Int32;
+  native let anim: CName;
+  native let idle: CName;
+}
+
 public native struct TandemSkipEvent {
   // 1 asked of us, 2 a vote on ours, 3 ended
   native let kind: Int32;
@@ -86,5 +98,6 @@ public native class TandemActivity extends IScriptable {
   // The scene our game plays now (its resource path hash; 0: none), and
   // whether it is one of V's homes' interactions (the shower, the bed...).
   public static native func OurScene() -> Uint64;
+  public static native func Workspot(actor: EntityID) -> TandemWorkspot;
   public static native func ApartmentScene(scene: Uint64) -> Bool;
 }

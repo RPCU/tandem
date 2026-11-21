@@ -169,8 +169,8 @@ player's alone.
     false), a shard's popup (`ShardNotificationController`), a device's
     screen up close (the player state machine's `IsUIZoomDevice`, the
     device from `UIZoomDeviceID`: a screen), a workspot
-    (`WorkspotGameSystem.GetWorkspotInstance`: its resource, entry, idle
-    animation), a bed (a workspot in which our clock jumped: lying, kind
+    (`TandemActivity.Workspot`, the game's instance map: its resource,
+    entry, idle animation; not yet run in game), a bed (a workspot in which our clock jumped: lying, kind
     Sleep). Anchored where it began. Frozen while our game stands
     still (`TimeSystem.IsPausedState`, or an active time dilation under
     0.05: the wheel's, a menu's).

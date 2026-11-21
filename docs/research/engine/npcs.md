@@ -186,9 +186,11 @@ syncSlotName, opt slideTime)` (`:53330`; vanilla plays it on a dead or
   `ExtendedWorkspotInfo` (`:319157`) has only flags. Codeware adds
   `WorkspotGameSystem.GetWorkspotInstance(actorID) ->
 workWorkspotInstance {resource, animName, idleAnim, entryId}`
-  (`scripts/World/WorkspotSystem.reds`), `CResource.path`, `ResRef.resource`
-  with `ResourceAsyncRef.GetHash`: the resource's depot path hash, the same
-  in every copy of the game. `WorkspotStartedEvent.nodeId: GlobalNodeID`
+  (`scripts/World/WorkspotSystem.reds`), which finds no instance on 2.50
+  (§13.134); tandem reads the game's map itself
+  (`TandemActivity.Workspot`). In scripts, `CResource.path`,
+  `ResRef.resource` with `ResourceAsyncRef.GetHash` give a resource's
+  depot path hash, the same in every copy of the game. `WorkspotStartedEvent.nodeId: GlobalNodeID`
   (`:250074`) names the workspot's world node, unused so far.
 - **A workspot to play from**: `WorkspotResourceComponent` (`:105125`, an
   `IPlacedComponent`; Codeware exposes `workspotResource: ResourceAsyncRef`).
@@ -202,3 +204,27 @@ workWorkspotInstance {resource, animName, idleAnim, entryId}`
   transform is its world transform, that `PlayNpcInWorkspot` takes the
   proxy as its own master and reference entity, and that the movement
   controller (kept still meanwhile) does not fight the workspot.
+
+### 13.134 Which workspot an actor plays: the game's instance map (2026-11-21, decompiled 2.50 exe, one run)
+
+- `gameWorkspotGameSystem.IsActorInWorkspot` (native `0x1409ef4ac`) takes
+  the `workWorkspotSystem` (runtime system 31: game instance `+0x40` →
+  `+0x78` → `+0x1f0`), its shared spin lock at `+0x50`, and looks the
+  actor's EntityID hash up with `0x1405dbbec` (address-library hash
+  `2234523611`, `(system, uint64 entity) -> workWorkspotInstance*`): a
+  `HashMap<uint64, instance*>` at `+0x70` whose hashed key is the low 32
+  bits of the EntityID (`0x14022c920`: bucket `(uint32)key % capacity`,
+  node key compared whole). True when the instance's `+0x60`, `+0x30` and
+  `+0x90` are set (`0x140228508`). [2.5-verified]
+- Codeware 1.21.5's `GetWorkspotInstance` reads the same map through
+  RED4ext's `HashMap::Get`, which hashes a `uint64` key with FNV-1a: it
+  never finds the instance. In game: 48 NPCs in workspots at
+  kabuki-market, `IsActorInWorkspot` true, "no instance" for every one
+  (npcs-anims-host, 2026-11-21). [2.5-verified]
+- `workWorkspotInstance` (0x2E0 bytes) holds handles at `+0x60`
+  (`workWorkspotTree`), `+0x70` (`workWorkspotResource`), `+0x80`, `+0x90`
+  (its destructor releases those four), and, per Codeware, `animName`
+  `+0x110`, `idleAnim` `+0x118`, `entryId` `+0x120`. `CResource.path` (the
+  depot path hash) is at `+0x30`. Whether a community or crowd workspot's
+  instance holds its resource is not yet seen (`npc seek: its workspot:`
+  says). [2.5-untested]

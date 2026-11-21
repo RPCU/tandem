@@ -12,6 +12,7 @@
 #include "activity.hpp"
 #include "combat.hpp"
 #include "engine/scenes.hpp"
+#include "engine/workspots.hpp"
 #include "runtime.hpp"
 
 #include "tandem/activity.hpp"
@@ -20,6 +21,7 @@
 #include <RedLib.hpp>
 
 #include <RED4ext/ResourcePath.hpp>
+#include <RED4ext/Scripting/Natives/Generated/ent/EntityID.hpp>
 
 #include <algorithm>
 #include <array>
@@ -57,6 +59,16 @@ struct TandemSkipEvent {
   std::int32_t toSeconds{};
 };
 static_assert(alignof(TandemSkipEvent) <= 8, "the script VM aligns struct locals to 8");
+
+// The workspot an actor plays in (engine::WorkspotRead).
+struct TandemWorkspot {
+  std::int32_t state{}; // 0 none, 1 found, 2 an instance with no resource, 3 refused
+  std::uint64_t path{}; // the workspot resource's depot path hash
+  std::int32_t entry{}; // its tree entry
+  Red::CName anim{};    // the animation playing
+  Red::CName idle{};    // the idle animation
+};
+static_assert(alignof(TandemWorkspot) <= 8, "the script VM aligns struct locals to 8");
 
 // A street race's note, for the scripts (RaceNote; Races.reds). A heard
 // Race comes as a head (part 0) followed by one event per point (part 1:
@@ -370,6 +382,16 @@ struct TandemActivity : Red::IScriptable {
   // The scene our game plays now (its quest node ran in the last 3 s; 0:
   // none, or the scene hook is out): its resource path hash.
   static std::uint64_t OurScene() { return engine::ScenePlaying(3000); }
+  // The workspot `actor` plays in, from the game's workspot system (an NPC
+  // of the world, our V).
+  static TandemWorkspot Workspot(Red::EntityID actor) {
+    const auto read = engine::WorkspotOf(actor.hash);
+    return TandemWorkspot{.state = static_cast<std::int32_t>(read.state),
+                          .path = read.path,
+                          .entry = static_cast<std::int32_t>(read.entry),
+                          .anim = Red::CName(read.anim),
+                          .idle = Red::CName(read.idle)};
+  }
   // That scene is one of V's homes' interactions.
   static bool ApartmentScene(std::uint64_t scene) {
     static const auto hashes = [] {
@@ -385,6 +407,14 @@ struct TandemActivity : Red::IScriptable {
   RTTI_IMPL_ALLOCATOR();
 };
 } // namespace tandem::plugin
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemWorkspot, "TandemWorkspot", {
+  RTTI_PROPERTY(state);
+  RTTI_PROPERTY(path);
+  RTTI_PROPERTY(entry);
+  RTTI_PROPERTY(anim);
+  RTTI_PROPERTY(idle);
+});
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemBusyState, "TandemBusyState", {
   RTTI_PROPERTY(player);
@@ -452,5 +482,6 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemActivity, "TandemActivity", {
   RTTI_METHOD(QueueRaceUi);
   RTTI_METHOD(QueueRaceReward);
   RTTI_METHOD(OurScene);
+  RTTI_METHOD(Workspot);
   RTTI_METHOD(ApartmentScene);
 });

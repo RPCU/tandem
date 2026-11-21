@@ -343,26 +343,34 @@ public class TandemNpcAnims {
         anim.target = this.TargetOf(threat.entity as GameObject, you);
       }
     }
-    let workspots = GameInstance.GetWorkspotSystem(this.m_game);
-    if workspots.IsActorInWorkspot(npc) {
-      let instance = workspots.GetWorkspotInstance(npc.GetEntityID());
-      if IsDefined(instance) && IsDefined(instance.resource) {
-        let path = instance.resource.path;
-        let reference = path.resource;
-        anim.workspot = ResourceAsyncRef.GetHash(reference);
-        anim.workspotEntry = Cast<Int32>(instance.entryId.id);
-        anim.workspotAnim = IsNameValid(instance.idleAnim) ? instance.idleAnim : instance.animName;
-        if anim.workspot != 0ul {
-          anim.flags += 2;
-        }
-      }
-      if anim.workspot == 0ul {
-        // npcs-anims-host: 48 NPCs in workspots near, every shared one sent
-        // with workspot 0: which half is missing, the instance or its path?
-        TandemNative.LogDebug(s"npc anims: \(TandemNative.EntityHex(npc.GetEntityID())) is in a workspot, \(IsDefined(instance) ? (IsDefined(instance.resource) ? "its resource has no path" : "its instance has no resource") : "no instance")");
+    // The game's own instance map (TandemActivity.Workspot): Codeware's
+    // GetWorkspotInstance hashes the key otherwise and found none of the
+    // 48 NPCs in workspots at kabuki-market (npcs-anims-host, 2026-11-21).
+    if GameInstance.GetWorkspotSystem(this.m_game).IsActorInWorkspot(npc) {
+      let spot = TandemActivity.Workspot(npc.GetEntityID());
+      if spot.state == 1 {
+        anim.workspot = spot.path;
+        anim.workspotEntry = spot.entry;
+        anim.workspotAnim = IsNameValid(spot.idle) ? spot.idle : spot.anim;
+        anim.flags += 2;
+      } else {
+        TandemNative.LogDebug(s"npc anims: \(TandemNative.EntityHex(npc.GetEntityID())) is in a workspot, not sent: \(TandemNpcAnims.SpotStateName(spot.state))");
       }
     }
     return anim;
+  }
+
+  public static func SpotStateName(state: Int32) -> String {
+    if state == 1 {
+      return "found";
+    }
+    if state == 2 {
+      return "its instance holds no resource";
+    }
+    if state == 3 {
+      return "its instance is not laid out as measured";
+    }
+    return "no instance";
   }
 
   // A player id (us or a puppet), 0x10000 + a shared NPC's id, or 0.
@@ -441,6 +449,9 @@ public class TandemNpcAnims {
       GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, to, TandemYawAngles(player.GetWorldYaw()));
     }
     TandemNative.Log(s"npc seek: \(seen) in a workspot, the nearest \(TDBID.ToStringDEBUG(best.GetRecordID())) \(bestDistance) m away\(moved ? ", V moved to 40 m of it" : "")");
+    // What the host sends of it: the workspot read as StateOf reads it.
+    let spot = TandemActivity.Workspot(best.GetEntityID());
+    TandemNative.Log(s"npc seek: its workspot: \(TandemNpcAnims.SpotStateName(spot.state)), resource \(spot.path), entry \(spot.entry), anim \(NameToString(IsNameValid(spot.idle) ? spot.idle : spot.anim))");
     return true;
   }
 

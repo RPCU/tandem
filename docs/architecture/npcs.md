@@ -196,8 +196,11 @@ the first group session.
   high-level, upper-body and stance states (the `PuppetState` blackboard
   NPCStatesComponent fills), the item in its right hand, whom it is after
   (its top hostile threat: a player, or another shared NPC) and the
-  workspot it plays in (Codeware's `GetWorkspotInstance`: the workspot
-  resource's path hash, its tree entry, the animation), and sends the NPCs
+  workspot it plays in (`TandemActivity.Workspot`, the game's own instance
+  map, engine-knowledge §13.134: the workspot resource's path hash, its tree
+  entry, the animation; Codeware's `GetWorkspotInstance` finds none on
+  2.50, so every NPC went with workspot 0 until 2026-11-21; not yet run in
+  game), and sends the NPCs
   whose state changed as `NpcAnims` (reliable; the host keeps each NPC's
   latest for late joiners). Every NPC shot passes `AIWeapon.Fire` and goes
   as `NpcShot` (unreliable). A guest applies a state once the proxy is

@@ -9,6 +9,9 @@ at "${NPCS_AT:-kabuki-market}"
 pause 5
 cmd npc seek 150
 expect 'npc seek: [1-9][0-9]* in a workspot' 10
+# The game's own instance map has it, and its resource (Codeware's
+# GetWorkspotInstance found none: every NPC went with workspot 0).
+expect 'npc seek: its workspot: found, resource [1-9][0-9]*, entry' 5
 pause 3
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode idle --record .cache/npcs-anims.rec
 expect_peer 'npc [0-9]+ animates: high [0-9]+, upper [0-9]+, stance [0-9]+' 30
