@@ -3,12 +3,13 @@
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male
 expect 'joined \(player [0-9]+' 20
+# (34: the save's own story call may add restrictions, 2, to the test's 32.)
 cmd story spectate on
 expect 'spectate: test moment on' 5
-expect 'spectate: our V is in a scripted moment \(reasons 32.*only our view shows it' 5
+expect 'spectate: our V is in a scripted moment \(reasons 3[24].*only our view shows it' 5
 expect 'story: our story flags 80' 5
 cmd story spectate report
-expect 'host moment true \(reasons 32, to watch true' 5
+expect 'host moment true \(reasons 3[24], to watch true' 5
 # A private scene ends it at once and says nothing more.
 cmd story private on
 expect 'spectate: our moment is over' 5
