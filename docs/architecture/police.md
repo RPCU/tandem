@@ -89,8 +89,12 @@ it does not (a proxy that does not count as a civilian there, research §13.34 q
    at a time, up to stage + 1 (6 at five stars), at points the game's own
    spawn system finds around the puppet (`FindPursuitPointsRangeAsync`
    takes its origins as arguments), spawned by the game's own
-   `RequestUnitSpawn`. They are the owner's NPCs: shared with everyone as
-   proxies, shot at and killed like any NPC, and they fire at the puppet
+   `RequestUnitSpawn`, drawn by weight from the district's pool for that
+   stage at its spawn range (the prevention system's preset,
+   `PreventionData.NCPD` before it has one; the script's failsafe records
+   `Character.prevention_unit_tier1/2/3` do not exist, §13.33). They are
+   the owner's NPCs: shared with everyone
+   as proxies, shot at and killed like any NPC, and they fire at the puppet
    through the existing path (`NpcShotAt`: the target's game simulates the
    shot).
 4. **Hostile to that V alone.** A unit sent for a player is made hostile
@@ -194,8 +198,6 @@ Not built:
   level in the co-op roster). The level is there (`TandemStreet.HeatStage`).
 - Chase vehicles, roadblocks and MaxTac for a wanted guest in another
   game's area (above).
-- The pools the game draws its units from (per district and stage): the
-  owner uses `Character.prevention_unit_tier1/2/3` by stage.
 - Security areas and their own alarm (a guest trespassing in a host's
   restricted area) are not looked at here.
 
