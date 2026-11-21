@@ -1,26 +1,29 @@
-// Spectating the host's scripted moments (docs/architecture/story.md,
-// "Spectating"; the rule: core/story.hpp MomentReasons, HostMoment,
-// Spectator). The quest runs on the host's game alone: while its V is in a
-// scripted moment (a story scene of tier 2 and up, quest restrictions on how
-// it moves, a ride its scene or quest put it in, a scripted body or camera
-// mode, another world), a guest beside it watches through the host's camera
-// instead of playing a V the quest knows nothing of.
+// Spectating the host's scripted moments, the last resort (docs/architecture/
+// story.md, "Spectating"; the rule: core/story.hpp MomentReasons,
+// HostMoment, Spectator). The quest runs on the host's game alone. A guest
+// that shares the host's moment (a scene, quest restrictions, a quest ride,
+// a scripted body mode) plays it from its own V: scene replay shows the
+// actors, the restrictions hold it, the ride along seats it. It watches
+// through the host's camera only while it cannot take part from its own
+// body: (a) a cutscene (tier 5), (b) the host's V in another world, (c) the
+// host's V taken beyond its reach, (d) the quest's camera animation.
 //   - the host reads its own V four times a second, from the game's data
 //     (no list of quests), says the moment as kStoryMoment in its
-//     StoryState (Story.reds SendFlags) and sends its camera's view every
-//     frame while it lasts (SceneCamera, paced by the endpoint);
-//   - a guest that shares the moment when it begins (grouped, in this
-//     world, within 40 m) watches it on a camera of its own, following the
-//     host's V wherever the moment takes it; its own V is parked:
+//     StoryState (Story.reds SendFlags), kStoryWatch with it for (a), (b),
+//     (d), and sends its camera's view every frame while the moment lasts
+//     (SceneCamera, paced by the endpoint);
+//   - a guest that stood in the moment (grouped, in this world, within
+//     40 m) watches while a reason holds, on a camera of its own, following
+//     the host's V wherever the moment takes it; its own V is parked:
 //     invisible to the NPCs (the visible object component, as vanilla's
 //     grace period after a spawn), held still and safe (the spectating
 //     holds, Story.reds UpdateHolds: no movement, no combat, no camera,
 //     invulnerable), its body out of the picture, hidden from the others
 //     (kStorySpectating), and carried along with the host's V (Follow), so
 //     the world streams, the NPC links and the sound come with the picture.
-//     "Stop watching" (Choice1) leaves; the moment's end, the host
-//     vanishing or the session ending release it, the V where it was
-//     carried to.
+//     "Stop watching" (Choice1) leaves; the reason's end (even with the
+//     moment going on), the host vanishing or the session ending release
+//     it, the V where it was carried to.
 // Names checked against the 2.50 scripts (final.reds lines in the comments).
 
 public class TandemSpectateFrame extends DelayCallback {
@@ -42,11 +45,13 @@ public class TandemSpectate {
   private let m_lastScan: Float;
   private let m_moment: Bool;
   private let m_reasons: Int32;
-  // Guest: when we last checked, whether we watch, the camera body we asked
+  // Guest: when we last checked, whether we watch and why (Spectator::Why),
+  // the camera body we asked
   // for, whether the picture is its, what we did to our V and the host's
   // puppet, whether the player asked to leave (OnAction, acted on the frame).
   private let m_lastCheck: Float;
   private let m_watching: Bool;
+  private let m_why: Int32;
   private let m_camera: EntityID;
   private let m_cameraAsked: Bool;
   private let m_cameraLive: Bool;
@@ -84,7 +89,8 @@ public class TandemSpectate {
   }
 
   // A scripted body or camera mode the story holds the V in (no movement,
-  // no camera control, forced crouch, a camera animation), not one of its
+  // no camera control, forced crouch; a camera animation is IsCamera's),
+  // not one of its
   // own activities (a body carried, a call, a braindance, focus, a locker,
   // a contest, driving in combat): those are not the story's moments.
   public static func IsMode(record: wref<StatusEffect_Record>) -> Bool {
@@ -105,8 +111,15 @@ public class TandemSpectate {
         return false;
       }
     }
-    return record.GameplayTagsContains(n"CameraAnimation") || StrContains(name, "NoMovement")
-      || StrContains(name, "NoCameraControl") || StrContains(name, "ForceCrouch");
+    return !record.GameplayTagsContains(n"CameraAnimation") && (StrContains(name, "NoMovement")
+      || StrContains(name, "NoCameraControl") || StrContains(name, "ForceCrouch"));
+  }
+
+  // The quest's camera animation holds the V's view (the CameraAnimation
+  // tag): a picture the guest's own camera cannot give, only the host's.
+  public static func IsCamera(record: wref<StatusEffect_Record>) -> Bool {
+    return TandemRestrictions.IsRestriction(record) && !TandemRestrictions.IsShared(record)
+      && record.GameplayTagsContains(n"CameraAnimation");
   }
 
   // ---- host ----
@@ -124,12 +137,15 @@ public class TandemSpectate {
     }
     let restricted = false;
     let mode = false;
+    let camera = false;
     let effects: array<ref<StatusEffect>>;
     GameInstance.GetStatusEffectSystem(this.m_game).GetAppliedEffects(player.GetEntityID(), effects);
     for effect in effects {
       let record = effect.GetRecord();
       if TandemSpectate.Restricts(record) {
         restricted = true;
+      } else if TandemSpectate.IsCamera(record) {
+        camera = true;
       } else if TandemSpectate.IsMode(record) {
         mode = true;
       }
@@ -141,11 +157,12 @@ public class TandemSpectate {
     let mounted = IsDefined(transit) && transit.OurKind() == 3;
     // Cyberspace, a braindance, playing as Johnny (Elsewhere.reds).
     let away = TandemElsewhere.Inside(this.m_game);
-    let reasons = TandemStory.SpectateReasons(tier, isPrivate, restricted, mounted, mode, away);
-    let on = TandemStory.SpectateMoment(tier, isPrivate, restricted, mounted, mode, away);
+    let reasons = TandemStory.SpectateReasons(tier, isPrivate, restricted, mounted, mode, camera, away);
+    let on = TandemStory.SpectateMoment(tier, isPrivate, restricted, mounted, mode, camera, away);
     if NotEquals(on, this.m_moment) || (on && reasons != 0 && reasons != this.m_reasons) {
       if on {
-        TandemNative.Log(s"spectate: our V is in a scripted moment (reasons \(reasons): 1 scene, 2 restrictions, 4 quest ride, 8 scripted mode, 16 another world, 32 test): the guests beside us watch");
+        let watch = TandemStory.SpectateHostWatch();
+        TandemNative.Log(s"spectate: our V is in a scripted moment (reasons \(reasons): 1 scene, 2 restrictions, 4 quest ride, 8 scripted mode, 16 another world, 32 test, 64 cutscene, 128 quest camera): \(watch ? "only our view shows it, the guests in it watch" : "the guests in it play it from their own V")");
       } else {
         TandemNative.Log("spectate: our moment is over");
       }
@@ -187,11 +204,23 @@ public class TandemSpectate {
     let flags = story.StoryFlagsOf(host);
     let at = TandemNative.RemotePosition(host);
     let here = player.GetWorldPosition();
-    let change = TandemStory.SpectateUpdate((flags & 16) != 0, (flags & 8) != 0, story.Grouped(), TandemElsewhere.Inside(this.m_game), at.W >= 0.5, at.X, at.Y, at.Z, here.X, here.Y, here.Z);
+    let system = TandemSystem.Of(this.m_game);
+    let transit = IsDefined(system) ? system.Transit() : null;
+    let hostCar = IsDefined(system) ? system.CarOf(host) : EntityID.FromHash(0ul);
+    let hostRiding = EntityID.IsDefined(hostCar);
+    // Riding along in the host's copy (seated or carried) or in a car of our
+    // own: we play. Our spectating's own carry is not a ride.
+    let inVehicle = !this.m_carried && (VehicleComponent.IsMountedToVehicle(this.m_game, player) || (IsDefined(transit) && transit.CarriedBy() != 0u));
+    let change = TandemStory.SpectateUpdate((flags & 16) != 0, (flags & 64) != 0, (flags & 8) != 0, story.Grouped(), TandemElsewhere.Inside(this.m_game), TandemElsewhere.IsElsewhere(this.m_game, host), story.TierOf(host), hostRiding, inVehicle, at.W >= 0.5, at.X, at.Y, at.Z, here.X, here.Y, here.Z);
+    let why = TandemStory.SpectateWhy();
     if change == 2 {
+      this.m_why = why;
       this.Begin(player);
     } else if change == 3 {
       this.Finish(true);
+    } else if this.m_watching && why != this.m_why {
+      TandemNative.Log(s"spectate: still watching, now \(TandemSpectate.Why(why))");
+      this.m_why = why;
     }
     if this.m_watching {
       this.Park(player);
@@ -200,6 +229,23 @@ public class TandemSpectate {
         this.HideHead(true);
       }
     }
+  }
+
+  // Why we watch, as the log says it (story::Spectator::Why).
+  public static func Why(why: Int32) -> String {
+    if why == 1 {
+      return "(a) a cutscene: no player control, the scene's camera";
+    }
+    if why == 2 {
+      return "(b) the host's V in another world our game cannot enter";
+    }
+    if why == 3 {
+      return "(c) the host's V taken beyond our reach, no ride along";
+    }
+    if why == 4 {
+      return "(d) the quest's camera holds the host's view (or a test moment)";
+    }
+    return "none";
   }
 
   // Our V is parked (Story.reds adds the spectating holds while this says so).
@@ -221,7 +267,7 @@ public class TandemSpectate {
     }
     this.Park(player);
     this.StartFrames();
-    TandemNative.Log(s"spectate: watching \(name)'s moment through their camera, our V parked");
+    TandemNative.Log(s"spectate: watching \(name)'s moment through their camera, our V parked: \(TandemSpectate.Why(this.m_why))");
   }
 
   // What keeps our V out of the moment: unseen by the NPCs (PlayerPuppet.
@@ -392,14 +438,15 @@ public class TandemSpectate {
     TandemText.Hint(this.m_game, n"TandemSpectate", n"Choice1", false, "", inkInputHintHoldIndicationType.Press);
     let host = this.m_story.HostPlayer();
     let distance = this.m_story.DistanceToHost();
-    TandemNative.Log(s"spectate: our own V again (\(ended ? "the moment is over" : "we left it"), \(distance) m from the host\(this.m_followed ? ", carried along" : ""))");
+    TandemNative.Log(s"spectate: our own V again (\(ended ? "the reason is over" : "we left it"): \(TandemSpectate.Why(this.m_why)), \(distance) m from the host\(this.m_followed ? ", carried along" : ""))");
     // Our V was carried along (Follow): it plays on where it is, beside the
     // host. Only when that fell short (no ground near the host, its copy
-    // gone, a loading screen) and the moment ended far away: we go to it,
+    // gone, a loading screen) and the reason ended far away: we go to it,
     // behind a loading screen (Travel.reds).
     if ended && this.m_story.InSession() && distance > 60.0 && TandemTravel.RegroupTo(this.m_game, host) {
       TandemNative.Log("spectate: joining the host where the moment left it");
     }
+    this.m_why = 0;
   }
 
   // The session is over or the host is gone: everything back.
@@ -737,6 +784,6 @@ public class TandemSpectate {
     for player in this.m_spectators {
       spectators += s" \(player)";
     }
-    TandemNative.Log(s"spectate: on \(TandemStory.SpectateOn()), host moment \(this.m_moment) (reasons \(this.m_reasons)), test \(TandemStory.SpectateTestOn()), watching \(this.m_watching), camera \(this.m_cameraLive ? "the host's" : "ours"), carried \(this.m_followed)\(this.m_carried ? " (in the host's vehicle)" : ""), host's head hidden \(this.m_headHidden), spectators:\(StrLen(spectators) > 0 ? spectators : " none")");
+    TandemNative.Log(s"spectate: on \(TandemStory.SpectateOn()), host moment \(this.m_moment) (reasons \(this.m_reasons), to watch \(TandemStory.SpectateHostWatch())), test \(TandemStory.SpectateTestOn()), in the host's moment \(TandemStory.SpectateShared()), watching \(this.m_watching) (why: \(TandemSpectate.Why(this.m_why))), camera \(this.m_cameraLive ? "the host's" : "ours"), carried \(this.m_followed)\(this.m_carried ? " (in the host's vehicle)" : ""), host's head hidden \(this.m_headHidden), spectators:\(StrLen(spectators) > 0 ? spectators : " none")");
   }
 }

@@ -2223,10 +2223,13 @@ private:
 //   face NPC on|off              that actor speaks: its face (a 40-joint
 //                                stand-in whose jaw opens and closes) is sent
 //                                as rig poses (RigPose) while it lasts
-//   moment on|off                the host's V is in a scripted moment (its
-//                                StoryState says kStoryMoment): a guest beside
-//                                it watches through its camera (camera on
-//                                sends the views, scene or not)
+//   moment on [watch] [TIER]|off the host's V is in a scripted moment (its
+//                                StoryState says kStoryMoment, its tier TIER,
+//                                else the scene's): a guest in it plays it from its own
+//                                V; watch (kStoryWatch: a cutscene at tier 5,
+//                                another world, the quest's camera): it
+//                                watches through its camera (camera on sends
+//                                the views, scene or not)
 //   camera on [FOV]|cut|off      the host is in a cutscene: its camera's view
 //                                (behind and above the mock player) is sent
 //                                every frame (SceneCamera); cut: the next
@@ -2384,10 +2387,19 @@ SceneMessages(const StoryStep &step, SceneScript &script, const tandem::proto::V
     }
     if (step.verb == "moment" && !a.empty()) {
       script.moment = a[0] == "on";
+      bool watch = false;
+      int tier = script.stage.On() ? std::max<int>(script.sample.tier, 2) : 1;
+      for (std::size_t i = 1; i < a.size(); ++i) {
+        if (a[i] == "watch")
+          watch = script.moment;
+        else
+          tier = std::stoi(a[i]);
+      }
       std::vector<proto::Message> out;
-      out.push_back(
-          proto::StoryState{.tier = static_cast<std::uint8_t>(script.stage.On() ? 2 : 1),
-                            .flags = script.moment ? proto::kStoryMoment : std::uint8_t{0}});
+      out.push_back(proto::StoryState{
+          .tier = static_cast<std::uint8_t>(tier),
+          .flags = static_cast<std::uint8_t>((script.moment ? proto::kStoryMoment : 0) |
+                                             (watch ? proto::kStoryWatch : 0))});
       return out;
     }
     if (step.verb == "camera" && !a.empty()) {

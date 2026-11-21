@@ -1,9 +1,9 @@
-# As a guest watching the host's moment: "Stop watching" gives our V back at once, and the same moment is not offered again
+# As a guest watching the host's cutscene: "Stop watching" gives our V back at once, and the same cutscene is not offered again
 # shellcheck shell=bash disable=SC2317
 ensure join
 peer host --mode front --body male --story tools/scenarios/spectate-guest.story
 expect 'in the session as player' 30
-expect 'spectate: watching .*moment through their camera' 15
+expect 'spectate: watching .*moment through their camera.*\(a\) a cutscene' 20
 # The hint's key, as the game would hear it: the test command does the same.
 cmd story spectate off
 expect 'spectate: our own V again \(we left it' 5

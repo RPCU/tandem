@@ -54,10 +54,10 @@
     weapons, no sprint, no jump, forced walk, no vehicle, no quickhacks)
     would hold the host alone, and a guest could draw and fire beside the
     host's scene, kill a quest NPC or break the scene. Now a guest that
-    shares the host's story moment and does not watch it (spectating, below:
-    turned off, left with "Stop watching", or near a moment it did not share
-    when it began) wears the same ones on its own V; a spectator wears none
-    of them, only the spectating holds.
+    shares the host's story moment and does not watch it (the rule: it
+    watches only while it cannot take part from its own V, spectating
+    below) wears the same ones on its own V; a spectator wears none of
+    them, only the spectating holds.
     - _The host reports_ four times a second the gameplay restrictions on
       its V that a guest beside it shares: its status effects tagged
       `GameplayRestriction`, but not what holds the host's own body or
@@ -131,35 +131,54 @@ story restrict` (report), `story restrict on|off REC` (a test
     `MomentReasons`, `HostMoment`, `Spectator`, engine facts §13.96; built
     2026-11-21, nothing run in game; the audit of the base game's and
     Phantom Liberty's moments: [`scripted-moments.md`](scripted-moments.md)).
-    The quest runs on the host's game alone, so during its scripted gameplay
-    (a ride, an escort, a set piece, a netrun) a guest's own V is a body the
-    quest knows nothing of. A guest beside the host watches the moment
-    through the host's eyes instead, its own V parked.
+    **The last resort** (the user's rule, 2026-11-21): a guest in the host's
+    moment plays it as itself and sees it from its own eyes (scene replay
+    shows the actors, voices, subtitles and choices; the restrictions above
+    keep it from breaking the scene; the ride along seats it in the host's
+    quest vehicle, passenger combat included; its hits and uses go to their
+    owner as always). It watches through the host's eyes, its own V
+    parked, only while it cannot take part from its own body:
+    (a) a cutscene (tier 5: a scene camera, no player control);
+    (b) the host's V in another world (cyberspace, a braindance, Johnny,
+    the Blackwall: `Elsewhere.reds`); (c) the host's V taken beyond its
+    reach during the moment (a quest ride it could not ride along in, a
+    quest teleport); (d) the quest's camera animation holding the host's
+    view. The reason gone, it plays again at once, the moment going on.
     - _The host's moment_, read four times a second from its own V, no
       list of quests: a scene of tier 2 and up, quest restrictions on how
       it moves (`Restrictions.reds` `IsShared`, but not a weapons-only zone:
       a club's rule), a ride its scene drives (`Transit.reds` kind Scene),
-      a scripted body or camera mode (GameplayRestriction effects
-      NoMovement, NoCameraControl, ForceCrouch, the CameraAnimation tag; not
-      its own activities), or another world (`Elsewhere.reds`: cyberspace, a
-      braindance, Johnny). A fight, the player's own driving, a cab it
-      called: none. A private scene: never (off at once). On, it holds
-      1.5 s after its reasons go (`story::kMomentHoldUs`: between a scene's
-      sections, a loading screen). Said as `kStoryMoment` in the host's
-      `StoryState` flags (a free bit: no new message, protocol 7); while it
-      lasts the host's active camera (first person included: its position,
-      orientation and field of view) goes out every frame as `SceneCamera`,
-      numbered as the scene it announces, else as its last one (1 before
-      any), paced by the scene budget (`Endpoint::SendSceneCamera`).
-    - _Who watches_ (`story::Spectator`): a guest starts when the host's
-      moment is on and it shares it (grouped, its own V in this world,
-      within 40 m: `InMoment`'s distance); from then on it follows the
-      host's V wherever the moment takes it (a quest teleport, a ride,
-      cyberspace), however far, until the moment ends, the host's scene
-      turns private, the player presses "Stop watching" (`Choice1`; not
-      offered again in that moment), the guest goes apart, the host
-      vanishes or the session ends (`GuestLeave`). `spectate = off`
-      (`tandem.ini`) keeps a guest's own V in every moment.
+      a scripted body mode (GameplayRestriction effects NoMovement,
+      NoCameraControl, ForceCrouch; not its own activities), a camera
+      animation (the CameraAnimation tag), or another world. A fight, the
+      player's own driving, a cab it called: none. A private scene: never
+      (off at once). On, it holds 1.5 s after its reasons go
+      (`story::kMomentHoldUs`: between a scene's sections, a loading
+      screen). Said as `kStoryMoment` in the host's `StoryState` flags, and
+      `kStoryWatch` (64) with it while a reason only its view shows holds
+      (`story::kMomentWatch`: tier 5, another world, the camera animation,
+      the test moment; held alike). Free bits: no new message, protocol 7.
+      While the moment lasts the host's active camera (first person
+      included: its position, orientation and field of view) goes out every
+      frame as `SceneCamera`, numbered as the scene it announces, else as
+      its last one (1 before any), paced by the scene budget
+      (`Endpoint::SendSceneCamera`): (c) needs it in any moment.
+    - _Who watches_ (`story::Spectator`): a guest shares the moment once it
+      stands in it (grouped, its own V in this world, within 40 m:
+      `InMoment`'s distance), until the moment ends. Then it watches while
+      `kStoryWatch` holds, (b) when the host is elsewhere, else (a) at tier
+      5, else (d); or (c) while it rides nothing (neither along with the
+      host nor in a car of its own) and the host's V is more than 150 m
+      away (`story::kSpectateReach`: the NPC links' reach; in reach again
+      at 120 m, carried there by `Follow`; watching while the host rides, it
+      stays (c) until that ride ends). Each start logs its letter and why
+      (`spectate: watching … our V parked: (a) a cutscene…`), a change of
+      reason `spectate: still watching, now …`, the end `our own V again
+(the reason is over): …`. "Stop watching" (`Choice1`) declines until
+      that reason ends; watching also stops when the host's scene turns
+      private, the guest goes apart, the host vanishes or the session ends
+      (`GuestLeave`). `spectate = off` (`tandem.ini`) keeps a guest's own V
+      in every moment.
     - _What watching does_: the host's view on a camera of the guest's own
       (the watch camera's: `simple_free_camera.ent`, drawn from the same
       `scene::CameraTrack`, any play), activated with the audio listener
@@ -184,19 +203,24 @@ story restrict` (report), `story restrict on|off REC` (a test
       short of the host's V on its side when more than 15 m away (once a
       second at most). Already seated or riding along in the host's ride:
       not moved. Back: everything undone, the V where it was carried (off
-      the copy: beside it, on its right); only when the moment ended with
+      the copy: beside it, on its right); only when the reason ended with
       the host still more than 60 m away (the carry fell short: no ground,
       a loading screen) does the guest join it (`TandemTravel.RegroupTo`,
       behind a loading screen).
-    - Tests: `tests/restrictions_test.cpp` (the reasons, the hold, who
-      watches: near at the start, followed anywhere, private, apart, left,
-      lifted), `tests/referee_test.cpp` (a moment is the host's word,
-      spectating a guest's), `tests/presence_test.cpp`; mock player story
-      verb `moment on|off` (with `camera on`); scenarios `spectate-guest`,
+    - Tests: `tests/restrictions_test.cpp` (the reasons, what is to watch,
+      the holds; who watches: played in a tier 2 scene and a ride along,
+      each of (a) to (d), back at once when it ends, a moment not shared,
+      private, apart, left, lifted), `tests/referee_test.cpp` (a moment and
+      a moment to watch are the host's word, spectating a guest's),
+      `tests/presence_test.cpp`; mock player story verb `moment on [watch]
+[TIER]|off` (with `camera on`); scenarios `spectate-guest` (a tier 2
+      walk and talk played, a tier 5 cutscene and a dive watched),
       `spectate-leave`, `spectate-host`; `tools/game.sh cmd story spectate
-report` (state), `story spectate on|off` (host: a test moment; guest:
-      watching allowed, or off for the session), `story spectate parts`
-      (the host's puppet's meshes, the head ones marked).
+report` (state: the host's reasons and whether to watch, whether we
+      share the moment, why we watch), `story spectate on|off` (host: a test
+      moment, one to watch; guest: watching allowed, or off for the
+      session), `story spectate parts` (the host's puppet's meshes, the head
+      ones marked).
   - _Johnny, Songbird, takeovers_ (`research/coop-quests-design.md` §2.11):
     Johnny and Songbird are NPCs of the host's world, so a guest near the
     host sees them as proxies where the host does. Johnny's relic glitches

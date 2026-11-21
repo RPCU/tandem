@@ -1069,6 +1069,9 @@ public class TandemStorySystem extends ScriptableSystem {
     // watching it.
     if this.m_isHost && this.m_spectate.HostMoment() {
       flags += 16;
+      if TandemStory.SpectateHostWatch() {
+        flags += 64;
+      }
     }
     if !this.m_isHost && this.m_spectate.Watching() {
       flags += 32;
@@ -1077,7 +1080,7 @@ public class TandemStorySystem extends ScriptableSystem {
     if flags != this.m_ourFlags {
       this.m_ourFlags = flags;
       TandemStory.SendState(this.m_ourTier, flags);
-      TandemNative.Log(s"story: our story flags \(flags) (1 braindance, 2 Johnny, 8 private, 16 moment, 32 spectating)");
+      TandemNative.Log(s"story: our story flags \(flags) (1 braindance, 2 Johnny, 8 private, 16 moment, 32 spectating, 64 to watch)");
     }
   }
 

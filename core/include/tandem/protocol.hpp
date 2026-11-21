@@ -627,12 +627,16 @@ struct ChoiceCursor {
 // worlds such as cyberspace).
 inline constexpr std::uint8_t kStoryBraindance = 1, kStoryReplacer = 2, kStoryInCall = 4,
                               kStoryPrivate = 8, // in a private scene: not to be watched
-    // The host's V is in a scripted moment a guest beside it watches through
-    // the host's camera (story::MomentReasons; the host's word only).
+    // The host's V is in a scripted moment; its camera's views go out
+    // (story::MomentReasons; the host's word only).
     kStoryMoment = 16,
                               // A guest watches the host's moment: its own V is parked (hidden from
                               // the others, not to be seen by their NPCs). A guest's word only.
-    kStorySpectating = 32;
+    kStorySpectating = 32,
+                              // The host's moment is one only its view shows (story::kMomentWatch:
+                              // a cutscene, another world, the quest's camera). With kStoryMoment;
+                              // the host's word only.
+    kStoryWatch = 64;
 struct StoryState {
   PlayerId player{};
   std::uint8_t tier{};  // GameplayTier 1..5

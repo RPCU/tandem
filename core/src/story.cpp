@@ -265,12 +265,16 @@ std::uint8_t MomentReasons(const MomentSignals &signals) {
   std::uint8_t reasons = 0;
   if (signals.tier >= 2)
     reasons |= kMomentScene;
+  if (signals.tier >= 5)
+    reasons |= kMomentCutscene;
   if (signals.restricted)
     reasons |= kMomentRestricted;
   if (signals.questMount)
     reasons |= kMomentMounted;
   if (signals.mode)
     reasons |= kMomentMode;
+  if (signals.camera)
+    reasons |= kMomentCamera;
   if (signals.elsewhere)
     reasons |= kMomentElsewhere;
   if (signals.test)
@@ -278,38 +282,62 @@ std::uint8_t MomentReasons(const MomentSignals &signals) {
   return reasons;
 }
 
-bool HostMoment::Update(std::uint8_t reasons, std::uint64_t nowUs) {
-  if (reasons != 0) {
-    m_on = true;
-    m_lastUs = nowUs;
-  } else if (m_on && (nowUs < m_lastUs || nowUs - m_lastUs >= kMomentHoldUs)) {
-    m_on = false;
+namespace {
+bool Held(bool &on, std::uint64_t &lastUs, bool now, std::uint64_t nowUs) {
+  if (now) {
+    on = true;
+    lastUs = nowUs;
+  } else if (on && (nowUs < lastUs || nowUs - lastUs >= kMomentHoldUs)) {
+    on = false;
   }
-  return m_on;
+  return on;
+}
+} // namespace
+
+bool HostMoment::Update(std::uint8_t reasons, std::uint64_t nowUs) {
+  Held(m_watch, m_watchLastUs, (reasons & kMomentWatch) != 0, nowUs);
+  return Held(m_on, m_lastUs, reasons != 0, nowUs);
 }
 
 void HostMoment::Clear() {
-  m_on = false;
-  m_lastUs = 0;
+  m_on = m_watch = false;
+  m_lastUs = m_watchLastUs = 0;
 }
 
 Spectator::Change Spectator::Update(const SpectateInput &in) {
   const bool moment = in.hostMoment && !in.hostPrivate;
   if (!moment)
-    m_declined = false; // the next moment is offered again
-  bool want = false;
-  if (in.on && moment && in.grouped && !in.ourAway) {
-    if (m_watching)
-      want = true; // wherever the moment takes the host's V
-    else if (!m_declined)
-      want = InMoment({.grouped = true,
-                       .away = false,
-                       .hostKnown = in.hostKnown,
-                       .host = in.host,
-                       .guest = in.guest,
-                       .restricted = true},
-                      false);
+    m_shared = false;
+  const bool able = in.on && moment && in.grouped && !in.ourAway;
+  if (able && !m_shared)
+    m_shared = InMoment({.grouped = true,
+                         .away = false,
+                         .hostKnown = in.hostKnown,
+                         .host = in.host,
+                         .guest = in.guest,
+                         .restricted = true},
+                        false);
+  Why why = Why::None;
+  if (able && m_shared) {
+    if (in.hostWatch) {
+      why = in.hostElsewhere ? Why::Elsewhere : in.hostTier >= 5 ? Why::Cutscene : Why::View;
+    } else if (!in.inVehicle) {
+      const bool taken = m_watching && m_why == Why::Taken;
+      const float distance = Distance(in.guest, in.host);
+      if (m_watching && in.hostRiding)
+        why = Why::Taken; // carried in its copy: until its ride ends
+      else if (taken && !in.hostKnown)
+        why = Why::Taken; // its puppet streaming in
+      else if (in.hostKnown && distance > (taken ? kSpectateReachBack : kSpectateReach))
+        why = Why::Taken;
+    }
   }
+  if (why == Why::None)
+    m_declined = false; // the next reason is offered again
+  if (m_declined)
+    why = Why::None;
+  const bool want = why != Why::None;
+  m_why = why;
   if (want == m_watching)
     return Change::None;
   m_watching = want;
@@ -321,11 +349,14 @@ Spectator::Change Spectator::Leave() {
     return Change::None;
   m_watching = false;
   m_declined = true;
+  m_why = Why::None;
   return Change::Stop;
 }
 
 Spectator::Change Spectator::Lift() {
   m_declined = false;
+  m_shared = false;
+  m_why = Why::None;
   if (!m_watching)
     return Change::None;
   m_watching = false;
