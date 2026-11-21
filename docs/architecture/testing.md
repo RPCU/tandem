@@ -103,8 +103,11 @@ not a game` since, `exit-host`'s end): the game is stopped and the
 spots scenarios need that the test field lacks. `at NAME` (or `at "X Y
 Z [YAW]"`; `tools/scenario.sh`) teleports our V and waits until it stands
 within 4 m of the spot (its position asked every 2 s, 45 s at most: a far
-teleport has a loading screen), then 3 s; a loading screen's watchdog
-`silent` line is marked past. Each scenario's `*_AT` variable takes a name
+teleport has a loading screen), then 3 s. Our V's position is set before
+a loading screen ends: when one came (the watchdog's `silent` line), `at`
+also waits for its `back` line (90 s at most) and 5 s of streaming, then
+marks the log past it (three spots surveyed empty, each shot the loading
+screen, 2026-11-21). Each scenario's `*_AT` variable takes a name
 or coordinates (default below). `cmd fixture check [M]`
 (`scripts/tandem/Fixtures.reds`, solo too) logs `fixture: …` lines: our V's
 spot, the devices within M m (60) by class, the nearest door, lift,

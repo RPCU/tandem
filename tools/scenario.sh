@@ -289,10 +289,11 @@ spot() {
 }
 fixtures() { awk '!/^#/ && NF >= 4 { print $1 }' "$fixture_file"; }
 at() {
-  local where x y z start=$SECONDS line silent
+  local where x y z start=$SECONDS line silent back
   where=$(spot "$1") || fail "no fixture '$1' in $fixture_file"
   read -r x y z _ <<<"$where"
   silent=$(since | grep -c 'watchdog: game thread silent' || true)
+  back=$(since | grep -c 'watchdog: game thread back' || true)
   cmd teleport "$where"
   while ((SECONDS - start < 45)); do
     sleep 2
@@ -307,7 +308,16 @@ at() {
       echo "  at $1 ($where) in $((SECONDS - start)) s"
       pause 3
       if [ "$(since | grep -c 'watchdog: game thread silent' || true)" != "$silent" ]; then
-        echo "  (a loading screen on the way: the log marked after it)"
+        # Our V's position is set before the loading screen ends: the world
+        # around it streams in only after (fixtures-survey found nothing at
+        # three spots, each shot still the loading screen). Its end is the
+        # watchdog's "back" line; then the streaming's few seconds.
+        local waited=$SECONDS
+        while [ "$(since | grep -c 'watchdog: game thread back' || true)" = "$back" ] && ((SECONDS - waited < 90)); do
+          sleep 2
+        done
+        pause 5
+        echo "  (a loading screen on the way, $((SECONDS - waited)) s: the log marked after it)"
         mark
       fi
       return 0
