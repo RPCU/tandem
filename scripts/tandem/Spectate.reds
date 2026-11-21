@@ -11,13 +11,16 @@
 //     frame while it lasts (SceneCamera, paced by the endpoint);
 //   - a guest that shares the moment when it begins (grouped, in this
 //     world, within 40 m) watches it on a camera of its own, following the
-//     host's V wherever the moment takes it; its own V is parked where it
-//     stands: invisible to the NPCs (the visible object component, as
-//     vanilla's grace period after a spawn), held still and safe (the
-//     spectating holds, Story.reds UpdateHolds: no movement, no combat, no
-//     camera, invulnerable), its body out of the picture, and hidden from
-//     the others (kStorySpectating). "Stop watching" (Choice1) leaves; the
-//     moment's end, the host vanishing or the session ending release it.
+//     host's V wherever the moment takes it; its own V is parked:
+//     invisible to the NPCs (the visible object component, as vanilla's
+//     grace period after a spawn), held still and safe (the spectating
+//     holds, Story.reds UpdateHolds: no movement, no combat, no camera,
+//     invulnerable), its body out of the picture, hidden from the others
+//     (kStorySpectating), and carried along with the host's V (Follow), so
+//     the world streams, the NPC links and the sound come with the picture.
+//     "Stop watching" (Choice1) leaves; the moment's end, the host
+//     vanishing or the session ending release it, the V where it was
+//     carried to.
 // Names checked against the 2.50 scripts (final.reds lines in the comments).
 
 public class TandemSpectateFrame extends DelayCallback {
@@ -50,7 +53,17 @@ public class TandemSpectate {
   private let m_cameraLogged: Bool;
   private let m_madeInvisible: Bool;
   private let m_bodyHidden: Bool;
-  private let m_hostHidden: Bool;
+  private let m_headHidden: Bool;
+  // Guest: our V carried with the host's (Follow): the copy of the host's
+  // vehicle it is mounted to, the mount's check or its fallback, the last
+  // teleport on foot.
+  private let m_carryCar: EntityID;
+  private let m_carried: Bool;
+  private let m_carryMounted: Bool;
+  private let m_carryCheckAt: Float;
+  private let m_carryFallback: Bool;
+  private let m_followedAt: Float;
+  private let m_followed: Bool;
   private let m_listening: Bool;
   private let m_leaveAsked: Bool;
   // Everyone: the other guests that watch now (their puppets hidden here).
@@ -182,6 +195,10 @@ public class TandemSpectate {
     }
     if this.m_watching {
       this.Park(player);
+      this.Follow(player, now);
+      if this.m_headHidden {
+        this.HideHead(true);
+      }
     }
   }
 
@@ -193,6 +210,8 @@ public class TandemSpectate {
   private func Begin(player: ref<PlayerPuppet>) -> Void {
     this.m_watching = true;
     this.m_leaveAsked = false;
+    this.m_followed = false;
+    this.m_followedAt = 0.0;
     let name = this.m_story.NameOf(this.m_story.HostPlayer());
     this.m_story.Notice("Spectate-Watching", name);
     TandemText.Hint(this.m_game, n"TandemSpectate", n"Choice1", true, TandemText.Get("Spectate-Leave"), inkInputHintHoldIndicationType.Press);
@@ -221,6 +240,130 @@ public class TandemSpectate {
     }
   }
 
+  // Four times a second while watching: our parked V goes with the host's,
+  // so our game streams the world, links with the host's NPCs (regions.md)
+  // and listens around the picture, not where the moment began. Hidden,
+  // unseen and held all along (Park, the spectating holds). In the host's
+  // vehicle: mounted to its copy's trunk body slot, position kept (the
+  // ride along's carry, Transit.reds), else put in its cabin each check.
+  // On foot: put back on the ground 3 m short of the host's V, on our side
+  // of it, when it is more than 15 m away (at most once a second): out of
+  // its way, never in a wall. Seated or carried in the host's ride already
+  // (Transit.reds): that moves us.
+  private func Follow(player: ref<PlayerPuppet>, now: Float) -> Void {
+    let host = this.m_story.HostPlayer();
+    let at = TandemNative.RemotePosition(host);
+    if at.W < 0.5 {
+      return;
+    }
+    let system = TandemSystem.Of(this.m_game);
+    if !IsDefined(system) {
+      return;
+    }
+    let transit = system.Transit();
+    if !this.m_carried && (VehicleComponent.IsMountedToVehicle(this.m_game, player) || (IsDefined(transit) && transit.CarriedBy() != 0u)) {
+      return;
+    }
+    let carId = system.CarOf(host);
+    let car = TandemTraffic.Body(this.m_game, carId);
+    if this.m_carried && (!IsDefined(car) || carId != this.m_carryCar) {
+      this.Uncarry(player, false);
+    }
+    if IsDefined(car) {
+      this.CarryWith(player, car, carId, now);
+      return;
+    }
+    let here = player.GetWorldPosition();
+    if Vector4.Distance(here, at) <= 15.0 || now - this.m_followedAt < 1.0 {
+      return;
+    }
+    this.m_followedAt = now;
+    let back = Vector4.Normalize(new Vector4(here.X - at.X, here.Y - at.Y, 0.0, 0.0));
+    let spot = new Vector4(at.X + back.X * 3.0, at.Y + back.Y * 3.0, at.Z, 1.0);
+    let navigation = GameInstance.GetAINavigationSystem(this.m_game);
+    let ground = navigation.FindPointInSphereForCharacter(spot, 1.5, player);
+    if NotEquals(ground.status, worldNavigationRequestStatus.OK) {
+      ground = navigation.FindPointInSphereForCharacter(new Vector4(at.X, at.Y, at.Z, 1.0), 3.0, player);
+    }
+    if NotEquals(ground.status, worldNavigationRequestStatus.OK) {
+      TandemNative.LogDebug("spectate: no ground near the host's V to carry ours to");
+      return;
+    }
+    GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, ground.point, Vector4.ToRotation(at - ground.point));
+    if !this.m_followed {
+      TandemNative.Log("spectate: our V carried along with the host's");
+    }
+    this.m_followed = true;
+    TandemNative.LogDebug(s"spectate: our V put by the host's at \(ground.point.X) \(ground.point.Y) \(ground.point.Z)");
+  }
+
+  // In the host's vehicle: placed in its copy's cabin, then mounted to its
+  // trunk body slot (not a seat: no seat of the copy is taken); a copy
+  // without the slot (not mounted half a second later): placed again each
+  // check instead.
+  private func CarryWith(player: ref<PlayerPuppet>, car: ref<VehicleObject>, carId: EntityID, now: Float) -> Void {
+    if !this.m_carried {
+      this.m_carried = true;
+      this.m_carryCar = carId;
+      this.m_carryFallback = false;
+      this.m_carryMounted = false;
+      this.PlaceIn(player, car);
+      this.m_followed = true;
+      TandemNative.Log("spectate: our V carried along in the host's vehicle");
+      return;
+    }
+    // Mounted at the next check, once the teleport has put our V there
+    // (the mount keeps where it stands).
+    if !this.m_carryMounted && !this.m_carryFallback {
+      TandemVehicles.Carry(this.m_game, player, car, TandemTransit.CarrySlot());
+      this.m_carryMounted = true;
+      this.m_carryCheckAt = now + 0.5;
+      return;
+    }
+    if this.m_carryCheckAt > 0.0 && now >= this.m_carryCheckAt {
+      this.m_carryCheckAt = 0.0;
+      if !GameInstance.GetMountingFacility(this.m_game).IsMountedToAnything(player.GetEntityID()) {
+        this.m_carryMounted = false;
+        this.m_carryFallback = true;
+        TandemNative.Log("spectate: the host's vehicle copy has no trunk body slot: our V placed in it four times a second");
+      }
+    }
+    if this.m_carryFallback {
+      this.PlaceIn(player, car);
+    }
+  }
+
+  private func PlaceIn(player: ref<PlayerPuppet>, car: ref<VehicleObject>) -> Void {
+    let forward = car.GetWorldForward();
+    let at = car.GetWorldPosition();
+    let spot = new Vector4(at.X - forward.X * 0.45, at.Y - forward.Y * 0.45, at.Z + 0.2, 1.0);
+    GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, spot, car.GetWorldOrientation().ToEulerAngles());
+  }
+
+  // Off the host's vehicle copy; `placeOut`: put down beside it (its right
+  // side), as the ride along leaves it.
+  private func Uncarry(player: ref<PlayerPuppet>, placeOut: Bool) -> Void {
+    if !this.m_carried {
+      return;
+    }
+    if this.m_carryMounted {
+      TandemVehicles.Uncarry(this.m_game, player, this.m_carryCar, TandemTransit.CarrySlot());
+    }
+    let car = TandemTraffic.Body(this.m_game, this.m_carryCar);
+    if placeOut && IsDefined(car) {
+      let right = car.GetWorldRight();
+      let at = car.GetWorldPosition();
+      let spot = new Vector4(at.X + right.X * 2.5, at.Y + right.Y * 2.5, at.Z, 1.0);
+      GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, spot, car.GetWorldOrientation().ToEulerAngles());
+    }
+    this.m_carried = false;
+    this.m_carryMounted = false;
+    this.m_carryFallback = false;
+    this.m_carryCheckAt = 0.0;
+    this.m_carryCar = EntityID.FromHash(0ul);
+    TandemNative.Log("spectate: our V off the host's vehicle");
+  }
+
   // Our own eyes and V again. `ended`: the moment is over (not left by the
   // player): far from the host, we join it the game's way.
   private func Finish(ended: Bool) -> Void {
@@ -229,9 +372,10 @@ public class TandemSpectate {
     }
     this.m_watching = false;
     this.ReleaseCamera();
-    this.ShowHost();
+    this.ShowHead();
     let player = GetPlayer(this.m_game);
     if IsDefined(player) {
+      this.Uncarry(player, true);
       if this.m_madeInvisible {
         player.SetInvisible(false);
       }
@@ -248,9 +392,11 @@ public class TandemSpectate {
     TandemText.Hint(this.m_game, n"TandemSpectate", n"Choice1", false, "", inkInputHintHoldIndicationType.Press);
     let host = this.m_story.HostPlayer();
     let distance = this.m_story.DistanceToHost();
-    TandemNative.Log(s"spectate: our own V again (\(ended ? "the moment is over" : "we left it"), \(distance) m from the host)");
-    // The moment took the host's V away (a ride, a quest teleport): we go
-    // to it, behind a loading screen (Travel.reds).
+    TandemNative.Log(s"spectate: our own V again (\(ended ? "the moment is over" : "we left it"), \(distance) m from the host\(this.m_followed ? ", carried along" : ""))");
+    // Our V was carried along (Follow): it plays on where it is, beside the
+    // host. Only when that fell short (no ground near the host, its copy
+    // gone, a loading screen) and the moment ended far away: we go to it,
+    // behind a loading screen (Travel.reds).
     if ended && this.m_story.InSession() && distance > 60.0 && TandemTravel.RegroupTo(this.m_game, host) {
       TandemNative.Log("spectate: joining the host where the moment left it");
     }
@@ -370,15 +516,20 @@ public class TandemSpectate {
     lens.SetFOV(view.fov);
     if !this.m_cameraLive {
       this.m_cameraLive = true;
-      lens.Activate(0.4, false);
+      // The audio listener too (shouldOverrideAudioListeners, final.reds:
+      // 106188, as vanilla's camera takeover does, :102051): without it the
+      // listener stays our V's.
+      lens.Activate(0.4, true);
       TandemNative.Log(s"spectate: watching through the host's camera (fov \(view.fov))");
     }
     this.FirstPerson(position);
   }
 
-  // The host's own eyes (first person): its puppet's head would fill the
-  // picture, so the puppet is hidden while the view sits in it (within 1 m
-  // of it, 1.5 m to show it again).
+  // The host's own eyes (first person): the view sits in its puppet's head
+  // (within 1 m of it, 1.5 m to leave). As the game draws V's own first
+  // person (its FPP head has no face, hair or headgear), only the puppet's
+  // head goes: its arms, hands and what they hold stay in the picture.
+  // Third person and scene cameras see the whole puppet.
   private func FirstPerson(view: Vector4) -> Void {
     let host = this.m_story.HostPlayer();
     let at = TandemNative.RemotePosition(host);
@@ -386,19 +537,76 @@ public class TandemSpectate {
       return;
     }
     let distance = Vector4.Distance2D(view, at);
-    if !this.m_hostHidden && distance < 1.0 {
-      this.m_hostHidden = true;
-      TandemVisibility.Hide(this.m_game, host, n"spectate", 0.0);
-    } else if this.m_hostHidden && distance > 1.5 {
-      this.ShowHost();
+    if !this.m_headHidden && distance < 1.0 {
+      this.m_headHidden = true;
+      let count = this.HideHead(true);
+      TandemNative.Log(s"spectate: first person: the host's puppet's head hidden (\(count) parts), its arms and weapon shown");
+    } else if this.m_headHidden && distance > 1.5 {
+      this.ShowHead();
     }
   }
 
-  private func ShowHost() -> Void {
-    if this.m_hostHidden {
-      this.m_hostHidden = false;
-      TandemVisibility.Show(this.m_game, this.m_story.HostPlayer(), n"spectate", 0.0);
+  private func ShowHead() -> Void {
+    if this.m_headHidden {
+      this.m_headHidden = false;
+      // A puppet hidden whole for a reason of its own (PuppetVisibility.reds)
+      // keeps its meshes hidden: that reason shows them again.
+      if !TandemVisibility.IsHidden(this.m_game, this.m_story.HostPlayer()) {
+        this.HideHead(false);
+      }
     }
+  }
+
+  // The host's puppet's head meshes (face, eyes, brows, teeth, hair, beard,
+  // headgear) and what it wears on head, eyes and face, hidden or shown
+  // (IVisualComponent.TemporaryHide). Again each check while hidden: a look
+  // applied since builds them again. Returns how many were touched.
+  private func HideHead(hidden: Bool) -> Int32 {
+    let puppet = this.m_story.PuppetOf(this.m_story.HostPlayer());
+    if !IsDefined(puppet) {
+      return 0;
+    }
+    let count = 0;
+    for component in puppet.GetComponents() {
+      let visual = component as IVisualComponent;
+      if IsDefined(visual) && TandemSpectate.IsHeadPart(NameToString(component.GetName())) {
+        visual.TemporaryHide(hidden);
+        count += 1;
+      }
+    }
+    let transactions = GameInstance.GetTransactionSystem(this.m_game);
+    for slot in [t"AttachmentSlots.Head", t"AttachmentSlots.Eyes", t"AttachmentSlots.Face"] {
+      let item = transactions.GetItemInSlot(puppet, slot);
+      if IsDefined(item) {
+        for component in item.GetComponents() {
+          let visual = component as IVisualComponent;
+          if IsDefined(visual) {
+            visual.TemporaryHide(hidden);
+            count += 1;
+          }
+        }
+      }
+    }
+    return count;
+  }
+
+  // A head mesh by its component's name: the game's mesh prefixes (h0_ head,
+  // h1_ headgear, hh_ hair, he_ eyes, heb_ brows, hb_ beard, ht_ teeth, hx_
+  // head cyberware) or a word of them. Unmeasured on the puppet: `story
+  // spectate parts` lists its meshes.
+  public static func IsHeadPart(name: String) -> Bool {
+    let lower = StrLower(name);
+    for prefix in ["h0_", "h1_", "hh_", "he_", "heb_", "hb_", "ht_", "hx_"] {
+      if StrBeginsWith(lower, prefix) {
+        return true;
+      }
+    }
+    for word in ["head", "hair", "beard", "eyes", "eyebrow", "teeth", "face", "glasses", "mask", "hat_"] {
+      if StrContains(lower, word) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // Our own eyes again; the camera body goes.
@@ -408,7 +616,7 @@ public class TandemSpectate {
       let body = GameInstance.FindEntityByID(this.m_game, this.m_camera);
       let lens = IsDefined(body) ? body.FindComponentByType(n"gameCameraComponent") as CameraComponent : null;
       if IsDefined(lens) {
-        lens.Deactivate(0.4, false);
+        lens.Deactivate(0.4, true);
       }
       TandemNative.Log("spectate: our own camera again");
     }
@@ -499,9 +707,29 @@ public class TandemSpectate {
         }
         TandemNative.Log(s"spectate: watching \(on ? "allowed" : "off for this session")");
       }
+    } else if Equals(command, "story spectate parts") {
+      this.Parts();
     } else {
       this.Report();
     }
+  }
+
+  // (measure) the host's puppet's meshes, each marked when first person
+  // hides it as a head part.
+  private func Parts() -> Void {
+    let puppet = this.m_story.PuppetOf(this.m_story.HostPlayer());
+    if !IsDefined(puppet) {
+      TandemNative.Log("spectate: no puppet of the host here");
+      return;
+    }
+    let parts = "";
+    for component in puppet.GetComponents() {
+      if IsDefined(component as IVisualComponent) {
+        let name = NameToString(component.GetName());
+        parts += s" \(name)\(TandemSpectate.IsHeadPart(name) ? "*" : "")";
+      }
+    }
+    TandemNative.Log(s"spectate: the host's puppet's meshes (* head, hidden in first person):\(parts)");
   }
 
   public func Report() -> Void {
@@ -509,6 +737,6 @@ public class TandemSpectate {
     for player in this.m_spectators {
       spectators += s" \(player)";
     }
-    TandemNative.Log(s"spectate: on \(TandemStory.SpectateOn()), host moment \(this.m_moment) (reasons \(this.m_reasons)), test \(TandemStory.SpectateTestOn()), watching \(this.m_watching), camera \(this.m_cameraLive ? "the host's" : "ours"), spectators:\(StrLen(spectators) > 0 ? spectators : " none")");
+    TandemNative.Log(s"spectate: on \(TandemStory.SpectateOn()), host moment \(this.m_moment) (reasons \(this.m_reasons)), test \(TandemStory.SpectateTestOn()), watching \(this.m_watching), camera \(this.m_cameraLive ? "the host's" : "ours"), carried \(this.m_followed)\(this.m_carried ? " (in the host's vehicle)" : ""), host's head hidden \(this.m_headHidden), spectators:\(StrLen(spectators) > 0 ? spectators : " none")");
   }
 }
