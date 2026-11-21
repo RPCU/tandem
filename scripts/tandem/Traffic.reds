@@ -192,6 +192,9 @@ public class TandemTraffic {
     if you == 0u {
       return;
     }
+    for mounted in TandemStreaming.TakeStreamed(TandemStreamKind.Mounted()) {
+      this.PlayerMounts(mounted.entity, mounted.cls);
+    }
     this.TakeEvents(system);
     // Ours: announced while we own our area, said for as long as we run them.
     if now - this.m_last >= 0.1 {
@@ -361,13 +364,10 @@ public class TandemTraffic {
 
   // ---- our V gets into a vehicle ----
 
-  // From VehicleObject.OnMountingEvent, for our own V: a shared vehicle
-  // becomes ours if we are first (the answer is a Gone event, taken).
-  public func PlayerMounts(vehicle: ref<VehicleObject>, slot: CName) -> Void {
-    if this.m_you == 0u || !IsDefined(vehicle) {
-      return;
-    }
-    let body = vehicle.GetEntityID();
+  // From VehicleObject.OnMountingEvent (queued: it may run on a job thread),
+  // for our own V: a shared vehicle becomes ours if we are first (the answer
+  // is a Gone event, taken).
+  private func PlayerMounts(body: EntityID, slot: CName) -> Void {
     let car = this.FindBody(body);
     if IsDefined(car) && !car.claimed {
       car.claimed = true;
@@ -1173,17 +1173,13 @@ protected cb func OnDetach() -> Bool {
   return wrappedMethod();
 }
 
-// Our V gets into a vehicle: a shared one becomes ours.
+// Our V gets into a vehicle: a shared one becomes ours (on the tick).
 @wrapMethod(VehicleObject)
 protected cb func OnMountingEvent(evt: ref<MountingEvent>) -> Bool {
-  TandemNative.HookRan(n"Traffic.VehicleObject.OnMountingEvent");
   let result = wrappedMethod(evt);
   let child = GameInstance.FindEntityByID(this.GetGame(), evt.request.lowLevelMountingInfo.childId) as GameObject;
   if IsDefined(child) && child.IsPlayer() {
-    let traffic = TandemTraffic.Of(this.GetGame());
-    if IsDefined(traffic) {
-      traffic.PlayerMounts(this, evt.request.lowLevelMountingInfo.slotId.id);
-    }
+    TandemStreaming.QueueStreamed(TandemStreamKind.Mounted(), this.GetEntityID(), evt.request.lowLevelMountingInfo.slotId.id, true);
   }
   return result;
 }

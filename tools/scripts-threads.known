@@ -40,7 +40,6 @@ Throws.reds ProjectileLauncherRound.ExecuteGameEffect
 Throws.reds ProjectileLauncherRound.Release
 Time.reds BaseBullet.OnProjectileInitialize
 Time.reds BaseProjectile.OnProjectileInitialize
-Traffic.reds VehicleObject.OnMountingEvent
 Traffic.reds VehicleObject.OnVehicleBumpEvent
 Wheels.reds VehicleObject.DamagePipelineFinalized
 Wheels.reds VehicleObject.OnVehicleBumpEvent

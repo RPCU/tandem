@@ -53,6 +53,8 @@ public abstract class TandemStreamKind {
   public static func BreachNpc() -> Int32 { return 6; }
   // The Ping quickhack reached a device: its network pulses from it.
   public static func NetworkPing() -> Int32 { return 7; }
+  // Our V got into a vehicle (entity: the vehicle, cls: the seat).
+  public static func Mounted() -> Int32 { return 8; }
 }
 
 // The point queues (kPointKinds in the .cpp).
