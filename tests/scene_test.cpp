@@ -626,7 +626,10 @@ TEST_CASE("a line names only a speaker the guests were told of") {
 
   host->SendStory(proto::SceneLine{.line = 1, .speaker = 55}); // a bark of an NPC not shared
   host->SendStory(proto::SceneLine{.line = 2, .speaker = 7});
-  host->SendStory(proto::SceneLine{.play = 3, .line = 4, .speaker = 55});
+  scene::Stage stage;
+  for (const auto &message : stage.Update(Talk(), host->HostNowUs()))
+    host->SendStory(message);
+  host->SendStory(*stage.Line(4, 55, proto::kNoPlayer, 3.f, 0, host->HostNowUs()));
   std::vector<proto::SceneLine> heard;
   Pump(
       {host.get(), a.get()},
