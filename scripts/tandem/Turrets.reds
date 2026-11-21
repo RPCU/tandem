@@ -37,7 +37,9 @@
 // (...and draws a shot there) | turret engage (host: the nearest turret
 // takes the first puppet as a target, as when its guest's copy locked it)
 // | turret take (our V takes control of the nearest turret, as its control
-// panel gives it)
+// panel gives it) | turret provoke (the nearest turret's copy takes our own
+// V as a target). All but take: the nearest turret we follow ("sentry",
+// Devices.reds) when one is within 60 m, else the nearest.
 
 // A turret we speak of (host), or whose copy has our V (guest).
 public class TandemTurret {
@@ -288,7 +290,7 @@ public class TandemTurrets extends ScriptableSystem {
     if !IsDefined(turret) || !IsDefined(puppet) || !TandemTurrets.Follows(turret) {
       // Not in our world: the guest's game runs its own copy (it hears
       // nothing from us about it).
-      let why = !IsDefined(turret) ? "no such turret in our world" : (!IsDefined(puppet) ? "no puppet of that player yet" : "a turret we do not follow (a player's or the police's)");
+      let why = !IsDefined(turret) ? "no such turret in our world" : (!IsDefined(puppet) ? "no puppet of that player yet" : (turret.GetDevicePS().IsPartOfPrevention() ? "a turret we do not follow (the police's)" : "a turret we do not follow (in a player's hands, or spawned)"));
       TandemNative.Log(s"turrets: player \(player)'s copy of \(TandemNative.EntityHex(entity)) \(seen ? "has" : "lost") its V; \(why)");
       return;
     }
@@ -488,16 +490,20 @@ public class TandemTurrets extends ScriptableSystem {
   // ---- a turret in a player's hands ----
 
   // The turret our V controls (the takeover system's), when the session
-  // speaks of it: placed, not the police's.
+  // speaks of it: placed. The police's too, as OnHands takes another
+  // player's: in a player's hands it is that player's (arasaka-park's were
+  // never claimed, so never refused, and two players held one, 2026-11-21).
+  private func OurDevice() -> ref<GameObject> {
+    let control = GameInstance.GetScriptableSystemsContainer(this.GetGameInstance()).Get(n"TakeOverControlSystem") as TakeOverControlSystem;
+    return IsDefined(control) ? control.GetControlledObject() : null;
+  }
+
   private func OurHands() -> ref<SecurityTurret> {
-    let game = this.GetGameInstance();
-    let control = GameInstance.GetScriptableSystemsContainer(game).Get(n"TakeOverControlSystem") as TakeOverControlSystem;
-    let turret = IsDefined(control) ? control.GetControlledObject() as SecurityTurret : null;
+    let turret = this.OurDevice() as SecurityTurret;
     if !IsDefined(turret) || !EntityID.IsStatic(turret.GetEntityID()) {
       return null;
     }
-    let ps = turret.GetDevicePS();
-    return IsDefined(ps) && !ps.IsPartOfPrevention() ? turret : null;
+    return IsDefined(turret.GetDevicePS()) ? turret : null;
   }
 
   // Ours: where it points (40 m along the camera, which is the turret's
@@ -566,10 +572,18 @@ public class TandemTurrets extends ScriptableSystem {
       return;
     }
     let turret = this.Body(event.entity);
-    if !IsDefined(turret) || turret.GetDevicePS().IsControlledByPlayer() {
-      return; // not in our world, or in our V's hands
+    if !IsDefined(turret) {
+      return; // not in our world
     }
     let known = this.FindHands(event.entity);
+    if turret.GetDevicePS().IsControlledByPlayer() {
+      // In our V's hands for now (our claim on its way to a refusal): the
+      // holder's hold goes on, our copy follows it again once our V is out.
+      if IsDefined(known) && event.value < 2 {
+        known.handsHeard = now;
+      }
+      return;
+    }
     if event.value >= 2 {
       if IsDefined(known) {
         this.LetGo(known);
@@ -680,9 +694,9 @@ public class TandemTurrets extends ScriptableSystem {
 
   // ---- commands (tools/game.sh cmd turret ...) ----
 
-  private func Nearest() -> ref<SecurityTurret> {
+  private func Nearest(kind: String) -> ref<SecurityTurret> {
     let devices = TandemDevices.Get(this.GetGameInstance());
-    return IsDefined(devices) ? devices.NearestOf("turret", 60.0) as SecurityTurret : null;
+    return IsDefined(devices) ? devices.NearestOf(kind, 60.0) as SecurityTurret : null;
   }
 
   public func Command(command: String, now: Float) -> Void {
@@ -691,10 +705,13 @@ public class TandemTurrets extends ScriptableSystem {
     let verb = ArraySize(words) > 1 ? words[1] : "";
     if Equals(verb, "") {
       let role = this.m_host ? "host" : "guest";
-      TandemNative.Log(s"turrets: \(ArraySize(this.m_turrets)) spoken of; shots told \(this.m_shotsSaid), drawn \(this.m_shotsDrawn), real at our V \(this.m_shotsReal); puppets taken as targets \(this.m_engaged); left to our game \(this.m_left) (\(role)); in others' hands \(ArraySize(this.m_hands)), their shots drawn \(this.m_handsDrawn); in ours \(TandemNative.EntityHex(this.m_held)); claims refused \(this.m_refusals)");
+      TandemNative.Log(s"turrets: \(ArraySize(this.m_turrets)) spoken of; shots told \(this.m_shotsSaid), drawn \(this.m_shotsDrawn), real at our V \(this.m_shotsReal); puppets taken as targets \(this.m_engaged); left to our game \(this.m_left) (\(role)); in others' hands \(ArraySize(this.m_hands)), their shots drawn \(this.m_handsDrawn); in ours \(TandemNative.EntityHex(this.m_held)); claims refused \(this.m_refusals); our V controls a device: \(IsDefined(this.OurDevice()))");
       return;
     }
-    let turret = this.Nearest();
+    let turret = Equals(verb, "take") ? null : this.Nearest("sentry");
+    if !IsDefined(turret) {
+      turret = this.Nearest("turret");
+    }
     let ours = GetPlayer(game);
     if !IsDefined(turret) || !IsDefined(ours) {
       TandemNative.Log("turrets: no turret within 60 m");
@@ -721,6 +738,10 @@ public class TandemTurrets extends ScriptableSystem {
       take.SetProperties(false, false);
       TakeOverControlSystem.RequestTakeControl(turret, take);
       TandemNative.Log(s"turrets: our V takes control of \(hex)");
+    } else if Equals(verb, "provoke") {
+      // Our copy takes our own V as a target (as the host's takes a puppet):
+      // a spot's turret is not always hostile to V, or has it in sight.
+      TandemNative.Log(s"turrets: \(hex) takes our V as a target: \(turret.TandemEngage(ours)) (followed \(TandemTurrets.Follows(turret)), the police's \(turret.GetDevicePS().IsPartOfPrevention()))");
     } else if Equals(verb, "engage") {
       let system = TandemSystem.Of(game);
       let players = IsDefined(system) ? system.PuppetPlayers() : [];

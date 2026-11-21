@@ -386,7 +386,11 @@ not run in game; engine facts §13.90. Code: `scripts/tandem/Turrets.reds`
   `tests/referee_test.cpp`, `tests/peer_devices.sh`; the mock player's
   `--turret-seen ENTITY[@S]` (guest) and `--turret-shots N` (host: a burst
   at whoever a copy has); in game `tools/game.sh cmd turret`, `turret aim`,
-  `turret shot`, `turret engage`; scenarios `turret-host`, `turret-guest`.
+  `turret shot`, `turret engage`, `turret provoke` (the copy takes our
+  own V); scenarios `turret-host`, `turret-guest`. Both need a turret we
+  follow (`device near sentry`: a turret that is not the police's); the
+  nearest at arasaka-park and drake-ave is the police's (2026-11-21), no
+  fixture with a sentry is known yet (`fixture check` lists the nearest).
 
 ## A turret in a player's hands
 
@@ -397,7 +401,8 @@ shows its aim and shots on the others' copies; damage as today." Built
 
 - **The controller's game** (host or guest): the turret the takeover
   system holds (`TakeOverControlSystem.GetControlledObject`, a placed
-  `SecurityTurret`, not the police's) is said 5 times a second
+  `SecurityTurret`, the police's too: in a player's hands it is that
+  player's) is said 5 times a second
   (`TurretHands`): where it points (40 m along the active camera, the
   turret's while it is held) and whether it fires (its anim feature's
   `Shoot`); once more when V lets go. Its shots stay its own: what they
@@ -440,7 +445,10 @@ shows its aim and shots on the others' copies; damage as today." Built
   seconds); in game `tools/game.sh cmd turret take` (V takes the nearest
   turret, as its control panel gives it); scenarios `turret-hands`,
   `turret-hands-busy` (the mock guest holds the turret, V's takeover is
-  refused and let go; not yet run in game).
+  refused and let go, the guest's hold goes on). Run 2026-11-21 at
+  arasaka-park: its turret is the police's, `OurHands` left those out, so
+  V's takeover was never said, never refused, and the guest's hold lapsed
+  while V held it; fixed, not yet run again.
 
 ## Glass and breakable scenery
 
