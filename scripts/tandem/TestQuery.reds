@@ -6,7 +6,8 @@
 // "none" when there is nothing to read (no V, not mounted, no such NPC or
 // entry). Solo or in a session.
 //
-//   health                our V's health, percent (2 decimals)
+//   health [points]       our V's health, percent (2 decimals); points: in
+//                         health points
 //   item RECORD           how many of RECORD our inventory holds (0: none)
 //   money                 our eddies
 //   fact NAME             a quest fact's value (0: never set)
@@ -31,7 +32,10 @@ public class TandemTestQuery {
     let player = GetPlayer(game);
     let value = "none";
     if Equals(what, "health") {
-      if IsDefined(player) {
+      if IsDefined(player) && Equals(arg, "points") {
+        let points = GameInstance.GetStatPoolsSystem(game).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, false);
+        value = FloatToStringPrec(points, 2);
+      } else if IsDefined(player) {
         value = TandemTestQuery.Health(game, player);
       }
     } else if Equals(what, "item") && count > 3 {
@@ -81,7 +85,7 @@ public class TandemTestQuery {
       value = "unknown";
     }
     if Equals(value, "unknown") {
-      TandemNative.Log(s"test query: unknown: \(asked) (health, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health)");
+      TandemNative.Log(s"test query: unknown: \(asked) (health [points], item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health)");
       return;
     }
     TandemNative.Log(s"test query: \(asked) = \(value)");
