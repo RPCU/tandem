@@ -371,6 +371,7 @@ tools/instance.sh start b; tools/instance.sh load b   # once a plays
 tools/instance.sh log a; tools/instance.sh cmd b where
 tools/instance.sh stats a; tools/instance.sh shot b x.png; tools/instance.sh xdo b key c
 tools/instance.sh bt b                # a frozen game's stacks, to b's run/bt.txt
+tools/instance.sh who                 # each running game: ours (steam, instance a) or the player's
 tools/instance.sh stop a; tools/instance.sh destroy a
 ```
 
@@ -422,10 +423,25 @@ TANDEM_INSTANCE=a tools/scenario.sh three-players   # one scenario on a, by hand
   own wineserver) and the sweep's crash and hang check find only the
   game's own, by pid, never every `Cyberpunk2077.exe` by name. An instance
   starts, loads (`tools/instance.sh load`: a click on Continue) and stops
-  through `tools/instance.sh`, beside the Steam game with
-  `INSTANCE_ALLOW_FOREIGN=1` (the sweep sets it: the Steam game is a test
-  game then). Everything else follows its folder: logs, `tandem.cmd`,
-  `tandem.ini` roles, `.started`, the deploy (`GAME_DIR`).
+  through `tools/instance.sh`. Everything else follows its folder: logs,
+  `tandem.cmd`, `tandem.ini` roles, `.started`, the deploy (`GAME_DIR`).
+- **Whose game**: `tools/instance.sh` refuses to change anything (create,
+  sync, role, settings, start, cmd, destroy) while the player's game runs.
+  The Steam game it may run beside is the one `tools/game.sh` started:
+  `start` and `launches` write that game's pid and kernel start time to
+  `~/.cache/tandem/pilot/main/game.owner` on the game machine as soon as
+  its process exists (the pilot's owner record, `autopilot.md`); `stop`
+  removes it once the game is gone. A game is ours when it carries an
+  instance's mark, or when it is that recorded pid with that start time (a
+  reused pid does not match), a launcher above it (Steam's reaper, Proton)
+  or a process below it. Any other is the player's, and nothing is done; one
+  under a minute old is waited for (a minute at most) until `tools/game.sh`
+  records it. `tools/instance.sh who` lists each running game as
+  `ours (steam, started by game.sh)`, `ours (instance a)` or `the player's`
+  (a launcher of the player's too); `status` names the recorded Steam game.
+  A Steam game started by hand or by Steam is the player's: stop it, or
+  start it with `tools/game.sh start`. `INSTANCE_ALLOW_FOREIGN=1` (by hand
+  only, never set by the sweep) takes any running game for ours.
 - **Ports**: game k listens on 27450 + 100 k (`TANDEM_GAME_PORT`; an
   instance alone defaults to 27550), in its `tandem.ini`. The scenarios name
   27450: `tools/game.sh peer` and `peer2` turn a mock player's
@@ -530,9 +546,11 @@ not run in a game `[unknown]` (the instances on anya did not need them).
 - **A full copy of the game.** Simplest and slowest to build: 70 GB and more
   per instance. `INSTANCE_MIRROR=copy`.
 - **The player's game as one of the two** (launched by Steam, as the
-  scenarios do today) and one instance. Works with the same script
-  (`INSTANCE_ALLOW_FOREIGN=1`), but the tests then use the player's saves
-  and prefix again, and `tools/game.sh` kills by name. Not recommended.
+  scenarios do today) and one instance. What the sweep does (the Steam game
+  `tools/game.sh` recorded counts as ours, "Sweeps on two games"), but that
+  game uses the player's saves and prefix again, and `tools/game.sh` stops
+  any Steam game (every one without a mark). Not recommended for two
+  instances' worth of tests.
 - **A second Steam app entry** (a non-Steam shortcut with its own prefix).
   Means editing the player's Steam configuration, and the game then talks to
   the client. Rejected.

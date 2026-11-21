@@ -228,7 +228,9 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
   `TANDEM_INSTANCE=NAME` or the Steam game, its processes by pid;
   `tools/sweep.sh --instances N` runs N at once (`two-instances.md`,
   "Sweeps on two games"; not yet run in game: until it has been, run them
-  beside instances only through it).
+  beside instances only through it). `tools/instance.sh` runs beside a
+  Steam game only when `tools/game.sh` started (and recorded) it; any other
+  is the player's: `tools/instance.sh who` says whose each game is.
 - **Every scenario starts from `test reset`** (`tools/game.sh test-reset`,
   `scripts/tandem/TestReset.reds`), which `tools/scenario.sh` runs before
   each one: the save loads as the player left it (in a car, mid-mission,

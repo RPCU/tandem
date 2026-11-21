@@ -177,7 +177,11 @@ output, `NAME.log`. Build first (`tools/build.sh`, or `tools/remote.sh` and
   the order in parallel, on its own port and mock players; those that need
   the Steam game (keys, the pilot's, by hand, the port named) stay on it.
   `TANDEM_INSTANCE=NAME` points `tools/game.sh`, `tools/scenario.sh` and a
-  one-game sweep at an instance. How, and what is routed:
+  one-game sweep at an instance. The instances run beside the Steam game
+  only when `tools/game.sh` started it (its record: pid and start time);
+  another Steam game is the player's and `tools/instance.sh` refuses. First
+  `tools/instance.sh who`: whose each running game is (the Steam game of
+  `tools/game.sh`, an instance, or the player's). How, and what is routed:
   `two-instances.md`, "Sweeps on two games".
 - **`results.txt`**, a line per scenario, tab-separated: name, `PASS` or
   `FAIL`, seconds, class, the first `FAIL:` line, the evidence folder (and
