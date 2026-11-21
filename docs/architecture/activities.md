@@ -328,6 +328,10 @@ racers.
   `activity.hpp` (`RaceNote`), heard from `events::Combat` (`IsCombat`'s
   path, `net_thread.cpp`). Times reach scripts as `ago` (seconds before
   now on the host clock), never as absolute floats.
+- **One race at a time.** A partner follows the first starter it hears
+  until that race is over, abandoned or quiet for 10 s, joined or not;
+  another starter's race meanwhile is not followed (two starters flapped
+  the offer and its notices; 2026-11-21, not yet run in game).
 - **Joining.** A partner within 400 m of the start line, not in a race of
   its own, hears "NAME is lining up for a street race" and gets "Join
   NAME's race" on the phone key (a press; a hold is the phone's), held back
