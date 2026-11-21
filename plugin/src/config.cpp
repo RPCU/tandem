@@ -173,8 +173,11 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       return Bad("{} is on or off", key);
   } else if (key == "quest_freeze_allow" || key == "quest_freeze_gigs" || key == "private_actors" ||
              key == "private_scenes" || key == "public_scenes" ||
-             key == "quest_interact_hostonly" || key == "quest_interact_allow") {
+             key == "quest_interact_hostonly" || key == "quest_interact_allow" ||
+             key == "moment_watch" || key == "moment_play") {
     auto &list = key == "quest_freeze_allow"        ? config.questFreezeAllow
+                 : key == "moment_watch"            ? config.momentWatch
+                 : key == "moment_play"             ? config.momentPlay
                  : key == "quest_freeze_gigs"       ? config.questFreezeGigs
                  : key == "quest_interact_hostonly" ? config.questInteractHostOnly
                  : key == "quest_interact_allow"    ? config.questInteractAllow

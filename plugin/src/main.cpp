@@ -15,6 +15,7 @@
 #include "recording.hpp"
 #include "runtime.hpp"
 #include "stall.hpp"
+#include "story.hpp"
 #include "threads.hpp"
 
 #include "tandem/compat.hpp"
@@ -249,6 +250,9 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
       engine::InstallQuestFreeze(sdk, handle, runtime.config.questFreezeAllow,
                                  runtime.config.questFreezeGigs, runtime.config.questFreeze);
     }
+    // The scripted moments marked by hand (docs/architecture/scripted-moments.md,
+    // "The moment list"): shipped beside the DLL, plus tandem.ini's.
+    LoadMoments(PluginDirectory(handle) / "moments.txt");
     if (runtime.config.trace || runtime.config.mirror)
       engine::InstallTrace(sdk, handle, runtime.config.trace);
     // The recorder (recording.hpp): its own key, whatever the role.

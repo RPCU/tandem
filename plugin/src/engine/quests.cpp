@@ -60,6 +60,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstring>
 #include <format>
 #include <map>
@@ -336,9 +337,49 @@ void Trace(std::uintptr_t phase, const Path &path, void *node, std::uint16_t nod
   }
 }
 
+// ---- the moment list's phases (SetPhaseNotes) ----
+
+std::atomic_bool g_phaseNotes{false};
+std::mutex g_phaseLock;                             // g_phaseSeen
+std::map<std::uint64_t, std::uint64_t> g_phaseSeen; // resource path hash -> ms
+
+std::uint64_t NowMs() {
+  return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::steady_clock::now().time_since_epoch())
+                                        .count());
+}
+
+// The phase's own resource and its ancestors' (guarded reads), noted as
+// running now. A few reads and one short lock per node, only while the list
+// has a phase.
+void NotePhase(std::uintptr_t phase, std::uintptr_t context) {
+  std::array<std::uint64_t, 17> resources{};
+  std::size_t count = 0;
+  if (const auto own = ResourceOf(phase))
+    resources[count++] = own;
+  ArrayHead stack{};
+  if (ReadAt(context + kContextStack, stack) && stack.size <= kMaxStack)
+    for (std::uint32_t i = 0; i < stack.size && count < resources.size(); ++i) {
+      std::uintptr_t ancestor = 0;
+      if (ReadAt(stack.entries + i * sizeof(void *), ancestor) && ancestor)
+        if (const auto resource = ResourceOf(ancestor))
+          resources[count++] = resource;
+    }
+  if (count == 0)
+    return;
+  const auto now = NowMs();
+  std::lock_guard _(g_phaseLock);
+  for (std::size_t i = 0; i < count; ++i)
+    g_phaseSeen[resources[i]] = now;
+  if (g_phaseSeen.size() > 512)
+    std::erase_if(g_phaseSeen, [&](const auto &seen) { return now - seen.second > 30'000; });
+}
+
 std::uint8_t Detour(void *phase, void *node, void *context, const void *socket, void *outputs) {
   // Scene privacy (scenes.cpp): which scene runs, on every game.
   ObserveSceneNode(node);
+  if (g_phaseNotes.load(std::memory_order_relaxed))
+    NotePhase(reinterpret_cast<std::uintptr_t>(phase), reinterpret_cast<std::uintptr_t>(context));
   const bool tracing = g_trace.load(std::memory_order_relaxed);
   if ((!g_active.load(std::memory_order_relaxed) && !tracing) || t_replaying)
     return g_original(phase, node, context, socket, outputs);
@@ -567,6 +608,24 @@ void SetQuestGrouped(bool grouped) {
 }
 
 bool QuestGrouped() { return g_grouped.load(); }
+
+void SetPhaseNotes(bool on) {
+  g_phaseNotes = on;
+  if (!on) {
+    std::lock_guard _(g_phaseLock);
+    g_phaseSeen.clear();
+  }
+}
+
+std::vector<std::uint64_t> RecentPhases(std::uint32_t maxAgeMs) {
+  std::vector<std::uint64_t> out;
+  const auto now = NowMs();
+  std::lock_guard _(g_phaseLock);
+  for (const auto &[resource, at] : g_phaseSeen)
+    if (now - at <= maxAgeMs)
+      out.push_back(resource);
+  return out;
+}
 
 void SetQuestTrace(bool on) {
   if (on && !g_journal.node) {
