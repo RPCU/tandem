@@ -32,7 +32,9 @@
 // gets up at Viktor's clinic. An out V gets up in a free seat of the
 // partner's car, else at the partner's last fit spot on foot, else at
 // Viktor's (our fast travel point nearest to it where the story has no Vik
-// for us) (revive.md, "Where a respawn puts you").
+// for us) (revive.md, "Where a respawn puts you"). Never far away where the
+// game would not let that V fast travel (the host's quest locks it, or our
+// own game): then up where it lies, out of its seat, at the water's surface.
 
 public class TandemRevive {
   private let m_game: GameInstance;
@@ -134,6 +136,13 @@ public class TandemRevive {
   // navmesh there); "revive novik": Viktor's is out of our story's reach.
   private let m_testNoSpot: Bool;
   private let m_testNoVik: Bool;
+  // Leaving is refused (fast travel blocked): where we get up near (W 0:
+  // where we lie; set where we lie is no place to stand: deep water, a
+  // sunken car) and how it is said. (test) "revive locked": our game's
+  // fast travel taken as blocked.
+  private let m_nearTo: Vector4;
+  private let m_nearHow: String;
+  private let m_testLocked: Bool;
 
   // ---- the others' places (respawn spots, speeds) ----
   // Each partner's last spot on foot fit to get up at (our navmesh, dry,
@@ -483,6 +492,7 @@ public class TandemRevive {
     this.m_noSpotSince = -1.0;
     this.m_farStage = 0;
     this.m_farSaidNone = false;
+    this.m_nearTo = new Vector4(0.0, 0.0, 0.0, 0.0);
     this.NoteCar(player);
     if life == 1 {
       this.Notice(SimpleMessageType.Negative, this.UpOthers() > 0 ? "Revive-Down" : "Revive-DownAlone", this.UpNames());
@@ -694,8 +704,10 @@ public class TandemRevive {
   // free seat of the car it drives or rides; else at its last spot on foot
   // (our navmesh, dry, in our city), 1.5 m behind it when that is clear;
   // else beside its stopped car when that is dry ground; never beside a
-  // car on the move (10 s for it to stop); else at Viktor's (RespawnFar).
-  // False: nowhere yet (tried again).
+  // car on the move (10 s for it to stop); else at Viktor's (RespawnFar),
+  // unless leaving is refused (fast travel blocked): then 10 s for a spot
+  // beside it, and up near where we lie (RespawnNear). False: nowhere yet
+  // (tried again).
   private func Respawn(player: ref<PlayerPuppet>, partner: Uint32, why: String) -> Bool {
     let name = this.NameOf(partner);
     let none = EntityID.FromHash(0ul);
@@ -753,17 +765,22 @@ public class TandemRevive {
       if first {
         this.m_noSpotSince = this.m_now;
       }
-      // A car on the move may stop: 10 s for it.
+      // A car on the move may stop: 10 s for it. Leaving refused: 10 s
+      // for a spot beside the partner (it may step onto ground of ours).
       let moving = IsDefined(car) && !sunken && !this.m_testNoSpot && this.SpeedOf(partner) > 2.0;
-      if moving && this.m_now - this.m_noSpotSince < 10.0 {
+      let refused = this.LeaveRefused();
+      if (moving || StrLen(refused) > 0) && this.m_now - this.m_noSpotSince < 10.0 {
         if first {
-          TandemNative.Log(s"revive: no spot to get up at beside \(name) yet (in a moving car with no free seat): 10 s for it to stop");
+          TandemNative.Log(s"revive: no spot to get up at beside \(name) yet (\(moving ? "in a moving car with no free seat" : s"fast travel blocked (\(refused))")): 10 s for one");
         }
         return false;
       }
       let where = this.m_testNoSpot ? "a test" : sunken ? "its car under water" : moving ? "its car still moving after 10 s"
         : IsDefined(car) ? "no ground beside its car" : "never seen on foot where our world has ground";
       TandemNative.Log(s"revive: no spot to get up at beside \(name) (\(where))");
+      if StrLen(refused) > 0 {
+        return this.RespawnNear(player, refused, why);
+      }
       return this.RespawnFar(player, why);
     }
     TandemNative.Log(s"revive: respawn beside \(name) (\(why)): \(how)");
@@ -947,10 +964,15 @@ public class TandemRevive {
 
   // Down where nobody can reach it (deep water, a sunken car): out at once
   // and up at Viktor's, unless no other V is up (the session's loss then
-  // decides: Lost). True if it goes.
+  // decides: Lost). Leaving refused (fast travel blocked): out, and up
+  // beside a partner as any out V (MaybeRespawn), else at the water's
+  // surface over where it lies (out of the car first). True if it goes.
   private func Drowned(player: ref<PlayerPuppet>, where: String) -> Bool {
     if this.m_lost || this.UpOthers() == 0 {
       return false;
+    }
+    if this.m_nearTo.W > 0.0 {
+      return true;
     }
     TandemNative.Log(s"revive: our V is down in \(where): out, no revive there");
     if this.m_life != 2 {
@@ -959,7 +981,91 @@ public class TandemRevive {
       this.HideBar(false);
       this.SendOurs(player);
     }
-    return this.RespawnFar(player, where);
+    let refused = this.LeaveRefused();
+    if StrLen(refused) == 0 {
+      return this.RespawnFar(player, where);
+    }
+    TandemNative.Log(s"revive: far respawn refused: fast travel blocked (\(refused)): up beside a partner, else at the surface here");
+    let car: wref<VehicleObject>;
+    let spot = player.GetWorldPosition();
+    this.m_nearHow = "at the water's surface over where we lay";
+    if VehicleComponent.GetVehicle(this.m_game, player, car) && IsDefined(car) {
+      spot = TandemVehicles.ExitSpot(this.m_game, car, player);
+      this.m_nearHow = "out of our sunken car, at the water's surface beside it";
+    }
+    let depth = this.WaterOver(spot, 0.0);
+    this.m_nearTo = new Vector4(spot.X, spot.Y, spot.Z + MaxF(depth, 0.0), 1.0);
+    return true;
+  }
+
+  // ---- leaving allowed: what the game's fast travel says ----
+
+  // Why our V may not leave the area by a far respawn ("": it may): the
+  // game would not let it fast travel now. A guest's own story is frozen,
+  // so the quest that may lock it is the host's: the host's StoryState
+  // says so (kStoryNoFastTravel, "host's quest"); our own game's locks
+  // count too ("ours").
+  private func LeaveRefused() -> String {
+    let story = TandemStorySystem.Get(this.m_game);
+    if IsDefined(story) && story.HostNoFastTravel() {
+      return "host's quest";
+    }
+    if this.m_testLocked || StrLen(TandemRevive.TravelLock(this.m_game)) > 0 {
+      return "ours";
+    }
+    return "";
+  }
+
+  // What keeps our own game from fast travelling now ("": nothing):
+  // vanilla's own tests, a BlockFastTravel status effect on V
+  // (FastTravelSystem.RegisterFastTravelPoint, final.reds 50507) and a
+  // fast travel lock (IsFastTravelEnabled, 50501), less the locks of a
+  // moment that passes (combat, a car, the police: TandemQuestLock).
+  // Not IsFastTravelEnabledOnMap (50394): its flag is the fast travel
+  // menu open at a terminal (OnEnterFastTravelMenu, 50131).
+  public static func TravelLock(game: GameInstance) -> String {
+    let player = GetPlayer(game);
+    if IsDefined(player) && StatusEffectSystem.ObjectHasStatusEffectWithTag(player, n"BlockFastTravel") {
+      return "BlockFastTravel";
+    }
+    let travel = GameInstance.GetScriptableSystemsContainer(game).Get(n"FastTravelSystem") as FastTravelSystem;
+    if !IsDefined(travel) {
+      return "";
+    }
+    let lock = travel.TandemQuestLock();
+    return IsNameValid(lock) ? s"lock \(NameToString(lock))" : "";
+  }
+
+  // Up near where we lie, never far away (leaving refused): at the spot
+  // Drowned kept, else out of our seat beside the car, else where we lie
+  // (at the water's surface if under it). A poor spot: said in words.
+  private func RespawnNear(player: ref<PlayerPuppet>, refused: String, why: String) -> Bool {
+    TandemNative.Log(s"revive: far respawn refused: fast travel blocked (\(refused))");
+    if Equals(refused, "ours") {
+      let lock = this.m_testLocked ? "a test" : TandemRevive.TravelLock(this.m_game);
+      TandemNative.Log(s"revive: our game's fast travel: \(lock)");
+    }
+    let to = player.GetWorldPosition();
+    let how = "where we lie";
+    let car: wref<VehicleObject>;
+    if this.m_nearTo.W > 0.0 {
+      to = this.m_nearTo;
+      how = this.m_nearHow;
+    } else if VehicleComponent.GetVehicle(this.m_game, player, car) && IsDefined(car) {
+      to = TandemVehicles.ExitSpot(this.m_game, car, player);
+      how = "out of our seat, beside the car";
+    }
+    let depth = this.WaterOver(to, 0.0);
+    if this.m_nearTo.W == 0.0 && depth > 0.0 {
+      to.Z += depth;
+      how = how + ", at the water's surface";
+    }
+    this.m_nearTo = new Vector4(0.0, 0.0, 0.0, 0.0);
+    TandemNative.Log(s"revive: respawn near (\(why)): \(how) (\(to.X), \(to.Y), \(to.Z))");
+    this.m_lost = false;
+    this.Notice(SimpleMessageType.Neutral, "Revive-StayedNear");
+    this.PutOutTo(player, to, player.GetWorldYaw(), true);
+    return true;
   }
 
   // How deep `at` (raised by `up`) is under water, in metres (0: dry):
@@ -1313,6 +1419,7 @@ public class TandemRevive {
     this.m_testWreck = false;
     this.m_farStage = 0;
     this.m_noSpotSince = -1.0;
+    this.m_nearTo = new Vector4(0.0, 0.0, 0.0, 0.0);
     this.HideBar(false);
     if IsDefined(this.m_system) {
       this.m_system.ClearLeftDown();
@@ -1777,6 +1884,11 @@ public class TandemRevive {
       // (a respawn goes to Viktor's); "revive nospot off": the real spots.
       this.m_testNoSpot = !StrEndsWith(command, " off");
       TandemNative.Log(s"revive nospot: \(this.m_testNoSpot ? "no spot beside a partner fits" : "the real spots")");
+    } else if StrBeginsWith(command, "revive locked") {
+      // (test) our game's fast travel taken as blocked (a far respawn is
+      // refused: up near); "revive locked off": the game's own locks.
+      this.m_testLocked = !StrEndsWith(command, " off");
+      TandemNative.Log(s"revive locked: \(this.m_testLocked ? "our fast travel taken as blocked" : "the game's own locks")");
     } else if StrBeginsWith(command, "revive novik") {
       // (test) Viktor's is out of our story's reach (a far respawn goes to
       // our nearest fast travel point); "revive novik off": the story's.
@@ -1820,6 +1932,7 @@ public class TandemRevive {
       this.m_testOut = false;
       this.m_testNoSpot = false;
       this.m_testNoVik = false;
+      this.m_testLocked = false;
       // Still down or out from an earlier test: up first.
       if this.m_life != 0 && !this.m_dying {
         TandemNative.Log("revive fresh: our V was down: it stands up");
@@ -1829,6 +1942,8 @@ public class TandemRevive {
     } else if Equals(command, "revive report") {
       let health = GameInstance.GetStatPoolsSystem(this.m_game).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, true);
       let reach = this.VikOutOfReach();
+      let refused = this.LeaveRefused();
+      TandemNative.Log(s"revive report: leaving \(StrLen(refused) == 0 ? "allowed" : s"refused, fast travel blocked (\(refused))"), our game's fast travel lock: \(this.m_testLocked ? "a test" : StrLen(TandemRevive.TravelLock(this.m_game)) > 0 ? TandemRevive.TravelLock(this.m_game) : "none")");
       TandemNative.Log(s"revive report: our V life \(this.m_life), health \(health) %, protected \(this.m_protected), invulnerable \(this.m_invulnerable), released \(this.m_release), lost \(this.m_lost), dying \(this.m_dying), left down \(IsDefined(this.m_system) && this.m_system.LeftDown()), \(this.UpOthers()) other(s) up, revived \(RoundF(this.m_now - this.m_revivedAt)) s ago");
       TandemNative.Log(s"revive report: our V in a seat \(EntityID.IsDefined(this.m_downCar)) (\(NameToString(this.m_downSlot))), speed \(this.m_speed) m/s, a revive waiting \(this.m_waiting != 0u), far respawn \(this.m_farStage), Viktor's \(StrLen(reach) == 0 ? "in reach" : reach), a seat to take \(EntityID.IsDefined(this.m_seatCar))");
       for p in this.Others() {
@@ -1895,4 +2010,18 @@ protected func OnResurrected() -> Void {
   TandemNative.HookRan(n"Revive.PlayerPuppet.OnResurrected");
   wrappedMethod();
   TandemRevive.Resurrected(this);
+}
+
+// Our fast travel's first lock that a quest put (n"None": none): the locks
+// of a moment that passes (InCombat, InVehicle, PreventionSystem:
+// final.reds 242893, 90614, 138840) say nothing of where the quest keeps V.
+@addMethod(FastTravelSystem)
+public final const func TandemQuestLock() -> CName {
+  for lock in this.m_fastTravelLocks {
+    let reason = lock.lockReason;
+    if !Equals(reason, n"InCombat") && !Equals(reason, n"InVehicle") && !Equals(reason, n"PreventionSystem") {
+      return reason;
+    }
+  }
+  return n"None";
 }
