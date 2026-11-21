@@ -96,34 +96,68 @@ it does not (a proxy that does not count as a civilian there, research §13.34 q
    the owner's NPCs: shared with everyone
    as proxies, shot at and killed like any NPC, and they fire at the puppet
    through the existing path (`NpcShotAt`: the target's game simulates the
-   shot).
-4. **Hostile to that V alone.** A unit sent for a player is made hostile
-   to that player's puppet and given it as a threat. The police around a
+   shot). A car's crew counts among them: units on foot fill in for the
+   cars that could not come.
+4. **Cars from two stars** (one, two from four): the owner finds a place on
+   the roads around the puppet (`FindPursuitPointsRangeAsync` with
+   `NavGenAgentSize` 1, vehicle, at the level's vehicle spawn range) and
+   takes the first one more than 60° off where that V looks
+   (`TandemNative.RemoteYaw`). It asks the game's own chase vehicle with
+   its crew seated (`RequestChaseVehicle`: a car from the level's pool, its
+   own passengers, a `GetToPlayerFromAnywhere`, `SearchFromAnywhere` or
+   `DriveTowardsPlayer` strategy, whichever the spawn system has a road
+   for), moves it to that place facing the puppet, and sends it after the
+   puppet: `AIVehicleChaseCommand` on the puppet as an event and as its
+   init command, no limit on chasing vehicles, driving stats boosted. It is
+   given the chase again while its driver is in and it has lost it. Its
+   crew are units for that player (below), and the game's own behaviour
+   gets them out within 15 m of the puppet. The spawn system only has
+   roads while someone asks it to check its strategies, and the prevention
+   system asks only while the owner's own V is chased: while a remote V
+   wants cars and ours is not chased, `Police.reds` asks
+   (`SetStrategyPreCheckRequests`, from that V's level) and clears them
+   when nobody it answers is wanted. No place out of sight, no road, or a
+   failed spawn: on foot only, another try after the cooldown (the level's
+   `VehicleSpawnCooldown`, 15 s by default). The car is a world vehicle
+   like any (`Traffic.reds` shares it, police flag and siren).
+5. **The MaxTac AV at five stars**, one for each wanted V while it stays at
+   five: `RequestAVSpawnAtLocation` (a first-wave record,
+   `Vehicle.max_tac_av1/2/3`) at a point 15–40 m from the puppet out of its
+   sight (or the first found, or the puppet's own position). Its MaxTac are
+   units for that player. The game's own `RequestAVSpawnAtPosition` is not
+   used: it also stops our V's car, and the follower's copy of it is the one
+   `Police.reds` blocks (a follower spawns nothing).
+6. **Hostile to that V alone.** A unit sent for a player (on foot, a
+   crew, MaxTac) is made hostile to that player's puppet and given it as a
+   threat: a unit spawned off our screen may not see the puppet (research
+   §13.34 question 6), a threat needs no sight. The police around a
    puppet look at it by its own stage (`TandemPolice.Face`: hostile while
    wanted, neutral and forgotten again at 0), and never by the owner V's:
    `Attitudes.reds`, which copies V's relations onto the puppets, leaves
    the police out. In the other direction nothing is needed: vanilla makes
    the police hostile to the local player's attitude group, which no
    puppet is in.
-5. **Seen or lost.** Whether the police see the wanted V is the owner's
+7. **Seen or lost.** Whether the police see the wanted V is the owner's
    NPCs' business (their senses, the puppet's stealth). The offender's
    game already receives which NPCs have detected its V
    (`NpcStates.detected`): for each officer among them it registers the
    proxy as a viewer with its own prevention system, and unregisters it
    when the officer loses sight (`TandemPolice.Watch`). The stars go grey
    and blink out by the game's own rules.
-6. **It ends** when the offender's stage is 0: the owner's units for that
-   player stand down the way the game's do (the threat dropped, neutral,
-   relaxed, the game's own "stars dropped" effect), walk off, and are
-   taken away by the spawn system after 20 s.
+8. **It ends** when the offender's stage is 0, or when it leaves or
+   vanishes: the owner's units for that player stand down the way the
+   game's do (the threat dropped, neutral, relaxed, the game's own "stars
+   dropped" effect), walk off, and are taken away by the spawn system after
+   20 s. Its cars stop what they were told and drive off as the game's own
+   do (`InterruptAllActionAndCommands`, `AIVehiclePanicCommand`), and are
+   taken away with whoever is still aboard after 20 s
+   (`RequestDespawnVehicleAndPassengers`); the AV too.
 
-What a wanted guest does not get today, and why: chase vehicles,
-roadblocks and the MaxTac AV are placed by the native spawn system around
-"the player" (the road ahead of it, its speed, the intersection in front),
-which is the owner's V. A wanted guest is chased on foot, by units that
-arrive around it, at every stage. With per-player regions a player alone
-in its region owns it and gets the whole chase; the gap is only for a
-wanted guest standing in someone else's area.
+What a wanted guest does not get today, and why: roadblocks are placed by
+the native spawn system around "the player" (the road ahead of it, the
+intersection in front), which is the owner's V. With per-player regions a
+player alone in its region owns it and gets the whole chase; the gap is
+only for a wanted guest standing in someone else's area.
 
 ## The cases the user asked about
 
@@ -154,8 +188,8 @@ Appended to the protocol; no existing message changed.
 | `Heat`  | Event           | each game → host → all (kept)  | that V's wanted level 0..5 and star state         |
 | `Crime` | Event, one-shot | area owner → the offender only | a crime of that V only the owner's game could see |
 
-Nothing else: the units are NPCs (`NpcSpawn`…), their cars would be world
-vehicles (`TrafficSpawn` with the police flag), their sight is
+Nothing else: the units are NPCs (`NpcSpawn`…), their cars and the AV are
+world vehicles (`TrafficSpawn` with the police flag), their sight is
 `NpcStates.detected`.
 
 ## Consistency
@@ -190,14 +224,15 @@ Built in this change:
    the owner's police as viewers; owner: units for a remote V, attitudes
    by each V's own heat, standing down; crimes attributed), the police
    left out of `Attitudes.reds`'s copying.
-5. **Scenarios**: `police-guest`, `police-host`.
+5. **Scenarios**: `police-guest`, `police-host`, `police-host-cars`.
+6. **Cars and the AV** for a remote V (above, 4 and 5): scripts only,
+   compiled, not run.
 
 Not built:
 
 - The partner's stars on screen (a marker on the wanted partner, or its
   level in the co-op roster). The level is there (`TandemStreet.HeatStage`).
-- Chase vehicles, roadblocks and MaxTac for a wanted guest in another
-  game's area (above).
+- Roadblocks for a wanted guest in another game's area (above).
 - Security areas and their own alarm (a guest trespassing in a host's
   restricted area) are not looked at here.
 
@@ -213,6 +248,16 @@ Not built:
   out for that player, that they stand down when its stars go, and again
   when it vanishes mid-chase. Look for: where the units appear, that they
   go for the puppet and leave our V alone, how they walk off.
+
+- **police-host-cars**: the game hosts; the mock guest is wanted at three
+  stars, then at five. Checks that a place for a car is found around the
+  puppet, that the car comes and chases it, that it stands down and is
+  taken away when the stars go, then that the MaxTac AV comes at five.
+  Needs roads near V (`POLICE_AT="X Y Z"` teleports there first); without
+  them the log says "no road" or "no place for a car" and the scenario
+  fails at the car. Look for: where the car appears (out of the puppet's
+  sight), that it drives to the puppet and its crew get out, that our V is
+  left alone, the AV's landing.
 
 By hand, two games: a guest shoots a civilian near the host (stars on the
 guest only); the host joins the fight against the police (its own stars);

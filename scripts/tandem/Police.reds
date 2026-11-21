@@ -5,20 +5,36 @@
 // - every game says its V's level (TandemStreet.SendHeat), for the others;
 // - only the owner of an area spawns police there (TandemArea): a game
 //   that follows keeps its prevention system but not its spawns, and the
-//   owner answers a remote V's heat with units of its own, hostile to that
-//   V's puppet alone;
+//   owner answers a remote V's heat with units, cars and (at five stars)
+//   a MaxTac AV of its own, hostile to that V's puppet alone;
 // - a crime only the owner's game can see (its NPCs calling the police on
 //   a puppet) is never blamed on the owner's V: it is told to the
 //   offender's game (TandemStreet.SendCrime), which scores it as its own;
 // - police see a remote V through the owner's senses: the offender's game
 //   feeds its prevention system with what the owner's NPCs detect.
 
-// A unit the owner's game spawned for a remote player's heat.
+// A unit the owner's game spawned for a remote player's heat: on foot, or
+// the crew of one of its cars, or the MaxTac of its AV.
 public class TandemPoliceUnit {
   public let id: EntityID;
   public let player: Uint32;
   public let since: Float;
   public let stoodDownAt: Float;
+  // The car or AV it came in (none for a unit on foot).
+  public let vehicle: EntityID;
+}
+
+// A police car or MaxTac AV the owner's game spawned for a remote player's
+// heat.
+public class TandemPoliceCar {
+  public let id: EntityID;
+  public let player: Uint32;
+  public let record: TweakDBID;
+  public let av: Bool;
+  public let since: Float;
+  public let stoodDownAt: Float;
+  // When it was last told to chase the puppet.
+  public let chasedAt: Float;
 }
 
 public class TandemPolice {
@@ -37,9 +53,28 @@ public class TandemPolice {
   private let m_units: array<ref<TandemPoliceUnit>>;
   private let m_tickets: array<Uint32>;
   private let m_ticketPlayers: array<Uint32>;
+  // What each ticket is (0 a unit on foot, 1 a car, 2 an AV) and, for a
+  // car, the point out of its V's sight it goes to (zero: none).
+  private let m_ticketKinds: array<Int32>;
+  private let m_ticketPoints: array<Vector4>;
   private let m_pointsFor: Uint32;
   private let m_pointsAt: Float;
   private let m_nextDispatch: Float;
+  // What the request for points is for (0 units, 1 a car, 2 an AV), and the
+  // car's record and crew.
+  private let m_pointsKind: Int32;
+  private let m_pointsVehicle: TweakDBID;
+  private let m_pointsCrew: array<TweakDBID>;
+  // Owner: police cars and AVs out for remote players, when the next car
+  // may be asked for, the players an AV came for at this level 5 (one
+  // each), whether we asked the spawn system to look for roads (it only
+  // does while someone asks, and the prevention system asks only while our
+  // own V is chased), and whether our own V was chased last time.
+  private let m_cars: array<ref<TandemPoliceCar>>;
+  private let m_nextCar: Float;
+  private let m_avFor: array<Uint32>;
+  private let m_roads: Bool;
+  private let m_wasChased: Bool;
   // Owner: each remote player's level as last acted on.
   private let m_heatPlayers: array<Uint32>;
   private let m_heatStages: array<Int32>;
@@ -88,9 +123,17 @@ public class TandemPolice {
     for unit in this.m_units {
       this.StandDown(unit);
     }
+    for car in this.m_cars {
+      this.StandDownCar(car);
+    }
+    this.Roads(false);
     ArrayClear(this.m_units);
+    ArrayClear(this.m_cars);
+    ArrayClear(this.m_avFor);
     ArrayClear(this.m_tickets);
     ArrayClear(this.m_ticketPlayers);
+    ArrayClear(this.m_ticketKinds);
+    ArrayClear(this.m_ticketPoints);
     ArrayClear(this.m_viewers);
     ArrayClear(this.m_heatPlayers);
     ArrayClear(this.m_heatStages);
@@ -125,7 +168,16 @@ public class TandemPolice {
         others += s" player \(player): \(TandemStreet.HeatStage(player)) (state \(TandemStreet.HeatState(player)))";
       }
       let role = TandemArea.Owns() ? "we answer the others' heat" : "we follow: our own spawns are off";
-      TandemNative.Log(s"police report: our wanted level \(police.GetHeatStageAsInt()) (state \(EnumInt(police.GetStarState()))), \(role);\(others); \(ArraySize(this.m_units)) unit(s) out for the others, \(ArraySize(this.m_tickets)) on their way, \(ArraySize(this.m_viewers)) of the host's police see our V");
+      let cars = 0;
+      let avs = 0;
+      for car in this.m_cars {
+        if car.av {
+          avs += 1;
+        } else {
+          cars += 1;
+        }
+      }
+      TandemNative.Log(s"police report: our wanted level \(police.GetHeatStageAsInt()) (state \(EnumInt(police.GetStarState()))), \(role);\(others); \(ArraySize(this.m_units)) unit(s) out for the others, \(cars) car(s), \(avs) AV(s), \(ArraySize(this.m_tickets)) on their way, \(ArraySize(this.m_viewers)) of the host's police see our V");
     }
   }
 
@@ -323,10 +375,36 @@ public class TandemPolice {
       }
     }
     this.m_units = alive;
+    // Cars and AVs: wrecked, gone, or stood down and driven off for a
+    // while (the game takes them away with whoever is still aboard).
+    let cars: array<ref<TandemPoliceCar>>;
+    for car in this.m_cars {
+      let body = GameInstance.FindEntityByID(this.m_game, car.id) as VehicleObject;
+      if !IsDefined(body) {
+        TandemNative.Log(s"police: \(TandemPolice.KindOf(car)) for player \(car.player) gone");
+      } else if body.IsDestroyed() {
+        TandemNative.Log(s"police: \(TandemPolice.KindOf(car)) for player \(car.player) destroyed");
+      } else if car.stoodDownAt == 0.0 || this.m_now - car.stoodDownAt < 20.0 {
+        ArrayPush(cars, car);
+      } else {
+        GameInstance.GetPreventionSpawnSystem(this.m_game).RequestDespawnVehicleAndPassengers(body);
+        TandemNative.Log(s"police: \(TandemPolice.KindOf(car)) for player \(car.player) taken away");
+      }
+    }
+    this.m_cars = cars;
     // A request for spawn points that never came back.
     if this.m_pointsFor != 0u && this.m_now - this.m_pointsAt > 5.0 {
       this.m_pointsFor = 0u;
     }
+    // Our own V's chase ending clears the roads the spawn system looks for
+    // (PreventionSystem.UpdateStrategyPreCheckRequests): ours too.
+    let prevention = this.Prevention();
+    let chased = IsDefined(prevention) && prevention.IsChasingPlayer();
+    if this.m_wasChased && !chased {
+      this.m_roads = false;
+    }
+    this.m_wasChased = chased;
+    let carsWanted = false;
     // In a local: ArrayContains on the array a call returns reads some
     // other array (tools/scripts-temporaries.py), so every level was
     // forgotten on the tick it was learnt.
@@ -340,36 +418,61 @@ public class TandemPolice {
           this.SetStage(player, stage);
           TandemNative.Log(s"police: player \(player) wanted level \(was) -> \(stage)");
           if stage == 0 {
-            for unit in this.m_units {
-              if unit.player == player {
-                this.StandDown(unit);
-              }
-            }
+            this.StandDownFor(player);
           }
+        }
+        if stage < 5 {
+          ArrayRemove(this.m_avFor, player);
         }
         if IsDefined(puppet) {
           this.Face(player, puppet, stage, system);
           if stage > 0 {
+            this.Crews(player, puppet, system);
             this.Dispatch(player, puppet, stage);
+            if TandemPolice.CarsFor(stage) > 0 {
+              carsWanted = true;
+              this.SendCar(player, puppet, stage, chased);
+            }
+            if stage >= 5 {
+              this.SendAV(player, puppet);
+            }
           }
         }
       }
+    }
+    if !carsWanted {
+      this.Roads(false);
     }
     // A player that left takes its heat with it.
     let i = 0;
     while i < ArraySize(this.m_heatPlayers) {
       if !ArrayContains(here, this.m_heatPlayers[i]) {
-        for unit in this.m_units {
-          if unit.player == this.m_heatPlayers[i] {
-            this.StandDown(unit);
-          }
-        }
+        this.StandDownFor(this.m_heatPlayers[i]);
+        ArrayRemove(this.m_avFor, this.m_heatPlayers[i]);
         ArrayErase(this.m_heatPlayers, i);
         ArrayErase(this.m_heatStages, i);
       } else {
         i += 1;
       }
     }
+  }
+
+  // Everything out for that player stands down: units, cars, the AV.
+  private func StandDownFor(player: Uint32) -> Void {
+    for unit in this.m_units {
+      if unit.player == player {
+        this.StandDown(unit);
+      }
+    }
+    for car in this.m_cars {
+      if car.player == player {
+        this.StandDownCar(car);
+      }
+    }
+  }
+
+  private static func KindOf(car: ref<TandemPoliceCar>) -> String {
+    return car.av ? s"AV \(TDBID.ToStringDEBUG(car.record))" : s"car \(TDBID.ToStringDEBUG(car.record))";
   }
 
   private func StageOf(player: Uint32) -> Int32 {
@@ -416,12 +519,13 @@ public class TandemPolice {
   }
 
   // More units for a wanted remote V, a few at a time, at points the
-  // game's own spawn system finds around its puppet.
+  // game's own spawn system finds around its puppet. A car's crew counts:
+  // units on foot fill in for the cars that could not come.
   private func Dispatch(player: Uint32, puppet: ref<ScriptedPuppet>, stage: Int32) -> Void {
     if this.m_now < this.m_nextDispatch || this.m_pointsFor != 0u {
       return;
     }
-    let out = ArraySize(this.m_tickets);
+    let out = this.TicketsFor(player, 0);
     for unit in this.m_units {
       if unit.player == player && unit.stoodDownAt == 0.0 {
         out += 1;
@@ -451,31 +555,65 @@ public class TandemPolice {
     let origins: array<Vector4>;
     ArrayPush(origins, puppet.GetWorldPosition());
     this.m_pointsFor = player;
+    this.m_pointsKind = 0;
     this.m_pointsAt = this.m_now;
     GameInstance.GetPreventionSpawnSystem(this.m_game).FindPursuitPointsRangeAsync(origins, near, far, Cast<Uint32>(wanted), records, true, NavGenAgentSize.Human, this, "OnPursuitPoints");
     TandemNative.Log(s"police: \(wanted) unit(s) asked for player \(player) (level \(stage), \(TDBID.ToStringDEBUG(records[0])), \(near)-\(far) m)");
   }
 
+  // Our tickets of that kind (0 units, 1 cars, 2 AVs) on their way to that
+  // player.
+  private func TicketsFor(player: Uint32, kind: Int32) -> Int32 {
+    let count = 0;
+    let i = 0;
+    while i < ArraySize(this.m_tickets) {
+      if this.m_ticketPlayers[i] == player && this.m_ticketKinds[i] == kind {
+        count += 1;
+      }
+      i += 1;
+    }
+    return count;
+  }
+
+  private func AddTicket(ticket: Uint32, player: Uint32, kind: Int32, point: Vector4) -> Void {
+    ArrayPush(this.m_tickets, ticket);
+    ArrayPush(this.m_ticketPlayers, player);
+    ArrayPush(this.m_ticketKinds, kind);
+    ArrayPush(this.m_ticketPoints, point);
+  }
+
   // The spawn system's answer (called by the engine, by name).
   public final func OnPursuitPoints(const spawnPoints: array<Vector3>, const characterRecords: array<TweakDBID>, unitCount: Uint32) -> Int32 {
     let player = this.m_pointsFor;
+    let kind = this.m_pointsKind;
     this.m_pointsFor = 0u;
     let system = GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"TandemSystem") as TandemSystem;
     let puppet = IsDefined(system) ? system.PuppetOf(player) : null;
-    if player == 0u || !IsDefined(puppet) || ArraySize(characterRecords) == 0 || TandemStreet.HeatStage(player) == 0 {
+    if player == 0u || !IsDefined(puppet) || TandemStreet.HeatStage(player) == 0 {
+      return 0;
+    }
+    let points: array<Vector4>;
+    for point in spawnPoints {
+      ArrayPush(points, Cast<Vector4>(point));
+    }
+    if kind == 1 {
+      return this.PlaceCar(player, puppet, points);
+    }
+    if kind == 2 {
+      return this.PlaceAV(player, puppet, points);
+    }
+    if ArraySize(characterRecords) == 0 {
       return 0;
     }
     let sent = 0;
     let spawner = GameInstance.GetPreventionSpawnSystem(this.m_game);
-    for point in spawnPoints {
+    for at in points {
       if sent < Cast<Int32>(unitCount) {
         let transform: WorldTransform; // assigned on every path: position and orientation set below
-        let at = Cast<Vector4>(point);
         WorldTransform.SetPosition(transform, at);
         WorldTransform.SetOrientationFromDir(transform, Vector4.Normalize2D(puppet.GetWorldPosition() - at));
         let ticket = spawner.RequestUnitSpawn(characterRecords[sent % ArraySize(characterRecords)], transform);
-        ArrayPush(this.m_tickets, ticket);
-        ArrayPush(this.m_ticketPlayers, player);
+        this.AddTicket(ticket, player, 0, new Vector4(0.0, 0.0, 0.0, 0.0));
         sent += 1;
       }
     }
@@ -491,33 +629,442 @@ public class TandemPolice {
       return false;
     }
     let player = this.m_ticketPlayers[i];
+    let kind = this.m_ticketKinds[i];
+    let point = this.m_ticketPoints[i];
     ArrayErase(this.m_tickets, i);
     ArrayErase(this.m_ticketPlayers, i);
+    ArrayErase(this.m_ticketKinds, i);
+    ArrayErase(this.m_ticketPoints, i);
+    let what = kind == 1 ? "a car" : kind == 2 ? "an AV" : "a unit";
     if !result.success {
-      TandemNative.Log(s"police: a unit for player \(player) could not spawn");
+      TandemNative.Log(s"police: \(what) for player \(player) could not spawn");
+      if kind == 1 {
+        // Units on foot fill in meanwhile (Dispatch counts the crews).
+        this.m_nextCar = this.m_now + 15.0;
+      }
       return true;
     }
     let system = GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"TandemSystem") as TandemSystem;
     let puppet = IsDefined(system) ? system.PuppetOf(player) as ScriptedPuppet : null;
+    let vehicle: wref<VehicleObject>;
+    for spawned in result.spawnedObjects {
+      let car = spawned as VehicleObject;
+      if IsDefined(car) {
+        vehicle = car;
+      }
+    }
+    let vehicleId = IsDefined(vehicle) ? vehicle.GetEntityID() : EntityID.FromHash(0ul);
+    let aboard = 0;
     for spawned in result.spawnedObjects {
       let body = spawned as ScriptedPuppet;
       if IsDefined(body) {
-        let unit = new TandemPoliceUnit();
-        unit.id = body.GetEntityID();
-        unit.player = player;
-        unit.since = this.m_now;
-        ArrayPush(this.m_units, unit);
-        if IsDefined(puppet) {
-          // After that V, and nobody else.
-          GameObject.ChangeAttitudeToHostile(body, puppet);
-          GameObject.ChangeAttitudeToHostile(puppet, body);
-          TargetTrackingExtension.InjectThreat(body, puppet);
-          NPCPuppet.ChangeHighLevelState(body, gamedataNPCHighLevelState.Combat);
-        }
-        TandemNative.Log(s"police: unit \(TDBID.ToStringDEBUG(body.GetRecordID())) out for player \(player)");
+        this.Enlist(body, player, puppet, vehicleId);
+        aboard += 1;
       }
     }
+    if kind == 0 || !IsDefined(vehicle) {
+      return true;
+    }
+    let car = new TandemPoliceCar();
+    car.id = vehicleId;
+    car.player = player;
+    car.record = vehicle.GetRecordID();
+    car.av = kind == 2;
+    car.since = this.m_now;
+    ArrayPush(this.m_cars, car);
+    if car.av {
+      TandemNative.Log(s"police: AV \(TDBID.ToStringDEBUG(car.record)) out for player \(player) (\(aboard) aboard)");
+      return true;
+    }
+    if IsDefined(puppet) {
+      // Where the spawn system put it is about our V: the point found
+      // around the puppet, out of its sight, is about that V.
+      let target = puppet.GetWorldPosition();
+      if !Vector4.IsXYZZero(point) {
+        let at = new Vector4(point.X, point.Y, point.Z + 0.3, 1.0);
+        GameInstance.GetTeleportationFacility(this.m_game).Teleport(vehicle, at, Vector4.ToRotation(Vector4.Normalize2D(target - at)));
+        TandemNative.Log(s"police: car placed out of player \(player)'s sight, \(Vector4.Distance(at, target)) m away");
+      }
+      TandemPolice.Chase(vehicle, puppet, 10.0);
+      car.chasedAt = this.m_now;
+    }
+    TandemNative.Log(s"police: car \(TDBID.ToStringDEBUG(car.record)) chasing player \(player) (\(aboard) aboard)");
     return true;
+  }
+
+  // A unit of ours, after that V and nobody else. On foot it starts the
+  // fight at once; a crew starts it from its seat, and the game's own
+  // behaviour gets it out within 15 m of a target that is not the player
+  // (AITargetInUnmountingRangeCond).
+  private func Enlist(body: ref<ScriptedPuppet>, player: Uint32, puppet: ref<ScriptedPuppet>, vehicle: EntityID) -> Void {
+    let unit = new TandemPoliceUnit();
+    unit.id = body.GetEntityID();
+    unit.player = player;
+    unit.since = this.m_now;
+    unit.vehicle = vehicle;
+    ArrayPush(this.m_units, unit);
+    if IsDefined(puppet) {
+      GameObject.ChangeAttitudeToHostile(body, puppet);
+      GameObject.ChangeAttitudeToHostile(puppet, body);
+      TargetTrackingExtension.InjectThreat(body, puppet);
+      if !EntityID.IsDefined(vehicle) {
+        NPCPuppet.ChangeHighLevelState(body, gamedataNPCHighLevelState.Combat);
+      }
+    }
+    TandemNative.Log(s"police: unit \(TDBID.ToStringDEBUG(body.GetRecordID())) out for player \(player)");
+  }
+
+  private func IsUnit(id: EntityID) -> Bool {
+    for unit in this.m_units {
+      if unit.id == id {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // ---- owner: cars and the AV for a remote V ----
+
+  // Police cars out at a level, at most: none before two stars.
+  private static func CarsFor(stage: Int32) -> Int32 {
+    if stage < 2 {
+      return 0;
+    }
+    return stage >= 4 ? 2 : 1;
+  }
+
+  // The heat table of a level here (its strategies' ranges, the cars'
+  // cooldown).
+  private func TableFor(stage: Int32) -> wref<PreventionHeatTable_Record> {
+    let police = this.Prevention();
+    return IsDefined(police) ? police.TandemHeatTable(stage) : null;
+  }
+
+  // The spawn system only finds roads for police cars from the strategies
+  // it is asked to check, and the prevention system asks only while our
+  // own V is chased (UpdateStrategyPreCheckRequests). While a remote V is
+  // wanted and ours is not, we ask, from that V's level; when nobody we
+  // answer is, we stop.
+  private func Roads(wanted: Bool, opt stage: Int32) -> Void {
+    let spawner = GameInstance.GetPreventionSpawnSystem(this.m_game);
+    if !wanted {
+      if this.m_roads && !this.m_wasChased {
+        spawner.ClearStrategyPreCheckRequests();
+        TandemNative.Log("police: no more roads to check for police cars");
+      }
+      this.m_roads = false;
+      return;
+    }
+    if this.m_roads {
+      return;
+    }
+    let table = this.TableFor(stage);
+    let requests: array<ref<BaseStrategyRequest>>;
+    ArrayPush(requests, TandemPolice.StrategyRequest(table, vehiclePoliceStrategy.GetToPlayerFromAnywhere));
+    ArrayPush(requests, TandemPolice.StrategyRequest(table, vehiclePoliceStrategy.SearchFromAnywhere));
+    ArrayPush(requests, TandemPolice.StrategyRequest(table, vehiclePoliceStrategy.DriveTowardsPlayer));
+    spawner.SetStrategyPreCheckRequests(requests);
+    this.m_roads = true;
+    TandemNative.Log(s"police: roads checked for police cars (level \(stage))");
+  }
+
+  // As the prevention system makes them (CreateStrategyRequest), from a
+  // level's table.
+  private static func StrategyRequest(table: wref<PreventionHeatTable_Record>, strategy: vehiclePoliceStrategy) -> ref<BaseStrategyRequest> {
+    let data: wref<StrategyData_Record>;
+    if IsDefined(table) {
+      if Equals(strategy, vehiclePoliceStrategy.DriveTowardsPlayer) {
+        data = table.Strategy1();
+      } else if Equals(strategy, vehiclePoliceStrategy.GetToPlayerFromAnywhere) {
+        data = table.Strategy5();
+      } else {
+        data = table.Strategy7();
+      }
+    }
+    let range = new Vector2(80.0, 200.0);
+    let angles = new Vector2(0.0, 360.0);
+    let direct = 50.0;
+    if IsDefined(data) {
+      range = data.VehicleSpawnDistanceRange();
+      angles = data.VehicleSpawnAngleRange();
+      direct = data.MinDirectDistance();
+    }
+    if Equals(strategy, vehiclePoliceStrategy.DriveTowardsPlayer) {
+      return DriveTowardsPlayerStrategyRequest.Create(range, direct);
+    }
+    if Equals(strategy, vehiclePoliceStrategy.GetToPlayerFromAnywhere) {
+      return GetToPlayerFromAnywhereStrategyRequest.Create(range, direct);
+    }
+    return SearchFromAnywhereStrategyRequest.Create(range, angles);
+  }
+
+  // A police car from the level's pool, drawn by weight as the game does
+  // (GetVehicleRecordFromPool), and its crew from the car's own passengers
+  // (TryGetUnitDataFromVehicleRecord), else from the level's units.
+  private func DrawCar(stage: Int32, out crew: array<TweakDBID>) -> wref<Vehicle_Record> {
+    let heat = this.HeatData(stage);
+    let pool: array<wref<PreventionVehiclePoolData_Record>>;
+    if IsDefined(heat) {
+      heat.VehicleRecordPool(pool);
+    }
+    if ArraySize(pool) == 0 {
+      heat = TandemPolice.HeatOf(TweakDBInterface.GetDistrictPreventionDataRecord(t"PreventionData.NCPD"), stage);
+      if IsDefined(heat) {
+        heat.VehicleRecordPool(pool);
+      }
+    }
+    let sum = 0.0;
+    for entry in pool {
+      if IsDefined(entry) {
+        sum += MaxF(entry.Weight(), 0.0);
+      }
+    }
+    let pick = RandRangeF(0.0, sum);
+    let seen = 0.0;
+    let chosen: wref<Vehicle_Record>;
+    for entry in pool {
+      let record = IsDefined(entry) ? entry.VehicleRecord() : null;
+      if IsDefined(record) && !IsDefined(chosen) {
+        seen += MaxF(entry.Weight(), 0.0);
+        if pick <= seen {
+          chosen = record;
+        }
+      }
+    }
+    if !IsDefined(chosen) {
+      return null;
+    }
+    let count = RandRange(chosen.MinVehiclePassengersCount(), chosen.MaxVehiclePassengersCount() + 1);
+    let passengers: array<wref<Character_Record>>;
+    chosen.PreventionPassengers(passengers);
+    let n = 0;
+    while n < count {
+      if ArraySize(passengers) > 0 {
+        let passenger = passengers[RandRange(0, ArraySize(passengers))];
+        if IsDefined(passenger) {
+          ArrayPush(crew, passenger.GetID());
+        }
+      }
+      n += 1;
+    }
+    if ArraySize(crew) == 0 && IsDefined(heat) && count > 0 {
+      crew = TandemPolice.DrawRecords(heat, count);
+    }
+    return chosen;
+  }
+
+  // A police car for a wanted remote V at two stars and more: first a
+  // place for it on the roads around the puppet, out of that V's sight.
+  private func SendCar(player: Uint32, puppet: ref<ScriptedPuppet>, stage: Int32, chased: Bool) -> Void {
+    if this.m_now < this.m_nextCar || this.m_pointsFor != 0u || this.TicketsFor(player, 1) > 0 {
+      return;
+    }
+    let out = 0;
+    for car in this.m_cars {
+      if car.player == player && !car.av && car.stoodDownAt == 0.0 {
+        out += 1;
+      }
+    }
+    if out >= TandemPolice.CarsFor(stage) {
+      return;
+    }
+    let table = this.TableFor(stage);
+    let cooldown = IsDefined(table) ? table.VehicleSpawnCooldown() : 0.0;
+    this.m_nextCar = this.m_now + (cooldown > 5.0 ? cooldown : 15.0);
+    if !chased && !this.m_roads {
+      // The spawn system needs a moment to look for roads.
+      this.Roads(true, stage);
+      this.m_nextCar = this.m_now + 3.0;
+      return;
+    }
+    let crew: array<TweakDBID>;
+    let record = this.DrawCar(stage, crew);
+    if !IsDefined(record) || ArraySize(crew) == 0 {
+      TandemNative.Log(s"police: no police car or crew records for level \(stage) here: on foot only for player \(player)");
+      return;
+    }
+    let heat = this.HeatData(stage);
+    let range = IsDefined(heat) ? heat.VehicleSpawnDistanceRange() : new Vector2(0.0, 0.0);
+    let near = range.X > 0.0 ? range.X : 40.0;
+    let far = range.Y > near ? range.Y : near + 60.0;
+    let origins: array<Vector4>;
+    ArrayPush(origins, puppet.GetWorldPosition());
+    this.m_pointsFor = player;
+    this.m_pointsKind = 1;
+    this.m_pointsAt = this.m_now;
+    this.m_pointsVehicle = record.GetID();
+    this.m_pointsCrew = crew;
+    // NavGenAgentSize 1 is Vehicle (the RTTI enum; the scripts declare
+    // Human alone): points a car fits on.
+    GameInstance.GetPreventionSpawnSystem(this.m_game).FindPursuitPointsRangeAsync(origins, near, far, 4u, crew, true, IntEnum<NavGenAgentSize>(1), this, "OnPursuitPoints");
+    TandemNative.Log(s"police: a place for a car asked for player \(player) (level \(stage), \(TDBID.ToStringDEBUG(record.GetID())), \(near)-\(far) m)");
+  }
+
+  // Out of that V's sight: more than 60° off where it looks (the game's
+  // forward is +Y turned by yaw: (-sin, cos)).
+  private static func OutOfSight(player: Uint32, from: Vector4, point: Vector4) -> Bool {
+    let yaw = TandemNative.RemoteYaw(player);
+    let dx = point.X - from.X;
+    let dy = point.Y - from.Y;
+    let length = SqrtF(dx * dx + dy * dy);
+    if length < 1.0 {
+      return false;
+    }
+    return (dy * CosF(yaw) - dx * SinF(yaw)) / length < 0.5;
+  }
+
+  // The places found: the car is asked for (the game's own chase vehicle,
+  // its crew aboard) and goes to the first one out of the V's sight. None:
+  // units on foot fill in.
+  private func PlaceCar(player: Uint32, puppet: ref<GameObject>, points: array<Vector4>) -> Int32 {
+    let from = puppet.GetWorldPosition();
+    let place = new Vector4(0.0, 0.0, 0.0, 0.0);
+    for point in points {
+      if Vector4.IsXYZZero(place) && TandemPolice.OutOfSight(player, from, point) {
+        place = point;
+      }
+    }
+    if Vector4.IsXYZZero(place) {
+      TandemNative.Log(s"police: no place for a car out of player \(player)'s sight (\(ArraySize(points)) found): on foot only for now");
+      return 0;
+    }
+    let spawner = GameInstance.GetPreventionSpawnSystem(this.m_game);
+    let wanted: array<vehiclePoliceStrategy>;
+    ArrayPush(wanted, vehiclePoliceStrategy.GetToPlayerFromAnywhere);
+    ArrayPush(wanted, vehiclePoliceStrategy.SearchFromAnywhere);
+    ArrayPush(wanted, vehiclePoliceStrategy.DriveTowardsPlayer);
+    let strategy = spawner.GetRandomAvailableStrategy(wanted);
+    if Equals(strategy, vehiclePoliceStrategy.None) {
+      TandemNative.Log(s"police: no road the spawn system can bring a car on for player \(player): on foot only for now");
+      return 0;
+    }
+    let stage = TandemStreet.HeatStage(player);
+    let request = TandemPolice.StrategyRequest(this.TableFor(stage), strategy);
+    let ticket = spawner.RequestChaseVehicle(this.m_pointsVehicle, this.m_pointsCrew, request);
+    this.AddTicket(ticket, player, 1, place);
+    TandemNative.Log(s"police: car \(TDBID.ToStringDEBUG(this.m_pointsVehicle)) asked for player \(player) (level \(stage), strategy \(EnumInt(strategy)), \(ArraySize(this.m_pointsCrew)) aboard)");
+    return 1;
+  }
+
+  // The game's own chase (PreventionSystem.ChasePlayer) aimed at the
+  // puppet, as the dynamic spawn system sends its chase cars
+  // (DynamicSpawnSystem.SpawnCallback): no limit on chasing vehicles,
+  // driving stats boosted, and its init command so it starts with it.
+  private static func Chase(car: ref<VehicleObject>, target: ref<GameObject>, startSpeed: Float) -> Void {
+    let command = new AIVehicleChaseCommand();
+    command.target = target;
+    command.distanceMin = 3.0;
+    command.distanceMax = 10.0;
+    command.forcedStartSpeed = startSpeed;
+    command.ignoreChaseVehiclesLimit = true;
+    command.boostDrivingStats = true;
+    let evt = new AICommandEvent();
+    evt.command = command;
+    car.QueueEvent(evt);
+    let ai = car.GetAIComponent();
+    if IsDefined(ai) {
+      ai.SetInitCmd(command);
+    }
+  }
+
+  // Each tick, for the cars out for that V: whoever sits in them is ours
+  // (a crew the spawn result did not list), and a car whose driver is in
+  // and has lost the chase is given it again.
+  private func Crews(player: Uint32, puppet: ref<ScriptedPuppet>, system: ref<TandemSystem>) -> Void {
+    let target = puppet.GetWorldPosition();
+    for car in this.m_cars {
+      if car.player == player && car.stoodDownAt == 0.0 {
+        let body = GameInstance.FindEntityByID(this.m_game, car.id) as VehicleObject;
+        if IsDefined(body) {
+          let passengers: array<wref<GameObject>>;
+          VehicleComponent.GetAllPassengers(this.m_game, car.id, false, passengers);
+          for passenger in passengers {
+            let npc = passenger as ScriptedPuppet;
+            // (Not a V's puppet that took the car.)
+            if IsDefined(npc) && !npc.IsPlayer() && !npc.IsDead() && system.PlayerOfPuppet(npc.GetEntityID()) == 0u && !this.IsUnit(npc.GetEntityID()) {
+              this.Enlist(npc, player, puppet, car.id);
+            }
+          }
+          let position = body.GetWorldPosition();
+          if !car.av && this.m_now - car.chasedAt > 8.0 && !body.IsChasingTarget() && VehicleComponent.HasActiveDriverMounted(this.m_game, car.id) && Vector4.Distance(position, target) > 30.0 {
+            TandemPolice.Chase(body, puppet, -1.0);
+            car.chasedAt = this.m_now;
+            TandemNative.Log(s"police: car \(TDBID.ToStringDEBUG(car.record)) chasing player \(player) again");
+          }
+        }
+      }
+    }
+  }
+
+  // The MaxTac AV at five stars, one for each wanted V: landed near its
+  // body (RequestAVSpawnAtLocation), at a point found around it.
+  private func SendAV(player: Uint32, puppet: ref<ScriptedPuppet>) -> Void {
+    if ArrayContains(this.m_avFor, player) || this.m_pointsFor != 0u || this.TicketsFor(player, 2) > 0 {
+      return;
+    }
+    let heat = this.HeatData(5);
+    let records: array<TweakDBID>;
+    if IsDefined(heat) {
+      records = TandemPolice.DrawRecords(heat, 1);
+    }
+    let origins: array<Vector4>;
+    ArrayPush(origins, puppet.GetWorldPosition());
+    this.m_pointsFor = player;
+    this.m_pointsKind = 2;
+    this.m_pointsAt = this.m_now;
+    GameInstance.GetPreventionSpawnSystem(this.m_game).FindPursuitPointsRangeAsync(origins, 15.0, 40.0, 4u, records, false, NavGenAgentSize.Human, this, "OnPursuitPoints");
+    TandemNative.Log(s"police: a place for an AV asked for player \(player)");
+  }
+
+  private func PlaceAV(player: Uint32, puppet: ref<GameObject>, points: array<Vector4>) -> Int32 {
+    let from = puppet.GetWorldPosition();
+    let place = from;
+    let found = false;
+    for point in points {
+      if !found && TandemPolice.OutOfSight(player, from, point) {
+        place = point;
+        found = true;
+      }
+    }
+    if !found && ArraySize(points) > 0 {
+      place = points[0];
+    }
+    // The first wave's records, as the prevention system picks them
+    // (RequestAVSpawnAtPosition).
+    let pick = RandRange(1, 4);
+    let record = pick == 1 ? t"Vehicle.max_tac_av1" : pick == 2 ? t"Vehicle.max_tac_av2" : t"Vehicle.max_tac_av3";
+    let ticket = GameInstance.GetPreventionSpawnSystem(this.m_game).RequestAVSpawnAtLocation(record, Cast<Vector3>(place));
+    ArrayPush(this.m_avFor, player);
+    this.AddTicket(ticket, player, 2, new Vector4(0.0, 0.0, 0.0, 0.0));
+    TandemNative.Log(s"police: AV \(TDBID.ToStringDEBUG(record)) asked for player \(player), \(Vector4.Distance(place, from)) m from it");
+    return 1;
+  }
+
+  // The chase is over for this car: it stops what it was told and drives
+  // off as the game's own do (StartVehicleDeescalationBehavior); its crew
+  // stands down as units. The AV leaves on its own.
+  private func StandDownCar(car: ref<TandemPoliceCar>) -> Void {
+    if car.stoodDownAt != 0.0 {
+      return;
+    }
+    car.stoodDownAt = this.m_now;
+    let body = GameInstance.FindEntityByID(this.m_game, car.id) as VehicleObject;
+    if IsDefined(body) && !car.av && !body.IsDestroyed() {
+      GameInstance.GetPreventionSpawnSystem(this.m_game).InterruptAllActionAndCommands(body);
+      let panic = new AIVehiclePanicCommand();
+      panic.allowSimplifiedMovement = true;
+      panic.ignoreTickets = true;
+      panic.useSpeedBasedLookupRange = true;
+      let evt = new AICommandEvent();
+      evt.command = panic;
+      body.QueueEvent(evt);
+      let ai = body.GetAIComponent();
+      if IsDefined(ai) {
+        ai.SetInitCmd(panic);
+      }
+    }
+    let what = car.av ? "AV" : "car";
+    TandemNative.Log(s"police: \(what) for player \(car.player) stands down");
   }
 
   // The chase is over for this unit: it forgets the V and walks off, as
@@ -612,6 +1159,16 @@ public class TandemPolice {
 @addMethod(PreventionSystem)
 public final func TandemPreset() -> wref<DistrictPreventionData_Record> {
   return this.m_preventionPreset;
+}
+
+// The heat table of a level in the district's matrix (the strategies'
+// ranges, the cooldowns), for a remote V's level.
+@addMethod(PreventionSystem)
+public final func TandemHeatTable(stage: Int32) -> wref<PreventionHeatTable_Record> {
+  if !IsDefined(this.m_preventionDataMatrix) || stage < 0 || stage > 5 {
+    return null;
+  }
+  return this.GetDataTableForHeat(IntEnum<EPreventionHeatStage>(stage));
 }
 
 // A game that follows spawns no police of its own: the area's owner does.
