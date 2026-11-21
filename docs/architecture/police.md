@@ -165,14 +165,39 @@ it does not (a proxy that does not count as a civilian there, research §13.34 q
    host's heat (a guest owning its area) spares its own V the same way. In
    the other direction nothing is needed: vanilla makes the police hostile
    to the local player's attitude group, which no puppet is in.
-7. **Seen or lost.** Whether the police see the wanted V is the owner's
+7. **Their chase is not the owner's heat** (not yet run in game). Vanilla
+   knows one culprit, "the player", and some of what it hears around a
+   chase names nobody: a witness of the fight calling it in (`CallPolice`
+   and the native `CrowdCallingPoliceEvent` name the local V), a prevention
+   turret opening on whatever it follows, the native stolen-vehicle
+   request. Each gives a V at no star its first
+   (`OnCrimeWitnessRequest`, `OnCombatStartedRequest`,
+   `OnVehicleStolenRequest`): the host's V, which did nothing, got "our
+   wanted level 1" 2.4 s after MaxTac landed for a guest's puppet 3 m from
+   it, as it entered combat (police-host-cars, 2026-11-21; that log does
+   not say which input). While a game answers another player's heat
+   (`TandemPolice.Answering`: one wanted in its area or within 10 s after,
+   or units or cars still out) and its own V has no star, a first star
+   needs that V to have done something (`PreventionSystem.TandemNotOurs`):
+   an input vanilla attributes by the hit's instigator (damage, a kill, an
+   officer hit, a car it blew up), a `Crime` from the area's owner, or
+   damage it dealt in the last 10 s
+   (`PlayerPuppet.GetLastDamageInflictedTime`). The three handlers above
+   drop the input otherwise, and `ChangeHeatStage`, the one place the
+   level changes, refuses whatever came another way ("police: heat refused
+   for our V (REASON)"). A quest's level (`SetWantedLevel`, `police heat`)
+   always counts; with a star, vanilla's rules. Every first star in a
+   session is logged with vanilla's reason ("police: our V gets heat
+   (REASON)"). Not counted while answering: a police car our V only
+   quickhacks, shots it fires that hit nobody.
+8. **Seen or lost.** Whether the police see the wanted V is the owner's
    NPCs' business (their senses, the puppet's stealth). The offender's
    game already receives which NPCs have detected its V
    (`NpcStates.detected`): for each officer among them it registers the
    proxy as a viewer with its own prevention system, and unregisters it
    when the officer loses sight (`TandemPolice.Watch`). The stars go grey
    and blink out by the game's own rules.
-8. **It ends** when the offender's stage is 0, or when it leaves or
+9. **It ends** when the offender's stage is 0, or when it leaves or
    vanishes: the owner's units for that player stand down the way the
    game's do (the threat dropped, neutral, relaxed, the game's own "stars
    dropped" effect), walk off, and are taken away by the spawn system after
@@ -293,8 +318,10 @@ Not built:
   fails at the car. Look for: where the car appears (out of the puppet's
   sight), that it drives to the puppet and its crew get out, that our V is
   left alone (its health never dips, `test query health low`; the puppet
-  stands 3 m in front of it, so a stray round can fail this), the AV's
-  landing.
+  stands 3 m in front of it, so a stray round can fail this), that it
+  gets no star of its own (`test query wanted` stays 0; a "police: heat
+  refused for our V (REASON)" line names the input that would have given
+  one), the AV's landing.
 
 By hand, two games: a guest shoots a civilian near the host (stars on the
 guest only); the host joins the fight against the police (its own stars);
