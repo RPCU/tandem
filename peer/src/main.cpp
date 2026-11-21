@@ -207,6 +207,10 @@ struct Options {
   float driveRadius{12.f}; // drive: the circle's radius round your V
   // drive: the car's radio (ERadioStationList index, -1 off); unset: none sent
   std::optional<int> radioStation;
+  // drive: our car's custom paint (unset: none said), and when it goes back
+  // to stock (seconds after taking the seat; 0: never).
+  std::optional<tandem::proto::CarPaint> paint;
+  int paintOffSeconds{0};
   int hitNpcsSeconds{0};   // join: hit one of the host's NPCs this often (0: never)
   int hitYouSeconds{0};    // host: one of its NPCs hits each guest's V this often (0: never)
   bool hitYouMelee{false}; // --hit-you: a melee hit (blockable, held for the proxy's swing)
@@ -649,6 +653,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --radio STATION    drive: the car's radio plays STATION (0-13 or its name,\n"
          "                     radio_station_09_downtempo...; off): sent when seated and\n"
          "                     again when a passenger gets in\n"
+         "  --paint RRGGBB[,RRGGBB][@HUE] drive: the car carries a custom paint (CarPaint):\n"
+         "                     its colour, a second one, its lights' hue in degrees\n"
+         "  --paint-off-at S   --paint: back to stock paint S seconds after taking the seat\n"
          "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
          "  --shoot-you N      host: an NPC (a replayed one) fires at each guest's V every N\n"
          "                     seconds: the guest's game fires it and decides the hit\n"
@@ -1690,6 +1697,36 @@ Options Parse(int argc, char **argv) {
         options.radioStation = station;
       else
         Usage(std::format("--radio: no station {}", value));
+    } else if (flag == "--paint") {
+      namespace proto = tandem::proto;
+      proto::CarPaint paint{.flags = proto::kPaintPrimary};
+      auto text = value;
+      if (const auto at = text.find('@'); at != std::string_view::npos) {
+        paint.flags = static_cast<std::uint8_t>(paint.flags | proto::kPaintLights);
+        paint.lightsHue = Number<float>(text.substr(at + 1));
+        text = text.substr(0, at);
+      }
+      const auto colour = [](std::string_view hex, std::uint8_t &r, std::uint8_t &g,
+                             std::uint8_t &b) {
+        unsigned rgb = 0;
+        if (hex.size() != 6 || std::from_chars(hex.data(), hex.data() + hex.size(), rgb, 16).ptr !=
+                                   hex.data() + hex.size())
+          Usage("--paint is RRGGBB[,RRGGBB][@HUE]: hex colours, the lights' hue in degrees");
+        r = static_cast<std::uint8_t>(rgb >> 16 & 0xFF);
+        g = static_cast<std::uint8_t>(rgb >> 8 & 0xFF);
+        b = static_cast<std::uint8_t>(rgb & 0xFF);
+      };
+      const auto comma = text.find(',');
+      colour(text.substr(0, comma), paint.primaryR, paint.primaryG, paint.primaryB);
+      if (comma != std::string_view::npos) {
+        paint.flags = static_cast<std::uint8_t>(paint.flags | proto::kPaintSecondary);
+        colour(text.substr(comma + 1), paint.secondaryR, paint.secondaryG, paint.secondaryB);
+      }
+      if (!(paint.lightsHue >= 0.f && paint.lightsHue <= 360.f))
+        Usage("--paint: the lights' hue is 0 to 360 degrees");
+      options.paint = paint;
+    } else if (flag == "--paint-off-at") {
+      options.paintOffSeconds = Number<int>(value);
     } else if (flag == "--look-keys") {
       options.lookKeys = value;
     } else if (flag == "--look") {
@@ -3817,8 +3854,30 @@ tandem::proto::NpcStrike StrikeOf(std::string_view kind, tandem::proto::NpcId np
   return strike;
 }
 
+// "primary ff0000, secondary 00ff00, lights hue 120", "stock".
+std::string PaintText(const tandem::proto::CarPaint &paint) {
+  namespace proto = tandem::proto;
+  if (paint.flags == 0)
+    return "stock";
+  if ((paint.flags & proto::kPaintUnique) != 0)
+    return std::format("unique template {:#x} (model {:#x})", paint.unique, paint.model);
+  std::string out;
+  const auto add = [&](std::string part) { out += (out.empty() ? "" : ", ") + part; };
+  if ((paint.flags & proto::kPaintPrimary) != 0)
+    add(std::format("primary {:02x}{:02x}{:02x}", paint.primaryR, paint.primaryG, paint.primaryB));
+  if ((paint.flags & proto::kPaintSecondary) != 0)
+    add(std::format("secondary {:02x}{:02x}{:02x}", paint.secondaryR, paint.secondaryG,
+                    paint.secondaryB));
+  if ((paint.flags & proto::kPaintLights) != 0)
+    add(std::format("lights hue {:.0f}", paint.lightsHue));
+  return out;
+}
+
 std::string DescribeCombat(const tandem::proto::Message &message) {
   namespace proto = tandem::proto;
+  if (const auto *paint = std::get_if<proto::CarPaint>(&message))
+    return std::format("player {}'s car is painted: {} (car {:#x})", paint->player,
+                       PaintText(*paint), paint->vehicle);
   if (const auto *s = std::get_if<proto::NpcStrike>(&message))
     return std::format("npc {} struck by player {}: {:.0f} health, {:.0f} poise, flags {:#x}, "
                        "zone {}, part {}",
@@ -4561,7 +4620,7 @@ int main(int argc, char **argv) {
   }
   const auto startUs = tandem::net::NowUs();
   auto nextWorld = std::chrono::steady_clock::now();
-  bool seated = false, parked = false;
+  bool seated = false, parked = false, paintOff = false;
   std::uint64_t seatedAtUs = 0;
   std::optional<tandem::proto::VehicleState> lastCar;
   // The last state sent, and (world ... moved) the body we hold there.
@@ -6096,6 +6155,13 @@ int main(int argc, char **argv) {
           seatedAtUs = nowUs;
           if (options.radioStation)
             sendRadio("at the wheel");
+          // --paint: the car's custom paint, as its owner's game says it.
+          if (options.paint) {
+            auto paint = *options.paint;
+            paint.vehicle = TweakDBID(options.vehicle);
+            endpoint->SendCombat(paint);
+            Log("our car's paint sent: {}", PaintText(paint));
+          }
           // Not at the wheel: a ride our game runs (an AI or a scene drives).
           if (!driving) {
             namespace proto = tandem::proto;
@@ -6179,6 +6245,13 @@ int main(int argc, char **argv) {
           }
           Log("out of the car the hard way (kind {}) at {:.1f} m/s{}",
               static_cast<int>(options.exitKind), speed, rolls ? ": it rolls on" : "");
+        }
+        // --paint-off-at: the custom paint switched off (stock paint again).
+        if (seated && options.paint && options.paintOffSeconds > 0 && !paintOff &&
+            nowUs - seatedAtUs > static_cast<std::uint64_t>(options.paintOffSeconds) * 1'000'000) {
+          paintOff = true;
+          endpoint->SendCombat(tandem::proto::CarPaint{});
+          Log("our car's paint sent: stock");
         }
         if (seated && !parked && options.driveSeconds > 0 &&
             nowUs - seatedAtUs > static_cast<std::uint64_t>(options.driveSeconds) * 1'000'000) {
