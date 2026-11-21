@@ -222,9 +222,14 @@ that moves the vehicle owns it"), with no copy spawned on top of it.
 3. Every game hands the body it has to that player: at the owner's it is
    the real traffic car (its NPCs are put out beside the door with the
    game's own `VehicleHijackEvent`: they flee or fight as when V jacks a
-   car), elsewhere the proxy. When the player's `Seat` arrives, the
-   puppet's car copy is that body (`TandemTraffic.TakeAdopted`): the car
-   never pops, and the puppet sits where the driver sat.
+   car), elsewhere the proxy. Each seat is read as the seat check reads it
+   (the mounting facility's child of that slot; `GetAllPassengers` and a
+   filter that spared DES-managed NPCs put no one out, 2026-11-21); a
+   player stays, an NPC another game runs is its owner's. When the
+   player's `Seat` arrives, the puppet's car copy is that body
+   (`TandemTraffic.TakeAdopted`): the car never pops, and the puppet sits
+   where the driver sat, half a second later (the driver's unmount lands
+   first; not yet run in game).
 4. From then on it is `Seat` + `VehicleState` from the thief, 30 Hz, as
    any car a player drives. When they get out it is a car they left
    parked.
@@ -307,7 +312,7 @@ Built in this change:
    `tests/protocol_test.cpp`, `tests/consistency_test.cpp`.
 2. **Mock player**: `tandem-peer host --traffic N [--npc REC]
 [--wreck-at S]` drives N cars round the guest and parks one; `join
---ram-traffic S`, `--steal-at S`.
+--ram-traffic S`, `--steal-at S` (`--steal-driven`: a car with a driver).
 3. **Plugin**: `street_natives.cpp` (`TandemStreet`), the runtime's queues
    and per-vehicle tracks, the packet budget on the game thread.
 4. **Scripts**: `Traffic.reds` (the owner's share loop, proxies, status,
@@ -348,10 +353,12 @@ Not built, in the order I would do them:
   wreck, and that everything goes with the host. Look for: cars sliding
   or hovering, wheels not turning, the driver's pose, the explosion's
   sound and fire, the wreck staying.
-- **traffic-host**: the game hosts on a street with traffic; the mock
-  guest rams a car every 4 s, then gets into one. Checks that our cars
-  are announced, the ram applied to the real car, the taken car handed to
-  the guest's puppet with no second copy. Look for: the rammed driver's
+- **traffic-host**: the game hosts on a street with traffic (drake-ave:
+  the test field has parked cars only); the mock guest rams a car every
+  4 s, then gets into one with a driver. Checks that our cars are
+  announced, the ram applied to the real car, the driver put out, the
+  taken car handed to the guest's puppet at its wheel (`query mounted
+puppet`) with no second copy. Look for: the rammed driver's
   reaction, the evicted driver beside the door, the puppet at the wheel
   of the same car.
 - **wheels-guest-area**: the game hosts; a mock guest 400 m away owns its

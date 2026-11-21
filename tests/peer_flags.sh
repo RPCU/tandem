@@ -51,7 +51,7 @@ declare -A value=(
   ["--region-leave-at"]=20 ["--region-leave-linked"]=3 ["--region-speed"]=25 ["--region-cars"]=2
   ["--region-driver"]=--check ["--region-chase"]=--check
   ["--region-at"]="1,2,3"
-  ["--traffic"]=4 ["--traffic-vehicle"]=Vehicle.x ["--wreck-at"]=10 ["--ram-traffic"]=3 ["--steal-at"]=12
+  ["--traffic"]=4 ["--traffic-vehicle"]=Vehicle.x ["--wreck-at"]=10 ["--ram-traffic"]=3 ["--steal-at"]=12 ["--steal-driven"]=--check
   ["--heat"]=3 ["--heat-at"]=5 ["--heat-for"]=20 ["--crime-at"]=8
   ["--hurt"]=4 ["--melee"]=5 ["--menu-at"]=10 ["--react-npcs"]=3
   ["--hold"]=Items.x ["--holster-at"]=10
