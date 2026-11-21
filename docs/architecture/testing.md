@@ -76,7 +76,7 @@ scenario. Ready, `test-reset` asks `test choice` and, while a dialogue's
 choices are up (the save may load on a call waiting for one, its quest
 holding the save), presses ChoiceApply (F) and waits for the call to end,
 60 s at most: the first option, in memory only (the tests write no save). A scenario that needs
-another spot teleports after it.
+another spot goes there after it with `at` (Fixtures, below).
 
 Before that reset, `tools/scenario.sh`'s `run`:
 
@@ -98,6 +98,41 @@ not a game` since, `exit-host`'s end): the game is stopped and the
   `coop leave`) in the role and keys the game runs with, which `ensure`
   would not restart: `coop join ADDRESS:27450` (tandem.ini's address) as
   guest, `coop host` as host.
+
+**Fixtures** (`tools/scenarios/fixtures.txt`: `NAME X Y Z YAW`): the named
+spots scenarios need that the test field lacks. `at NAME` (or `at "X Y
+Z [YAW]"`; `tools/scenario.sh`) teleports our V and waits until it stands
+within 4 m of the spot (its position asked every 2 s, 45 s at most: a far
+teleport has a loading screen), then 3 s; a loading screen's watchdog
+`silent` line is marked past. Each scenario's `*_AT` variable takes a name
+or coordinates (default below). `cmd fixture check [M]`
+(`scripts/tandem/Fixtures.reds`, solo too) logs `fixture: …` lines: our V's
+spot, the devices within M m (60) by class, the nearest door, lift,
+camera, turret, barrel, access point and radio within 200 m with position
+and state, the NPCs within M m (vendors of our own world, in a workspot)
+and the nearest vendor and workspot NPC within 200 m, then `fixture:
+done`. World glass has no entity: not listed. Scenario `fixtures-survey`
+visits each (`FIXTURES="a b"`, `RADIUS`), notes those lines and a
+screenshot, `glass break` at kabuki-market. Every spot is **unverified**
+until the survey has run in game.
+
+<!-- prettier-ignore -->
+| Fixture | X Y Z yaw | Source | Expected there | Scenarios |
+| --- | --- | --- | --- | --- |
+| `test-field` | -915.0 1879.5 36.19 0 | `TestReset.reds` (verified: every reset) | Kabuki street corner: doors, traffic, 2 NPCs in a workspot 12 m off; no ap, camera, lift, turret, vendor within 200 m; something 7 m north (pilot, 2026-11-21) | the rest |
+| `h10` | -1397.31 1278.07 123.08 0 | fast-travel point `wat_lch_dataterm_10` (dataterm tracker, 2.50 sectors); the save's own start (body held there, `police-host-cars`, 2026-11-21) | H10's floor; its lift terminal 70 m (journal `#q101_mp_elevator_terminal_mb`, -1434.85 1314.51 120.81) | `devices-lift` |
+| `v-door` | -1389.66 1271.12 123.08 0 | journal `#q101_mp_leave_v_room` ("Leave the apartment"; the pin's z 124.59, the floor h10's) | V's door; V's computer 3.6 m (`#q101_mp_v_room_computer`); the scenarios `device goto door` | `interact-guest-pickup`, `interact-guest-hostonly`, `interact-apart-own-gig` |
+| `kabuki-market` | -1158.78 2014.22 12.06 0 | `wat_kab_dataterm_01` (tracker) | market stalls: vendors, NPCs at stalls (a workspot); shop panes a guess (no data) | `vendor-guest`, `ledger-guest`, `npcs-anims-host`, `glass-guest`, `glass-latecomer` |
+| `h11-basement` | -1390.79 1963.74 -25.02 0 | journal `#lch_01_tr_main_computer_room_001` (gig "Catch a Tyger's Toe"); walkthroughs (Fandom, Fextralife, GameClubz) | Tyger Claws server room, floor -05: 2–4 cameras, a laptop with network access, the lift; hostile unless the gig is done | `breach-guest`, `breach-host`, `comms-network`, `devices-camera` |
+| `arasaka-park` | -209.26 -1454.22 7.60 0 | journal `#q112_mp_truck_drive_inside` ("Drive into Arasaka Industrial Park"); players' reports (perimeter turrets, cameras; hostile, empty after "Gimme Danger") | hostile turrets that are on | `turret-guest`, `turret-hands`, `turret-host` |
+| `drake-ave` | -1608.11 1772.70 18.38 0 | `wat_lch_dataterm_02` (tracker) | an avenue with traffic for police pursuit points (the test field found 0) | `police-host-cars` |
+| `niwaki-plaza` | -230.49 306.01 29.55 0 | `wbr_hil_dataterm_01`, Gold Niwaki Plaza (tracker) | open plaza ground for `street.pilot` (14 m ahead, 8 m aside) | `pilot-street` |
+
+Sources: the journal's quest map pins (`journal-quest-data.json`, the RED
+modding wiki's export, as `engine/revive.md` §13.110); the fast-travel
+points' arrival spots from cadugi/cyberpunk2077-dataterm-tracker
+`data/reference.json` (2.50 records and 3263 world sectors, 2026-11-08). No
+device placement was read from the archives (no WolvenKit here).
 
 **Sweeps** (`tools/sweep.sh`, `task sweep -- …`): every scenario, or the
 NAMEs given, through `tools/scenario.sh` one at a time, into
