@@ -56,6 +56,21 @@
   reason 3 ("NAME was taken somewhere else"), shown to the far ones only
   (`tools/game.sh cmd regroup jump X Y Z`: such a teleport).
 
+- **The arrival** (`Travel.reds` `ArriveBeside`, 2026-11-21, not yet run
+  in game; scenarios `coop-arrive`, `coop-arrive-load`): a join the co-op
+  menu chose (`coop-menu.md`, New co-op game) was the player's yes. At its
+  first welcome our V waits until it is free to go (not in a scene of tier
+  3 and up, a vehicle, or down; 90 s at most, then "Joined NAME's session"
+  and the usual ways), then goes 2 m behind the host **behind the fast
+  travel's loading screen** (`TeleportHidden`: what `PerformFastTravel`
+  does, gameplay restrictions off and `NotifyFastTravelStart`, around a
+  plain teleport to the spot: no fast travel point needed), whatever the
+  distance; within 60 m it stays. Our own fast travel locks do not hold it
+  (our story's, held in the session). After the loading screen, within
+  30 m of the host it stays where it landed (no visible hop), else the last
+  metres as a regroup's. One notice: "Joined NAME's session". No
+  `RegroupAnswer`: the host already hears "NAME joined the session".
+
 ## Open problems
 
 - **Region authority** once players spread out (feasibility and a staged

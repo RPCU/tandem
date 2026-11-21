@@ -171,7 +171,7 @@ The owner simulates; everyone else displays.
 | a guest's use of the host's objects while grouped (a quest switch, an objective item, a quest container, a terminal) | host's game: judged from its own data, done by its V on its own copy, first come first served | asks; its own copy does it at once for feel (not what would cast its V); a choice that casts the doer is host-only, greyed "NAME must do this"; apart, or on its own things: its own, as solo (`architecture/story.md`, "Quest interactions") |
 | what a guest did in co-op (the ledger) | the guest's game (save) | never shared: quests taken part in, rewards paid once, vehicles earned |
 
-Enemy level (the mean of the players' levels) and enemy scaling (tougher
+Enemy level (the mean of the players' levels, at most `level_gap` above the lowest) and enemy scaling (tougher
 for each extra player near, its damage never): `architecture/npcs.md`.
 
 Vehicle combat follows the same rule, the game that simulates a vehicle owns it, its damage included (a car its driver left is still that driver's; a gunner seat is given by the vehicle's owner): [`architecture/vehicle-combat.md`](architecture/vehicle-combat.md).

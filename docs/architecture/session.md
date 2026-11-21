@@ -111,7 +111,7 @@ idle: …); recorder on|off; transform guard on|off (why)`. `TandemSystem`'s idl
   `dist/tandem.ini` (shipped as `tandem.default.ini`) and
   `dist/INSTALL.md`; each is explained in the topic file it belongs to:
   role, address, port, name, `last_address` here; `relay`, `relay_token`,
-  `join`, `code`, `direct` (`relay.md`); pose (`players.md`); story,
+  `join`, `code`, `direct` (`relay.md`); `level_gap` (`progression.md`); pose (`players.md`); story,
   quest_freeze, quest_freeze_allow, `quest_freeze_gigs`, `quest_interact`
   (`story.md`); scene_privacy, private_actors, private_scenes,
   public_scenes, `scene_replay` (`scene-replay.md`); time_host
