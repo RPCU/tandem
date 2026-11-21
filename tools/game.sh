@@ -838,8 +838,14 @@ ensure() {
   # Not installed yet: the first deploy brings tandem and its tandem.ini.
   remote "[ -e '$dir/red4ext/plugins/tandem/tandem.ini' ]" || deploy
   current_role=$(remote "sed -n 's/^role *= *//p' '$dir/red4ext/plugins/tandem/tandem.ini'")
-  if [ "$current_role" != "$role_name" ] || [ "${started#* }" != "$want" ]; then
+  # The port too: an ini set by hand (tools/instance.sh role) hosted on
+  # another port than this game's, and no mock player could join.
+  local current_port restart_for_port=''
+  current_port=$(remote "sed -n 's/^port *= *//p' '$dir/red4ext/plugins/tandem/tandem.ini'")
+  [ "$current_port" = "$port" ] || restart_for_port=1
+  if [ "$current_role" != "$role_name" ] || [ "${started#* }" != "$want" ] || [ -n "$restart_for_port" ]; then
     role "$role_name" >/dev/null
+    [ -z "$restart_for_port" ] || started=''
   fi
   if [ "$started" = "$now $want" ] && running && healthy; then
     echo "game: running this build as $want"
