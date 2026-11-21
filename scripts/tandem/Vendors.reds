@@ -491,6 +491,7 @@ public class TandemVendors {
       let own = this.NearestOwn(player, 200.0);
       if !IsDefined(own) {
         TandemNative.Log("vendor: no vendor of our own world within 200 m");
+        TandemVendors.LogLacking(player, "vendor", 200.0);
         return;
       }
       let at = own.GetWorldPosition();
@@ -576,14 +577,104 @@ public class TandemVendors {
 
   // The nearest vendor of our own world (placed, alive, not a proxy).
   private func NearestOwn(player: ref<PlayerPuppet>, reach: Float) -> ref<ScriptedPuppet> {
-    let npcs = this.m_system.Npcs();
     let best: ref<ScriptedPuppet>;
     let bestAt = reach;
     for body in player.GetNPCsAroundObject(reach) {
-      let id = IsDefined(body) ? body.GetEntityID() : EntityID.FromHash(0ul);
-      if IsDefined(body) && body.IsVendor() && !body.IsDead() && !(IsDefined(npcs) && npcs.IsProxyEntity(id)) && EntityID.IsDefined(TandemPlaced.IdOf(body)) {
+      if Equals(TandemVendors.Lacks(body), "") {
         let far = Vector4.Distance(player.GetWorldPosition(), body.GetWorldPosition());
         if far <= bestAt {
+          best = body;
+          bestAt = far;
+        }
+      }
+    }
+    return best;
+  }
+
+  // What a body lacks to be a vendor of our own world ("": nothing, it is
+  // one): its record's vendor (as the game's own IsVendor and
+  // MarketSystem.GetVendorID), alive, not a copy of another game's NPC,
+  // placed (TandemPlaced.IdOf: the id every game knows it by).
+  public static func Lacks(body: ref<ScriptedPuppet>) -> String {
+    if !IsDefined(body) {
+      return "no npc";
+    }
+    if !body.IsVendor() {
+      return "no vendor id";
+    }
+    if body.IsDead() {
+      return "dead";
+    }
+    if TandemVendors.IsCopy(body) {
+      return "a proxy";
+    }
+    if !EntityID.IsDefined(TandemPlaced.IdOf(body)) {
+      return s"not placed (\(TandemPlaced.Why(body)))";
+    }
+    return "";
+  }
+
+  // (test: `vendor near`, `fixture check`) No vendor of our own world within
+  // `radius`: what is there instead. The NPCs within 200 m, the nearest three
+  // whose record has a vendor and the nearest five of the others, each with
+  // what it lacks; then ours hidden in this session. An NPC of ours hidden
+  // in an earlier session (behind its owner's proxy, or dead in that session)
+  // is on no list: it is out of sight until it streams out (vendor-guest ran
+  // after ledger-guest had hidden Viktor, 2026-11-21).
+  public static func LogLacking(player: ref<PlayerPuppet>, tag: String, radius: Float) -> Void {
+    let game = player.GetGame();
+    let here = player.GetWorldPosition();
+    let around = player.GetNPCsAroundObject(200.0);
+    let withVendor = 0;
+    for body in around {
+      if IsDefined(body) && body.IsVendor() {
+        withVendor += 1;
+      }
+    }
+    let system = TandemSystem.Of(game);
+    let npcs = IsDefined(system) ? system.Npcs() : null;
+    let hidden: array<EntityID>;
+    if IsDefined(npcs) {
+      hidden = npcs.HiddenIds();
+    }
+    TandemNative.Log(s"\(tag): \(ArraySize(around)) npcs within 200 m, \(withVendor) with a vendor id, \(ArraySize(hidden)) of ours hidden in this session (one hidden in an earlier session is out of sight until it streams out: leave and come back)");
+    let listed: array<ref<NPCPuppet>>;
+    let pass = 0;
+    while pass < 2 {
+      let left = pass == 0 ? 3 : 5;
+      while left > 0 {
+        let next = TandemVendors.NextNearest(around, here, listed, pass == 0);
+        if !IsDefined(next) {
+          left = 0;
+        } else {
+          ArrayPush(listed, next);
+          let far = Vector4.Distance(here, next.GetWorldPosition());
+          let lacks = TandemVendors.Lacks(next);
+          if Equals(lacks, "") {
+            lacks = far > radius ? s"a vendor of our own world, too far (beyond \(radius) m)" : "a vendor of our own world";
+          }
+          TandemNative.Log(s"\(tag):   record \(TDBID.ToStringDEBUG(next.GetRecordID())) entity \(TandemNative.EntityHex(next.GetEntityID())) at \(far) m: \(lacks)");
+          left -= 1;
+        }
+      }
+      pass += 1;
+    }
+    for id in hidden {
+      let own = GameInstance.FindEntityByID(game, id) as ScriptedPuppet;
+      if IsDefined(own) && own.IsVendor() {
+        TandemNative.Log(s"\(tag):   record \(TDBID.ToStringDEBUG(own.GetRecordID())) entity \(TandemNative.EntityHex(id)) at \(Vector4.Distance(here, own.GetWorldPosition())) m: ours, hidden in this session");
+      }
+    }
+  }
+
+  // The nearest of `around` not yet listed (with a vendor id, or without).
+  private static func NextNearest(around: array<ref<NPCPuppet>>, here: Vector4, listed: array<ref<NPCPuppet>>, withVendor: Bool) -> ref<NPCPuppet> {
+    let best: ref<NPCPuppet>;
+    let bestAt = 1000.0;
+    for body in around {
+      if IsDefined(body) && Equals(body.IsVendor(), withVendor) && !ArrayContains(listed, body) {
+        let far = Vector4.Distance(here, body.GetWorldPosition());
+        if far < bestAt {
           best = body;
           bestAt = far;
         }
