@@ -106,7 +106,10 @@ it does not (a proxy that does not count as a civilian there, research §13.34 q
    behind the same switch.
    The owner finds a place on
    the roads around the puppet (`FindPursuitPointsRangeAsync` with
-   `NavGenAgentSize` 1, vehicle, at the level's vehicle spawn range) and
+   `NavGenAgentSize` 1, vehicle, at the level's vehicle spawn range; none
+   there, 2 s later at 40–120 m, then at 40–120 m with size 0, a person's,
+   whose navmesh has the streets too: drake-ave's 150–250 m found 0,
+   2026-11-21) and
    takes the first one more than 60° off where that V looks
    (`TandemNative.RemoteYaw`). It asks the game's own chase vehicle with
    its crew seated (`RequestChaseVehicle`: a car from the level's pool, its

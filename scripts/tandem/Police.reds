@@ -67,6 +67,9 @@ public class TandemPolice {
   private let m_pointsKind: Int32;
   private let m_pointsVehicle: TweakDBID;
   private let m_pointsCrew: array<TweakDBID>;
+  // Which search a car's place is on (TandemPolice.CarSearch): the next one
+  // after a search that found nothing, back to the first after a car.
+  private let m_carSearch: Int32;
   // Owner: police cars and AVs out for remote players, when the next car
   // may be asked for, the players an AV came for at this level 5 (one
   // each), whether we asked the spawn system to look for roads (it only
@@ -926,6 +929,13 @@ public class TandemPolice {
     let range = IsDefined(heat) ? heat.VehicleSpawnDistanceRange() : new Vector2(0.0, 0.0);
     let near = range.X > 0.0 ? range.X : 40.0;
     let far = range.Y > near ? range.Y : near + 60.0;
+    let search = this.m_carSearch;
+    if search > 0 {
+      // The level's range found nothing (drake-ave, 150-250 m: 0 points,
+      // 2026-11-21): nearer, still out of that V's sight.
+      near = TandemPolice.CarNear();
+      far = TandemPolice.CarFar();
+    }
     let origins: array<Vector4>;
     ArrayPush(origins, puppet.GetWorldPosition());
     this.m_pointsFor = player;
@@ -934,10 +944,19 @@ public class TandemPolice {
     this.m_pointsVehicle = record.GetID();
     this.m_pointsCrew = crew;
     // NavGenAgentSize 1 is Vehicle (the RTTI enum; the scripts declare
-    // Human alone): points a car fits on.
-    GameInstance.GetPreventionSpawnSystem(this.m_game).FindPursuitPointsRangeAsync(origins, near, far, 4u, crew, true, IntEnum<NavGenAgentSize>(1), this, "OnPursuitPoints");
-    TandemNative.Log(s"police: a place for a car asked for player \(player) (level \(stage), \(TDBID.ToStringDEBUG(record.GetID())), \(near)-\(far) m)");
+    // Human alone): points a car fits on. The last search takes a person's
+    // (0, the one the game's own units on foot are found with), whose
+    // navmesh has the streets too.
+    let size = search >= 2 ? 0 : 1;
+    GameInstance.GetPreventionSpawnSystem(this.m_game).FindPursuitPointsRangeAsync(origins, near, far, 4u, crew, true, IntEnum<NavGenAgentSize>(size), this, "OnPursuitPoints");
+    TandemNative.Log(s"police: a place for a car asked for player \(player) (level \(stage), \(TDBID.ToStringDEBUG(record.GetID())), \(near)-\(far) m, agent size \(size))");
   }
+
+  // A car's place when the level's range has none: this near and far.
+  public static func CarNear() -> Float { return 40.0; }
+  public static func CarFar() -> Float { return 120.0; }
+  // The searches: the level's range, nearer, nearer for a person's size.
+  public static func CarSearches() -> Int32 { return 3; }
 
   // Out of that V's sight: more than 60° off where it looks (the game's
   // forward is +Y turned by yaw: (-sin, cos)).
@@ -964,9 +983,16 @@ public class TandemPolice {
       }
     }
     if Vector4.IsXYZZero(place) {
+      // The next search soon (another range, another size), else the first
+      // again after the level's cooldown.
+      this.m_carSearch = (this.m_carSearch + 1) % TandemPolice.CarSearches();
+      if this.m_carSearch != 0 {
+        this.m_nextCar = this.m_now + 2.0;
+      }
       TandemNative.Log(s"police: no place for a car out of player \(player)'s sight (\(ArraySize(points)) found): on foot only for now");
       return 0;
     }
+    this.m_carSearch = 0;
     let spawner = GameInstance.GetPreventionSpawnSystem(this.m_game);
     let wanted: array<vehiclePoliceStrategy>;
     ArrayPush(wanted, vehiclePoliceStrategy.GetToPlayerFromAnywhere);
