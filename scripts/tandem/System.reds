@@ -1415,10 +1415,20 @@ public class TandemSystem extends ScriptableSystem {
       // damage pipeline as a real one would go (Combat.reds): lethal
       // ("npc punch"), or N physical damage ("npc punch N").
       // "npc punch burn": 10 damage that also sets it on fire.
+      // "npc punch N npc ID": on that NPC's proxy instead of the nearest.
       let burn = Equals(command, "npc punch burn");
-      let amount = burn ? 10.0 : StrLen(command) > 10 ? StringToFloat(StrAfterFirst(command, "punch "), 0.0) : 0.0;
+      let rest = StrAfterFirst(command, "punch ");
+      let on = 0u;
+      if StrContains(rest, " npc ") {
+        on = Cast<Uint32>(StringToInt(StrAfterFirst(rest, " npc "), 0));
+        rest = StrBeforeFirst(rest, " npc ");
+      }
+      let amount = burn ? 10.0 : StrLen(command) > 10 ? StringToFloat(rest, 0.0) : 0.0;
       let player = GetPlayer(this.GetGameInstance());
-      let target = IsDefined(this.m_npcs) ? this.m_npcs.NearestProxy(player.GetWorldPosition()) : null;
+      let target: ref<ScriptedPuppet>;
+      if IsDefined(this.m_npcs) {
+        target = on != 0u ? this.m_npcs.ReadyProxy(on) : this.m_npcs.NearestProxy(player.GetWorldPosition());
+      }
       if IsDefined(target) {
         let context: AttackInitContext;
         context.record = TweakDBInterface.GetAttackRecord(t"Attacks.VehicleImpact");
