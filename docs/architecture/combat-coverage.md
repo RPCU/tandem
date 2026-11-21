@@ -70,8 +70,9 @@ Counts at the end. Evidence names a scenario, a code path or a dated check.
 | Ultimate quickhacks: Suicide, Cyberpsychosis, System Collapse, Blackwall Gateway | W vanilla | – | – | U the kill or madness on the host's NPC; D System Collapse's trace and cost buffs (`SystemCollapseModifyRevealBarEffector`) go to the host's V (coop-perks §6.2) | – | – | U |
 | Breach Protocol | W vanilla | – | – | U the minigame on the guest's game, its rewards paid there once the host grants the breach (a refused one pays nothing and names who was first); its outcome a `Breach` to the host: the network breached once for everyone (the access point's record), its daemons run by the host on the network's devices and its NPCs from the guest's puppet, by every other game on the NPCs it runs (`breach-guest`, devices.md); U the quickhack on a host NPC: that NPC by its owner, its network by the host; U a mod that skips the minigame (AccessPointSkip) through the same outcome | – | – | U the puppet busy in its minigame (activities.md); the daemons' effects on proxies (`NpcStatus`), the devices through their state (`breach-host`) |
 | Operating systems: cyberdeck (RAM, queue, Overclock), Sandevistan, Berserk | W vanilla | – | – | W the caster's own game (RAM, cooldowns, queue on the proxy: coop-perks §6.1) | – | – | – |
-| Vehicle combat (mounted guns, missiles, rams) | W vanilla | W off / U on | – | U hits from the driver's game on proxies; D missiles not shown (vehicles.md) | W off / U on | – | D |
-| Environment: explosive barrels and devices, turrets, electrified floors | W vanilla | W off / U on | W vanilla | D a barrel the guest shoots explodes on its game only (devices are the host's: devices branch); its strikes count | W off / U on | W vanilla | D; turrets: the host's turret's aim and shots drawn on every copy, a shot at a V fired by that V's game (devices.md, "A device's fire"; built, not run) |
+| Vehicle combat (mounted guns, missiles, rams) | W vanilla | U off: the copy of the driver's car running into the other V hurts nobody, its knock stays (`TandemWheelsSync.CausedElsewhere`; **was B**: it hurt the V) / U on | – | U hits from the driver's game on proxies; D missiles not shown (vehicles.md) | U off / U on, as the host's | – | D |
+| Environment: explosive barrels and devices, turrets, electrified floors | W vanilla | W off / U on | W vanilla | U the guest's copy goes off on its game, and the host's from the guest's puppet (`ExplosiveDevice.TandemDetonate`, `devices-barrel`; not yet run in game): the host's NPCs it kills are the guest's kills, its crime the guest's (**was D**: no instigator, nobody's kill); D the host's V may be spared by its blast as by any friend's | W off / U on | W vanilla | D; turrets: the host's turret's aim and shots drawn on every copy, a shot at a V fired by that V's game (devices.md, "A device's fire"; built, not run) |
+| Weak spots (a boss's plates and heat sinks: `WeakspotObject`) | W vanilla | – | – | U the guest's fire breaks the proxy's on its screen, and the share of its health each hit took goes to the NPC's owner (`WeakSpotHit`), whose real one takes it: its fact and the boss's next phase on the game that runs it (`npcs-weakspot`; not yet run in game; **was B**: the guest's `AddFact` landed on its own game) | – | – | D the other game's copy of the weak spot stays whole until the boss's state shows it |
 | Environment: falls, drowning, fire, own crashes | – | – | W vanilla | – | – | W vanilla | U a burn, shock, poison or bleed on the V shows on its puppet, its look and sound only (`StatusVisuals`, `presence-status`) |
 | Finishers and takedowns | W vanilla | – | – | U a request to the host, played on the real NPC (`takedowns-host`); U the finisher a broken guard offers goes to whoever broke it (`PoiseBroken`) | – | – | U the workspot on the puppet |
 
@@ -80,7 +81,7 @@ Counts at the end. Evidence names a scenario, a code path or a dated check.
 <!-- prettier-ignore -->
 | Attack | On the host's V | On a guest's V | Seen on the other game |
 | --- | --- | --- | --- |
-| Gunfire | W vanilla | U fired from the proxy and applied on the guest's game, whether it may land the host's time between hits on the puppet (`npcs-shoot-guest`; **was B** too: every shot missed, the proxy's line of sight reads 0); **was B**: those hits were dropped as a proxy's own (`IsProxyComputed`), fixed here (`TandemShots.IsSimulatedHit`) | U the shot on the proxy (`NpcShot`) |
+| Gunfire | W vanilla | U fired from the proxy and applied on the guest's game, whether it may land the host's time between hits on the puppet (`npcs-shoot-guest`; **was B** too: every shot missed, the proxy's line of sight reads 0), by a player's rules: the group and cover coefficients and a V's base, which the game gives no NPC target (`TandemShouldHitAsPlayer`, `npcs-shoot-puppet`; not yet run in game); **was B**: those hits were dropped as a proxy's own (`IsProxyComputed`), fixed here (`TandemShots.IsSimulatedHit`) | U the shot on the proxy (`NpcShot`) |
 | Smart weapons | W vanilla | D the proxy fires plain rounds (no lock), the hit is still the guest's | U |
 | Melee | W vanilla | U the host's hit is held until the proxy's swing lands on the guest's screen, then run on its V (`TandemFight.MeleeHold`, `combat-melee-guest`) | U the NPC's animation (`NpcAnims`) |
 | Blocking an NPC's melee | W vanilla | U on the guest's game (`ProcessDefensiveState`), and the host's NPC recoils (`Defended`, `combat-defend`) | U |
@@ -88,7 +89,7 @@ Counts at the end. Evidence names a scenario, a code path or a dated check.
 | Bullet block, deflect and parry with a blade | W vanilla | U the shot is the guest's game's, so its perks apply; a deflected bullet strikes the proxy (a strike) | U |
 | Grenades | W vanilla | U damage as `PlayerHit`; U seen: a copy from the proxy (`kThrowByNpc`); **was B** (nothing flew) | U |
 | Thrown knives, launchers | W vanilla | U damage as `PlayerHit` | D not shown on guests |
-| Netrunner hacks | W vanilla | U on the guest's V (`PlayerHack`, `hacks-guest`) | U |
+| Netrunner hacks | W vanilla | U on the guest's V (`PlayerHack`, `hacks-guest`); U cut short when its owner's netrunner is interrupted (`HackingInterrupted`, `HackRevealInterrupted`, a cyberware malfunction on it: `NpcStatus` puts it on the proxy, which the upload reads; `hacks-interrupt`); U a trace's end sets the netrunner's squad on the guest's puppet on the owner's game (`HackTraced`, `hacks-trace-squad`); not yet run in game | U |
 | Area attacks, explosions, fire | W vanilla | U `PlayerHit`, the target's side on the guest | U |
 
 ## Companions and allies
@@ -121,16 +122,16 @@ proxies of them.
 
 Each cell counted once, by the worst state it names (B, then D, then U,
 then W; "W off / U on" counts as the default, W; "was B" is history),
-2026-11-19:
+2026-11-21:
 
 <!-- prettier-ignore -->
 | Table | Cells | W | D | B | U | – |
 | --- | --- | --- | --- | --- | --- | --- |
-| The Vs attacking (27 rows × 7) | 189 | 70 | 16 | 1 | 31 | 71 |
+| The Vs attacking (28 rows × 7) | 196 | 69 | 17 | 1 | 34 | 75 |
 | The host's NPCs attacking (10 × 3) | 30 | 10 | 2 | 0 | 18 | 0 |
 | Companions and allies | 5 | 1 | 1 | 0 | 2 | 1 |
 | Healing and consumables | 5 | 1 | 1 | 0 | 2 | 1 |
-| All | 229 | 82 | 20 | 1 | 53 | 73 |
+| All | 236 | 81 | 21 | 1 | 56 | 77 |
 
 Before this change three of today's U were B (NPC gunfire on a guest, NPC
 grenades and every V's thrown object unseen on the other game) and the
