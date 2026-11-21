@@ -1,5 +1,5 @@
 # As a guest: our copy of a turret never fires on its own; it draws the mock host's turret's aim and shots, and fires for real at our V only on the host's word
-# shellcheck shell=bash disable=SC2317
+# shellcheck shell=bash disable=SC2317,SC2154
 # Where: TURRET_AT (a fixture or "X Y Z": a security turret we follow, a
 # "sentry", within 200 m: V goes beside it, and `turret provoke` makes it
 # take V; default arasaka-park; the police's are not followed, as
@@ -32,7 +32,9 @@ shot turret-guest-drawn
 # V out of its sight): said to the host, which fires at us through it.
 cmd turret provoke
 expect "turrets: $turret takes our V as a target: true \(followed true" 5
-expect "turrets: our copy of $turret has our V: said to the host" 60
+expect "turrets: our copy of $turret has our V: said to the host" 10
+query target device sentry target
+expect_value "$target" = V
 expect_peer "turret $turret: player [0-9]+'s copy has the V of player [0-9]+" 10
 expect "turrets: the host's turret $turret fires at our V: our copy's real shot" 10
 shot turret-guest-fire

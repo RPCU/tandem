@@ -324,6 +324,16 @@ target's position, the target, …)`, the anim event `Shoot`, the effect
   player's with no relation records (§13.17): a security system reads it
   friendly by group, so the host's turret does not take a puppet on its own
   _(inferred)_; hence the forced target.
+- A followed target is not a locked one: `SensorDevice.OnCurrentTargetAppears`
+  (151273) of a turret connected to a security system returns before
+  `StartLockingTarget` when that system is `SAFE` (nothing) or `ALERTED`
+  (`TARGETLOCK`, no lock); only `COMBAT`, follow mode or no security system
+  lock (the last after `m_timeToActionAfterSpot`). `ShootStart` (171502)
+  needs the sensor state `TARGETLOCK`. arasaka-park's sentry
+  17d93f9464117cb6 followed a forced puppet 6 s without a shot, and never
+  locked a forced V (2026-11-21, logs; the security state itself not read)
+  _(inferred)_; hence `TandemTake`'s own lock, not run in game.
+  [2.5-untested]
 - To verify in game (`tools/game.sh cmd turret …`, scenarios `turret-host`,
   `turret-guest`):
   1. `turret aim` and `turret shot` on a copy: it turns, one tracer leaves

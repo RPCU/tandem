@@ -1,5 +1,5 @@
 # As a host: the mock guest's copy of a turret near V "has its V"; our turret takes the guest's puppet as a target, turns to it, fires, and every shot is told
-# shellcheck shell=bash disable=SC2317
+# shellcheck shell=bash disable=SC2317,SC2154
 # Where: TURRET_AT (a fixture or "X Y Z": a security turret we follow, a
 # "sentry", within 200 m: V goes beside it; default arasaka-park). The
 # police's street-corner turrets are not followed (devices.md): a spot
@@ -27,6 +27,10 @@ expect 'joined \(player [0-9]+' 30
 expect_peer "turret $turret: our copy has our V \(--turret-seen\)" 30
 expect "turrets: player [0-9]+'s copy of $turret has its V: our turret takes its puppet \(true\)" 10
 shot turret-host-aim
+# The turret's own target, and its lock: ours (TandemTake), at once; the
+# mock's copy has its V for 6 s only.
+query target device sentry target
+expect_value "$target" = puppet
 expect "turrets: our turret $turret fires at [0-9a-f]+: told to the guests" 20
 expect_peer "turret $turret: the host's fires at target kind 3 id [0-9]+ at " 10
 shot turret-host-fire
