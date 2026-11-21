@@ -26,7 +26,7 @@
 //   mirror = off         ; on (experiment): puppets get the local V's anim features
 //   pose = on            ; off: no body pose streaming (the hooks stay out)
 //   story = on           ; off: no story sync (journal, calls, lines, hubs, rewards)
-//   quest_freeze = off   ; on: a guest's own story phases wait while it is in a
+//   quest_freeze = on    ; a guest's own story phases wait while it is in a
 //                        ; session (engine/quests.cpp); off: the hook stays out
 //   scene_privacy = on   ; off: every scene is watched (no private scenes)
 //   scene_replay = on    ; on: a host's story scenes play for its guests (their
@@ -164,7 +164,7 @@ struct Config {
   std::uint64_t recorderMaxMb{2048};
   std::uint32_t recorderSegmentMinutes{10};
   bool recorderPose{true};
-  bool questFreeze{false};
+  bool questFreeze{true};
   std::vector<std::string> questFreezeAllow;
   std::vector<std::string> questFreezeGigs; // gig phase resources (ours while apart)
   // Quest interactions (Interact.reds): a guest's use of the host's objects

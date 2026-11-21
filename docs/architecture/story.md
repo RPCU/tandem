@@ -17,9 +17,10 @@
     open-world phases (communities, vendors, NCPD hustles, city scenes,
     fixers: Codeware's list, plus `quest_freeze_allow`) and phases under
     them keep running, so a guest away from the host runs its own
-    surroundings (`research/coop-regions.md`). **Off by default**
-    (`quest_freeze = on` to use it) until checked in game; without it a
-    guest gets calls, lines, hubs and rewards but not the journal or texts.
+    surroundings (`research/coop-regions.md`). **On by default** since
+    2026-11-21 (the 11 `story-*` and `quest-trace` scenarios passed in game
+    against the mock player; the two-game pass is next); `quest_freeze = off`
+    gives a guest calls, lines, hubs and rewards but not the journal or texts.
   - _Saves_: a guest in a session never saves (`TandemStorySystem` overrides
     `IsSavingLocked`, plus a `SaveLocksManager` lock and dropped autosaves).
     Every journal entry the mirror changes keeps its state from before; on
