@@ -157,11 +157,7 @@ public abstract class TandemCombat {
     if !IsDefined(player) {
       return null;
     }
-    let melee = (hit.flags & 4) != 0;
-    let record = TweakDBInterface.GetAttackRecord(hit.attack);
-    if !IsDefined(record) {
-      record = TweakDBInterface.GetAttackRecord(melee ? t"Attacks.ForwardPush" : t"Attacks.REMOVE_BulletWithDamage");
-    }
+    let record = TandemCombat.AttackRecord(game, hit.attack, (hit.flags & 4) != 0);
     // Armour and the one-shot cap only apply with an attacking weapon: the
     // proxy's own if it holds one, else ours stands in (its armour
     // penetration is replaced by the host's: GetArmorPenetrationValue).
@@ -229,6 +225,126 @@ public abstract class TandemCombat {
   public static func ForwardedPierce(game: GameInstance, hitEvent: ref<gameHitEvent>, out pierce: Float) -> Bool {
     let system = TandemCombat.System(game);
     return IsDefined(system) && system.ForwardedPierce(hitEvent, pierce);
+  }
+
+  // The attack a hit from another game names, as our game knows it. One
+  // our game lacks (a mod's, or none from a mock player) is stood in by a
+  // shove or a plain bullet, which only names the hit: the stand-in's own
+  // multiplier for a V as target is not applied
+  // (ProcessPlayerIncomingDamageMultiplier) and the damage stays at most
+  // the sender's (CapForwarded). Each unknown record is logged once a
+  // session (TandemNpcs.NoteStandIn).
+  public static func AttackRecord(game: GameInstance, attack: TweakDBID, melee: Bool) -> ref<Attack_Record> {
+    let record = TweakDBInterface.GetAttackRecord(attack);
+    if IsDefined(record) {
+      return record;
+    }
+    let standIn = melee ? t"Attacks.ForwardPush" : t"Attacks.REMOVE_BulletWithDamage";
+    let system = TandemCombat.System(game);
+    if IsDefined(system) && IsDefined(system.Npcs()) {
+      system.Npcs().NoteStandIn(attack, standIn);
+    }
+    return TweakDBInterface.GetAttackRecord(standIn);
+  }
+
+  public static func IsStandIn(record: ref<Attack_Record>) -> Bool {
+    if !IsDefined(record) {
+      return false;
+    }
+    let id = record.GetID();
+    return id == t"Attacks.ForwardPush" || id == t"Attacks.REMOVE_BulletWithDamage";
+  }
+
+  // An attack whose record sets a V's damage itself, from the V's health
+  // (an explosion's fixed share, a grenade's per-difficulty damage:
+  // ProcessPlayerFixedPercentageOverride, ProcessGrenadeExplosionDamageToPlayer,
+  // final.reds 85107, 85250): our game's rule, whatever the sender computed.
+  public static func SetsPlayerDamage(record: ref<Attack_Record>) -> Bool {
+    let effect = record as Attack_GameEffect_Record;
+    if !IsDefined(effect) {
+      return false;
+    }
+    let flags = effect.HitFlags();
+    return ArrayContains(flags, "OverridePlayerDamageWithFixedPercentage") || ArrayContains(flags, "PlayerGrenadeDamageOverride");
+  }
+
+  // A hit another game computed takes at most what it sent, per damage
+  // type: our game's rules for our V (armour, resistances, block, perks, the
+  // one-shot cap) may lower it, and raise it only where they mean to for a V
+  // as target: the attack's own multiplier for players (a record we know),
+  // the police's, an explosion's fixed share (SetsPlayerDamage). A stand-in
+  // record's never (a 10-physical melee hit through Attacks.ForwardPush took
+  // 392.96, 2026-11-21). The margin: 1 %, and the 1 point vanilla's
+  // resistances and armour leave of each type. With no weapon our game
+  // skips its one-shot cap (ProcessOneShotProtection, final.reds 85069):
+  // applied here for an NPC's hit, as it would be with one.
+  public static func CapForwarded(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Void {
+    let system = TandemCombat.System(game);
+    let sent: array<Float>;
+    if !IsDefined(system) || !system.ForwardedSent(hitEvent, sent) {
+      return;
+    }
+    let record = hitEvent.attackData.GetAttackDefinition().GetRecord();
+    let standIn = TandemCombat.IsStandIn(record);
+    if !standIn && TandemCombat.SetsPlayerDamage(record) {
+      return;
+    }
+    let allowance = MaxF(PreventionSystem.GetDamageToPlayerMultiplier(game), 1.0);
+    if IsDefined(record) && !standIn {
+      allowance *= MaxF(record.PlayerIncomingDamageMultiplier(), 1.0);
+    }
+    let had = hitEvent.attackComputed.GetTotalAttackValue(gamedataStatPoolType.Health);
+    let values = hitEvent.attackComputed.GetAttackValues();
+    let total = 0.0;
+    let i = 0;
+    while i < ArraySize(values) {
+      let most = 0.0;
+      if i < ArraySize(sent) && sent[i] > 0.0 {
+        most = MaxF(sent[i] * allowance * 1.01, 1.0);
+      }
+      values[i] = MinF(values[i], most);
+      total += values[i];
+      i += 1;
+    }
+    let instigator = hitEvent.attackData.GetInstigator();
+    if !IsDefined(hitEvent.attackData.GetWeapon()) && hitEvent.target.IsPlayer() && TandemCombat.PuppetPlayer(game, instigator) == 0u {
+      let cap = TandemCombat.OneShotCap(game, hitEvent.target);
+      if cap > 0.0 && total > cap {
+        let share = cap / total;
+        i = 0;
+        while i < ArraySize(values) {
+          values[i] *= share;
+          i += 1;
+        }
+      }
+    }
+    hitEvent.attackComputed.SetAttackValues(values);
+    let now = hitEvent.attackComputed.GetTotalAttackValue(gamedataStatPoolType.Health);
+    if now < had - 0.01 {
+      TandemNative.LogDebug(s"combat: forwarded hit on our V capped: \(had) -> \(now) damage (\(standIn ? "a stand-in attack" : "the attack's own record"))");
+    }
+  }
+
+  // The most one NPC hit may take from our V at the session's difficulty
+  // (ProcessOneShotProtection): a share of its maximum health.
+  public static func OneShotCap(game: GameInstance, target: ref<GameObject>) -> Float {
+    let share = 0.0;
+    switch GameInstance.GetStatsDataSystem(game).GetDifficulty() {
+      case gameDifficulty.Story:
+        share = TweakDBInterface.GetFloat(t"Constants.DamageSystem.maxPercentDamagePerHitStory", 0.0);
+        break;
+      case gameDifficulty.Easy:
+        share = TweakDBInterface.GetFloat(t"Constants.DamageSystem.maxPercentDamagePerHitEasy", 0.0);
+        break;
+      case gameDifficulty.Hard:
+        share = TweakDBInterface.GetFloat(t"Constants.DamageSystem.maxPercentDamagePerHitHard", 0.0);
+        break;
+      case gameDifficulty.VeryHard:
+        share = TweakDBInterface.GetFloat(t"Constants.DamageSystem.maxPercentDamagePerHitVeryHard", 0.0);
+        break;
+    }
+    let maxHealth = GameInstance.GetStatsSystem(game).GetStatValue(Cast<StatsObjectID>(target.GetEntityID()), gamedataStatType.Health);
+    return maxHealth * share / 100.0;
   }
 
   public static func Health(game: GameInstance, target: wref<GameObject>) -> Float {
@@ -387,6 +503,8 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) {
   // Guest: the host's NPC's hit on our V, applied here like any other.
   if TandemCombat.IsForwarded(game, hitEvent) {
     let before = TandemCombat.Health(game, hitEvent.target);
+    // Never more than the sender computed (a stand-in record's multipliers).
+    TandemCombat.CapForwarded(game, hitEvent);
     wrappedMethod(hitEvent);
     let after = TandemCombat.Health(game, hitEvent.target);
     TandemNative.LogDebug(s"combat: npc hit applied to our V: \(hitEvent.attackComputed.GetTotalAttackValue(gamedataStatPoolType.Health)) damage, health \(before) -> \(after)");
@@ -640,7 +758,17 @@ private final func ProcessMitigation(hitEvent: ref<gameHitEvent>) {
 
 @wrapMethod(DamageSystem)
 private final func ProcessPlayerIncomingDamageMultiplier(hitEvent: ref<gameHitEvent>) {
-  if TandemCombat.OnPuppet(GetGameInstance(), hitEvent) {
+  let game = GetGameInstance();
+  if TandemCombat.OnPuppet(game, hitEvent) {
+    return;
+  }
+  // Guest: a stand-in attack (TandemCombat.AttackRecord) is not the one the
+  // sender's NPC made: its multiplier for a V as target is not applied, the
+  // police's is (final.reds 84831).
+  if TandemCombat.IsForwarded(game, hitEvent) && TandemCombat.IsStandIn(hitEvent.attackData.GetAttackDefinition().GetRecord()) {
+    if IsDefined(hitEvent.target as PlayerPuppet) {
+      hitEvent.attackComputed.MultAttackValue(PreventionSystem.GetDamageToPlayerMultiplier(game));
+    }
     return;
   }
   wrappedMethod(hitEvent);

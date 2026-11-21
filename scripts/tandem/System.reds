@@ -2179,6 +2179,10 @@ public class TandemSystem extends ScriptableSystem {
     return IsDefined(this.m_npcs) && this.m_npcs.ForwardedPierce(hit, pierce);
   }
 
+  public func ForwardedSent(hit: ref<gameHitEvent>, out sent: array<Float>) -> Bool {
+    return IsDefined(this.m_npcs) && this.m_npcs.ForwardedSent(hit, sent);
+  }
+
   public func ForgetForwardedHit(hit: ref<gameHitEvent>) -> Void {
     if IsDefined(this.m_npcs) {
       this.m_npcs.Forget(hit);
