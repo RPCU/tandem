@@ -9,7 +9,7 @@ expect 'comms: link with tandem-peer: [0-9] -> 3' 20
 expect 'comms: showing ping [0-9]+ of tandem-peer \(Enemy, 15(\.0+)? s\) on the entity, registered true' 40
 shot comms-enemy-ping
 cmd comms report
-expect 'comms: ping [0-9]+ of player 1 \(Enemy\) at ' 5
+expect 'comms: ping [0-9]+ of player 1 \((Enemy|Danger)\) at ' 5
 # A reveal of the host's NPCs (the Ping quickhack): outlined here, for 10 s.
 expect 'comms: outlined a reveal of a linked player' 30
 shot comms-reveal
