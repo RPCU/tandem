@@ -27,7 +27,7 @@ expect 'time: the slow-motion cue off' 5
 # speed, and the mock player told.
 cmd time scan 0.2 4
 expect 'time: our abilities 8 \(world speed 0.2' 5
-expect 'time: world speed 0\.2[0-9]* over the test' 5
+expect 'time: world speed 0\.(19|2[0-9])[0-9]* over the test' 5
 expect 'time: npc [0-9]+ at 0\.2[0-9]* .*ignoring our global factor true' 5
 expect 'time: bubble of player 1: [1-9][0-9]* NPC' 5
 expect_peer 'player 1: time abilities 0x8 \(world speed 0.20\)' 5

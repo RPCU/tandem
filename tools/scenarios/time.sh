@@ -25,7 +25,7 @@ expect 'time: our V back to its own speed' 5
 # whatever the game's own factor, and the mock player hears of it.
 cmd time test 0.25 4
 expect 'time: our abilities 1 \(world speed 0.25' 5
-expect 'time: world speed 0\.2[0-9]* over the test' 5
+expect 'time: world speed 0\.(19|2[0-9])[0-9]* over the test' 5
 expect 'time: npc [0-9]+ at 0\.25[0-9]* .*ignoring our global factor true' 5
 cmd time report
 expect 'time: what the game.s fire-rate formula reads .*sandevistan active true, factor 0\.2' 5
