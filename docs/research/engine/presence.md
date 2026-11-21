@@ -358,7 +358,9 @@ EnterCharge)`, `charging_tpp`, `AI_PlayChargeStartedSound`
   killed, the `charged` loop broken, `discharge_tpp` when it was not full
   (`OnStopShooting`, `:173113`). [2.5-untested] [to-see]
 - **An NPC's guided round**: `AIWeapon.Fire` with `shouldTrackTarget`
-  (`:173148`) aims at `GetBestComponentOnTargetObject(…, Shooting)` and sets
+  (`:173148`) aims at `GetBestComponentOnTargetObject(…, Shooting)` (a
+  player's `GetPrimaryTargetingComponent()` instead: the best found none on
+  our V, `npcs-shoot-guest-smart` 2026-11-21) and sets
   `smartGunAccuracy` 1, `smartGunIsProjectileGuided`, `trackedTargetComponent`;
   a round the time between hits says misses ignores the target's collision.
   `shouldTrackTarget` is the AI's (`ShouldTrackTarget`, `:450386`): a smart

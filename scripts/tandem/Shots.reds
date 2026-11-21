@@ -352,7 +352,13 @@ public class TandemShots {
     // AIWeapon.Fire fires one with shouldTrackTarget (final.reds:173200).
     let component: wref<TargetingComponent>;
     if (shot.flags & 2) != 0 {
-      component = GameInstance.GetTargetingSystem(this.m_game).GetBestComponentOnTargetObject(weapon.GetWorldPosition(), weapon.GetWorldForward(), player, TargetComponentFilterType.Shooting);
+      // A player's is its primary one, as AIWeapon.Fire takes it for a
+      // target that is the player (final.reds, `target.IsPlayer()`); the
+      // targeting system's best found none on our V (2026-11-21).
+      component = player.GetPrimaryTargetingComponent();
+      if !IsDefined(component) {
+        component = GameInstance.GetTargetingSystem(this.m_game).GetBestComponentOnTargetObject(weapon.GetWorldPosition(), weapon.GetWorldForward(), player, TargetComponentFilterType.Shooting);
+      }
       if !IsDefined(component) {
         this.Once(n"guidedNoComponent", s"shots: npc \(shot.npc)'s guided round has no targeting component of our V to home on: fired plain");
       }

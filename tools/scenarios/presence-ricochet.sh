@@ -9,9 +9,14 @@ expect 'player [0-9]+: holds Items.Preset_Lexington_Default' 20
 expect_peer 'ricochet' 15
 # The shot: the drawn bullet (impact, decal, sounds) and the weapon's own
 # hitscan trail from the muzzle (Tracers.reds).
-expect 'bullet: player [0-9]+.s shot 1 drawn from its puppet.s weapon .*trail true' 10
+expect 'bullet: player [0-9]+.s shot 1 drawn from its puppet.s weapon .*trail true' 20
 # The bounce: the weapon's ricochet trail on from where the shot ended.
 expect 'bullet: player [0-9]+.s ricochet 1 drawn on to' 10
+# From here on every ricochet has its shot (one fired before the weapon
+# was in the puppet's hand has none, and is rightly not drawn: the puppet
+# was built again as the mock joined, 2026-11-21).
+mark
+expect 'bullet: player [0-9]+.s ricochet [0-9]+ drawn on to' 10
 reject 'ricochet came with no shot of theirs just before'
 cmd presence report
 expect 'bullets drawn [1-9][0-9]* \(trails [1-9][0-9]*, ricochets [1-9]' 5

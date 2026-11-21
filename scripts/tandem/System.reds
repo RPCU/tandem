@@ -28,6 +28,8 @@ public class TandemPuppet {
   public let askedRight: TweakDBID;
   public let askedLeft: TweakDBID;
   public let armCheckAt: Float;
+  // Asks refused in a row (the body not there yet): asked again sooner.
+  public let armRefused: Int32;
   // Vehicles: the seats received for this player that the puppet sits in;
   // the copy of their car while they drive it; where the puppet is mounted;
   // a seat waiting for its vehicle to exist.
@@ -3565,8 +3567,12 @@ public class TandemSystem extends ScriptableSystem {
     }
     puppet.askedRight = right;
     puppet.askedLeft = left;
-    puppet.armCheckAt = this.Now() + 3.0;
     let ok = TandemWeapons.Hold(entity, t"AttachmentSlots.WeaponRight", right) && TandemWeapons.Hold(entity, t"AttachmentSlots.WeaponLeft", left);
+    // Refused (a puppet just built again, its body not there yet): asked
+    // again in half a second, not 3 (its shots and charges of those 3 s
+    // had no weapon to be drawn from: presence-ricochet, 2026-11-21).
+    puppet.armRefused = ok ? 0 : puppet.armRefused + 1;
+    puppet.armCheckAt = this.Now() + (ok ? 3.0 : 0.5);
     TandemNative.Log(s"player \(puppet.player): holds \(TDBID.ToStringDEBUG(right)) / \(TDBID.ToStringDEBUG(left)) (\(ok))");
   }
 
@@ -3580,10 +3586,15 @@ public class TandemSystem extends ScriptableSystem {
     let right = TandemWeapons.Held(entity, t"AttachmentSlots.WeaponRight");
     let left = TandemWeapons.Held(entity, t"AttachmentSlots.WeaponLeft");
     if right != puppet.askedRight || left != puppet.askedLeft {
-      TandemNative.Log(s"player \(puppet.player): hands hold \(TDBID.ToStringDEBUG(right)) / \(TDBID.ToStringDEBUG(left)) 3 s after the ask: asked again");
+      TandemNative.Log(s"player \(puppet.player): hands hold \(TDBID.ToStringDEBUG(right)) / \(TDBID.ToStringDEBUG(left)) after the ask: asked again");
+      let refused = puppet.armRefused;
       this.Rearm(puppet, true);
-      // Once: a hand that cannot hold it waits for the next change.
-      puppet.armCheckAt = 0.0;
+      // Once for an ask that was taken: a hand that cannot hold it waits
+      // for the next change. A refused one is asked again, 8 times at most.
+      if refused == 0 || puppet.armRefused == 0 || puppet.armRefused > 8 {
+        puppet.armCheckAt = 0.0;
+        puppet.armRefused = 0;
+      }
     }
   }
 

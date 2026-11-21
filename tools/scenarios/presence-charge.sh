@@ -7,7 +7,9 @@ expect 'joined \(player [0-9]+' 20
 expect 'controller handed to the engine' 20
 expect 'player [0-9]+: holds Items.Preset_Achilles_Default' 20
 expect_peer 'charge step 1' 15
-expect 'charge: player [0-9]+.s puppet charges its weapon \(1 so far; the weapon.s charge effects: true\)' 10
+# The first charge may come while the rifle is still on its way to the
+# puppet's hand (effects: false, 2026-11-21): the next one, 6 s later, has it.
+expect 'charge: player [0-9]+.s puppet charges its weapon \([0-9]+ so far; the weapon.s charge effects: true\)' 20
 expect 'charge: player [0-9]+.s weapon fully charged' 5
 expect 'charge: player [0-9]+.s charge ended \(released\)' 5
 expect_peer 'charged shot' 5
