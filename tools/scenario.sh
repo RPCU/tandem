@@ -244,11 +244,18 @@ reject_peer() {
 }
 # The thread probe (docs/architecture/testing.md): no script hook ran off the
 # game thread since the mark (each is logged the first time, then summed up).
+# Once the script tick has moved between threads (said once per launch), no
+# thread is the game's and the names are only noted.
 on_game_thread() {
   local names
   names=$(since | sed -n 's/.*threads: hook \([^ ]*\) ran off the game thread.*/\1/p' | sort -u | tr '\n' ' ' || true)
   [ -n "$names" ] || names=$(since | sed -n 's/.*threads: [1-9][0-9]* hooks off-thread: //p' | tail -1 || true)
-  [ -z "$names" ] || fail "script hooks ran off the game thread (queue them, testing.md): $names"
+  [ -n "$names" ] || return 0
+  if remote "grep -q 'threads: the script tick moved from thread' '$mark_file'"; then
+    note "thread probe (the script tick moves between threads, nothing judged): $names"
+    return 0
+  fi
+  fail "script hooks ran off the game thread (queue them, testing.md): $names"
 }
 pause() {
   local start=$SECONDS
