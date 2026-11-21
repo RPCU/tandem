@@ -1981,6 +1981,12 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_npcs) && IsDefined(this.m_npcs.Levels()) {
       this.m_npcs.Levels().ResayForTests();
     }
+    if IsDefined(this.m_npcs) {
+      let inherited = this.m_npcs.DeleteInheritedForTests();
+      if inherited > 0 {
+        TandemNative.Log(s"test reset: \(inherited) NPC(s) taken over from other players deleted");
+      }
+    }
     if IsDefined(this.m_presence) && IsDefined(this.m_presence.Hud()) {
       this.m_presence.Hud().ResayForTests();
     }

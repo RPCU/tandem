@@ -48,7 +48,7 @@ workspot; ends the test private scene and quest freeze, test worlds
 (Elsewhere), the test dilation and `god on`; resets revive (`revive
 fresh`: up, no cooldown); heals V and removes bleeding, burning,
 crippling and other lasting effects; asks the police to stand down;
-deletes the tests' NPCs (`Tandem.Test`, `npc hostile`, `proxy test`,
+deletes the tests' NPCs (`Tandem.Test`, `npc hostile`, `proxy test`, the NPCs taken over from a mock player,
 `ride npc`) and the car copies nobody drives (parked, or an earlier
 player's; once nobody sits in them); then teleports V to the test field
 (-915.0 1879.5 36.19) and waits until it has stood still there for 1.5 s

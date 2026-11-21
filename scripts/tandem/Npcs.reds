@@ -2065,6 +2065,23 @@ public class TandemNpcs {
     TandemNative.Log(s"regions: handover out: npc \(npc) to player \(to), health \(health), effects \(ArraySize(effects)), target player \(target)");
   }
 
+  // test reset: the NPCs we run that another player announced (handed over
+  // or inherited from a mock player, a chaser among them) are deleted: they
+  // outlive the scenario and, nobody else up, kill our V at the test field.
+  // The scan reports them gone.
+  public func DeleteInheritedForTests() -> Int32 {
+    let entities = GameInstance.GetDynamicEntitySystem();
+    let deleted = 0;
+    for known in this.m_known {
+      let announcer = known.npc / 16777216u + 1u;
+      if this.m_you != 0u && announcer != this.m_you && EntityID.IsDefined(known.id) {
+        entities.DeleteEntity(known.id);
+        deleted += 1;
+      }
+    }
+    return deleted;
+  }
+
   // An NPC we showed as a proxy is ours to run from now (handed over, or
   // inherited from an owner that is gone): its brain is switched back on and
   // it gets the state that came with it. Same body: nothing pops.
