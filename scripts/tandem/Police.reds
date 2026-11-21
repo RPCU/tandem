@@ -22,7 +22,23 @@ public class TandemPoliceUnit {
   public let stoodDownAt: Float;
   // The car or AV it came in (none for a unit on foot).
   public let vehicle: EntityID;
+  // When it was enlisted, on the engine clock our V's hits are stamped
+  // with (GameObject.GetReceivedDamageByPlayerLastTimeStamp).
+  public let enlistedAt: Float;
+  // Our V hit it since: it may fight our V, as any NPC our V attacks.
+  public let provoked: Bool;
+  // It was kept off our V last tick (our V not wanted, not provoked).
+  public let spared: Bool;
+  // It has been taken off our V at least once (logged once).
+  public let keptOff: Bool;
 }
+
+// A unit Police.reds sent or turned after a remote V's puppet that our V
+// has not attacked: the AI's target selection keeps our V off it while our
+// V is not wanted (Threats.reds, TandemPolice.SparesOurV). Written on the
+// game thread, read on the AI's job threads.
+@addField(NPCPuppet)
+public let m_tandemSparesV: Bool;
 
 // A police car or MaxTac AV the owner's game spawned for a remote player's
 // heat.
@@ -178,6 +194,7 @@ public class TandemPolice {
         others += s" player \(player): \(TandemStreet.HeatStage(player)) (state \(TandemStreet.HeatState(player)))";
       }
       let role = TandemArea.Owns() ? "we answer the others' heat" : "we follow: our own spawns are off";
+      let hostile = this.HostileToOurV();
       let cars = 0;
       let avs = 0;
       for car in this.m_cars {
@@ -187,7 +204,7 @@ public class TandemPolice {
           cars += 1;
         }
       }
-      TandemNative.Log(s"police report: our wanted level \(police.GetHeatStageAsInt()) (state \(EnumInt(police.GetStarState()))), \(role);\(others); \(ArraySize(this.m_units)) unit(s) out for the others, \(cars) car(s), \(avs) AV(s), \(ArraySize(this.m_tickets)) on their way, \(ArraySize(this.m_viewers)) of the host's police see our V");
+      TandemNative.Log(s"police report: our wanted level \(police.GetHeatStageAsInt()) (state \(EnumInt(police.GetStarState()))), \(role);\(others); \(ArraySize(this.m_units)) unit(s) out for the others (\(hostile) on our V), \(cars) car(s), \(avs) AV(s), \(ArraySize(this.m_tickets)) on their way, \(ArraySize(this.m_viewers)) of the host's police see our V");
     }
   }
 
@@ -385,6 +402,7 @@ public class TandemPolice {
       }
     }
     this.m_units = alive;
+    this.Spare();
     // Cars and AVs: wrecked, gone, or stood down and driven off for a
     // while (the game takes them away with whoever is still aboard).
     let cars: array<ref<TandemPoliceCar>>;
@@ -506,19 +524,35 @@ public class TandemPolice {
   // The police around a remote V's puppet look at it as its own heat says:
   // hostile while it is wanted, neutral again when it is not. Never as our
   // V's heat says (Attitudes.reds leaves the police out of what it copies).
+  // One turned on a puppet spares our V as our own units do (Spare: the
+  // MaxTac an AV set down, the game's own police near the puppet), until
+  // our V hits it.
   private func Face(player: Uint32, puppet: ref<ScriptedPuppet>, stage: Int32, system: ref<TandemSystem>) -> Void {
     let mine = puppet.GetAttitudeAgent();
-    if !IsDefined(mine) {
+    let ourV = GetPlayer(this.m_game);
+    if !IsDefined(mine) || !IsDefined(ourV) {
       return;
     }
     let wanted = stage > 0;
+    let oursWanted = TandemPolice.OursWanted(this.m_game);
     for npc in puppet.GetNPCsAroundObject(60.0) {
       let theirs = npc.GetAttitudeAgent();
       if npc.IsPrevention() && IsDefined(theirs) && system.PlayerOfPuppet(npc.GetEntityID()) == 0u {
         let now = theirs.GetAttitudeTowards(mine);
+        let ours = this.IsUnit(npc.GetEntityID());
         if wanted && NotEquals(now, EAIAttitude.AIA_Hostile) {
           theirs.SetAttitudeTowards(mine, EAIAttitude.AIA_Hostile);
           mine.SetAttitudeTowards(theirs, EAIAttitude.AIA_Hostile);
+          if !ours {
+            npc.m_tandemSparesV = npc.GetReceivedDamageByPlayerLastTimeStamp() <= 0.0;
+          }
+        } else if wanted && !ours && npc.m_tandemSparesV {
+          if npc.GetReceivedDamageByPlayerLastTimeStamp() > 0.0 {
+            npc.m_tandemSparesV = false;
+            TandemNative.Log(s"police: our V attacked an officer on player \(player): it may fight our V too");
+          } else if !oursWanted && TandemPolice.KeepOff(npc, ourV) {
+            TandemNative.LogDebug(s"police: an officer on player \(player) turned on our V: kept off it");
+          }
         } else if !wanted && Equals(now, EAIAttitude.AIA_Hostile) {
           theirs.SetAttitudeTowards(mine, EAIAttitude.AIA_Neutral);
           mine.SetAttitudeTowards(theirs, EAIAttitude.AIA_Neutral);
@@ -526,9 +560,133 @@ public class TandemPolice {
           if IsDefined(tracker) {
             tracker.RemoveThreat(tracker.MapThreat(puppet));
           }
+          if !this.IsUnit(npc.GetEntityID()) {
+            npc.m_tandemSparesV = false;
+          }
         }
       }
     }
+  }
+
+  // Our V is wanted by our own game (its own heat: our units and the game's
+  // fight it by vanilla's rules then). Reads only: the AI's job threads ask.
+  public static func OursWanted(game: GameInstance) -> Bool {
+    let police = GameInstance.GetScriptableSystemsContainer(game).Get(n"PreventionSystem") as PreventionSystem;
+    return IsDefined(police) && police.GetHeatStageAsInt() > 0u;
+  }
+
+  // An NPC sent or turned after a remote V must not take our V for its
+  // target: our V is not wanted and has not attacked it. Asked by the AI's
+  // target selection on job threads (Threats.reds): reads only.
+  public static func SparesOurV(owner: wref<GameObject>, target: wref<GameObject>) -> Bool {
+    let unit = owner as NPCPuppet;
+    if !IsDefined(unit) || !unit.m_tandemSparesV || !IsDefined(target) || !target.IsPlayerControlled() {
+      return false;
+    }
+    return !TandemPolice.OursWanted(owner.GetGame());
+  }
+
+  // Police sent for one V chase that V only. Vanilla's own target selection
+  // turns an NPC hostile to whatever tops its threats
+  // (SetTopThreatToCombatTarget.SetCombatTarget), and its helping-an-ally
+  // and hostile-stimulus paths turn a fighting NPC on whoever is near
+  // (AIActionHelper.TryChangingAttitudeToHostile): nothing kept our V out of
+  // that. Each tick, each unit of ours, while our V is not wanted: neutral
+  // to our V and our V off its threats and its squad's (as vanilla's combat
+  // target check drops a V the police may not fight, final.reds:456663). Our V
+  // hitting it is the provocation that ends it, as for any NPC; our V's own
+  // heat (that hit's, or any) gives it to vanilla's rules. Threats.reds
+  // keeps our V off its targets between ticks.
+  private func Spare() -> Void {
+    let player = GetPlayer(this.m_game);
+    if !IsDefined(player) {
+      return;
+    }
+    let wanted = TandemPolice.OursWanted(this.m_game);
+    for unit in this.m_units {
+      let body = GameInstance.FindEntityByID(this.m_game, unit.id) as NPCPuppet;
+      if IsDefined(body) && unit.stoodDownAt == 0.0 {
+        if !unit.provoked && body.GetReceivedDamageByPlayerLastTimeStamp() > unit.enlistedAt {
+          unit.provoked = true;
+          unit.spared = false;
+          body.m_tandemSparesV = false;
+          GameObject.ChangeAttitudeToHostile(body, player);
+          TargetTrackingExtension.InjectThreat(body, player);
+          TandemNative.Log(s"police: our V attacked a unit for player \(unit.player): it fights our V too");
+        } else if !unit.provoked {
+          body.m_tandemSparesV = true;
+          if !wanted {
+            if TandemPolice.KeepOff(body, player) && !unit.keptOff {
+              unit.keptOff = true;
+              TandemNative.Log(s"police: a unit for player \(unit.player) turned on our V: kept off it (our V is not wanted)");
+            }
+          } else if unit.spared {
+            // Our V's own heat: the groups' relation again (the police's
+            // to our V's, which vanilla sets by our V's stars).
+            TandemPolice.ByGroups(body, player);
+            TandemNative.Log(s"police: our V is wanted: a unit for player \(unit.player) may fight it too");
+          }
+          unit.spared = !wanted;
+        }
+      }
+    }
+  }
+
+  // Neutral to our V, our V off its threats and its squad's. True when it
+  // had turned on our V.
+  private static func KeepOff(body: ref<NPCPuppet>, player: ref<GameObject>) -> Bool {
+    let theirs = body.GetAttitudeAgent();
+    let ours = player.GetAttitudeAgent();
+    let turned = false;
+    if IsDefined(theirs) && IsDefined(ours) {
+      if Equals(theirs.GetAttitudeTowards(ours), EAIAttitude.AIA_Hostile) {
+        theirs.SetAttitudeTowards(ours, EAIAttitude.AIA_Neutral);
+        turned = true;
+      }
+      if Equals(ours.GetAttitudeTowards(theirs), EAIAttitude.AIA_Hostile) {
+        ours.SetAttitudeTowards(theirs, EAIAttitude.AIA_Neutral);
+      }
+    }
+    let tracker = body.GetTargetTrackerComponent();
+    let threat: TrackedLocation; // assigned on every path: read only after ThreatFromEntity fills it
+    if IsDefined(tracker) && tracker.ThreatFromEntity(player, threat) {
+      AISquadHelper.RemoveThreatFromSquad(body, threat);
+      tracker.RemoveThreat(tracker.MapThreat(player));
+      turned = true;
+    }
+    return turned;
+  }
+
+  // The unit looks at our V as its group looks at our V's again.
+  private static func ByGroups(body: ref<NPCPuppet>, player: ref<GameObject>) -> Void {
+    let theirs = body.GetAttitudeAgent();
+    let ours = player.GetAttitudeAgent();
+    if !IsDefined(theirs) || !IsDefined(ours) {
+      return;
+    }
+    let relation = GameInstance.GetAttitudeSystem(body.GetGame()).GetAttitudeRelation(theirs.GetAttitudeGroup(), ours.GetAttitudeGroup());
+    theirs.SetAttitudeTowards(ours, relation);
+  }
+
+  // How many of our units are on our V now (hostile to it, or holding it
+  // as a threat): 0 while our V is not wanted and has hit none.
+  private func HostileToOurV() -> Int32 {
+    let player = GetPlayer(this.m_game);
+    let count = 0;
+    if !IsDefined(player) {
+      return count;
+    }
+    for unit in this.m_units {
+      let body = GameInstance.FindEntityByID(this.m_game, unit.id) as NPCPuppet;
+      if IsDefined(body) && !body.IsDead() && unit.stoodDownAt == 0.0 {
+        let tracker = body.GetTargetTrackerComponent();
+        let threat: TrackedLocation; // assigned on every path: only ThreatFromEntity's answer is read
+        if Equals(GameObject.GetAttitudeBetween(body, player), EAIAttitude.AIA_Hostile) || (IsDefined(tracker) && tracker.ThreatFromEntity(player, threat)) {
+          count += 1;
+        }
+      }
+    }
+    return count;
   }
 
   // More units for a wanted remote V, a few at a time, at points the
@@ -669,7 +827,7 @@ public class TandemPolice {
     let vehicleId = IsDefined(vehicle) ? vehicle.GetEntityID() : EntityID.FromHash(0ul);
     let aboard = 0;
     for spawned in result.spawnedObjects {
-      let body = spawned as ScriptedPuppet;
+      let body = spawned as NPCPuppet;
       if IsDefined(body) {
         this.Enlist(body, player, puppet, vehicleId);
         aboard += 1;
@@ -709,13 +867,16 @@ public class TandemPolice {
   // fight at once; a crew starts it from its seat, and the game's own
   // behaviour gets it out within 15 m of a target that is not the player
   // (AITargetInUnmountingRangeCond).
-  private func Enlist(body: ref<ScriptedPuppet>, player: Uint32, puppet: ref<ScriptedPuppet>, vehicle: EntityID) -> Void {
+  private func Enlist(body: ref<NPCPuppet>, player: Uint32, puppet: ref<ScriptedPuppet>, vehicle: EntityID) -> Void {
     let unit = new TandemPoliceUnit();
     unit.id = body.GetEntityID();
     unit.player = player;
     unit.since = this.m_now;
     unit.vehicle = vehicle;
+    unit.enlistedAt = EngineTime.ToFloat(GameInstance.GetEngineTime(this.m_game));
     ArrayPush(this.m_units, unit);
+    // Not on our V, which it did not come for (Spare).
+    body.m_tandemSparesV = true;
     if IsDefined(puppet) {
       GameObject.ChangeAttitudeToHostile(body, puppet);
       GameObject.ChangeAttitudeToHostile(puppet, body);
@@ -1044,7 +1205,7 @@ public class TandemPolice {
           let passengers: array<wref<GameObject>>;
           VehicleComponent.GetAllPassengers(this.m_game, car.id, false, passengers);
           for passenger in passengers {
-            let npc = passenger as ScriptedPuppet;
+            let npc = passenger as NPCPuppet;
             // (Not a V's puppet that took the car.)
             if IsDefined(npc) && !npc.IsPlayer() && !npc.IsDead() && system.PlayerOfPuppet(npc.GetEntityID()) == 0u && !this.IsUnit(npc.GetEntityID()) {
               this.Enlist(npc, player, puppet, car.id);
@@ -1139,10 +1300,12 @@ public class TandemPolice {
       return;
     }
     unit.stoodDownAt = this.m_now;
-    let body = GameInstance.FindEntityByID(this.m_game, unit.id) as ScriptedPuppet;
+    let body = GameInstance.FindEntityByID(this.m_game, unit.id) as NPCPuppet;
     if !IsDefined(body) || body.IsDead() {
       return;
     }
+    // Back to vanilla's rules with our V.
+    body.m_tandemSparesV = false;
     let system = GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"TandemSystem") as TandemSystem;
     let puppet = IsDefined(system) ? system.PuppetOf(unit.player) : null;
     body.StopPoliceBehaviour();

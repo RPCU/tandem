@@ -261,7 +261,9 @@ private final static func BossThreatCalculation(
 }
 
 // A quest's BlockTargetingPlayer takes a player off an NPC's threats (base
-// -1, final.reds:165419): a puppet too, after vanilla has weighed it.
+// -1, final.reds:165419): a puppet too, after vanilla has weighed it. Police
+// sent after another V's puppet take our V off the same way while it is not
+// wanted and has not attacked them (Police.reds, TandemPolice.SparesOurV).
 // job thread safe: it writes only the NPC's own target tracker, as the wrapped method itself does from the same task.
 @wrapMethod(AIActionTarget)
 public final static func UpdateThreatsValue(puppet: ref<NPCPuppet>, newTargetObject: ref<GameObject>, timeSinceTargetChange: Float) {
@@ -276,19 +278,21 @@ public final static func UpdateThreatsValue(puppet: ref<NPCPuppet>, newTargetObj
   let threats = tracker.GetHostileThreats(false);
   for t in threats {
     let threat = t.entity as GameObject;
-    if TandemThreats.AsPlayer(puppet, threat) && TandemThreats.Blocked(puppet, threat) {
+    if TandemPolice.SparesOurV(puppet, threat) || (TandemThreats.AsPlayer(puppet, threat) && TandemThreats.Blocked(puppet, threat)) {
       tracker.SetThreatBaseMul(threat, -1.0);
     }
   }
 }
 
 // The combat target the top threat becomes: vanilla refuses a player under
-// BlockTargetingPlayer (final.reds:456609); a puppet the same.
+// BlockTargetingPlayer (final.reds:456609); a puppet the same. Vanilla turns
+// the NPC hostile to any other target it is given: police sent after another
+// V's puppet are refused our V (TandemPolice.SparesOurV).
 // job thread safe: it only reads and calls the wrapped method.
 @wrapMethod(SetTopThreatToCombatTarget)
 private final func SetCombatTarget(context: ScriptExecutionContext, target: ref<GameObject>) {
   let owner = ScriptExecutionContext.GetOwner(context);
-  if IsDefined(target) && TandemThreats.AsPlayer(owner, target) && TandemThreats.Blocked(owner, target) {
+  if IsDefined(target) && (TandemPolice.SparesOurV(owner, target) || (TandemThreats.AsPlayer(owner, target) && TandemThreats.Blocked(owner, target))) {
     wrappedMethod(context, null);
     return;
   }
