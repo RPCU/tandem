@@ -27,12 +27,13 @@ namespace tandem::plugin {
 // Something of the world for the script to show. Plain fields only: the
 // script VM aligns struct locals to 8.
 struct TandemObjectEvent {
-  std::int32_t kind{};    // 1 something broke, 2 a device's fire
-  std::uint32_t player{}; // 1: whose game saw it break; 2 (seen, lost): whose V
-  Red::EntityID entity;   // 1: the placed entity it is a part of (none: the world's); 2: the device
-  Red::CName name;        // 1: its destruction component
-  float x{}, y{}, z{};    // where
-  std::int32_t value{};   // 1: the level of destruction; 2: proto::DeviceFireKind
+  std::int32_t kind{};    // 1 something broke, 2 a device's fire, 3 a turret in a player's hands
+  std::uint32_t player{}; // 1: whose game saw it break; 2 (seen, lost): whose V; 3: whose hands
+  // 1: the placed entity it is a part of (none: the world's); 2 and 3: the device
+  Red::EntityID entity;
+  Red::CName name;      // 1: its destruction component
+  float x{}, y{}, z{};  // where (3: where it points)
+  std::int32_t value{}; // 1: the level of destruction; 2: proto::DeviceFireKind; 3: proto::kHands*
   std::int32_t targetKind{};  // 2: proto::TargetKind
   std::uint32_t target{};     // 2: the NPC, or the player
   Red::EntityID targetEntity; // 2: the placed entity
@@ -100,6 +101,17 @@ struct TandemObjects : Red::IScriptable {
     Runtime::Get().SubmitObject(fire);
   }
 
+  // A turret in our V's hands: where it points, whether it fires (1), or
+  // that we let go of it (2).
+  static void Hands(Red::EntityID entity, Red::Vector4 position, std::int32_t flags) {
+    if (entity.hash == 0)
+      return;
+    Runtime::Get().SubmitObject(
+        proto::TurretHands{.entity = entity.hash,
+                           .at = {position.X, position.Y, position.Z},
+                           .flags = static_cast<std::uint8_t>(flags & proto::kHandsFlags)});
+  }
+
   // What the others' games say since the last call: breaks for ours to
   // replay (those not broken here already), a device's fire.
   static Red::DynArray<TandemObjectEvent> TakeEvents() {
@@ -116,6 +128,14 @@ struct TandemObjects : Red::IScriptable {
                                           .y = fracture->at.y,
                                           .z = fracture->at.z,
                                           .value = fracture->level});
+      } else if (const auto *hands = std::get_if<proto::TurretHands>(&message)) {
+        out.EmplaceBack(TandemObjectEvent{.kind = 3,
+                                          .player = hands->player,
+                                          .entity = Red::EntityID(hands->entity),
+                                          .x = hands->at.x,
+                                          .y = hands->at.y,
+                                          .z = hands->at.z,
+                                          .value = hands->flags});
       } else if (const auto *fire = std::get_if<proto::DeviceFire>(&message)) {
         if (fire->kind == proto::DeviceFireKind::Shot) {
           const auto now = Runtime::Get().HostNowUs();
@@ -185,6 +205,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemObjects, "TandemObjects", {
   RTTI_METHOD(Broke);
   RTTI_METHOD(Replaying);
   RTTI_METHOD(Fire);
+  RTTI_METHOD(Hands);
   RTTI_METHOD(TakeEvents);
   RTTI_METHOD(Reset);
   RTTI_METHOD(Report);
