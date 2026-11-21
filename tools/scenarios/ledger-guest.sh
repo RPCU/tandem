@@ -1,17 +1,31 @@
 # As a guest: a placed NPC the host kills alone, far from us, is gone from our game too (our own copy hidden, in the session's ledger), and a body lies where it fell when we come by
 # shellcheck shell=bash disable=SC2317
-# Where: LEDGER_AT (a fixture or "X Y Z", default kabuki-market, testing.md
-# "Fixtures": the nearest placed NPC of our own world within 200 m of it,
-# not a quest's, stands for "a placed NPC": `ledger near`; a vendor is not
-# needed, and the survey found none there). The mock host stands
+# Where: LEDGER_AT (a fixture or "X Y Z", testing.md "Fixtures": the
+# nearest placed NPC of our own world within 200 m of it, not a quest's,
+# stands for "a placed NPC": `ledger near`). Default: the first of
+# kabuki-market, vik-clinic and h11-basement that has one (the market had
+# 46 NPCs and none placed, 2026-11-21; each spot's count is noted). The mock host stands
 # 300 m east of it (unlinked: it never sees ours, we never see its own) with
 # an NPC of that record and entity, and kills it. LEDGER_AWAY ("X Y Z", a
 # spot our V can stand on, 200 m or more from that NPC): the host stands
 # there instead, and we go there afterwards to see the body.
 ensure join
-at "${LEDGER_AT:-kabuki-market}"
-cmd ledger near
-expect 'ledger: near placed npc record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' 10
+if [ -n "${LEDGER_AT:-}" ]; then
+  spots=("$LEDGER_AT")
+else
+  spots=(kabuki-market vik-clinic h11-basement)
+fi
+for where in "${spots[@]}"; do
+  at "$where"
+  mark
+  cmd ledger near
+  expect 'ledger: (near|no) placed npc ' 10
+  note "$where: $(since | grep -aoE 'ledger: (near|no) placed npc .*' | tail -1)"
+  if since | grep -qaE 'ledger: near placed npc record '; then
+    break
+  fi
+done
+expect 'ledger: near placed npc record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' 2
 line=$(since | grep -oE 'ledger: near placed npc record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' | tail -1)
 note "$line"
 record=$(sed -E 's/.* record ([^ ]+) entity .*/\1/' <<<"$line")
