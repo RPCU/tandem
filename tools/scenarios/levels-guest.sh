@@ -9,7 +9,7 @@ expect "levels: the session's level is [0-9]+ \(2 players" 20
 expect 'puppet 6[0-9]{4}: controller handed to the engine' 30
 # The host's word for its NPCs, on our proxies (logged when a proxy's own
 # level differs: our game made it for our V's level).
-expect 'levels: proxy [0-9]+ level [0-9.]+ -> 31(\.0+)? \(the host.s 31' 30
+expect 'levels: proxy [0-9]+ level [0-9.]+ -> 31(\.0+)? \((the host|its owner).s 31' 30
 cmd progress
 expect 'levels: ours [0-9]+, session [0-9]+ \(2 players\), 0 NPCs moved; .* [1-9][0-9]* host levels known' 10
 shot levels-guest
