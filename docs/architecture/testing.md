@@ -109,7 +109,13 @@ a loading screen ends: when one came (the watchdog's `silent` line), `at`
 also waits for its `back` line (90 s at most) and 5 s of streaming, then
 marks the log past it (three spots surveyed empty, each shot the loading
 screen, 2026-11-21; the watchdog's state outlives a session, so a guest
-whose join times out during the loading screen still says `back`). Each scenario's `*_AT` variable takes a name
+whose join times out during the loading screen still says `back`).
+`moved COMMAND…` is `cmd` for a game command that teleports our V itself
+(`ledger goto`, `vendor goto`): the same wait and mark (`ledger goto` went
+99.5 m up from Viktor's clinic, the game thread silent 19.9 s: the
+`silent` line `ledger-guest`'s last reject tripped on, 2026-11-21; **not
+yet run in game**); what the command logged may be before the mark, so the
+scenario asks `near` again and expects it within 10 m. Each scenario's `*_AT` variable takes a name
 or coordinates (default below). `cmd fixture check [M]`
 (`scripts/tandem/Fixtures.reds`, solo too) logs `fixture: …` lines: our V's
 spot, the devices within M m (60) by class, the nearest door, lift,
@@ -117,11 +123,15 @@ camera, turret, sentry (a turret that is not the police's: the ones
 `Turrets.reds` follows), barrel, access point and radio within 200 m with position
 and state, the NPCs within M m (vendors of our own world, in a workspot)
 and the nearest vendor and workspot NPC within 200 m, then `fixture:
-done`. No vendor within M m: as `vendor near` with none, the NPCs within
-200 m, how many have a vendor id, ours hidden in this session, then the
-nearest three with a vendor id and the nearest five without, each with what
-it lacks (`TandemVendors.Lacks`: no vendor id, dead, a proxy, not placed
-and what its stub says, too far). World glass has no entity: not listed. Scenario `fixtures-survey`
+done`. No vendor within M m: as `vendor near`, the NPCs within
+200 m, how many have a vendor id, how many of those are vendors of our own
+world, ours hidden in this session, the game's time, then every NPC with a
+vendor id (the nearest twelve) with its vendor id, the id every game gives
+it (`TandemVendors.IdOf`), what it goes by (the crowd's by its record or in
+the crowd, its stub's community and entry) and what it lacks
+(`TandemVendors.Lacks`: no vendor id, dead, a proxy, a spawned body, too
+far), and the nearest five without when none is ours. `vendor near` logs
+that list with a vendor too. World glass has no entity: not listed. Scenario `fixtures-survey`
 visits each (`FIXTURES="a b"`, `RADIUS`), notes those lines and a
 screenshot, `glass break` at kabuki-market. Every spot is **unverified**
 until the survey has run in game.
@@ -133,7 +143,7 @@ until the survey has run in game.
 | `h10` | -1397.31 1278.07 123.08 0 | fast-travel point `wat_lch_dataterm_10` (dataterm tracker, 2.50 sectors); the save's own start (body held there, `police-host-cars`, 2026-11-21) | H10's floor; its lift terminal 70 m (journal `#q101_mp_elevator_terminal_mb`, -1434.85 1314.51 120.81) | `devices-lift` |
 | `v-door` | -1389.66 1271.12 123.08 0 | journal `#q101_mp_leave_v_room` ("Leave the apartment"; the pin's z 124.59, the floor h10's) | V's door; V's computer 3.6 m (`#q101_mp_v_room_computer`); the scenarios `device goto door` | `interact-guest-pickup`, `interact-guest-hostonly`, `interact-apart-own-gig` |
 | `kabuki-market` | -1158.78 2014.22 12.06 0 | `wat_kab_dataterm_01` (tracker) | market stalls: vendors, NPCs at stalls (a workspot); shop panes a guess (no data). 46 NPCs within 200 m, none with a static id, no vendor (2026-11-21) | `ledger-guest` (then `vik-clinic`, `h11-basement`: the first with a placed NPC), `npcs-anims-host`, `glass-guest`, `glass-latecomer` |
-| `vik-clinic` | -1546.73 1227.39 11.52 0 | §13.110 (Viktor's clinic, revive.md) | Viktor, a vendor (ripperdoc): the survey found no vendor at the market. Gone, his desk empty, once a session hid him (`ledger-guest` took him for its placed NPC, `vendor-guest`'s own end; 2026-11-21): `vendor-guest` goes away (`VENDOR_AWAY`, kabuki-market) and back when `vendor near` finds none | `vendor-guest` |
+| `vik-clinic` | -1546.73 1227.39 11.52 0 | §13.110 (Viktor's clinic, revive.md) | Viktor, a vendor (ripperdoc), and a food stall's seller 37 m off (`Character.Packed_Food`, the crowd's: a vendor by its vendor id and stall, `TandemVendors.IdOf`). Viktor is gone since a session hid him (`ledger-guest` took him for its placed NPC, `vendor-guest`'s own end; 2026-11-21): on no list of 35 to 40 NPCs within 200 m an hour later, after going away and back and after the game was started again (why: `engine/regions.md`, the hidden community NPC). `vendor-guest` takes the nearest vendor here, else at `VENDOR_AWAY` (kabuki-market), else here again | `vendor-guest`, `ledger-guest` (first) |
 | `h11-basement` | -1390.79 1963.74 -25.02 0 | journal `#lch_01_tr_main_computer_room_001` (gig "Catch a Tyger's Toe"); walkthroughs (Fandom, Fextralife, GameClubz) | Tyger Claws server room, floor -05: 2–4 cameras, a laptop with network access, the lift; hostile unless the gig is done | `breach-guest`, `breach-host`, `comms-network`, `devices-camera`, `devices-camera-friendly` |
 | `arasaka-park` | -209.26 -1454.22 7.60 0 | journal `#q112_mp_truck_drive_inside` ("Drive into Arasaka Industrial Park"); players' reports (perimeter turrets, cameras; hostile, empty after "Gimme Danger") | a turret 33 m off, the police's and off (2026-11-21): enough for the hands scenarios; `turret-host` and `turret-guest` need a sentry within 200 m, not seen yet | `turret-guest`, `turret-hands`, `turret-hands-busy`, `turret-host` |
 | `drake-ave` | -1608.11 1772.70 18.38 0 | `wat_lch_dataterm_02` (tracker) | an avenue with traffic for police pursuit points (the test field found 0); its turret, 27 m off, is the police's | `police-host-cars`, `police-spare-host`, `turret-friendly` |
@@ -611,11 +621,13 @@ decline`, `busy KIND|off`, `busy report`, `apartment report`. Scenarios
 REC@X,Y,Z#ENTITY` shares one NPC of REC standing at X,Y,Z once a guest
   is there, said to be the placed vendor ENTITY (hex, as the game's
   `tools/game.sh cmd vendor near` logs its own nearest vendor), so the
-  game as a guest opens its own vendor of it; `--vendor-dies N` kills it N
+  game as a guest opens its own vendor of it; `--vendor-crowd`: that
+  vendor is the crowd's, not a placed NPC (no `NpcPlaced`; `vendor near`
+  says `placed false`); `--vendor-dies N` kills it N
   s after a guest is there (every game hears that vendor died). What it
   hears of vendors is logged. In game: `tools/game.sh cmd vendor`,
   `vendor near`, `vendor goto`, `vendor open`, `vendor close`; scenario
-  `vendor-guest`. `vendor near` with none lists what stands there instead
+  `vendor-guest`. `vendor near` lists the NPCs with a vendor id around
   (Fixtures, above).
 - **Quest interactions** (any mode): `--interact
 ENTITY:CHOICE[:DETAIL][@SECONDS]` has a guest's V use the host's object

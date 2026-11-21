@@ -33,7 +33,7 @@ tandem does, with the scenario that checks it in game.
 | Quest, gig and NCPD rewards | both players, once | each game pays its own V | `GiveReward` pays the local player by its own level (§13.38.2) | was (`QuestReward`); **now through the carry-over ledger** in the guest's save (`quest-carryover.md`: once per quest and reward, whoever hosts; nothing for a quest the guest finished alone; a helper's own copy of a gig pays nothing again) |
 | Loot | rolled per player in their own game | each player's game | picked-up items are scaled to the **picker** (§13.38.4); whether the NPC's level enters the native roll is not in the scripts | was (Loot.reds). Open: measure a scaled NPC's drops in game |
 | Money | each player's own | that player's game | an item in V's inventory; bounties, shards and rewards pay the local player (§13.38.2, §13.38.5) | nothing needed |
-| Vendors: stock, prices, money | each player's own; the NPC is the world's | each player's game (`MarketSystem`, its save) | a vendor is created per entity whose record has a vendor id; the buyer is always `GetPlayer` (§13.38.5); the screen is bound to an entity, found by id (§13.80) | **built, not run in game**: beside another game's vendor, our own game's vendor of the same placed entity opens (see "Vendors" below); scenario `vendor-guest` |
+| Vendors: stock, prices, money | each player's own; the NPC is the world's | each player's game (`MarketSystem`, its save) | a vendor is created per entity whose record has a vendor id; the buyer is always `GetPlayer` (§13.38.5); the screen is bound to an entity, found by id (§13.80) | **built, not run in game**: beside another game's vendor, our own game's vendor of the same NPC opens (see "Vendors" below); scenario `vendor-guest` |
 | Ripperdocs, clothing stores | as vendors | each player's game | the same vendor, type ripperdoc; cyberware goes on the local V (§13.38.5); the hub shows the ripperdoc's tabs for a vendor of that type (§13.80) | as vendors; the new look reaches the others when the screen closes (the look resend, `activities.md`) |
 | Vending machines, drop points | each player's own device | each player's game | the game's own device, `GetPlayer` pays, the can is dropped in that game's world (§13.38.5, §13.80) | nothing needed (gig hand-ins stay the host's: its quests) |
 | Crafting, upgrading, disassembling | each player's own | that player's game | `CraftingSystem` holds one craft book, the local player's (§13.38.5) | nothing needed |
@@ -155,14 +155,26 @@ decided: a guest keeps its own vendors; `scripts/tandem/Vendors.reds`,
 `core/include/tandem/vendors.hpp`, `proto::NpcVendor`):
 
 1. **The owner names the vendor.** A game that announces an NPC that is a
-   vendor (`ScriptedPuppet.IsVendor()`) placed in the world (a static
-   entity id, the same in every game) says its entity (`NpcVendor`), kept
+   vendor (`ScriptedPuppet.IsVendor()`) of the world says the id every game
+   gives it (`NpcVendor`'s entity; `TandemVendors.IdOf`), kept
    with the NPC's records for late joiners, a link that forms and resyncs.
-   A spawned NPC of a vendor record is nobody's shop: never named.
+   That id is its placed id when it has one (`TandemPlaced.IdOf`,
+   `regions.md` §14: Viktor, by his community). Else (a stall's seller is
+   the crowd's and has none: `Character.Packed_Food` 37 m from vik-clinic
+   was refused as "not placed", the only NPC with a vendor id there,
+   2026-11-21) its record's vendor id (`MarketSystem`'s own key) and the
+   16 m cell it stands in, since two stalls may share a vendor id. Ours is
+   that vendor when the id is the one of a cell within 4 m of ours
+   (`TandemVendors.Is`: a vendor near a cell's edge stands in the next cell
+   in another game); of two, the nearest to our V. Its twin is known by
+   record and place (no `NpcPlaced`), its death is the vendors' alone (the
+   ledger has no crowd NPC). A spawned NPC of a vendor record (a mod's, a
+   body of ours) is nobody's shop: never named. The vendor id's part is
+   **not yet run in game**.
 2. **Our own copy stays behind the proxy.** On a guest, its own placed
    vendor gives way to the host's proxy as every twin does (`regions.md`
    §3): brain off, hidden, never announced. It is still in the guest's
-   world, under the same entity id, with the guest's `MarketSystem` vendor.
+   world, under the same id, with the guest's `MarketSystem` vendor.
 3. **The prompt.** Beside a vendor's proxy (2.5 m, in front of our V), the
    game's interaction prompt says "Trade" under the vendor's name; a
    partner's revive and a trade prompt come first. A press opens **our
@@ -191,7 +203,9 @@ decided: a guest keeps its own vendors; `scripts/tandem/Vendors.reds`,
    never saves in a session; a hidden NPC is not saved): back in its own
    world after the session the vendor stands again, as in its own story,
    once it has streamed out (Viktor's desk was still empty 2 min after a
-   session hid him, our V beside it: `vendor near` found none, 2026-11-21).
+   session hid him, our V beside it: `vendor near` found none, 2026-11-21;
+   and an hour later, after away and back and a new start of the game:
+   whether a community's NPC comes back is open, `engine/regions.md`).
 6. **No vendor for a proxy.** A vendor NPC's body attaching to the world
    asks `MarketSystem` for a vendor of its own (`NPCPuppet.PrepareVendor`):
    for a proxy that would be a new entry in the saved list under a dynamic
@@ -484,7 +498,8 @@ Decided by the user 2026-11-19 (the recommendations, and `stay`):
   a death, a knock-out then a death, is everyone's once).
 - Mock player: `--level N` (its V's level), `host --npc-level L` (the
   level it says its NPCs have), `host --vendor REC@X,Y,Z#ENTITY` (a
-  vendor NPC of ours named as that placed entity), `--vendor-dies N`.
+  vendor NPC of ours named as that vendor's id; `--vendor-crowd`: not a
+  placed NPC), `--vendor-dies N`.
 - In game: `tools/game.sh cmd progress` logs the leave step, our lock, the
   game's locks, what is left of a session, the save owed, the exit held,
   the checkpoint, and the levels; `cmd exit check` what the pause menu's

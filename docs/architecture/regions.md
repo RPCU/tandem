@@ -689,7 +689,9 @@ map and comes by an hour later. Built and tested without the game.
   one entry share an id: one death keeps one of ours out
   (`TandemLedger.Buries`), a second death of that entry is no new entry.
   The vendors (`Vendors.reds`: `SendVendor`, our own vendor of a proxy,
-  the dead ones) go by the same id. A knock-out counts (`kDeathKnockedOut`: such an NPC
+  the dead ones) go by the same id when they have one, else by their
+  vendor id and stall (`TandemVendors.IdOf`, `progression.md`: the crowd's
+  vendors, never in the ledger). A knock-out counts (`kDeathKnockedOut`: such an NPC
   never gets up); a later death of the same NPC is not a second entry.
 - **Who records.** The owner's endpoint, when its game reports the NPC dead
   or knocked out (`SendNpcGone`): `NoteDeath` builds an `NpcDeath` from the
