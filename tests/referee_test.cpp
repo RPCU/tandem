@@ -705,7 +705,8 @@ TEST_CASE("referee: a scene's props, camera and rig poses are the host's, about 
   host.Received(2, proto::SceneProp{.play = 1, .prop = 1, .record = 5, .holder = 7}, kSecond);
   host.Received(2, proto::SceneCamera{.play = 1, .fov = 60.f}, kSecond);
   host.Received(2, proto::RigPose{.npc = 7, .bones = 4}, kSecond);
-  CHECK(Rules(host) == std::vector<std::string>(3, "authority.host-only"));
+  host.Received(2, proto::RigTracks{.npc = 7, .tracks = 4}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>(4, "authority.host-only"));
 
   auto guest = Guest();
   guest.Received(1, proto::NpcSpawn{.npc = 7, .record = 10}, kSecond);

@@ -111,4 +111,56 @@ private:
   std::uint64_t m_appliedUs{};
   std::uint32_t m_received{};
 };
+// ---- float tracks (proto::RigTracks): a face's wrinkles, pupils, blinks ----
+
+// A track is said again once it is this far from what was last said of it.
+inline constexpr float kTrackTolerance = 0.004f;
+
+// The host's side of one rig's tracks.
+class TrackEncoder {
+public:
+  // The rig's reference values, before the first Encode.
+  void Reset(std::span<const float> reference);
+  bool Ready() const { return !m_reference.empty(); }
+  std::size_t Tracks() const { return m_reference.size(); }
+  // What to say of `values` (the rig's tracks, in order) in at most
+  // `maxBytes`: the furthest from what the receiver has, then a few in turn.
+  std::vector<std::uint8_t> Encode(std::span<const float> values, std::size_t maxBytes);
+
+private:
+  std::vector<float> m_reference;
+  std::vector<float> m_said;
+  std::size_t m_next{};
+};
+
+// The guest's side: what the host said of each track, blended in and
+// written over the rig's own values.
+class TrackSet {
+public:
+  bool Push(const proto::RigTracks &tracks);
+  std::uint64_t NewestUs() const { return m_newestUs; }
+  std::uint32_t Rig() const { return m_rig; }
+  std::size_t Held() const { return m_active.size(); }
+  // Writes the tracks the host moved into `values` (the rig's own, in its
+  // order), at host clock `nowUs`; a track the host put back at its
+  // reference value goes back to the rig's own and is let go. Nothing when
+  // `rig` or the count is not the stream's. Answers how many it wrote.
+  std::size_t Apply(std::uint64_t nowUs, std::uint32_t rig, std::span<const float> reference,
+                    std::span<float> values);
+
+private:
+  struct Told {
+    float value{};
+    float shown{};
+    bool active{};
+    bool started{};
+  };
+  std::vector<Told> m_told;
+  std::vector<std::uint16_t> m_active;
+  std::uint32_t m_rig{};
+  std::uint32_t m_lastSeq{};
+  bool m_haveSeq{};
+  std::uint64_t m_newestUs{};
+  std::uint64_t m_appliedUs{};
+};
 } // namespace tandem::rig

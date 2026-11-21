@@ -181,11 +181,17 @@ inline constexpr std::uint64_t kStreamIdleUs = 1'500'000;
 constexpr std::uint64_t StreamOf(proto::NpcId npc, std::uint8_t part) {
   return std::uint64_t{npc} << 8 | part;
 }
+// The stream of a rig's float tracks, apart from its bones'.
+constexpr std::uint64_t TracksOf(proto::NpcId npc, std::uint8_t part) {
+  return std::uint64_t{npc} << 8 | 0x80 | part;
+}
 inline constexpr std::uint64_t kCameraStream = ~std::uint64_t{0};
 // The camera is the picture: it matters more than any one body.
 inline constexpr float kCameraWeight = 3.f;
 // A speaker's face is where one looks: before a body.
 inline constexpr float kFaceWeight = 2.f;
+// Its float tracks (wrinkles, blinks): half of it.
+inline constexpr float kTracksWeight = 1.f;
 
 // Splits the budget between the streams that are alive: each is served at
 // least every kSlowestUs (the heaviest-weighted first, while the budget

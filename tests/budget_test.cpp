@@ -16,6 +16,7 @@
 #include <doctest/doctest.h>
 
 #include <chrono>
+#include <cmath>
 #include <format>
 #include <functional>
 #include <memory>
@@ -153,6 +154,13 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
             npc, pose::Pack(test::WalkCycle(s + 0.7f * static_cast<float>(npc), 0.4f))));
       }
       host->SendSceneCamera(scene::PackCamera(1, {{0.5f * s, -3.f, 1.8f}, {}, 50.f}, false));
+      // The first actor speaks: its face's float tracks (427, a few dozen
+      // moving: blinks, wrinkles, the lipsync envelope).
+      const std::vector<float> rest(427, 0.f);
+      std::vector<float> face(rest);
+      for (std::size_t track = 0; track < 40; ++track)
+        face[track * 10] = 0.5f + 0.5f * std::sin(3.f * s + static_cast<float>(track));
+      host->SendRigTracks(1, proto::kRigFace, 0x77, rest, face);
     }
     if (play == Play::Fight && now >= nextNpcs) {
       nextNpcs += 100'000;

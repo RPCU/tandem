@@ -51,6 +51,7 @@ TANDEM_SAID_BY(Host, SceneLine)
 TANDEM_SAID_BY(Host, ActorPose)
 TANDEM_SAID_BY(Host, ActorFrame)
 TANDEM_SAID_BY(Host, RigPose)
+TANDEM_SAID_BY(Host, RigTracks)
 TANDEM_SAID_BY(Host, SceneCamera)
 TANDEM_SAID_BY(Host, SceneProp)
 TANDEM_SAID_BY(Host, Rules)
@@ -761,7 +762,8 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::SceneCast>) {
           inRange = m.actors.size() <= p::kMaxSceneActors;
         } else if constexpr (std::is_same_v<M, p::ActorPose> ||
-                             std::is_same_v<M, p::TrafficStates> || std::is_same_v<M, p::RigPose>) {
+                             std::is_same_v<M, p::TrafficStates> || std::is_same_v<M, p::RigPose> ||
+                             std::is_same_v<M, p::RigTracks>) {
           timeUs = m.timeUs;
         } else if constexpr (std::is_same_v<M, p::SceneCamera>) {
           timeUs = m.timeUs;
