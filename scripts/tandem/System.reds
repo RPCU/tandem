@@ -1901,7 +1901,8 @@ public class TandemSystem extends ScriptableSystem {
         throws.Report();
       }
     } else if StrBeginsWith(command, "revive") {
-      // Revive.reds: revive down | hold | report.
+      // Revive.reds: revive down | out | hold | fresh | water N | wreck |
+      // unseat | report.
       if IsDefined(this.m_revive) {
         this.m_revive.Command(command);
       }
@@ -2420,6 +2421,18 @@ public class TandemSystem extends ScriptableSystem {
     for puppet in this.m_puppets {
       if puppet.player == player {
         return puppet.car;
+      }
+    }
+    let none = EntityID.FromHash(0ul);
+    return none;
+  }
+
+  // The vehicle a remote player's puppet sits in here (none: on foot, or no
+  // seat for it here): their own car's copy, a third player's, or ours.
+  public func SeatedIn(player: Uint32) -> EntityID {
+    for puppet in this.m_puppets {
+      if puppet.player == player && EntityID.IsDefined(puppet.seatedIn) {
+        return puppet.seatedIn;
       }
     }
     let none = EntityID.FromHash(0ul);
