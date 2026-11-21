@@ -281,6 +281,24 @@ public abstract class TandemWeakSpots {
     return spots;
   }
 
+  // What a hit on a weak spot takes, in percent of its health, measured as
+  // DealDamages would apply it (StatPoolsManager.ApplyDamage, not for real;
+  // DrainStatPool's points to percent, final.reds 219136-219145).
+  public static func Measure(game: GameInstance, hitEvent: ref<gameHitEvent>, spot: ref<WeakspotObject>) -> Float {
+    let lost: array<SDamageDealt>;
+    StatPoolsManager.ApplyDamage(hitEvent, false, lost);
+    let points = 0.0;
+    for dealt in lost {
+      if Equals(dealt.affectedStatPool, gamedataStatPoolType.Health) {
+        points += dealt.value;
+      }
+    }
+    if points <= 0.0 {
+      return 0.0;
+    }
+    return GameInstance.GetStatPoolsSystem(game).ToPercentage(Cast<StatsObjectID>(spot.GetEntityID()), gamedataStatPoolType.Health, points);
+  }
+
   // Guest: our hit on a proxy's weak spot took `drain` percent of it.
   public static func Lost(spot: ref<WeakspotObject>, npc: Uint32, drain: Float) -> Void {
     let record = spot.GetRecord();
@@ -400,8 +418,13 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) {
   let shooter = hitEvent.attackData.GetInstigator();
   if spotNpc != 0u && IsDefined(shooter) && shooter.IsPlayer() {
     let had = TandemWeakSpots.Health(game, spot);
+    // The pool's change is a request the game applies later: read right
+    // after, it is often unchanged. What the hit takes, measured first (not
+    // applied), stands in then.
+    let measured = TandemWeakSpots.Measure(game, hitEvent, spot);
     wrappedMethod(hitEvent);
-    TandemWeakSpots.Lost(spot, spotNpc, had - TandemWeakSpots.Health(game, spot));
+    let drain = had - TandemWeakSpots.Health(game, spot);
+    TandemWeakSpots.Lost(spot, spotNpc, drain > 0.0 ? drain : MinF(measured, had));
     return;
   }
   let npc = TandemCombat.ProxyNpc(game, hitEvent.target);
