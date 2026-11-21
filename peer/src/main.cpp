@@ -333,6 +333,9 @@ struct Options {
   enum class LinkAnswer { Auto, Ask, Off } linkConsent{LinkAnswer::Auto};
   int linkAtSeconds{-1};
   int unlinkAtSeconds{-1};
+  // --link ask: a request is accepted this long after it came (a person
+  // picking up a call; 0: at once).
+  int linkAnswerSeconds{0};
   int pingSeconds{0};
   int tagSeconds{0};
   int revealSeconds{0};
@@ -778,6 +781,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     the default; ask: nobody until asked, every request\n"
          "                     accepted; off: nobody, requests ignored)\n"
          "  --link-at N        N seconds after another player is in, ask everyone to link\n"
+         "  --link-answer-after N  with --link ask: accept a request N seconds after it\n"
+         "                     came (default 0: at once)\n"
          "  --unlink-at N      N seconds after another player is in, break every link\n"
          "  --ping N           every N seconds a ping: in front of the other V, then the\n"
          "                     nearest shared NPC (enemy), the same again (danger), a\n"
@@ -1756,6 +1761,8 @@ Options Parse(int argc, char **argv) {
         Usage(std::format("--link: auto, ask or off, not {}", value));
     } else if (flag == "--link-at")
       options.linkAtSeconds = Number<int>(value);
+    else if (flag == "--link-answer-after")
+      options.linkAnswerSeconds = Number<int>(value);
     else if (flag == "--unlink-at")
       options.unlinkAtSeconds = Number<int>(value);
     else if (flag == "--ping")
@@ -4159,6 +4166,8 @@ int main(int argc, char **argv) {
               : options.linkConsent == Options::LinkAnswer::Ask ? tandem::proto::LinkMode::Listed
                                                                 : tandem::proto::LinkMode::Off};
   endpoint->SetLocalLink(ownLink);
+  // --link-answer-after: the requests we will accept, and when.
+  std::vector<std::pair<tandem::proto::PlayerId, std::uint64_t>> linkAnswers;
   if (options.legacyWire) {
     endpoint->SetCompact(false);
     Log("legacy wire: every state every frame, whole poses and NPC lists");
@@ -5324,9 +5333,22 @@ int main(int argc, char **argv) {
                                   : "not linked");
               // --link ask: every request is accepted.
               if (theyAsk && !weDo && options.linkConsent == Options::LinkAnswer::Ask) {
-                ownLink = tandem::comms::WithConsent(ownLink, l.player, true);
-                endpoint->SetLocalLink(ownLink);
-                Log("accepted player {}'s link request", l.player);
+                if (options.linkAnswerSeconds > 0) {
+                  const bool waiting = std::ranges::any_of(
+                      linkAnswers, [&](const auto &answer) { return answer.first == l.player; });
+                  if (!waiting) {
+                    linkAnswers.emplace_back(
+                        l.player,
+                        tandem::net::NowUs() +
+                            static_cast<std::uint64_t>(options.linkAnswerSeconds) * 1'000'000);
+                    Log("player {}'s link request: answered in {} s", l.player,
+                        options.linkAnswerSeconds);
+                  }
+                } else {
+                  ownLink = tandem::comms::WithConsent(ownLink, l.player, true);
+                  endpoint->SetLocalLink(ownLink);
+                  Log("accepted player {}'s link request", l.player);
+                }
               }
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteWaypoint>) {
               const auto &w = e.waypoint;
@@ -6349,6 +6371,14 @@ int main(int argc, char **argv) {
           to.y, to.z, options.travelPoint.empty() ? "" : " at " + options.travelPoint, offers);
     }
     // Comms: link requests, pings, tags and reveals, our waypoint.
+    std::erase_if(linkAnswers, [&](const auto &answer) {
+      if (tandem::net::NowUs() < answer.second)
+        return false;
+      ownLink = tandem::comms::WithConsent(ownLink, answer.first, true);
+      endpoint->SetLocalLink(ownLink);
+      Log("accepted player {}'s link request", answer.first);
+      return true;
+    });
     if (!linkAsked && together(options.linkAtSeconds)) {
       linkAsked = true;
       for (const auto &[id, info] : endpoint->Players())

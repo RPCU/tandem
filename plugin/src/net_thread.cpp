@@ -50,6 +50,11 @@ struct NetThread::Impl {
   Config config;
   proto::Body body{};
   std::jthread thread;
+  // The watchdog: since when the game thread is silent (0: it ticks). Kept
+  // across sessions: a guest whose join timed out during a loading screen
+  // started a new session, and the "back" line never came (the scenarios
+  // wait for it: vendor-guest, 2026-11-21).
+  std::uint64_t silentSinceUs = 0;
   // What we last handed an endpoint that it keeps for the session: a new
   // session (a guest joining again) starts from them.
   std::optional<proto::Appearance> lastAppearance;
@@ -386,7 +391,6 @@ struct NetThread::Impl {
     // Our game announced or removed NPCs of its own: the owners the scripts
     // read change with them.
     bool announced = false;
-    std::uint64_t silentSinceUs = 0;
     std::uint32_t reportedRequests = 0;
 
     while (!stop.stop_requested() && !ended) {
