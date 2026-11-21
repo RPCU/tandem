@@ -279,6 +279,11 @@ note() { echo "  $*"; }
 # the spot, then 3 s more for the world around it to stream in. A loading
 # screen silences the game thread (the watchdog's "silent" line, which the
 # scenarios reject): when one came, the log is marked after it.
+# `moved COMMAND…` is `cmd` for a game command that teleports our V itself
+# (`ledger goto`, `vendor goto`: up to 200 m, out of a basement): the same
+# wait and mark (`ledger goto` went 99.5 m up from Viktor's clinic, the game
+# thread silent for 19.9 s, and ledger-guest's last reject tripped on it,
+# 2026-11-21). What the command logged may be before the mark: ask again.
 # The scenarios resolve the game machine's name with getent: a lookup that
 # comes back empty for a moment left the mock player with no address ("join
 # needs an address", 2026-11-21). Tried again, 10 s at most.
@@ -293,6 +298,32 @@ getent() {
   done
   return 2
 }
+# The watchdog's lines so far (silent, back), and the loading screen that
+# came since those counts, waited out and the log marked after it.
+watchdog_lines() { since | grep -c "watchdog: game thread $1" || true; }
+past_loading() {
+  [ "$(watchdog_lines silent)" != "$1" ] || return 0
+  # Our V's position is set before the loading screen ends: the world
+  # around it streams in only after (fixtures-survey found nothing at
+  # three spots, each shot still the loading screen). Its end is the
+  # watchdog's "back" line; then the streaming's few seconds.
+  local waited=$SECONDS
+  while [ "$(watchdog_lines back)" = "$2" ] && ((SECONDS - waited < 90)); do
+    sleep 2
+  done
+  pause 5
+  echo "  (a loading screen on the way, $((SECONDS - waited)) s: the log marked after it)"
+  mark
+}
+moved() {
+  local silent back
+  silent=$(watchdog_lines silent)
+  back=$(watchdog_lines back)
+  cmd "$@"
+  # The watchdog says "silent" after 5 s without a tick.
+  sleep 7
+  past_loading "$silent" "$back"
+}
 fixture_file=tools/scenarios/fixtures.txt
 spot() {
   if [[ $1 =~ ^-?[0-9.]+\ +-?[0-9.]+\ +-?[0-9.]+ ]]; then
@@ -306,8 +337,8 @@ at() {
   local where x y z start=$SECONDS line silent back
   where=$(spot "$1") || fail "no fixture '$1' in $fixture_file"
   read -r x y z _ <<<"$where"
-  silent=$(since | grep -c 'watchdog: game thread silent' || true)
-  back=$(since | grep -c 'watchdog: game thread back' || true)
+  silent=$(watchdog_lines silent)
+  back=$(watchdog_lines back)
   cmd teleport "$where"
   while ((SECONDS - start < 45)); do
     sleep 2
@@ -321,19 +352,7 @@ at() {
       exit !(dx * dx + dy * dy + dz * dz < 16) }'; then
       echo "  at $1 ($where) in $((SECONDS - start)) s"
       pause 3
-      if [ "$(since | grep -c 'watchdog: game thread silent' || true)" != "$silent" ]; then
-        # Our V's position is set before the loading screen ends: the world
-        # around it streams in only after (fixtures-survey found nothing at
-        # three spots, each shot still the loading screen). Its end is the
-        # watchdog's "back" line; then the streaming's few seconds.
-        local waited=$SECONDS
-        while [ "$(since | grep -c 'watchdog: game thread back' || true)" = "$back" ] && ((SECONDS - waited < 90)); do
-          sleep 2
-        done
-        pause 5
-        echo "  (a loading screen on the way, $((SECONDS - waited)) s: the log marked after it)"
-        mark
-      fi
+      past_loading "$silent" "$back"
       return 0
     fi
   done

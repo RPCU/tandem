@@ -32,8 +32,12 @@ note "$line"
 record=$(sed -E 's/.* record ([^ ]+) entity .*/\1/' <<<"$line")
 entity=$(sed -E 's/.* entity ([0-9a-f]+) at .*/\1/' <<<"$line")
 read -r x y z <<<"$(sed -E 's/.* at (-?[0-9.]+) (-?[0-9.]+) (-?[0-9.]+)$/\1 \2 \3/' <<<"$line")"
-cmd ledger goto
-expect 'ledger: near placed npc' 10
+# Up to it (99.5 m up from Viktor's clinic was a loading screen of 19.9 s:
+# the watchdog's "silent" line this scenario rejects, 2026-11-21), and it is
+# the one beside us now.
+moved ledger goto
+cmd ledger near
+expect "ledger: near placed npc record [^ ]+ entity $entity at [-0-9. ]+ \([0-9]\.[0-9]+ m;" 10
 if [ -n "${LEDGER_AWAY:-}" ]; then
   read -r ax ay az <<<"$LEDGER_AWAY"
 else
