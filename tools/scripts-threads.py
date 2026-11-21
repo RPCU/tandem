@@ -43,7 +43,7 @@ hook of that list starts with
     TandemNative.HookRan(n"File.Class.Method");
 
 (".2" after the name for a second overload), and the game's log names those
-that ran off the game thread. Checked: every listed hook has the call, and
+that ran beside the script tick. Checked: every listed hook has the call, and
 the call is a function's first statement, under that function's name.
 
 Usage: tools/scripts-threads.py [DIR]         (exit 1 on a finding)

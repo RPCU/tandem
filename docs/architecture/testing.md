@@ -68,51 +68,68 @@ wraps. Each launch starts the game through Steam with the role's
 prints `N launches, C crashes (…)` and fails unless C is 0 and one
 played. Wraps that changed script state on job threads while the save
 loaded crashed 5 launches in 6, and 0 in 7 without them (2026-11-20). It
-also fails, naming them, when a launch's log has a `threads: hook … ran off
-the game thread` line (below).
+also fails, naming them, when a launch's log has a `threads: hook … ran
+beside the script tick` line (below).
 
-**The thread probe** (`plugin/src/threads.hpp`): which thread the hooks of
-`tools/scripts-threads.known` really run on. Each starts with
+**The thread probe** (`plugin/src/threads.hpp`): whether the hooks of
+`tools/scripts-threads.known` run beside the script tick. Each starts with
 `TandemNative.HookRan(n"File.Class.Method");` (`.2`: a second overload;
 `task threads:check` refuses a listed hook without it, and the call anywhere
-but first in a function of that name). The game thread is the script tick's
-(the frame update's until the first tick). In the game's log:
+but first in a function of that name). `TandemSystem.OnTick` is bracketed by
+`TandemNative.ScriptTickBegin()` and `ScriptTickEnd()`, which hold the
+ticking thread in an atomic (0 between ticks). A hook's call is, by that
+atomic at the moment it begins:
 
-- `threads: hook NAME ran off the game thread (thread A, the game thread is
-B)`: a warning, once per hook and launch, written from that thread at
-  once. `tools/game.sh launches`, `threads` and every scenario fail on it,
-  unless the launch's log says the tick moved or runs off the frame's thread
-  (`: not the same`, below): then they only list it. On anya (2026-11-21)
-  the tick runs on the job workers from its first call and moves at any
-  time, so the probe judges nothing there: telling a hook that
-  runs beside the tick from one that runs between its frames needs the
-  tick's start and end, not its thread.
-- `threads: N hooks off-thread: A×12, B×3` (calls so far): every 60 s when
-  one ran since the last, at a session's end and on `tools/game.sh threads`
-  (`cmd threads`, then the newest log's `threads:` lines; exit 1 on a hook
-  off the game thread; works after the game has quit too), followed there
-  by `threads: N hooks only on the game thread (thread B): C×40, …`.
+- **beside** the tick: on another thread while a tick runs. Two threads in
+  script state at once, what corrupted the heap on 2026-11-20: unsafe.
+- **inside** the tick: on the tick's own thread while it runs (called from
+  something the tick did): safe.
+- **between** ticks: no tick runs. Not judged: the game's own scripts may
+  run then (a save's load, before the first tick), and a hook that
+  began just before a tick and still runs when it starts is missed.
+
+The thread ids alone say nothing: on anya (2.50, 2026-11-21) the tick
+itself runs on the job workers and changes thread at any time. In the
+game's log:
+
+- `threads: hook NAME ran beside the script tick (thread A, the tick on B)`:
+  a warning, once per hook and launch, written from that thread at once.
+  `tools/game.sh launches`, `threads` and every scenario fail on it.
+- `threads: N hooks beside the script tick: A×12, B×3` (calls so far): every
+  60 s when one ran since the last, at a session's end and on
+  `tools/game.sh threads` (`cmd threads`, then the newest log's `threads:`
+  lines; exit 1 on a hook beside the tick; works after the game has quit
+  too), followed there by `threads: N hooks only inside the script tick:
+C×40, …`, `threads: N hooks between ticks, never beside one: D×7, …` (the
+  calls between ticks) and `threads: N script ticks, on thread B last, it
+changed thread M times`.
 - `threads: the script tick runs on thread A, the frame update on B`, once
-  per world (`: not the same` when they differ). `the script tick moved
-from thread A to B`, then `changed thread N times` in the report: the
-  tick itself changes threads, and no line above means anything.
-- `N hook calls before a game thread was known, not judged`: before the
-  first frame.
+  per world (`: not the same` when they differ), and `the script tick moved
+from thread A to B` the first time it moves: facts, not findings.
+- `N hook calls before the first script tick (between ticks)`: the load
+  before the first tick.
+- `N hook calls beside a tick that never ended, not judged`: a tick marked
+  begun 5 s ago and not ended (a script that stopped halfway); `a script
+tick began on thread A while one ran on thread B` (a warning, once) and
+  `N script ticks began while another ran`: two ticks at once.
 
 Reading a played session (`tools/game.sh threads` at its end):
 
-- a hook **off the game thread**: rework it to the queue pattern (it only
+- a hook **beside the script tick**: rework it to the queue pattern (it only
   reads, calls the wrapped method and enqueues, `TandemStreaming.QueueStreamed`
   or a native of its own; its system acts on the tick), drop its `HookRan`
   and its line of `.known`;
-- a hook **only on the game thread**, with a count that shows the session
-  exercised it (a fight for the NPC hooks, a drive, the menus), over a whole
-  session: it may take the opt-out above it,
-  `// game thread only: seen on the game thread, <date>`, and lose its
-  `HookRan` and its line of `.known`. One clean session is evidence, not
+- a hook **only inside the script tick**, with a count that shows the
+  session exercised it (a fight for the NPC hooks, a drive, the menus), over
+  a whole session: it may take the opt-out above it,
+  `// game thread only: seen inside the script tick only, <date>`, and lose
+  its `HookRan` and its line of `.known`. One clean session is evidence, not
   proof: the hooks per NPC, vehicle or projectile also want a session with
   many of them at once;
-- a hook in **neither** list never ran: it stays listed.
+- a hook **between ticks, never beside one**: not proven either way; it
+  stays listed (a session that runs it while ticks run, or a rework,
+  decides);
+- a hook in **none** of the lists never ran: it stays listed.
 
 `tandem-peer` modes (in every one the referee checks what the others send,
 `sim.md`; a `referee:` line fails any scenario):

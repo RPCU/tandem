@@ -547,7 +547,6 @@ struct TandemNative : Red::IScriptable {
 
   static Red::DynArray<TandemEvent> TakeEvents() {
     Runtime::Get().NoteGameFrame();
-    threads::NoteTick();
     Red::DynArray<TandemEvent> out;
     for (auto &event : Runtime::Get().TakeEvents())
       out.EmplaceBack(TandemEvent{static_cast<std::int32_t>(event.kind), event.player,
@@ -1965,10 +1964,14 @@ struct TandemNative : Red::IScriptable {
   static void LogDebug(Red::CString text) { log::Debug("[script] {}", text.c_str()); }
 
   // ---- the thread probe (threads.hpp; docs/architecture/testing.md) ----
-  // Any thread: are we on the game thread (the script tick's)?
+  // TandemSystem.OnTick begins and ends (its thread: the game thread).
+  static void ScriptTickBegin() { threads::TickBegin(); }
+  static void ScriptTickEnd() { threads::TickEnd(); }
+  // Any thread: are we on the game thread (the last script tick's)?
   static bool OnGameThread() { return threads::OnGameThread(); }
   // Any thread, first in a hook that tools/scripts-threads.known lists:
-  // counted, and logged the first time it runs off the game thread.
+  // counted (beside the tick, inside it, between ticks), and logged the first
+  // time it runs beside the tick.
   static void HookRan(Red::CName name) {
     threads::HookRan(name.hash, [](std::uint64_t hash) { return Red::CName(hash).ToString(); });
   }
@@ -2438,6 +2441,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(NodeRefOf);
   RTTI_METHOD(Log);
   RTTI_METHOD(LogDebug);
+  RTTI_METHOD(ScriptTickBegin);
+  RTTI_METHOD(ScriptTickEnd);
   RTTI_METHOD(OnGameThread);
   RTTI_METHOD(HookRan);
   RTTI_METHOD(ThreadsReport);

@@ -49,8 +49,8 @@
 #   note TEXT              a line in the report
 # Every scenario also rejects the mock player's `referee:` lines: the game
 # broke a protocol or authority rule (docs/architecture/sim.md), and the game
-# log's `threads: hook NAME ran off the game thread` lines (the thread probe,
-# docs/architecture/testing.md).
+# log's `threads: hook NAME ran beside the script tick` lines (the thread
+# probe, docs/architecture/testing.md).
 # A failed check stops the scenario and keeps the evidence under
 # .cache/scenarios/NAME-TIME/: the game's log since the start, the mock
 # player's log, a screenshot and, when the game thread went silent, every
@@ -251,21 +251,15 @@ reject_peer() {
     echo "  ok, none (peer): $1"
   fi
 }
-# The thread probe (docs/architecture/testing.md): no script hook ran off the
-# game thread since the mark (each is logged the first time, then summed up).
-# Once the script tick has moved between threads, or runs off the frame's
-# thread from the start (each said once per launch), no thread is the
-# game's and the names are only noted.
+# The thread probe (docs/architecture/testing.md): no script hook ran beside
+# the script tick (on another thread while it ran) since the mark; each is
+# logged the first time, then summed up.
 on_game_thread() {
   local names
-  names=$(since | sed -n 's/.*threads: hook \([^ ]*\) ran off the game thread.*/\1/p' | sort -u | tr '\n' ' ' || true)
-  [ -n "$names" ] || names=$(since | sed -n 's/.*threads: [1-9][0-9]* hooks off-thread: //p' | tail -1 || true)
+  names=$(since | sed -n 's/.*threads: hook \([^ ]*\) ran beside the script tick.*/\1/p' | sort -u | tr '\n' ' ' || true)
+  [ -n "$names" ] || names=$(since | sed -n 's/.*threads: [1-9][0-9]* hooks beside the script tick: //p' | tail -1 || true)
   [ -n "$names" ] || return 0
-  if remote "cd '$dir'; grep -qE 'threads: the script tick (moved from thread|runs on thread [0-9]+, the frame update on [0-9]+: not the same)' '$mark_file'"; then
-    note "thread probe (the script tick runs on the job workers, nothing judged): $names"
-    return 0
-  fi
-  fail "script hooks ran off the game thread (queue them, testing.md): $names"
+  fail "script hooks ran beside the script tick (queue them, testing.md): $names"
 }
 pause() {
   local start=$SECONDS

@@ -177,7 +177,7 @@ build slots) and copies the DLL, `.pdb` and `tandem-peer` back; then
   `// job thread safe: <why>`. `tools/scripts-threads.known` holds the
   hooks older than the check, neither proven nor reworked: it only
   shrinks. Each of its hooks starts with `TandemNative.HookRan(n"File.Class.Method");`,
-  the thread probe: the log names those that ran off the game thread
+  the thread probe: the log names those that ran beside the script tick
   (`tools/game.sh threads`; how to read it: `testing.md`, "The thread
   probe"). A wrap of a class new to `tools/scripts-threads.classes` needs
   its ancestry there (`--classes VANILLA.reds`).

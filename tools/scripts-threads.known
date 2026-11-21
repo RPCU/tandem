@@ -6,7 +6,7 @@
 # only shrinks. One line per file and method: `File.reds Class.Method`.
 #
 # Each starts with the thread probe, TandemNative.HookRan(n"File.Class.Method"):
-# the game's log names those that ran off the game thread (tools/game.sh
+# the game's log names those that ran beside the script tick (tools/game.sh
 # threads; what to do with each: docs/architecture/testing.md, "The thread
 # probe").
 
