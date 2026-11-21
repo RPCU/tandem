@@ -35,7 +35,10 @@
   `EndSession(worldStays)` are the start and stop: a runtime leave removes
   puppets step by step, deletes the proxies and gives the crowd back, the
   net thread stops (its rejoin loop with it), and the story side gets an
-  end (`StoryInbound::Ended`) so a guest's own story comes back. Both menus
+  end (`StoryInbound::Ended`) so a guest's own story comes back. The pause
+  menu's own Exit (to the main menu, Close game) as a guest leaves and
+  saves the V first, or asks when no save can be made
+  ([`progression.md`](progression.md), Leaving). Both menus
   show a status panel (state, everyone with their ping:
   `Endpoint::LinkStatsOf`, `TandemNative.SessionStatus` /
   `SessionPlayers`) and notices in game ("NAME joined", "left", "session
