@@ -73,6 +73,8 @@ public class TandemCar {
   public let z: Float;
   // Proxies, the consistency checks: since when its body is missing (0: not so).
   public let goneSince: Float;
+  // (a proxy) how many times its body was spawned again in a row.
+  public let goneTries: Int32;
 }
 
 // A body a player took (TrafficGone taken): that player's car copy here,
@@ -828,11 +830,21 @@ public class TandemTraffic {
         }
       } else if !car.mine && !car.claimed && !car.own {
         let body = TandemTraffic.Body(this.m_game, car.body);
-        if IsDefined(body) || GameInstance.GetDynamicEntitySystem().IsSpawning(car.body) {
+        // A body that does not come is asked for again later each time (3 s,
+        // 6, 12… up to a minute), the one before it deleted first: asked for
+        // every 5 s with the old ones left to come, 181 bodies in 90 s ended
+        // in the engine's crash on a riding guest (2026-11-22).
+        let wait = MinF(3.0 * PowF(2.0, Cast<Float>(car.goneTries)), 60.0);
+        if IsDefined(body) {
+          car.goneSince = 0.0;
+          car.goneTries = 0;
+        } else if GameInstance.GetDynamicEntitySystem().IsSpawning(car.body) {
           car.goneSince = 0.0;
         } else if car.goneSince == 0.0 {
           car.goneSince = this.m_now;
-        } else if this.m_now - car.goneSince > 3.0 {
+        } else if this.m_now - car.goneSince > wait {
+          TandemEntities.Delete(car.body);
+          car.goneTries += 1;
           let at = TandemStreet.Position(car.id);
           if at.W == 0.0 {
             at = new Vector4(car.x, car.y, car.z, 1.0);
@@ -844,7 +856,7 @@ public class TandemTraffic {
           car.siren = false;
           car.seated = false;
           car.goneSince = 0.0;
-          TandemNative.Log(s"street: check: vehicle \(car.id)'s body was gone: spawned again");
+          TandemNative.Log(s"street: check: vehicle \(car.id)'s body was gone for \(wait) s: spawned again (\(car.goneTries) in a row)");
         }
       }
     }
