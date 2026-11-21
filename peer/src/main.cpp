@@ -326,6 +326,7 @@ struct Options {
   std::uint64_t revealDevice{};
   int revealDeviceAtSeconds{5};
   std::optional<Vec3> waypoint;
+  tandem::proto::WaypointKind waypointKind{tandem::proto::WaypointKind::Pin};
   int waypointClearSeconds{-1};
   // A team target (the "Mark target" quickhack) 5 s in: a shared NPC's id,
   // or "nearest" (empty: never).
@@ -745,6 +746,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     seconds after another player is in (5): the linked pulse its\n"
          "                     network from their copy and draw its beams\n"
          "  --waypoint X,Y,Z   our waypoint (a map pin) there, once another player is in\n"
+         "  --waypoint-kind K  what that waypoint is: pin (default), point (a tracked map\n"
+         "                     point) or objective (our tracked quest objective)\n"
          "  --waypoint-clear N take the waypoint away N seconds after setting it\n"
          "  --mark-target ID   5 seconds after another player is in, make the shared NPC\n"
          "                     ID (or \"nearest\") our team target, as the Mark target\n"
@@ -1693,7 +1696,17 @@ Options Parse(int argc, char **argv) {
       options.revealSeconds = Number<int>(value);
     else if (flag == "--waypoint")
       options.waypoint = Point(flag, value);
-    else if (flag == "--waypoint-clear")
+    else if (flag == "--waypoint-kind") {
+      using tandem::proto::WaypointKind;
+      if (value == "pin")
+        options.waypointKind = WaypointKind::Pin;
+      else if (value == "point")
+        options.waypointKind = WaypointKind::Point;
+      else if (value == "objective")
+        options.waypointKind = WaypointKind::Objective;
+      else
+        Usage(std::format("--waypoint-kind: {} is not pin, point or objective", value));
+    } else if (flag == "--waypoint-clear")
       options.waypointClearSeconds = Number<int>(value);
     else if (flag == "--hack-npc") {
       if (value != "nearest")
@@ -5131,6 +5144,9 @@ int main(int argc, char **argv) {
               const auto &w = e.waypoint;
               if (w.kind == tandem::proto::WaypointKind::None)
                 Log("player {}'s waypoint: none", w.player);
+              else if (w.kind == tandem::proto::WaypointKind::Objective)
+                Log("player {}'s waypoint: objective at ({:.1f}, {:.1f}, {:.1f})", w.player,
+                    w.position.x, w.position.y, w.position.z);
               else
                 Log("player {}'s waypoint: kind {} at ({:.1f}, {:.1f}, {:.1f})", w.player,
                     static_cast<int>(w.kind), w.position.x, w.position.y, w.position.z);
@@ -6300,9 +6316,9 @@ int main(int argc, char **argv) {
     if (options.waypoint && !waypointSet && endpoint->IsJoined() && togetherSince) {
       waypointSet = true;
       waypointSetAt = now;
-      endpoint->SetLocalWaypoint(
-          {.kind = tandem::proto::WaypointKind::Pin, .position = *options.waypoint});
-      Log("waypoint set at ({:.1f}, {:.1f}, {:.1f})", options.waypoint->x, options.waypoint->y,
+      endpoint->SetLocalWaypoint({.kind = options.waypointKind, .position = *options.waypoint});
+      Log("waypoint (kind {}) set at ({:.1f}, {:.1f}, {:.1f})",
+          static_cast<int>(options.waypointKind), options.waypoint->x, options.waypoint->y,
           options.waypoint->z);
     }
     if (waypointSet && !waypointCleared && options.waypointClearSeconds >= 0 &&
