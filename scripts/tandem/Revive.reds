@@ -25,6 +25,12 @@
 // cut multiplayer did (RefreshCPOVisionAppearance, 45061); within 2 m our V
 // gets the game's interaction prompt ([Hold F] Revive), and holding it for
 // 10 s (the HUD's progress bar) sends the revive to that player's game.
+//
+// Down in a seat, our V stays there (vanilla's dies seated) and is revived
+// from beside the car once it has stopped; a wreck puts it out beside the
+// car first. Down in deep water, it is lifted to the shore or the surface.
+// An out V gets up in a free seat of the partner's car, else at the
+// partner's last fit spot on foot (revive.md, "Where a respawn puts you").
 
 public class TandemRevive {
   private let m_game: GameInstance;
@@ -73,6 +79,56 @@ public class TandemRevive {
   // Up again (GotUp): when to look that nothing of the death state is
   // left (0: nothing to check).
   private let m_upCheckAt: Float;
+  // Down in a vehicle (none: on foot): which, the seat, and whether we
+  // braked it (our V at the wheel). (test) "revive wreck": taken as wrecked.
+  private let m_downCar: EntityID;
+  private let m_downSlot: CName;
+  private let m_testWreck: Bool;
+  // Put out of a seat, then placed (and stood up, for a respawn) once the
+  // unmount is through: when, where, facing, and whether to release then.
+  private let m_placeAt: Float;
+  private let m_placeTo: Vector4;
+  private let m_placeYaw: Float;
+  private let m_placeRelease: Bool;
+  // Our V's speed, from its position (seated or not), sampled 4 times a
+  // second: a revive in a moving car waits for it to stop.
+  private let m_speed: Float;
+  private let m_speedAt: Float;
+  private let m_speedFrom: Vector4;
+  // A revive done while our car moved: whose, since when (it waits).
+  private let m_waiting: Uint32;
+  private let m_waitingSince: Float;
+  // Deep water: lifted to the shore (for good) or to the surface (again
+  // if it sinks). (test) "revive water N": as if N m under water.
+  private let m_ashore: Bool;
+  private let m_surfaced: Bool;
+  private let m_lastWater: Float;
+  private let m_testDepth: Float;
+  // (test) "revive out": the next fall is out.
+  private let m_testOut: Bool;
+  // A respawn into a partner's car: the car, the seat, whose, when (0: once
+  // up); the seat it gave us last (for "revive unseat").
+  private let m_seatCar: EntityID;
+  private let m_seatSlot: CName;
+  private let m_seatOwner: Uint32;
+  private let m_seatAt: Float;
+  private let m_seatedCar: EntityID;
+  private let m_seatedSlot: CName;
+  // Said once while no respawn spot is found.
+  private let m_noSpotSaid: Bool;
+
+  // ---- the others' places (respawn spots, speeds) ----
+  // Each partner's last spot on foot fit to get up at (our navmesh, dry,
+  // in our city), and its facing (radians).
+  private let m_footPlayers: array<Uint32>;
+  private let m_footSpots: array<Vector4>;
+  private let m_footYaws: array<Float>;
+  private let m_lastFoot: Float;
+  // Each partner's speed, from its position, 4 times a second.
+  private let m_movePlayers: array<Uint32>;
+  private let m_moveFrom: array<Vector4>;
+  private let m_moveSpeeds: array<Float>;
+  private let m_lastMove: Float;
 
   // ---- reviving someone ----
   private let m_listening: Bool;
@@ -87,6 +143,11 @@ public class TandemRevive {
   private let m_savedVisualizers: VisualizersInfo;
   // The HUD bar: 0 off, 1 our revive of someone, 2 someone reviving us.
   private let m_bar: Int32;
+  // Our hold waits while the car the downed V sits in moves; our V kept
+  // from the car's own door prompt while it revives someone seated.
+  private let m_holdPaused: Bool;
+  private let m_lastRevival: Float;
+  private let m_carRestricted: Bool;
 
   // ---- the others ----
   private let m_livesSeen: Int32;
@@ -169,8 +230,13 @@ public class TandemRevive {
       }
       this.Unprotect(player);
       this.Vulnerable(player);
+      this.KeepFromCar(player, false);
     }
     this.m_listening = false;
+    let none = EntityID.FromHash(0ul);
+    this.m_seatCar = none;
+    this.m_placeAt = 0.0;
+    this.m_waiting = 0u;
   }
 
   // ---- the state machine's questions (wraps at the end of this file) ----
@@ -254,6 +320,14 @@ public class TandemRevive {
       this.Vulnerable(player);
     }
     this.FollowOthers(player, others);
+    this.Track(player, others);
+    if this.m_placeAt > 0.0 && now >= this.m_placeAt {
+      this.Place(player);
+    }
+    // Respawned into a partner's car: seated once up.
+    if EntityID.IsDefined(this.m_seatCar) && this.m_life == 0 && !this.m_release {
+      this.SeatWhenUp(player);
+    }
     if now - this.m_lastSample >= 0.5 {
       this.m_lastSample = now;
       this.SendOurs(player);
@@ -337,6 +411,7 @@ public class TandemRevive {
     }
     this.CancelHold("our V went down");
     this.HidePrompt();
+    this.KeepFromCar(player, false);
     if this.UpOthers() == 0 {
       if TandemNative.IsHost() {
         // The last V up: the session is lost (the others are told by the
@@ -353,7 +428,10 @@ public class TandemRevive {
       return true;
     }
     let cooldown = this.m_now - this.m_revivedAt < 300.0;
-    if forceKilled || cooldown {
+    if this.m_testOut {
+      this.m_testOut = false;
+      this.GoDown(player, 2, "a test");
+    } else if forceKilled || cooldown {
       this.GoDown(player, 2, forceKilled ? "killed outright" : s"down again \(RoundF(this.m_now - this.m_revivedAt)) s after a revive");
     } else {
       this.GoDown(player, 1, "revivable");
@@ -381,6 +459,12 @@ public class TandemRevive {
     this.DropThreats(player, player);
     this.SendOurs(player);
     TandemNative.Log(s"revive: our V is \(life == 1 ? "down" : "out") (\(why))");
+    this.m_waiting = 0u;
+    this.m_ashore = false;
+    this.m_surfaced = false;
+    this.m_lastWater = -1.0;
+    this.m_noSpotSaid = false;
+    this.NoteCar(player);
     if life == 1 {
       this.Notice(SimpleMessageType.Negative, this.UpOthers() > 0 ? "Revive-Down" : "Revive-DownAlone", this.UpNames());
     } else if this.UpOthers() > 0 {
@@ -411,6 +495,28 @@ public class TandemRevive {
       this.DropThreats(player, player);
       this.Invulnerable(player);
     }
+    // Twice a second: in a car, kept in the seat, out of a wreck; in deep
+    // water, lifted.
+    if this.m_placeAt == 0.0 && this.m_now - this.m_lastWater >= 0.5 {
+      this.m_lastWater = this.m_now;
+      this.InCar(player);
+      this.InWater(player);
+    }
+    // A revive done while our car moved: taken once it stops.
+    if this.m_waiting != 0u {
+      if !ArrayContains(others, this.m_waiting) || this.m_now - this.m_waitingSince > 30.0 {
+        TandemNative.Log(s"revive: \(this.NameOf(this.m_waiting))'s waiting revive dropped (gone, or 30 s)");
+        this.m_waiting = 0u;
+      } else if this.m_speed <= 1.0 {
+        let reviver = this.m_waiting;
+        this.m_waiting = 0u;
+        TandemNative.Log("revive: our car has stopped: the waiting revive goes on");
+        this.RevivedBy(player, reviver, 2);
+        if this.m_life != 1 {
+          return;
+        }
+      }
+    }
     // Nobody else in the session (they left, or the host is gone).
     if ArraySize(others) == 0 {
       if this.m_aloneSince < 0.0 {
@@ -426,6 +532,10 @@ public class TandemRevive {
       return;
     }
     this.m_aloneSince = -1.0;
+    // Being put out of a seat for a respawn: it stands up once placed.
+    if this.m_placeAt > 0.0 {
+      return;
+    }
     if this.m_lost {
       // Guest: the host reloaded and we are back in its session: up beside
       // the host's V once it is up and seen.
@@ -465,11 +575,23 @@ public class TandemRevive {
         TandemNative.Log(s"revive: \(name) stopped reviving us");
       }
       this.StopReviver(reviver);
+      if this.m_waiting == reviver {
+        this.m_waiting = 0u;
+      }
     } else if step == 2 {
       let at = TandemNative.RemotePosition(reviver);
       let distance = at.W > 0.0 ? Vector4.Distance(new Vector4(at.X, at.Y, at.Z, 1.0), player.GetWorldPosition()) : -1.0;
       if distance < 0.0 || distance > 4.0 {
         TandemNative.Log(s"revive: \(name)'s revive refused: \(distance) m away");
+        return;
+      }
+      // Seated in a car still moving: the revive waits until it stops.
+      if this.m_speed > 1.0 && VehicleComponent.IsMountedToVehicle(this.m_game, player) {
+        if this.m_waiting != reviver {
+          TandemNative.Log(s"revive: \(name)'s revive waits: our car still moves (\(this.m_speed) m/s)");
+        }
+        this.m_waiting = reviver;
+        this.m_waitingSince = this.m_now;
         return;
       }
       this.m_revivedAt = this.m_now;
@@ -543,18 +665,403 @@ public class TandemRevive {
     }
   }
 
-  // Up again beside `partner`'s V (behind it, facing its way).
-  private func Respawn(player: ref<PlayerPuppet>, partner: Uint32, why: String) -> Void {
-    let at = TandemNative.RemotePosition(partner);
-    // Radians (interpolation.hpp); the game's forward is +Y turned by yaw:
-    // (-sin, cos), so behind is (sin, -cos).
-    let yaw = TandemNative.RemoteYaw(partner);
-    let to = new Vector4(at.X + SinF(yaw) * 1.5, at.Y - CosF(yaw) * 1.5, at.Z, 1.0);
-    GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, to, TandemYawAngles(yaw * 57.29578));
+  // Up again with `partner` (revive.md, "Where a respawn puts you"): in a
+  // free seat of the car it drives or rides; else at its last spot on foot
+  // (our navmesh, dry, in our city), 1.5 m behind it when that is clear;
+  // never beside a car on the move. False: nowhere yet (tried again).
+  private func Respawn(player: ref<PlayerPuppet>, partner: Uint32, why: String) -> Bool {
+    let name = this.NameOf(partner);
+    let none = EntityID.FromHash(0ul);
+    let carId = IsDefined(this.m_system) ? this.m_system.SeatedIn(partner) : none;
+    let car = EntityID.IsDefined(carId) ? GameInstance.FindEntityByID(this.m_game, carId) as VehicleObject : null;
+    if IsDefined(car) {
+      let ours: wref<VehicleObject>;
+      if VehicleComponent.GetVehicle(this.m_game, player, ours) && IsDefined(ours) && ours.GetEntityID() == carId {
+        TandemNative.Log(s"revive: respawn beside \(name) (\(why)): in its car, where we sit");
+        this.Back(player, partner, "Revive-BackBeside");
+        this.Release(player);
+        return true;
+      }
+      let slot = TandemVehicles.FreeSlot(this.m_game, car, n"seat_front_right", player.GetEntityID());
+      if IsNameValid(slot) && !VehicleComponent.IsDriverSlot(slot) {
+        TandemNative.Log(s"revive: respawn beside \(name) (\(why)): into a free seat of its car (\(NameToString(slot)))");
+        this.m_seatCar = carId;
+        this.m_seatSlot = slot;
+        this.m_seatOwner = partner;
+        this.m_seatAt = 0.0;
+        this.Back(player, partner, "Revive-BackInCar");
+        // Up where we lie (out of a seat of ours first, beside that car),
+        // seated once up.
+        if IsDefined(ours) {
+          this.PutOutTo(player, TandemVehicles.ExitSpot(this.m_game, ours, player), player.GetWorldYaw(), true);
+        } else {
+          this.Release(player);
+        }
+        return true;
+      }
+    }
+    let i = ArrayFindFirst(this.m_footPlayers, partner);
+    let to = new Vector4(0.0, 0.0, 0.0, 0.0);
+    let yaw = 0.0;
+    let how = "";
+    if i >= 0 {
+      yaw = this.m_footYaws[i];
+      to = this.ClearOf(player, this.m_footSpots[i], yaw);
+      how = to.W > 1.5 ? "at its last spot on foot, 1.5 m away" : "at its last spot on foot (no clear room beside it)";
+      to.W = 1.0;
+    } else if IsDefined(car) && this.SpeedOf(partner) <= 2.0 {
+      // In a car with no free seat, never seen on foot here: beside the
+      // car, once it has (nearly) stopped.
+      to = TandemVehicles.ExitSpot(this.m_game, car, player);
+      yaw = Deg2Rad(car.GetWorldYaw());
+      how = "beside its car (no free seat, a stopped car)";
+    }
+    if to.W == 0.0 {
+      if !this.m_noSpotSaid {
+        this.m_noSpotSaid = true;
+        let where = IsDefined(car) ? "in a moving car with no free seat" : "not on foot anywhere our city has";
+        TandemNative.Log(s"revive: no spot to get up at beside \(name) yet (\(where), never seen on foot here)");
+      }
+      return false;
+    }
+    TandemNative.Log(s"revive: respawn beside \(name) (\(why)): \(how)");
+    this.Back(player, partner, "Revive-BackBeside");
+    this.PutOutTo(player, to, Rad2Deg(yaw), true);
+    return true;
+  }
+
+  // The respawn's notice (and the lost session forgotten).
+  private func Back(player: ref<PlayerPuppet>, partner: Uint32, key: String) -> Void {
     this.m_lost = false;
-    TandemNative.Log(s"revive: respawn beside \(this.NameOf(partner)) (\(why))");
-    this.Notice(SimpleMessageType.Neutral, "Revive-BackBeside", this.NameOf(partner));
-    this.Release(player);
+    this.Notice(SimpleMessageType.Neutral, key, this.NameOf(partner));
+  }
+
+  // Where to get up at `spot` (its facing `yaw`, radians): 1.5 m behind it
+  // when that is on our navmesh, dry and with nothing between, else beside
+  // or in front, else the spot itself. W 2: an offset spot; 1: the spot.
+  private func ClearOf(player: ref<PlayerPuppet>, spot: Vector4, yaw: Float) -> Vector4 {
+    // Radians (interpolation.hpp); the game's forward is +Y turned by yaw:
+    // (-sin, cos), so behind is (sin, -cos) and right (cos, sin).
+    let s = SinF(yaw);
+    let c = CosF(yaw);
+    let offsets = [new Vector4(s, -c, 0.0, 0.0), new Vector4(c, s, 0.0, 0.0), new Vector4(-c, -s, 0.0, 0.0), new Vector4(-s, c, 0.0, 0.0)];
+    let navigation = GameInstance.GetAINavigationSystem(this.m_game);
+    let queries = GameInstance.GetSpatialQueriesSystem(this.m_game);
+    for offset in offsets {
+      let there = new Vector4(spot.X + offset.X * 1.5, spot.Y + offset.Y * 1.5, spot.Z, 1.0);
+      let ground = navigation.FindPointInSphereForCharacter(there, 0.4, player);
+      if Equals(ground.status, worldNavigationRequestStatus.OK) && this.Dry(ground.point) {
+        let hit: TraceResult;
+        let from = new Vector4(spot.X, spot.Y, spot.Z + 1.0, 1.0);
+        let to = new Vector4(ground.point.X, ground.point.Y, ground.point.Z + 1.0, 1.0);
+        if !queries.SyncRaycastByCollisionGroup(from, to, n"Static", hit, true, false) || !TraceResult.IsValid(hit) {
+          return new Vector4(ground.point.X, ground.point.Y, ground.point.Z, 2.0);
+        }
+      }
+    }
+    return new Vector4(spot.X, spot.Y, spot.Z, 1.0);
+  }
+
+  // Out of a seat first when in one (the game's forced exit), then at `to`
+  // facing `yawDegrees` once the unmount is through; stood up then if
+  // `release`.
+  private func PutOutTo(player: ref<PlayerPuppet>, to: Vector4, yawDegrees: Float, release: Bool) -> Void {
+    this.m_placeTo = new Vector4(to.X, to.Y, to.Z, 1.0);
+    this.m_placeYaw = yawDegrees;
+    this.m_placeRelease = release;
+    if VehicleComponent.IsMountedToVehicle(this.m_game, player) {
+      TandemVehicles.PutOut(this.m_game, player);
+      this.m_placeAt = this.m_now + 0.25;
+      return;
+    }
+    this.Place(player);
+  }
+
+  private func Place(player: ref<PlayerPuppet>) -> Void {
+    this.m_placeAt = 0.0;
+    GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, this.m_placeTo, TandemYawAngles(this.m_placeYaw));
+    if this.m_placeRelease {
+      this.m_placeRelease = false;
+      this.Release(player);
+    }
+  }
+
+  // Respawned into a partner's car: half a second after getting up, into
+  // the seat it had free (still free, the car still here), else beside it.
+  private func SeatWhenUp(player: ref<PlayerPuppet>) -> Void {
+    if this.m_seatAt == 0.0 {
+      this.m_seatAt = this.m_now + 0.5;
+      return;
+    }
+    if this.m_now < this.m_seatAt {
+      return;
+    }
+    let none = EntityID.FromHash(0ul);
+    let carId = this.m_seatCar;
+    this.m_seatCar = none;
+    let car = GameInstance.FindEntityByID(this.m_game, carId) as VehicleObject;
+    let name = this.NameOf(this.m_seatOwner);
+    if !IsDefined(car) {
+      TandemNative.Log(s"revive: \(name)'s car is gone: we stay where we got up");
+      return;
+    }
+    if !TandemVehicles.FreeFor(this.m_game, car, this.m_seatSlot, player.GetEntityID()) {
+      let spot = TandemVehicles.ExitSpot(this.m_game, car, player);
+      GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, spot, TandemYawAngles(car.GetWorldYaw()));
+      TandemNative.Log(s"revive: \(NameToString(this.m_seatSlot)) of \(name)'s car was taken meanwhile: beside it instead");
+      return;
+    }
+    TandemVehicles.Seat(this.m_game, player, car, this.m_seatSlot);
+    this.m_seatedCar = carId;
+    this.m_seatedSlot = this.m_seatSlot;
+    TandemNative.Log(s"revive: seated in \(NameToString(this.m_seatSlot)) of \(name)'s car");
+  }
+
+  // ---- down in a car, in deep water ----
+
+  // Going down seated (a car, a bike; not the NCART, not carried along): V
+  // stays in its seat in the game's own death state, as vanilla's does (no
+  // death exit for a V that is not dead: DeathExitingDecisions, final.reds
+  // 551187). At the wheel, the car is braked to a stop.
+  private func NoteCar(player: ref<PlayerPuppet>) -> Void {
+    let none = EntityID.FromHash(0ul);
+    this.m_downCar = none;
+    this.m_downSlot = n"None";
+    let car: wref<VehicleObject>;
+    let transit = IsDefined(this.m_system) ? this.m_system.Transit() : null;
+    let along = IsDefined(transit) && transit.CarriedBy() != 0u;
+    if along || !VehicleComponent.GetVehicle(this.m_game, player, car) || !IsDefined(car) || TandemTransit.IsMetro(this.m_game, player, car) {
+      return;
+    }
+    let slot = n"None";
+    VehicleComponent.GetMountedSlotName(this.m_game, player, slot);
+    this.m_downCar = car.GetEntityID();
+    this.m_downSlot = slot;
+    let driver = VehicleComponent.IsDriver(this.m_game, player);
+    if driver {
+      car.ForceBrakesUntilStoppedOrFor(20.0);
+    }
+    TandemNative.Log(s"revive: our V is down in its seat (\(NameToString(slot))\(driver ? ", at the wheel: braking" : ""))");
+  }
+
+  // Each tick while down in a seat: out beside the car when it is wrecked,
+  // upside down or under water, once it has (nearly) stopped.
+  private func InCar(player: ref<PlayerPuppet>) -> Void {
+    if !EntityID.IsDefined(this.m_downCar) {
+      return;
+    }
+    let none = EntityID.FromHash(0ul);
+    if !VehicleComponent.IsMountedToVehicle(this.m_game, player) {
+      TandemNative.Log("revive: our V is no longer in the seat it went down in");
+      this.m_downCar = none;
+      return;
+    }
+    let car = GameInstance.FindEntityByID(this.m_game, this.m_downCar) as VehicleObject;
+    if !IsDefined(car) {
+      return;
+    }
+    let why = "";
+    if this.m_testWreck || car.IsDestroyed() {
+      why = "wrecked";
+    } else if car.IsVehicleUpsideDown() || car.ComputeIsVehicleUpsideDown() {
+      why = "upside down";
+    } else if this.WaterOver(car.GetWorldPosition(), 1.0) > 0.0 {
+      why = "under water";
+    }
+    if StrLen(why) == 0 || this.m_speed > 2.0 {
+      return;
+    }
+    let spot = TandemVehicles.ExitSpot(this.m_game, car, player);
+    TandemNative.Log(s"revive: our car is \(why): our V is put out beside it (\(spot.X), \(spot.Y), \(spot.Z))");
+    this.m_downCar = none;
+    this.m_testWreck = false;
+    this.Notice(SimpleMessageType.Neutral, "Revive-OutOfCar");
+    this.PutOutTo(player, spot, player.GetWorldYaw(), false);
+  }
+
+  // Twice a second while down: in water deeper than V's height (head
+  // under, or a floor more than 1.8 m under the surface), lifted where a
+  // partner can reach it: the nearest shore on our navmesh (40 m at most),
+  // else the surface (again whenever the body sinks: head under).
+  private func InWater(player: ref<PlayerPuppet>) -> Void {
+    if this.m_ashore || VehicleComponent.IsMountedToVehicle(this.m_game, player) {
+      return;
+    }
+    let feet = player.GetWorldPosition();
+    let depth = this.WaterOver(feet, 0.0);
+    if depth <= 0.0 {
+      return;
+    }
+    let surface = feet.Z + depth;
+    if depth < 1.7 && (this.m_surfaced || this.FloorUnder(feet, surface) < 1.8) {
+      return;
+    }
+    let shore = this.Shore(player, new Vector4(feet.X, feet.Y, surface, 1.0));
+    if shore.W > 0.0 {
+      this.m_ashore = true;
+      TandemNative.Log(s"revive: our V is down in deep water (\(depth) m over its feet): lifted to the shore, \(Vector4.Distance(shore, feet)) m away");
+      this.Notice(SimpleMessageType.Neutral, "Revive-Ashore");
+      this.PutOutTo(player, shore, player.GetWorldYaw(), false);
+      return;
+    }
+    this.m_surfaced = true;
+    TandemNative.Log(s"revive: our V is down in deep water (\(depth) m over its feet): lifted to the surface (no shore within 40 m)");
+    this.Notice(SimpleMessageType.Neutral, "Revive-Surfaced");
+    this.PutOutTo(player, new Vector4(feet.X, feet.Y, surface - 1.2, 1.0), player.GetWorldYaw(), false);
+  }
+
+  // How deep `at` (raised by `up`) is under water, in metres (0: dry):
+  // AIScriptUtils.GetWaterLevel (final.reds 158907) answers under water only.
+  private func WaterOver(at: Vector4, up: Float) -> Float {
+    if this.m_testDepth > 0.0 && up == 0.0 {
+      return this.m_testDepth;
+    }
+    let level = 0.0;
+    let probe = new Vector4(at.X, at.Y, at.Z + up, 1.0);
+    if AIScriptUtils.GetWaterLevel(this.m_game, Vector4.Vector4To3(probe), level) && level > probe.Z {
+      return level - at.Z;
+    }
+    return 0.0;
+  }
+
+  // How far the floor (static collision) lies under the water's `surface`
+  // at `at` (30 m if none is found).
+  private func FloorUnder(at: Vector4, surface: Float) -> Float {
+    if this.m_testDepth > 0.0 {
+      return this.m_testDepth;
+    }
+    let hit: TraceResult;
+    let from = new Vector4(at.X, at.Y, surface, 1.0);
+    let to = new Vector4(at.X, at.Y, surface - 30.0, 1.0);
+    if GameInstance.GetSpatialQueriesSystem(this.m_game).SyncRaycastByCollisionGroup(from, to, n"Static", hit, true, false) && TraceResult.IsValid(hit) {
+      return surface - hit.position.Z;
+    }
+    return 30.0;
+  }
+
+  // The nearest dry point on our navmesh from the water at `surface`: where
+  // our V last stood on the navmesh (gamePuppet.GetLastValidNavmeshPoint),
+  // else a search in growing spheres. W 0: none within 40 m.
+  private func Shore(player: ref<PlayerPuppet>, surface: Vector4) -> Vector4 {
+    let last = player.GetLastValidNavmeshPoint();
+    last.W = 1.0;
+    let lastFar = Vector4.Distance(last, surface);
+    if (last.X != 0.0 || last.Y != 0.0) && lastFar <= 40.0 && this.Dry(last) {
+      return last;
+    }
+    let navigation = GameInstance.GetAINavigationSystem(this.m_game);
+    let radii = [5.0, 12.0, 25.0, 40.0];
+    for radius in radii {
+      let ground = navigation.FindPointInSphereForCharacter(surface, radius, player);
+      if Equals(ground.status, worldNavigationRequestStatus.OK) && this.Dry(ground.point) {
+        return new Vector4(ground.point.X, ground.point.Y, ground.point.Z, 1.0);
+      }
+    }
+    return new Vector4(0.0, 0.0, 0.0, 0.0);
+  }
+
+  // Not under water (half a metre of it at most).
+  private func Dry(at: Vector4) -> Bool {
+    let level = 0.0;
+    let probe = new Vector4(at.X, at.Y, at.Z + 0.2, 1.0);
+    return !AIScriptUtils.GetWaterLevel(this.m_game, Vector4.Vector4To3(probe), level) || level - at.Z < 0.5;
+  }
+
+  // ---- speeds and spots (4 and 2 times a second) ----
+
+  private func Track(player: ref<PlayerPuppet>, others: array<Uint32>) -> Void {
+    if this.m_now - this.m_speedAt >= 0.25 {
+      let here = player.GetWorldPosition();
+      let dt = this.m_now - this.m_speedAt;
+      this.m_speed = this.m_speedAt > 0.0 && dt < 2.0 ? Vector4.Distance(here, this.m_speedFrom) / dt : 0.0;
+      this.m_speedFrom = here;
+      this.m_speedAt = this.m_now;
+    }
+    if this.m_now - this.m_lastMove >= 0.25 {
+      let dt = this.m_now - this.m_lastMove;
+      this.m_lastMove = this.m_now;
+      for p in others {
+        let at = TandemNative.RemotePosition(p);
+        let i = ArrayFindFirst(this.m_movePlayers, p);
+        if i < 0 {
+          ArrayPush(this.m_movePlayers, p);
+          ArrayPush(this.m_moveFrom, at);
+          ArrayPush(this.m_moveSpeeds, 0.0);
+        } else {
+          let from = this.m_moveFrom[i];
+          this.m_moveSpeeds[i] = at.W > 0.0 && from.W > 0.0 && dt < 2.0 ? Vector4.Distance(new Vector4(at.X, at.Y, at.Z, 1.0), new Vector4(from.X, from.Y, from.Z, 1.0)) / dt : 0.0;
+          this.m_moveFrom[i] = at;
+        }
+      }
+    }
+    if this.m_now - this.m_lastFoot >= 0.5 {
+      this.m_lastFoot = this.m_now;
+      for p in others {
+        this.TrackFoot(player, p);
+      }
+    }
+  }
+
+  // A partner's spot now, kept when it is fit to get up at: up, on foot on
+  // the ground (no seat, no ride, not swimming, climbing or in the air), in
+  // our city (not elsewhere), on our navmesh (an interior our world lacks
+  // has none here) and dry.
+  private func TrackFoot(player: ref<PlayerPuppet>, p: Uint32) -> Void {
+    let at = TandemNative.RemotePosition(p);
+    if at.W <= 0.0 || TandemNative.RemoteLife(p) != 0 || TDBID.IsValid(TandemNative.RemoteSeatVehicle(p))
+      || TandemNative.RemoteTransitKind(p) != 0 || TandemNative.RemotePlacement(p) != 0
+      || TandemElsewhere.IsElsewhere(this.m_game, p) || TandemElsewhere.BodyHidden(this.m_game, p) {
+      return;
+    }
+    let ground = GameInstance.GetAINavigationSystem(this.m_game).FindPointInSphereForCharacter(new Vector4(at.X, at.Y, at.Z, 1.0), 0.5, player);
+    if NotEquals(ground.status, worldNavigationRequestStatus.OK) || !this.Dry(ground.point) {
+      return;
+    }
+    let spot = new Vector4(ground.point.X, ground.point.Y, ground.point.Z, 1.0);
+    let i = ArrayFindFirst(this.m_footPlayers, p);
+    if i < 0 {
+      ArrayPush(this.m_footPlayers, p);
+      ArrayPush(this.m_footSpots, spot);
+      ArrayPush(this.m_footYaws, TandemNative.RemoteYaw(p));
+    } else {
+      this.m_footSpots[i] = spot;
+      this.m_footYaws[i] = TandemNative.RemoteYaw(p);
+    }
+  }
+
+  // A partner's speed (m/s), from its position.
+  private func SpeedOf(p: Uint32) -> Float {
+    let i = ArrayFindFirst(this.m_movePlayers, p);
+    return i >= 0 ? this.m_moveSpeeds[i] : 0.0;
+  }
+
+  // The downed partner sits in a vehicle.
+  private func Seated(p: Uint32) -> Bool {
+    return TDBID.IsValid(TandemNative.RemoteSeatVehicle(p));
+  }
+
+  // Our camera looks at `body` (within 60 degrees, level): a seated V is
+  // revived through the door one faces.
+  private func Facing(body: ref<GameObject>, here: Vector4) -> Bool {
+    let forward = GameInstance.GetCameraSystem(this.m_game).GetActiveCameraForward();
+    let to = body.GetWorldPosition() - here;
+    let flatForward = Vector4.Normalize(new Vector4(forward.X, forward.Y, 0.0, 0.0));
+    let flatTo = Vector4.Normalize(new Vector4(to.X, to.Y, 0.0, 0.0));
+    return Vector4.Dot(flatForward, flatTo) >= 0.5;
+  }
+
+  // Reviving a seated V: the car's own door prompt (the same key) kept off
+  // with the game's restriction a V riding along wears.
+  private func KeepFromCar(player: ref<PlayerPuppet>, want: Bool) -> Void {
+    if Equals(want, this.m_carRestricted) {
+      return;
+    }
+    this.m_carRestricted = want;
+    if want {
+      StatusEffectHelper.ApplyStatusEffect(player, t"GameplayRestriction.VehicleNoInteraction");
+    } else {
+      StatusEffectHelper.RemoveStatusEffect(player, t"GameplayRestriction.VehicleNoInteraction");
+    }
   }
 
   // Let the state machine stand V up (ResurrectEvents), as the others see.
@@ -599,6 +1106,12 @@ public class TandemRevive {
     this.ClearRevivers();
     this.m_calmSince = -1.0;
     this.m_aloneSince = -1.0;
+    let none = EntityID.FromHash(0ul);
+    this.m_downCar = none;
+    this.m_waiting = 0u;
+    this.m_testWreck = false;
+    this.m_ashore = false;
+    this.m_surfaced = false;
     this.HideBar(false);
     if IsDefined(this.m_system) {
       this.m_system.ClearLeftDown();
@@ -707,16 +1220,23 @@ public class TandemRevive {
     let able = this.m_life == 0 && this.m_you != 0u && !VehicleComponent.IsMountedToVehicle(this.m_game, player)
       && !TandemElsewhere.Inside(this.m_game);
     let here = player.GetWorldPosition();
+    let dt = this.m_lastRevival > 0.0 ? this.m_now - this.m_lastRevival : 0.0;
+    this.m_lastRevival = this.m_now;
     let nearest = 0u;
     let best = -1.0;
     if able {
       for p in others {
         let body = this.PuppetOf(p);
         // A downed V whose body the scene took out of sight is not here
-        // to revive; one left sitting or lying is.
+        // to revive; one left sitting or lying is. One seated in a car is
+        // revived from beside it, through the door we face, once the car
+        // has stopped.
         if TandemNative.RemoteLife(p) == 1 && IsDefined(body) && !TandemElsewhere.BodyHidden(this.m_game, p) {
+          let seated = this.Seated(p);
           let d = Vector4.Distance(body.GetWorldPosition(), here);
-          if d <= 2.0 && (best < 0.0 || d < best) {
+          let reach = seated ? 2.5 : 2.0;
+          let fits = !seated || (this.Facing(body, here) && this.SpeedOf(p) <= 1.0);
+          if d <= reach && fits && (best < 0.0 || d < best) {
             best = d;
             nearest = p;
           }
@@ -724,26 +1244,8 @@ public class TandemRevive {
       }
     }
     if this.m_holding != 0u {
-      let body = this.PuppetOf(this.m_holding);
-      let health = GameInstance.GetStatPoolsSystem(this.m_game).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, true);
-      if !able || !IsDefined(body) || TandemNative.RemoteLife(this.m_holding) != 1 {
-        this.CancelHold("they are no longer down, or we cannot");
-      } else if Vector4.Distance(body.GetWorldPosition(), here) > 2.5 && !(this.m_testHold && this.m_now - this.m_holdAt < 2.0) {
-        this.CancelHold("moved away");
-      } else if health < this.m_holdHealth - 0.5 {
-        this.CancelHold("hit");
-      } else {
-        let progress = (this.m_now - this.m_holdAt) / 10.0;
-        this.SetBar(progress);
-        if progress >= 1.0 {
-          TandemNative.SendRevive(this.m_holding, 2);
-          TandemNative.Log(s"revive: we revived \(this.NameOf(this.m_holding))");
-          this.m_holding = 0u;
-          this.m_testHold = false;
-          this.HideBar(true);
-          this.HidePrompt();
-        }
-      }
+      this.HoldOn(player, able, dt);
+      this.KeepFromCar(player, this.m_holding != 0u && this.Seated(this.m_holding));
       return;
     }
     if nearest != 0u {
@@ -752,6 +1254,46 @@ public class TandemRevive {
       }
     } else {
       this.HidePrompt();
+    }
+    this.KeepFromCar(player, this.m_target != 0u && this.Seated(this.m_target));
+  }
+
+  // Our hold, each tick: given up when they are up, gone or we cannot;
+  // when we move away or are hit; paused while their car moves.
+  private func HoldOn(player: ref<PlayerPuppet>, able: Bool, dt: Float) -> Void {
+    let here = player.GetWorldPosition();
+    let body = this.PuppetOf(this.m_holding);
+    let seated = this.Seated(this.m_holding);
+    let health = GameInstance.GetStatPoolsSystem(this.m_game).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, true);
+    if !able || !IsDefined(body) || TandemNative.RemoteLife(this.m_holding) != 1 {
+      this.CancelHold("they are no longer down, or we cannot");
+    } else if Vector4.Distance(body.GetWorldPosition(), here) > (seated ? 3.0 : 2.5) && !(this.m_testHold && this.m_now - this.m_holdAt < 2.0) {
+      this.CancelHold("moved away");
+    } else if health < this.m_holdHealth - 0.5 {
+      this.CancelHold("hit");
+    } else if seated && this.SpeedOf(this.m_holding) > 1.0 {
+      // Their car moves: the hold waits, its progress kept.
+      this.m_holdAt += dt;
+      if !this.m_holdPaused {
+        this.m_holdPaused = true;
+        this.SetBarBottom(TandemText.Get("Revive-CarMoving"));
+        TandemNative.Log(s"revive: reviving \(this.NameOf(this.m_holding)) waits: their car moves");
+      }
+    } else {
+      if this.m_holdPaused {
+        this.m_holdPaused = false;
+        this.SetBarBottom(TandemText.Get("Revive-KeepHolding"));
+      }
+      let progress = (this.m_now - this.m_holdAt) / 10.0;
+      this.SetBar(progress);
+      if progress >= 1.0 {
+        TandemNative.SendRevive(this.m_holding, 2);
+        TandemNative.Log(s"revive: we revived \(this.NameOf(this.m_holding))");
+        this.m_holding = 0u;
+        this.m_testHold = false;
+        this.HideBar(true);
+        this.HidePrompt();
+      }
     }
   }
 
@@ -776,6 +1318,7 @@ public class TandemRevive {
     this.m_holding = target;
     this.m_holdAt = this.m_now;
     this.m_testHold = test;
+    this.m_holdPaused = false;
     this.m_holdHealth = GameInstance.GetStatPoolsSystem(this.m_game).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, true);
     TandemNative.SendRevive(target, 0);
     this.HidePrompt();
@@ -791,6 +1334,7 @@ public class TandemRevive {
     TandemNative.Log(s"revive: stopped reviving \(this.NameOf(this.m_holding)) (\(why))");
     this.m_holding = 0u;
     this.m_testHold = false;
+    this.m_holdPaused = false;
     this.HideBar(false);
   }
 
@@ -983,6 +1527,13 @@ public class TandemRevive {
     }
   }
 
+  private func SetBarBottom(text: String) -> Void {
+    let board = GameInstance.GetBlackboardSystem(this.m_game).Get(GetAllBlackboardDefs().UI_HUDProgressBar);
+    if this.m_bar != 0 && IsDefined(board) {
+      board.SetString(GetAllBlackboardDefs().UI_HUDProgressBar.BottomText, text, true);
+    }
+  }
+
   private func HideBar(done: Bool) -> Void {
     if this.m_bar == 0 {
       return;
@@ -1004,15 +1555,36 @@ public class TandemRevive {
     if !IsDefined(player) {
       return;
     }
-    if Equals(command, "revive down") {
+    if Equals(command, "revive down") || Equals(command, "revive out") {
       // Our V at the end of its health: down (if another V is up), as from
-      // a lethal hit.
+      // a lethal hit; "out": out at once (as killed outright).
       if !this.m_protected {
         TandemNative.Log("revive down: refused, nobody else is here (our V would die)");
         return;
       }
+      this.m_testOut = Equals(command, "revive out");
       GameInstance.GetStatPoolsSystem(this.m_game).RequestSettingStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, 0.0, null, true);
-      TandemNative.Log("revive down: our V's health to 0");
+      TandemNative.Log(s"revive down: our V's health to 0\(this.m_testOut ? " (out)" : "")");
+    } else if StrBeginsWith(command, "revive water") {
+      // (test) "revive water N": as if our V's feet were N m under water
+      // (shore and surface searched as for real water); "off": real water.
+      let depth = StrLen(command) > 13 ? StringToFloat(StrAfterFirst(StrAfterFirst(command, " "), " ")) : 0.0;
+      this.m_testDepth = MaxF(0.0, depth);
+      TandemNative.Log(s"revive water: \(this.m_testDepth > 0.0 ? s"as if \(this.m_testDepth) m under water" : "the real water")");
+    } else if Equals(command, "revive wreck") {
+      // (test) the vehicle our V went down in is taken as wrecked.
+      this.m_testWreck = true;
+      TandemNative.Log(s"revive wreck: our V's car taken as wrecked (down in a seat: \(EntityID.IsDefined(this.m_downCar)))");
+    } else if Equals(command, "revive unseat") {
+      // (test) out of the seat a respawn gave us.
+      if EntityID.IsDefined(this.m_seatedCar) {
+        TandemVehicles.Unseat(this.m_game, player, this.m_seatedCar, this.m_seatedSlot);
+        let none = EntityID.FromHash(0ul);
+        this.m_seatedCar = none;
+        TandemNative.Log("revive unseat: out of the respawn's seat");
+      } else {
+        TandemNative.Log("revive unseat: no respawn seat");
+      }
     } else if Equals(command, "revive hold") {
       // Beside the first downed player, then the 10 s hold, with no key.
       for p in this.Others() {
@@ -1031,6 +1603,10 @@ public class TandemRevive {
       // (test) as if our V had never been revived: the next fall is a
       // revivable down, not out (the 300 s cooldown of an earlier test).
       this.m_revivedAt = -1000.0;
+      // An earlier test's pretend water, wreck or out.
+      this.m_testDepth = 0.0;
+      this.m_testWreck = false;
+      this.m_testOut = false;
       // Still down or out from an earlier test: up first.
       if this.m_life != 0 && !this.m_dying {
         TandemNative.Log("revive fresh: our V was down: it stands up");
@@ -1040,8 +1616,10 @@ public class TandemRevive {
     } else if Equals(command, "revive report") {
       let health = GameInstance.GetStatPoolsSystem(this.m_game).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, true);
       TandemNative.Log(s"revive report: our V life \(this.m_life), health \(health) %, protected \(this.m_protected), invulnerable \(this.m_invulnerable), released \(this.m_release), lost \(this.m_lost), dying \(this.m_dying), left down \(IsDefined(this.m_system) && this.m_system.LeftDown()), \(this.UpOthers()) other(s) up, revived \(RoundF(this.m_now - this.m_revivedAt)) s ago");
+      TandemNative.Log(s"revive report: our V in a seat \(EntityID.IsDefined(this.m_downCar)) (\(NameToString(this.m_downSlot))), speed \(this.m_speed) m/s, a revive waiting \(this.m_waiting != 0u), ashore \(this.m_ashore), a seat to take \(EntityID.IsDefined(this.m_seatCar))");
       for p in this.Others() {
-        TandemNative.Log(s"revive report: \(this.NameOf(p)) life \(TandemNative.RemoteLife(p)), flags \(TandemNative.RemoteVitalsFlags(p)), puppet \(IsDefined(this.PuppetOf(p)))");
+        let foot = ArrayContains(this.m_footPlayers, p);
+        TandemNative.Log(s"revive report: \(this.NameOf(p)) life \(TandemNative.RemoteLife(p)), flags \(TandemNative.RemoteVitalsFlags(p)), puppet \(IsDefined(this.PuppetOf(p))), seated \(this.Seated(p)), speed \(this.SpeedOf(p)) m/s, a spot on foot \(foot)");
       }
     } else {
       TandemNative.Log(s"unknown command: \(command)");
@@ -1084,6 +1662,18 @@ protected const final func ToResurrect(const stateContext: ref<StateContext>, co
     return false;
   }
   return wrappedMethod(stateContext, scriptInterface);
+}
+
+// Swimming leaves for the death state only at the health minimum
+// (SwimmingDecisions.ToDeath, final.reds 525674); our floor stops short of
+// it, so a V at the floor in the water goes as on land (DeathDecisions
+// above). Only reads.
+@wrapMethod(SwimmingDecisions)
+protected const final func ToDeath(const stateContext: ref<StateContext>, const scriptInterface: ref<StateGameScriptInterface>) -> Bool {
+  if wrappedMethod(stateContext, scriptInterface) {
+    return true;
+  }
+  return TandemRevive.AtFloor(scriptInterface.executionOwner);
 }
 
 @wrapMethod(PlayerPuppet)

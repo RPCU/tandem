@@ -92,6 +92,7 @@ SingleplayerMenuGameController < MainMenuGameController < gameuiMenuItemListGame
 SpeedExitingEvents < ExitingEvents < ExitingEventsBase < VehicleEventsTransition < VehicleTransition < DefaultTransition < StateFunctor < IScriptable
 StatusEffectManagerComponent < AIMandatoryComponents < AIRelatedComponents < ScriptableComponent < GameComponent < IComponent < IScriptable
 StimBroadcasterComponent < ScriptableComponent < GameComponent < IComponent < IScriptable
+SwimmingDecisions < HighLevelTransition < DefaultTransition < StateFunctor < IScriptable
 TakedownGameEffectHelper < IScriptable
 TakedownReleasePreyEvents < LocomotionTakedownEvents < LocomotionEventsTransition < LocomotionTransition < DefaultTransition < StateFunctor < IScriptable
 ThrowEvents < CarriedObjectEvents < CarriedObjectTransition < DefaultTransition < StateFunctor < IScriptable

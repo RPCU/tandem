@@ -39,6 +39,46 @@ public abstract class TandemVehicles {
     GameInstance.GetMountingFacility(game).Unmount(request);
   }
 
+  // The game's own forced way out of a seat: an instant unmount naming only
+  // the one getting out, as the vehicle state machine does for a V killed
+  // on a bike or thrown out (ImmediateExitWithForceEvents.Unmount,
+  // final.reds 550633). The state machine then leaves its vehicle states.
+  public static func PutOut(game: GameInstance, child: ref<GameObject>) -> Void {
+    let info: MountingInfo;
+    info.childId = child.GetEntityID();
+    let request = new UnmountingRequest();
+    request.lowLevelMountingInfo = info;
+    request.mountData = new MountEventData();
+    request.mountData.isInstant = true;
+    GameInstance.GetMountingFacility(game).Unmount(request);
+  }
+
+  // Where `child` would stand getting out of `vehicle`: the game's own exit
+  // spot (VehicleObject.CanUnmount, what the exit states ask), else the
+  // navmesh beside it (right, then left), else on its roof.
+  public static func ExitSpot(game: GameInstance, vehicle: ref<VehicleObject>, child: ref<GameObject>) -> Vector4 {
+    let exit = vehicle.CanUnmount(true, child);
+    if NotEquals(exit.direction, vehicleExitDirection.NoDirection) && NotEquals(exit.direction, vehicleExitDirection.Top) {
+      let at = WorldPosition.ToVector4(exit.position);
+      at.W = 1.0;
+      return at;
+    }
+    let navigation = GameInstance.GetAINavigationSystem(game);
+    let center = vehicle.GetWorldPosition();
+    let right = vehicle.GetWorldRight();
+    let sides = [2.5, -2.5];
+    for side in sides {
+      let beside = new Vector4(center.X + right.X * side, center.Y + right.Y * side, center.Z, 1.0);
+      let ground = navigation.FindPointInSphereForCharacter(beside, 2.0, child);
+      if Equals(ground.status, worldNavigationRequestStatus.OK) {
+        let at = ground.point;
+        at.W = 1.0;
+        return at;
+      }
+    }
+    return new Vector4(center.X, center.Y, center.Z + 2.0, 1.0);
+  }
+
   // Carries `child` with `parent` from where it stands now (a V riding
   // along, Transit.reds): a mount to a slot that is not a seat, its world
   // position kept (preservePositionAfterMounting, as vanilla's trunk body
