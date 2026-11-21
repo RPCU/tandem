@@ -130,6 +130,7 @@ public class TandemNpcs {
   // Since when a linked player that outranks us has been unplaced (0: none
   // is), and whether we now take it to be with us.
   private let m_unplacedSince: Float;
+  private let m_coveredSince: Float;
   private let m_assumeTogether: Bool;
   private let m_lastQuiet: Float;
   // The overlap: this game's setting (read once), the share of our crowd we
@@ -538,7 +539,15 @@ public class TandemNpcs {
       return;
     }
     let crowd = GameInstance.GetCommunitySystem(this.m_game);
-    if by != 0u && !this.m_quiet {
+    // Covered for a second before the crowd goes: at a join the others'
+    // places are not all known yet (a guest 1 km away was covered for 0.14 s,
+    // its street emptied and filled again: regions-apart).
+    if by == 0u || this.m_quiet {
+      this.m_coveredSince = 0.0;
+    } else if this.m_coveredSince <= 0.0 || this.m_now < this.m_coveredSince {
+      this.m_coveredSince = this.m_now;
+    }
+    if by != 0u && !this.m_quiet && this.m_now - this.m_coveredSince >= 1.0 {
       this.m_quiet = true;
       this.m_share = 0.0;
       crowd.ChangeDensityModifier(0.0);

@@ -323,8 +323,10 @@ companions, the session lost.
   off, nothing hidden. The `ChangeDensityModifier(0)` a guest applied for
   the whole session is gone.
 - **Inside a higher-ranked linked player's region** (our V within 45 m of
-  theirs; back to normal beyond 60 m): density 0, as before. The two Vs see
-  the same streets; one game populates them.
+  theirs; back to normal beyond 60 m): density 0, as before, once that has
+  held for a second (at a join, a place not yet known covered a guest 1 km
+  away for a moment and emptied its street). The two Vs see the same
+  streets; one game populates them.
 - **In the overlap only**: an NPC of ours first seen inside a higher-ranked
   linked player's region, and not in a fight, is suppressed (brain off,
   hidden) and never announced. Everything we already ran when the regions
