@@ -214,6 +214,22 @@ it. But `Attitudes.reds` copies V's relations onto the puppets every 2 s:
 without an exception the host's stars would make the police hostile to
 every guest. `[S]` `[I]`
 
+A unit's hostility is not only its group's. Vanilla turns a fighting NPC
+hostile to whatever tops its threats (`SetTopThreatToCombatTarget.SetCombatTarget`,
+`:456609`, `ChangeAttitudeToHostile` on any target but a player), and
+`AIActionHelper.TryChangingAttitudeToHostile` (`:169916`: help an ally,
+a hostile stimulus, a hit) turns an aggressive NPC's whole group on a
+neutral target's (`SetAttitudeTowardsAgentGroup`). The one guard for the
+police is in the combat target check (`:456663`): a prevention NPC drops
+the player only when `ShouldReactionBeAgressive` is false, which it is not
+for a V that is simply not wanted (`:141620`). `[S]` Units sent after a
+puppet took the spawning game's own clean V on and killed it
+(police-host-cars, 2026-11-21) `[T]`; which of these paths put V among
+their threats was not seen `[I]`.
+`GameObject.GetReceivedDamageByPlayerLastTimeStamp()` (`:12472`) is the
+engine time of the last player hit in an NPC's damage history, which keeps
+only the latest frame's hits. `[S]`
+
 At stage 0 (`OnHeatChanged`, `:140769`) each registered unit drops the
 player as a threat, turns neutral to it, goes `Relaxed`, gets the status
 effects `PreventionStatusEffect.OnStarDropToZero` and

@@ -143,9 +143,27 @@ it does not (a proxy that does not count as a civilian there, research §13.34 q
    puppet look at it by its own stage (`TandemPolice.Face`: hostile while
    wanted, neutral and forgotten again at 0), and never by the owner V's:
    `Attitudes.reds`, which copies V's relations onto the puppets, leaves
-   the police out. In the other direction nothing is needed: vanilla makes
-   the police hostile to the local player's attitude group, which no
-   puppet is in.
+   the police out. **They spare the owner's own V** while it is not wanted
+   and has not hit them: vanilla gives a fighting NPC whoever tops its
+   threats as its target and turns it hostile to that target
+   (`SetTopThreatToCombatTarget.SetCombatTarget`), and its help-an-ally and
+   hostile-stimulus paths turn it on whoever is near
+   (`TryChangingAttitudeToHostile`), so units sent for a guest's puppet
+   took the host's own V on and killed it (police-host-cars, 2026-11-21).
+   Each unit, and each officer `Face` turns on a puppet, carries a flag
+   (`NPCPuppet.m_tandemSparesV`); while the owner's V is not wanted
+   (`TandemPolice.OursWanted`), `Threats.reds` takes that V off its threats
+   (base −1, as vanilla does under `BlockTargetingPlayer`) and refuses it as
+   its combat target, and every tick `TandemPolice.Spare` sets it neutral
+   to that V and drops that V from its threats and its squad's. The
+   vanilla provocation rule ends it: the owner's V hitting one of them
+   (`GetReceivedDamageByPlayerLastTimeStamp` after it was enlisted) makes
+   that one hostile to it, a threat, and no longer spared; the owner's V's
+   own heat (from that hit or anything else) gives them all to vanilla's
+   rules, the unit's attitude back to its group's. A game that answers the
+   host's heat (a guest owning its area) spares its own V the same way. In
+   the other direction nothing is needed: vanilla makes the police hostile
+   to the local player's attitude group, which no puppet is in.
 7. **Seen or lost.** Whether the police see the wanted V is the owner's
    NPCs' business (their senses, the puppet's stealth). The offender's
    game already receives which NPCs have detected its V
@@ -233,7 +251,8 @@ Built in this change:
    the owner's police as viewers; owner: units for a remote V, attitudes
    by each V's own heat, standing down; crimes attributed), the police
    left out of `Attitudes.reds`'s copying.
-5. **Scenarios**: `police-guest`, `police-host`, `police-host-cars`.
+5. **Scenarios**: `police-guest`, `police-host`, `police-host-cars`,
+   `police-spare-host`.
 6. **Cars and the AV** for a remote V (above, 4 and 5): scripts only,
    compiled, not run.
 
@@ -258,6 +277,12 @@ Not built:
   when it vanishes mid-chase. Look for: where the units appear, that they
   go for the puppet and leave our V alone, how they walk off.
 
+- **police-spare-host**: the game hosts on drake-ave; the mock guest,
+  12 m off our V (mirror with an offset), is wanted at three stars. Checks
+  that units come for it, that none is on our V (`police report`: "0 on
+  our V"), that our V's health never dips (`test query health low`), and
+  that they stand down with the guest's stars.
+
 - **police-host-cars**: the game hosts; the mock guest is wanted at three
   stars, then at five. Checks that a place for a car is found around the
   puppet, that the car comes and chases it, that it stands down and is
@@ -266,7 +291,9 @@ Not built:
   them the log says "no road" or "no place for a car" and the scenario
   fails at the car. Look for: where the car appears (out of the puppet's
   sight), that it drives to the puppet and its crew get out, that our V is
-  left alone, the AV's landing.
+  left alone (its health never dips, `test query health low`; the puppet
+  stands 3 m in front of it, so a stray round can fail this), the AV's
+  landing.
 
 By hand, two games: a guest shoots a civilian near the host (stars on the
 guest only); the host joins the fight against the police (its own stars);
