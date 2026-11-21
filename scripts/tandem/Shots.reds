@@ -37,6 +37,11 @@ public class TandemShots {
   private let m_boostFactor: array<Float>;
   private let m_logged: array<CName>;
   private let m_handed: Bool;
+  // The proxy last given the shot's weapon, and when: given once, then its
+  // spawn is waited for (giving again every frame removed the one still
+  // spawning: RemoveItemFromSlot destroys a pending spawn).
+  private let m_givenTo: EntityID;
+  private let m_givenAt: Float;
   // Guest: why the last shot is still waiting, and the shots fired.
   private let m_waitingFor: String;
   private let m_fired: Int32;
@@ -47,6 +52,8 @@ public class TandemShots {
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
+    this.m_givenTo = EntityID.FromHash(0ul);
+    this.m_givenAt = 0.0;
   }
 
   public static func Of(game: GameInstance) -> ref<TandemShots> {
@@ -260,7 +267,11 @@ public class TandemShots {
         this.m_handed = true;
         TandemNative.LogDebug(s"shots: npc \(shot.npc)'s proxy has nothing in its hand: given \(TDBID.ToStringDEBUG(shot.weapon))");
       }
-      TandemWeapons.Hold(proxy, slot, shot.weapon);
+      if proxy.GetEntityID() != this.m_givenTo || now - this.m_givenAt > 2.0 || now < this.m_givenAt {
+        this.m_givenTo = proxy.GetEntityID();
+        this.m_givenAt = now;
+        TandemWeapons.Hold(proxy, slot, shot.weapon);
+      }
       this.m_waitingFor = "an empty hand";
       return false;
     }
