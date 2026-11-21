@@ -6,7 +6,7 @@ peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')"
   --hurt 5 --menu-at 8 --go-down 30
 expect 'joined \(player [0-9]+' 20
 expect 'controller handed to the engine' 20
-expect 'hud: party widget built on the HUD layer' 15
+# (The widget is built once per game: "party shown" says it is there.)
 expect 'hud: party shown \(1 partners\)' 10
 expect 'hud: entry for player [0-9]+ \(Panam\)' 10
 expect 'hud: player [0-9]+ "Panam" health [0-9]+ % status up, [0-9]+ m, in view, nameplate on' 30

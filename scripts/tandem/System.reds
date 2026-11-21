@@ -1975,6 +1975,17 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_presence) && IsDefined(this.m_presence.Hud()) {
       this.m_presence.Hud().ResayForTests();
     }
+    if IsDefined(this.m_presence) {
+      this.m_presence.ResayForTests();
+    }
+    let shots = TandemShots.Of(this.GetGameInstance());
+    if IsDefined(shots) {
+      shots.ResayForTests();
+    }
+    let reactions = TandemReactionsSync.Of(this.GetGameInstance());
+    if IsDefined(reactions) {
+      reactions.ResayForTests();
+    }
     let entities = GameInstance.GetDynamicEntitySystem();
     if IsDefined(this.m_time) {
       this.m_time.ResetTest();
