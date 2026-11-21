@@ -57,7 +57,7 @@ declare -A value=(
   ["--hold"]=Items.x ["--holster-at"]=10
   ["--level"]=30 ["--npc-level"]=25 ["--lend"]=owner ["--unlock-vehicle"]=Vehicle.x ["--vendor"]="Character.x@1,2,3#1a2b3c4d5e6f7788" ["--vendor-dies"]=10 ["--trade-offer"]=--check ["--trade-accept"]=--check
   ["--trade-give"]=Items.CommonMaterial1:2 ["--trade-money"]=100 ["--trade-asks"]=50
-  ["--link"]=ask ["--link-at"]=5 ["--unlink-at"]=9 ["--ping"]=4 ["--tag"]=6 ["--reveal"]=8 ["--waypoint"]="-915,1879.5,36.3" ["--waypoint-clear"]=20 ["--mark-target"]=nearest ["--hack-npc"]=nearest
+  ["--link"]=ask ["--link-at"]=5 ["--unlink-at"]=9 ["--ping"]=4 ["--tag"]=6 ["--reveal"]=8 ["--waypoint"]="-915,1879.5,36.3" ["--waypoint-kind"]=objective ["--waypoint-clear"]=20 ["--mark-target"]=nearest ["--hack-npc"]=nearest
 )
 flags=$("$peer" --help 2>&1 | grep -oE '^  --[a-z-]+' | tr -d ' ' | sort -u) || true
 [ -n "$flags" ] || {
