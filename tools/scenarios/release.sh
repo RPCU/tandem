@@ -26,10 +26,16 @@ pause 3
 cmd coop report
 expect 'report: written to red4ext/plugins/tandem/reports/tandem-report-[0-9-]+\.zip \(versions\.txt, tandem\.log' 10
 expect 'coop: report: red4ext/plugins/tandem/reports/tandem-report-' 5
-report=$(remote "cd '$dir/red4ext/plugins/tandem/reports' && ls -t tandem-report-*.zip | head -1")
-remote "cd '$dir/red4ext/plugins/tandem/reports' && unzip -tq '$report'" >/dev/null || fail "the report is not a zip unzip reads"
+# The newest by its name (its time is in it); read here: the game machine
+# has no unzip.
+report=$(remote "cd '$dir/red4ext/plugins/tandem/reports' && ls tandem-report-*.zip | sort | tail -1")
+mkdir -p .cache
+remote "cat '$dir/red4ext/plugins/tandem/reports/$report'" >.cache/report.zip
+python3 -I -c 'import sys, zipfile; sys.exit(zipfile.ZipFile(sys.argv[1]).testzip() is not None)' .cache/report.zip ||
+  fail "the report is not a zip that reads"
 # Nothing of the machine's own in it: no token, no user folder.
-if remote "cd '$dir/red4ext/plugins/tandem/reports' && unzip -p '$report' | grep -a -E -q 'relay_token *= *[0-9a-f]{16}|/home/[a-z]+/|\\\\Users\\\\[A-Za-z]'"; then
+if python3 -I -c 'import sys, zipfile; z = zipfile.ZipFile(sys.argv[1]); sys.stdout.buffer.write(b"".join(z.read(n) for n in z.namelist()))' .cache/report.zip |
+  grep -a -E -q 'relay_token *= *[0-9a-f]{16}|/home/[a-z]+/|\\Users\\[A-Za-z]'; then
   fail "the report still holds a token or a user's folder"
 fi
 remote "rm -f '$dir/red4ext/plugins/tandem/reports/$report'"
