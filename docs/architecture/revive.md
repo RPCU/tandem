@@ -94,8 +94,9 @@ VehicleNoInteraction`); it lets go past 3 m. **While the car moves**
   lift to a shore or the surface). A V whose head is under water, or whose
   water has its floor more than 1.8 m under the surface (a static
   raycast), or that is down in a sunken car, is **out at once** (no revive
-  there) and gets up **at Viktor's clinic** (below), while another V is up;
-  with none up the session's loss decides. A V at its floor while swimming
+  there) and gets up **at Viktor's clinic** (below), while another V is up
+  and leaving is allowed (else near: "No far respawn", below); with none
+  up the session's loss decides. A V at its floor while swimming
   enters the death state as on land (`SwimmingDecisions.ToDeath` wrapped:
   vanilla leaves swimming for death only at the health minimum).
 - **At Viktor's** (2026-11-21; engine facts §13.110): V gets up on the
@@ -136,6 +137,33 @@ nospot [off]` (no spot beside a partner fits), `revive novik [off]`
   `respawn-foot`, `respawn-viktor` (no fit spot), `respawn-point` (Vik out
   of reach). **None of this has run in game**; `revive-water` uses a
   pretend depth (no real water spot is known to the scenarios).
+- **No far respawn out of a locked quest area** (2026-11-21, the user's
+  call: a jump to Viktor's from Konpeki Plaza or a Phantom Liberty
+  mission would leave no way back). A far respawn (Viktor's, a fast
+  travel point) only when the game itself would let that V fast travel
+  now. Our own game's test (`TandemRevive.TravelLock`): no
+  `BlockFastTravel` status effect on V
+  (`FastTravelSystem.RegisterFastTravelPoint`) and no fast travel lock
+  (`IsFastTravelEnabled`) other than `InCombat`, `InVehicle` and
+  `PreventionSystem`, which pass with the moment
+  (`FastTravelSystem.TandemQuestLock`, ours). Not
+  `IsFastTravelEnabledOnMap`: its flag is the fast travel menu open at a
+  terminal (engine facts §13.132). The host and a player alone use their own game's; a guest's
+  own story is frozen (`story.md`), so the quest is the host's: the host
+  sends `kStoryNoFastTravel` (128) in its `StoryState` while its own test
+  says blocked, and the guest honours that and its own game's locks.
+  Refused, the V never leaves the area: (1)-(3) above as usual, with 10 s
+  for a fit spot beside the partner (as for a moving car), then up **where
+  it lies** (out of its seat beside the car; under water, at the surface
+  over it), with "No way out of here: back on your feet where you fell".
+  Deep water or a sunken car: out at once as usual, then up beside a
+  partner (MaybeRespawn), else at the water's surface over where it lay
+  (beside the sunken car). The log says `revive: far respawn refused: fast
+travel blocked (host's quest|ours)`; `revive report` says whether
+  leaving is allowed. `tools/game.sh cmd revive locked [off]`: our game's
+  fast travel taken as blocked. Scenario `respawn-locked` (as a guest:
+  the mock host's `--no-fast-travel`, `revive nospot`). **Not yet run in
+  game.**
 
 ## Open problems
 

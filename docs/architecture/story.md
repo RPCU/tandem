@@ -82,6 +82,17 @@
     within 30 m of the host in a tier 3+ scene has its weapons lowered, tier
     4+ also invulnerable; a guest further than 100 m from a tier 4+ scene
     gets an offer to join (the regroup itself: TODO).
+  - _Fast travel blocked_ (2026-11-21, not yet run in game): a guest's own
+    quest locks say nothing of the host's mission (its story is frozen), so
+    the host says it: `kStoryNoFastTravel` (128, the last free bit of
+    `StoryState`'s flags; protocol 12) while its own game would not let its
+    V fast travel (a `BlockFastTravel` status effect, or a fast travel lock
+    other than combat's, a car's or the police's: `TandemRevive.TravelLock`),
+    re-sent when it changes (`SendFlags`, twice a second). The host's word
+    only (referee: `authority.host-only`). A guest then never respawns far
+    away (`revive.md`, "No far respawn out of a locked quest area");
+    `tandem-peer host --no-fast-travel` (or the story verb
+    `fasttravel off|on`) sends it.
   - _Restrictions_ (`scripts/tandem/Restrictions.reds`, `core/src/story.cpp`
     `InMoment` and `Restrictions`, engine facts §13.45). The quest runs on
     the host, so the restrictions its story puts on the host's V (no

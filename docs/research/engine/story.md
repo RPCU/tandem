@@ -921,3 +921,25 @@ trace on`, `cmd story moments`). [2.5-untested]
   endings' sequence).
 - **Side quests**: a braindance (`sq030_braindance_active`, `:380271`), the
   street races (`sq024_*`).
+
+### 13.132 Whether the game lets V fast travel now (2026-11-21, read in final.reds, not run)
+
+What `revive.md`'s "No far respawn out of a locked quest area" reads
+(`TandemRevive.TravelLock`). [2.5-untested]
+
+- `FastTravelSystem.IsFastTravelEnabled()` (`:50501`): no entry in its
+  persistent `m_fastTravelLocks` (`FastTravelSystemLock`: `lockReason`, a
+  CName, and an optional `linkedStatusEffectID`). Locks come and go through
+  `EnableFastTravelRequest` (`OnEnableFastTravelRequest`, `:50653`; the
+  static `AddFastTravelLock` / `RemoveFastTravelLock`, `:50764`), which
+  quests send with their own reasons. The scripts' own reasons pass with
+  the moment: `InCombat` (`:242893`), `InVehicle` (`:90614`),
+  `PreventionSystem` (removed at `:138840`), `DEBUG` (non-final builds).
+- A `BlockFastTravel` status-effect tag on V keeps fast travel points from
+  registering (`RegisterFastTravelPoint`, `:50507`); the replacers (Johnny,
+  the VR tutorial, mq304's assassin, Kurt) apply
+  `GameplayRestriction.BlockFastTravel` (`:39769` on).
+- `IsFastTravelEnabledOnMap()` (`:50394`) is **not** that test: its
+  `m_isFastTravelEnabledOnMap` is set by `FastTravelMenuToggledEvent` from
+  `OnEnterFastTravelMenu` / `OnExitFastTravelMenu` (`:50131`): true only
+  while the fast travel menu is open at a terminal.
