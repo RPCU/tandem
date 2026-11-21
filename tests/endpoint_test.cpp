@@ -239,7 +239,11 @@ TEST_CASE("what a guest holds and its shots reach the host, stamped") {
   REQUIRE_MESSAGE(host, error);
   auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error);
   REQUIRE_MESSAGE(guest, error);
-  guest->SetLocalHeld({.right = 42}); // before joining: sent once in
+  // Before joining: sent once in, a mod's record with its hint (what the
+  // host resolves it by); the host holds nothing, which the guest hears.
+  const proto::RecordHint hint{.type = 0x1234, .tag = 0x5678};
+  host->SetLocalHeld({});
+  guest->SetLocalHeld({.right = 42, .rightHint = hint});
   std::optional<proto::Held> held;
   std::optional<proto::Shot> shot;
   bool shotSent = false;
@@ -257,6 +261,7 @@ TEST_CASE("what a guest holds and its shots reach the host, stamped") {
     return held && shot;
   }));
   CHECK(held->right == 42);
+  CHECK(held->rightHint == hint);
   CHECK(held->player == guest->You());
   CHECK(shot->player == guest->You());
   CHECK(shot->effect == 16);

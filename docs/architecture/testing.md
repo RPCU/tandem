@@ -122,7 +122,8 @@ Reading a played session (`tools/game.sh threads` at its end):
   The main tool for puppet, animation and vehicle sync.
 - **ghost** — circles around your V at walking speed.
 - **front** — stands 3 m in front of your V, facing it, and echoes your
-  look, held weapon, shots, pose (with `--pose FILE`, a recorded pose).
+  look, held weapon (unless it holds its own: `--hold`, `--held-record`,
+  `--strike blade`), shots, pose (with `--pose FILE`, a recorded pose).
 - **drive** — drives a car (`--vehicle RECORD`) in circles around your V:
   tests the copy of a remote player's car, its seated driver and its motion
   without anyone driving. `--radio STATION` (0–13, a station name, or
