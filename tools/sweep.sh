@@ -245,6 +245,12 @@ for entry in "${ordered[@]}"; do
     ;;
   esac
   class=$(classify "$rc" "$log" "$ev" "$state" "$name")
+  # Not in its test state: what the last one left (a menu, the phone) would
+  # fail every later one too; the next ensure starts a fresh game.
+  if [ "$class" = reset ] && [ "${state%% *}" = ok ]; then
+    timeout 90 "$game" stop </dev/null >/dev/null 2>&1 || true
+    echo "  harness: not in its test state: the game stopped, the next one starts it" >>"$log"
+  fi
   line=$(grep -m1 -E '^  (FAIL|ABORT): ' "$log" | sed 's/^  //' | tr '\t' ' ' | cut -c1-300 || true)
   [ -n "$line" ] || line="exit $rc$([ "$rc" = 124 ] && echo ", stopped after $limit s")"
   printf '%s\tFAIL\t%s\t%s\t%s\t%s\n' "$name" "$seconds" "$class" "$line" "${ev:--}" >>"$results"

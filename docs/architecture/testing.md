@@ -119,6 +119,9 @@ output, `NAME.log`. Build first (`tools/build.sh`, or `tools/remote.sh` and
   thread's backtrace first (`tools/game.sh bt` into the evidence folder,
   `bt.txt`; REDGraph's lines in `crash.txt`, the output in
   `scenario.log`), then `tools/game.sh stop`; the next `ensure` starts it.
+- **A failed test reset** (class `reset`) in a game that runs: stopped too
+  (a `harness:` repair). What the last one left (an open phone stops the
+  tick) would fail every later one; `test reset` closes the phone.
 - **`results.txt`**, a line per scenario, tab-separated: name, `PASS` or
   `FAIL`, seconds, class, the first `FAIL:` line, the evidence folder. The
   end prints the passes, game starts, `harness:` repairs, and the failures

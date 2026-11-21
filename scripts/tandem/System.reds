@@ -2020,6 +2020,11 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_pilot) {
       this.m_pilot.Off("test reset");
     }
+    // A phone a failed scenario left open stops the world's tick (every
+    // later reset failed, 2026-11-21).
+    if IsDefined(this.m_phoneContacts) {
+      this.m_phoneContacts.Command("phone close");
+    }
     // What a session says once (its rules, comms, our level, the party
     // HUD's layout) is said again: each scenario reads it after its reset,
     // in a session an earlier one began.
