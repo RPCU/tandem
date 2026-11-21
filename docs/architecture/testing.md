@@ -31,7 +31,22 @@ mock player and expects log lines within a time limit. Restarts happen
 only when the build or the role changed (one restart per role for a whole
 run), so a run takes minutes. A failure keeps its evidence (logs,
 a screenshot, every thread's backtrace when the plugin's watchdog saw the
-game thread stop). Each feature verified in game gets a scenario.
+game thread stop or the stall report has an open stall). Each feature
+verified in game gets a scenario.
+
+**The stall report** (`plugin/src/stall.hpp`): the watchdog's line comes
+from the net thread, so a hang that stops it too (the whole plugin stuck:
+a lock, the logger, the process; 2026-11-21, a guest's join with the quest
+freeze: game thread, net thread and log silent at once, no watchdog line)
+was not said anywhere. A thread of its own, sharing no lock with the game,
+the net thread or the logger, watches the net thread (which never rests
+5 s) and writes `stall.log` beside `tandem.ini` (emptied at each start) with
+Win32 calls only: `stall: the net thread is silent for 5.0 s (STEP); …;
+threads: net N, frame update F, script tick T`, each of those threads'
+registers (`rip`, `rsp`), then their stacks as `#i MODULE+0xOFFSET`
+(tandem's frames: its `.pdb`; the game's: `tools/re/addr.py`), and `stall:
+the net thread is back after X s` if it was not a hang. A failed scenario
+copies it into its evidence.
 More than two players: `peer2 ARGS…` starts a second mock player beside
 the first (`expect_peer2` reads its log, `.cache/peer2.log`); scenario
 `three-players`. Mock players under the same `--name` are shown as "V (2)",

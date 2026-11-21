@@ -10,6 +10,7 @@
 #include "recording.hpp"
 #include "regions.hpp"
 #include "runtime.hpp"
+#include "stall.hpp"
 #include "story.hpp"
 #include "trade.hpp"
 
@@ -224,7 +225,12 @@ struct NetThread::Impl {
   // code that never led into a session (wrong, expired) is tried 3 times:
   // each try costs one of the relay's limited code lookups.
   void Run(std::stop_token stop) {
+    // The stall report (stall.hpp) watches this thread while it runs.
+    struct Gone {
+      ~Gone() { stall::NetGone(); }
+    } gone;
     for (int codeTries = 1;; ++codeTries) {
+      stall::NetBeat(stall::kSession);
       const auto ended = Session(stop);
       if (stop.stop_requested())
         return;
@@ -246,8 +252,10 @@ struct NetThread::Impl {
         return;
       }
       Publish(SessionStatus::State::Retrying, ended);
-      for (int i = 0; i < 50 && !stop.stop_requested(); ++i)
+      for (int i = 0; i < 50 && !stop.stop_requested(); ++i) {
+        stall::NetBeat(stall::kRetry);
         std::this_thread::sleep_for(100ms);
+      }
       if (stop.stop_requested())
         return;
       log::Info("joining again");
@@ -375,6 +383,7 @@ struct NetThread::Impl {
     std::uint32_t reportedRequests = 0;
 
     while (!stop.stop_requested() && !ended) {
+      stall::NetBeat(stall::kPass);
       // Watchdog (runtime.hpp): one line when the game thread stops ticking,
       // one when it comes back. Pause menus and loading screens stop it too.
       if (const auto last = runtime.LastGameFrameUs(); last) {
@@ -392,6 +401,7 @@ struct NetThread::Impl {
       // `shared`: what the scripts' checks compare with changed.
       bool shared = std::exchange(announced, false);
       bool street = false;
+      stall::NetBeat(stall::kUpdate);
       for (const auto &event : endpoint->Update(2ms)) {
         std::visit(
             [&](const auto &e) {
@@ -989,6 +999,7 @@ struct NetThread::Impl {
             },
             event);
       }
+      stall::NetBeat(stall::kTake);
       const Perf::Scope pass(Work::NetPass);
       if (street && !ended)
         ShareStreet(runtime, *endpoint);
@@ -1404,6 +1415,7 @@ struct NetThread::Impl {
                       area->player);
       Combat::Get().SetRules(endpoint->Rules());
 
+      stall::NetBeat(stall::kReport);
       if (const auto now = std::chrono::steady_clock::now(); now >= nextStatus && !ended) {
         nextStatus = now + 500ms;
         Publish(endpoint->IsJoined() ? SessionStatus::State::InSession

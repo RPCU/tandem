@@ -13,6 +13,7 @@
 #include "mods.hpp"
 #include "recording.hpp"
 #include "runtime.hpp"
+#include "stall.hpp"
 #include "threads.hpp"
 
 #include "tandem/compat.hpp"
@@ -213,6 +214,8 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     // one. Next to the command file, so each instance (TANDEM_CMD) has its own.
     runtime.config.pilotStateFile = files.command.parent_path() / "pilot.state";
     std::filesystem::remove(runtime.config.pilotStateFile, ignored);
+    // The stall report (stall.hpp): beside the command file, each instance its own.
+    stall::Start(files.command.parent_path() / "stall.log");
     log::Info("role: {} (tandem.ini; the co-op menu can pick another)",
               NameOf(runtime.config.role));
 
@@ -269,6 +272,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     break;
   }
   case RED4ext::v1::EMainReason::Unload:
+    stall::Stop();
     Runtime::Get().Stop();
     Recording::Get().Shutdown();
     engine::RemoveHooks(g_sdk, handle);
