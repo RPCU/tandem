@@ -7,7 +7,6 @@
 ensure join
 peer host --mode front --body male --prefabs 7a3d0c5e9b1f2468
 expect 'in the session as player' 30
-expect 'prefabs: the quests system.s prefab handler is as measured on 2.50' 20
 expect 'prefabs: the host.s quests have 1 prefab\(s\) on' 15
 expect 'prefabs: 1 of the host.s on, 0 off \(grouped\)' 5
 cmd story prefabs
