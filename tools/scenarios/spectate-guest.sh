@@ -25,7 +25,8 @@ mark
 cmd story spectate report
 expect 'in the host.s moment true, watching false' 5
 # 24 s: the host's V dives into cyberspace (b); 30 s: back, played again.
-expect 'spectate: watching .*our V parked: \(b\) the host.s V in another world' 15
+# (The watch may start on another reason and move to (b) a moment later.)
+expect 'spectate: (watching .*our V parked: |still watching, now )\(b\) the host.s V in another world' 15
 expect 'spectate: our own V again \(the reason is over: \(b\)' 15
 reject 'spectate: the camera body has no camera component'
 reject 'watchdog: game thread silent'
