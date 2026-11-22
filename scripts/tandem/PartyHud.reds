@@ -756,12 +756,15 @@ public class TandemPartyHud {
       let there = WorldPosition.ToVector4(WorldTransform.GetWorldPosition(transform));
       height = there.Z - feet.Z;
     }
-    entry.head = this.ProjectionOf(body, component, slot, 0.0, head);
+    // The slot sits where the game hangs a marker (roleMappin: at the chest,
+    // 2026-11-22: the plate drew on Panam's chest); the plate goes 2 m above
+    // the feet, as our own projection and the world point put it.
+    entry.head = this.ProjectionOf(body, component, slot, 2.0 - height, head);
     if !IsDefined(entry.head) {
       this.m_tripped = "RegisterScreenProjection gave nothing";
       return;
     }
-    entry.chest = this.ProjectionOf(body, component, slot, -1.0, chest);
+    entry.chest = this.ProjectionOf(body, component, slot, 1.0 - height, chest);
     this.m_host.TandemWake();
     entry.anchoredTo = body;
     entry.slot = slot;
