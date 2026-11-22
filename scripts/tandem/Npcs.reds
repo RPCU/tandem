@@ -140,6 +140,7 @@ public class TandemNpcs {
   // Our V where the last check saw it, and when it last moved far at once.
   private let m_vAt: Vector4;
   private let m_vJumpedAt: Float;
+  private let m_clockAt: Float;
   private let m_known: array<ref<TandemNpcKnown>>;
   private let m_next: Uint32;
   private let m_last: Float;
@@ -1731,6 +1732,13 @@ public class TandemNpcs {
       this.m_vAt = here;
       this.m_vAt.W = 1.0;
     }
+    // So does a skip of the clock (the time wheel, a sleep): the game
+    // repopulates the street (skip-wheel, 2026-11-22: 2 bodies).
+    let clock = Cast<Float>(TandemWorld.GameSeconds(this.m_game));
+    if this.m_clockAt > 0.0 && clock - this.m_clockAt > 600.0 {
+      this.m_vJumpedAt = now;
+    }
+    this.m_clockAt = clock;
     let streamed = this.m_vJumpedAt > 0.0 && now - this.m_vJumpedAt < 20.0;
     let kept: array<ref<TandemNpcProxy>>;
     let lost: array<Uint32>;
