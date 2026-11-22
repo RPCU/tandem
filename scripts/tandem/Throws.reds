@@ -750,7 +750,9 @@ public class TandemThrows {
     } else if IsDefined(round) {
       round.TandemEnd(end, at);
     }
-    this.Once(n"finish", s"throws: player \(copy.player)'s throw \(copy.id) ended here (\(end))");
+    // Each one (debug): said once per game run, a second scenario's throw
+    // was never heard (combat-throw-host after another, 2026-11-22).
+    TandemNative.LogDebug(s"throws: player \(copy.player)'s throw \(copy.id) ended here (\(end))");
   }
 
   // A grenade copy's own fuse waits for the real one's end.
