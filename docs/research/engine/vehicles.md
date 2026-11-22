@@ -552,25 +552,26 @@ body `IsManaged`, neither `IsSpawning` nor `IsSpawned`.
 - **How it was measured** (instance b, 30 frames/s; a vehicle asked 14 m
   from V and an NPC 8 m from it, the time until `GetEntity` returns each):
 
-  | V is                                                        | vehicle           | NPC          |
-  | ----------------------------------------------------------- | ----------------- | ------------ |
-  | on foot                                                     | 0.07 s            | 0.20 s       |
-  | at the wheel of its own real car (the host)                 | within the frame  | not measured |
-  | in a seat of a dynamic car nobody moves                     | 0.07 s            | 0.06 s       |
-  | in that seat, the car teleported to where it is every frame | never (10.7 s)    | never (9.3 s) |
-  | … the teleports stopped                                     | 0.065 s later     | 0.39 s later |
-  | in that seat, the car teleported every 2nd frame            | 0.10 s            | not measured |
-  | in that seat, the car teleported every 4th frame            | 0.09 s            | not measured |
-  | in the host's car copy, followed every frame                | never (8.9 s)     | never (7.5 s) |
-  | … the follow stopped                                        | 0.10 s later      | 0.39 s later |
-  | … the follow back on, another asked                         | never (6.5 s)     | not measured |
-  | … out of the seat                                           | 0.075 s later     | not measured |
+  | V is                                                        | vehicle          | NPC           |
+  | ----------------------------------------------------------- | ---------------- | ------------- |
+  | on foot                                                     | 0.07 s           | 0.20 s        |
+  | at the wheel of its own real car (the host)                 | within the frame | not measured  |
+  | in a seat of a dynamic car nobody moves                     | 0.07 s           | 0.06 s        |
+  | in that seat, the car teleported to where it is every frame | never (10.7 s)   | never (9.3 s) |
+  | … the teleports stopped                                     | 0.065 s later    | 0.39 s later  |
+  | in that seat, the car teleported every 2nd frame            | 0.10 s           | not measured  |
+  | in that seat, the car teleported every 4th frame            | 0.09 s           | not measured  |
+  | in the host's car copy, followed every frame                | never (8.9 s)    | never (7.5 s) |
+  | … the follow stopped                                        | 0.10 s later     | 0.39 s later  |
+  | … the follow back on, another asked                         | never (6.5 s)    | not measured  |
+  | … out of the seat                                           | 0.075 s later    | not measured  |
 
   A car teleported every frame with nobody of ours in it stops nothing
   (the street's proxies, `vehicle probe`). It is not the seat, its
   workspot, the car being a dynamic entity, nor speed: the car stood
   still. Whether one frame without a teleport among many is enough was not
   measured (every 2nd and every 4th were). [2.5-verified]
+
 - **`Entity.SetWorldTransform`** (Codeware: the placed component's
   transform) does not move a vehicle: asked every frame for a point up to
   20 m away, the car stayed within 0.003 m of where it was, V in it.
@@ -672,8 +673,8 @@ All from the decompiled 2.50 scripts (`final.reds`), nothing run:
   kept as `VehicleComponent.m_customizationComponent` from the component's
   `OnGameAttach`) gets `SetDefaultDecalsEnabled(false)` and
   `SetupGenericCustomization(record.ExcludedComponentsGeneric(),
-  record.GenericCustomizationMask(), packedA, packedB, isInstant,
-  record.CustomizeCarRims())` (a colour packed as
+record.GenericCustomizationMask(), packedA, packedB, isInstant,
+record.CustomizeCarRims())` (a colour packed as
   `r + g / 100 + b / 10000`, each 0.01 to 0.99: `PackColorForEffect`), or
   `SetupUniqueCustomization` and `ShowUniqueCustomizationDecalsWithDisolve`.
   The lights event (`OnProcessVehicleVisualCustomizationLights`) reads the
@@ -709,3 +710,59 @@ All from the decompiled 2.50 scripts (`final.reds`), nothing run:
   (an empty mask); that it starts the `vvc_color` effect itself (no script
   starts it, only breaks its loop); the look of an instant apply on a copy
   that just spawned.
+
+### 13.155 A vehicle's physics state, the engine's kinematic drive and what reads its speed (2026-11-22, game 2.50, exe read)
+
+- **The physics state** (`vehicleBaseObject` `+0x260`, 32 bits, each a
+  reason the vehicle's own physics are off): `0x10` asleep
+  (`PhysicsWakeUp`, `0x1419079e4`, clears it), `0x80` quest or scene
+  (`IsInQuestOrScenePhysicsState`, `0x1421bc800`), `0x1` traffic
+  (`IsInTrafficPhysicsState` through `0x14081c4c8`), `0x100` driven
+  kinematically (below). The setter is hash 2592348558 (`0x1406e4e80`,
+  `(vehicle, bit, clear)`: sets the bit when `clear` is false; its read of
+  the state, `44 8B B9 60 02 00 00` at `+0x1D`, is tandem's layout check);
+  1620777158 (`0x14081ff30`) clears a bit, 2793083181 (`0x142b94c98`) every
+  bit. A change tells the physics object (`+0x2D0`, its virtual `+0x70`)
+  and the physics proxy (2421431546, `0x140591658`): with any bit but
+  `0x1` and `0x10` set the proxy is made kinematic (proxy command `0x15`,
+  426971847 `0x142607e74`; the rule is 850400227 `0x1405917f0`); `0x10`
+  zeroes its velocities; `0x20` and `0x40` zero the rigid body.
+  [2.5-static]
+- **The engine's own kinematic drive** is a quest's DriveToPoint
+  (3713079867, `0x142fdaaf0`): unless its condition (`0x1406eb934`) asks
+  for the physics, it sets `0x100` when it is not set and moves the car
+  with the move (2933986803, §13.141) every frame; when the physics are
+  asked for, it clears every bit (2793083181). [2.5-static]
+- **The move on a kinematic body** (its physics half 542316499,
+  `0x1402e33fc`): the rigid body (`+0x2D8`) gets the transform (3129742900,
+  `0x1406e101c`: `+0x150` position, `+0x160` orientation) and the velocity
+  of the motion (the target less where the physics object last had the
+  body, over the step: linear `+0x18`, angular `+0x24`); the proxy, which
+  its query `0x15` says is kinematic, is put at the transform outright
+  (command 3, 3058768275 `0x140612bc4`, not woken while a state bit is set)
+  and given no velocity; the physics object's per-frame state (`+0xD0`)
+  takes flag 2, both velocities and the transform. The move then copies
+  the rigid body's velocities to the runtime data. Over 100 m/s of motion:
+  at rest there. [2.5-static]
+- **What reads the speed**: `GetLinearVelocity` (`0x141918a74`) reads the
+  runtime data (`+0x5F0`) at `+0x30`; 2951222690 (`0x14053b7a4`) writes it
+  with the speed along the car's forward (`+0xC8`), its share of the top
+  speed (`+0xCC`) and the sideways speed (`+0xD0`); the move calls it with
+  the rigid body's velocity. A teleport leaves none: §13.6's zero.
+  [2.5-static]
+- **The direct placement** (457775029, `0x1404db4d0`,
+  `(vehicle, WorldTransform const&, bool)`): the placed component, the
+  runtime data, the rigid body's transform and, with the bool, the proxy's
+  transform, keeping the rigid body's velocity (given to a dynamic proxy).
+  The vehicle's update (`0x1401bcf0c`) calls an externally driven step
+  instead of its own (2801603953, `0x142b97eb0`) when the object at
+  `+0x610` says so (its flag at `+8`): the runtime velocity (2951222690),
+  the ground snap (car virtual `+0x2B0`, `0x142bad52c`: a ray down at each
+  wheel), the wheels (wheeled virtual `+0x2E8`, the physics object's
+  `+0x118`), then this placement. tandem does not use it: the move on a
+  kinematic body places the same way and carries the motion's velocity.
+  [2.5-static]
+- **Why `Entity.SetWorldTransform` did not move a vehicle** (§13.141): it
+  writes the placed component (1828854026, `0x14061ddc8`, the move's
+  first step too), which the vehicle's update writes back from its rigid
+  body every frame. [2.5-static]

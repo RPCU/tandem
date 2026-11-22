@@ -149,7 +149,27 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
 
 - **Range**: a vehicle is shared within 120 m of any player and dropped
   beyond 150 m (`traffic::InRange`: no flicker at the edge). At most 48 at
-  once (`kMaxShared`): what a game is asked to show.
+  once (`kMaxShared`): what a game is asked to show, nearest first: with
+  the share full, the nearest vehicle left out takes the place of the
+  farthest one shared when it is 20 m nearer a V or more, one a round
+  (`TandemTraffic.Share`; `street count` ends with how many). A ride's
+  host had 53 vehicles, 48 shared in the order they came, the parked cars
+  of the start among them (2026-11-22).
+- **Both screens, measured** (`street list` on both games at once, then
+  `tools/street-compare.py HOST.log GUEST.log`: each list carries our V's
+  place, each vehicle's velocity and our own unshared vehicles within
+  150 m with why). The 2026-11-22 ride's "45 of 51 vehicles on both" was
+  the two lists taken 1.2 s apart while the street moved: the 6 were 3
+  vehicles the host announced and 3 it dropped in between (their spawn
+  and gone lines say when), and the bodies up to 24 m apart were cars
+  moving for those 1.2 s; none was a vehicle one game streamed and the
+  other lacked. What the lists did not count: the riding guest's own
+  crowd cars, held back (never announced inside the host's region) yet
+  driving on its screen, 13 to 34 during the ride; density 0 does not
+  stop its traffic (`npcs: guest, own crowd off` at the start of the
+  ride). Open: keeping a covered guest's own traffic from spawning (a
+  crowd null area, `overlap = area`, and `overlap_despawn` are untested
+  for it).
 - **A packet** holds at most 32 entries of 28 bytes: position as floats,
   the rotation in 6 bytes (the quaternion's i, j, k in 1/32767 with r ≥ 0,
   under 0.01° of error), the velocity in cm/s. Ten a second is **under
@@ -165,9 +185,10 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
 - **Drawing**: each vehicle has its own track (`sync::VehicleTrack`, the
   one player cars use), drawn 200 ms in the past (two samples of a 10 Hz
   stream around it), extrapolated up to 500 ms along its velocity when a
-  far car only gets every third packet, then held. Proxies are moved by
-  the engine's kinematic vehicle move, a teleport only for a jump
-  (`vehicles.md`, "How a copy is moved"); one at rest is left alone.
+  far car only gets every third packet, then held. Proxies are moved as
+  every vehicle another game runs (`vehicles.md`, "How a copy is moved":
+  teleports by default, a kinematic body with `vehicle_move = kinematic`);
+  one at rest is left alone.
 - **Occupants** are NPCs of the owner, shared by the existing NPC range
   (60 m): beyond it a car's proxy has nobody at the wheel, which at that
   distance is behind a windscreen. Inside it the driver is an NPC proxy
@@ -203,10 +224,10 @@ Each game simulates the side it owns, and never the other.
 - A traffic car hitting a player's parked car, or a player on foot: the
   owner's car is moved by the owner; the parked car belongs to whoever
   drove it last (its copy elsewhere is not pushed), and a V on foot is
-  hurt on its own game by the proxy that hits it: the proxy is moved with
-  its owner's velocity (the kinematic move), so the game's own hit runs
-  (a knockdown, thrown aside); teleported, it had no speed and carried a V
-  on its hood. To check in game.
+  hurt on its own game by the proxy that hits it: a kinematic body
+  (`vehicle_move = kinematic`) carries its owner's velocity, so the game's
+  own hit should run (a knockdown, thrown aside); teleported, it had no
+  speed and carried a V on its hood. To check in game.
 - **Our traffic stops for a partner's V** (`TandemTraffic.Yield`, ten times
   a second on the cars we run; written 2026-11-22, not run in game). The
   native traffic system brakes for our own V by itself and drove through a
@@ -307,26 +328,26 @@ from that moment: `NpcSeat` out, then its states as for any NPC.
 
 ## Consistency
 
-| How it diverges                                           | What the player would see                            | Guard                                                                                                                                                      |
-| --------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| a late joiner                                             | an empty street                                      | spawns (at the latest transform), statuses and seats are kept and sent with the NPC domain                                                                 |
-| a spawn, a removal or a status lost (a bug, a full queue) | a missing car, a ghost, a car that should be a wreck | the shared set and each status are hashed into the NPC digest; a resync opens with `TrafficSet`                                                            |
-| sent twice (a resync, a duplicate)                        | two cars in one place                                | a known id is not announced again; statuses equal to the copy are dropped; hits and claims are one-shots                                                   |
-| a state overtakes its `TrafficGone` (other channel)       | a car back from nowhere                              | states only for known ids                                                                                                                                  |
-| the owner's world is rebuilt (fast travel)                | cars drawn where the old street was                  | `TrafficStates` share the NPC states' numbering: `Epoch::firstNpcSeq` fences both                                                                          |
-| a hit or a claim aimed at the owner's old world           | a wrong car damaged or taken                         | behind the epoch fence, like `NpcHit`                                                                                                                      |
-| hits queued behind a loading screen                       | a car wrecked the moment the world is back           | dropped after 3 s                                                                                                                                          |
-| a proxy's body streamed out or lost in our fast travel    | an invisible car                                     | the script's check against the session's record, once a second: spawned again after 3 s                                                                    |
-| our V rides in a car another game moves (its copy here, teleported every frame) | no proxy of anyone's traffic, nor of their NPCs: an empty street from the seat | every vehicle another game runs is moved by the engine's kinematic move, no teleport (`vehicles.md`, "How a copy is moved"; engine-knowledge §13.141) |
-| the owner vanishes                                        | frozen cars                                          | the session ends on the 5 s timeout; proxies go with it, our crowd and traffic come back                                                                   |
-| a guest vanishes in a car it took                         | —                                                    | it was its car: it stays parked with its puppet's car copy, as any car of a player that left                                                               |
-| a guest vanishes mid-claim                                | a car nobody drives                                  | the claim was granted or not; if granted the body is its (parked) car, if not nothing changed                                                              |
-| a proxy that had an occupant must go                      | a crash (engine-knowledge §13.6)                     | never deleted: kept out of range and reused for the next vehicle of its record                                                                             |
-| a guest owner's spawn or removal lost                     | a car missing for its linked players, or a ghost     | its vehicles are hashed into the `OwnedDigest` with its NPCs; twice different, it sends its whole set (`TrafficSet` from the guest, its spawns, statuses)  |
-| a hand-over step lost                                     | a car nobody runs, or run twice                      | one owner at every moment (the host moves it when the giver's state arrives); each step retried 3 times; a repeated state is answered with the same `Done` |
-| the receiver cannot run it, or leaves mid hand-over       | a frozen car                                         | it goes for everyone (`TrafficGone` away); a receiver that vanished is an owner that vanished                                                              |
-| a request aimed at the old owner                          | a hit or a claim lost                                | routed by the session's owner map at the host: the new owner gets it                                                                                       |
-| a guest's word about a vehicle it does not run            | a car moved or wrecked by two games                  | the host drops it (and the referee flags it: `authority.not-owner`)                                                                                        |
+| How it diverges                                                                 | What the player would see                                                      | Guard                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a late joiner                                                                   | an empty street                                                                | spawns (at the latest transform), statuses and seats are kept and sent with the NPC domain                                                                                                   |
+| a spawn, a removal or a status lost (a bug, a full queue)                       | a missing car, a ghost, a car that should be a wreck                           | the shared set and each status are hashed into the NPC digest; a resync opens with `TrafficSet`                                                                                              |
+| sent twice (a resync, a duplicate)                                              | two cars in one place                                                          | a known id is not announced again; statuses equal to the copy are dropped; hits and claims are one-shots                                                                                     |
+| a state overtakes its `TrafficGone` (other channel)                             | a car back from nowhere                                                        | states only for known ids                                                                                                                                                                    |
+| the owner's world is rebuilt (fast travel)                                      | cars drawn where the old street was                                            | `TrafficStates` share the NPC states' numbering: `Epoch::firstNpcSeq` fences both                                                                                                            |
+| a hit or a claim aimed at the owner's old world                                 | a wrong car damaged or taken                                                   | behind the epoch fence, like `NpcHit`                                                                                                                                                        |
+| hits queued behind a loading screen                                             | a car wrecked the moment the world is back                                     | dropped after 3 s                                                                                                                                                                            |
+| a proxy's body streamed out or lost in our fast travel                          | an invisible car                                                               | the script's check against the session's record, once a second: spawned again after 3 s                                                                                                      |
+| our V rides in a car another game moves (its copy here, teleported every frame) | no proxy of anyone's traffic, nor of their NPCs: an empty street from the seat | that car is not teleported two frames running while a body of ours spawns; with `vehicle_move = kinematic` never teleported (`vehicles.md`, "How a copy is moved"; engine-knowledge §13.141) |
+| the owner vanishes                                                              | frozen cars                                                                    | the session ends on the 5 s timeout; proxies go with it, our crowd and traffic come back                                                                                                     |
+| a guest vanishes in a car it took                                               | —                                                                              | it was its car: it stays parked with its puppet's car copy, as any car of a player that left                                                                                                 |
+| a guest vanishes mid-claim                                                      | a car nobody drives                                                            | the claim was granted or not; if granted the body is its (parked) car, if not nothing changed                                                                                                |
+| a proxy that had an occupant must go                                            | a crash (engine-knowledge §13.6)                                               | never deleted: kept out of range and reused for the next vehicle of its record                                                                                                               |
+| a guest owner's spawn or removal lost                                           | a car missing for its linked players, or a ghost                               | its vehicles are hashed into the `OwnedDigest` with its NPCs; twice different, it sends its whole set (`TrafficSet` from the guest, its spawns, statuses)                                    |
+| a hand-over step lost                                                           | a car nobody runs, or run twice                                                | one owner at every moment (the host moves it when the giver's state arrives); each step retried 3 times; a repeated state is answered with the same `Done`                                   |
+| the receiver cannot run it, or leaves mid hand-over                             | a frozen car                                                                   | it goes for everyone (`TrafficGone` away); a receiver that vanished is an owner that vanished                                                                                                |
+| a request aimed at the old owner                                                | a hit or a claim lost                                                          | routed by the session's owner map at the host: the new owner gets it                                                                                                                         |
+| a guest's word about a vehicle it does not run                                  | a car moved or wrecked by two games                                            | the host drops it (and the referee flags it: `authority.not-owner`)                                                                                                                          |
 
 ## Stages
 
