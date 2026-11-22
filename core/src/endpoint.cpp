@@ -2930,6 +2930,12 @@ void Endpoint::SendLocalStatusVisualsNow() {
 }
 
 void Endpoint::SendLocalCue(proto::Cue cue) {
+  // A charge's level and hand as the wire carries them (a byte each), and
+  // nothing else.
+  if (cue.kind == proto::CueKind::Charge)
+    cue.at = {proto::ChargeLevel(cue.at.x),
+              cue.at.y == proto::kChargeLeftHand ? proto::kChargeLeftHand : proto::kChargeRightHand,
+              0.f};
   if (m_tap)
     m_tap(cue);
   if (!IsJoined() || m_ended)

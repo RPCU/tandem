@@ -34,7 +34,11 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 16: dual wielding, the hand of what so far was the right hand's: a
 // Charge cue's `at.y`, kThrowLeftHand (a smart round), kStrikeLeftHand (a
 // game of 15 would draw and count each on the right hand's weapon).
-inline constexpr std::uint16_t kProtocolVersion = 16;
+// 17: PoseFrame's wire form (the key as a distance, a short time between
+// keys, no codes on a key, no length) and its two-byte turn (kBoneNudge);
+// the player in a byte in PoseFrame, PlayerMotion, VehicleMotion and Cue;
+// a charge Cue's level and hand in a byte each.
+inline constexpr std::uint16_t kProtocolVersion = 17;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -1715,7 +1719,9 @@ enum class CueKind : std::uint8_t {
   // charged it is (0..1: its glow), `at.y` the hand (kChargeRightHand,
   // kChargeLeftHand: v16, a dual wielding V charges each on its own), sent
   // on each change and every 0.25 s while not idle; a receiver ends a
-  // charge that stopped being said (a lost Idle). (v13)
+  // charge that stopped being said (a lost Idle). (v13) Its level and its
+  // hand travel in a byte each (v17): `at` is {ChargeLevel(level), the
+  // hand, 0} (Endpoint::SendLocalCue makes it so).
   Charge = 4,
 };
 inline constexpr std::uint8_t kTraceLeftHand = 1;  // from the left hand's weapon
@@ -1738,6 +1744,10 @@ struct Cue {
   Vec3 at;
   friend bool operator==(const Cue &, const Cue &) = default;
 };
+// A charge's level as the wire carries it: the nearest of kChargeLevels
+// steps of 0..1 (out of range or not a number: clamped).
+inline constexpr float kChargeLevels = 255.f;
+float ChargeLevel(float level);
 
 // How one of the host's NPCs reacts to a hit, in the game's own terms: the
 // hit reaction its HitReactionComponent and AI chose (a twitch, an impact, a
@@ -2507,16 +2517,27 @@ struct StoryRestrictions {
 // == seq) has every bone whole; the others say per bone (2 bits of `codes`,
 // slot n at bits 2n) whether it is the key's (kBoneKept), a small turn from
 // the key's (kBoneTurn: a rotation vector, 3 signed bytes of
-// kPoseTurnStep rad: up to 0.5 rad), or whole (kBoneWhole: a smallest-three quaternion in
-// 5 bytes), in slot order in `rotations`. State channel.
+// kPoseTurnStep rad: up to 0.5 rad; kBoneNudge: the same in 2 bytes, 5
+// signed bits a step, x lowest: up to 1/16 rad, v17), or whole (kBoneWhole:
+// a smallest-three quaternion in 5 bytes), in slot order in `rotations`.
+// State channel.
+// On the wire (v17, written out in protocol.cpp): the key as how many
+// frames back it is (a varint, 0: a key); a key's time whole and no codes
+// (all whole); another frame's time in 4 bytes; no length before the
+// rotations (the codes say it).
 inline constexpr std::size_t kPoseFrameRotationBytes = 5;
 inline constexpr std::size_t kPoseTurnBytes = 3;
+inline constexpr std::size_t kPoseNudgeBytes = 2;
+inline constexpr int kPoseNudgeSteps = 16; // a nudge's steps: -16..15
 inline constexpr float kPoseTurnStep = 1.f / 256.f;
 inline constexpr std::size_t kPoseCodeBytes = (kPoseBones * 2 + 7) / 8;
-inline constexpr std::uint8_t kBoneKept = 0, kBoneTurn = 1, kBoneWhole = 2;
+inline constexpr std::uint8_t kBoneKept = 0, kBoneTurn = 1, kBoneWhole = 2, kBoneNudge = 3;
+inline constexpr std::uint64_t kPoseTimeMask = 0xFFFF'FFFF;
 struct PoseFrame {
   PlayerId player{};
   std::uint32_t seq{};
+  // A key's: whole. Another frame's: its low 32 bits (kPoseTimeMask); the
+  // receiver completes them from its key's time (PoseDecoder).
   std::uint64_t timeUs{};
   std::uint32_t key{}; // seq of its key frame (== seq: this is one)
   std::array<std::int16_t, 3> hips{};
@@ -2548,9 +2569,10 @@ struct NpcMotion { // State channel, ~10 Hz, host only
   friend bool operator==(const NpcMotion &, const NpcMotion &) = default;
 };
 
-// PlayerState, compact (40 bytes, not 60): a V's orientation is its yaw
-// (1/65536 turn), its velocity in cm/s. Endpoint sends this and gives
-// PlayerState to everything above it. State channel.
+// PlayerState, compact (37 bytes, not 60): a V's orientation is its yaw
+// (1/65536 turn), its velocity in cm/s, the player in a byte (v17, as
+// VehicleMotion's, PoseFrame's and Cue's: protocol.cpp). Endpoint sends
+// this and gives PlayerState to everything above it. State channel.
 struct PlayerMotion {
   PlayerId player{};
   std::uint32_t seq{};

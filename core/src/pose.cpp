@@ -295,14 +295,35 @@ namespace {
 void SetCode(proto::PoseFrame &frame, std::size_t slot, std::uint8_t code) {
   frame.codes[slot / 4] |= static_cast<std::uint8_t>(code << (2 * (slot % 4)));
 }
+
+// A turn whose three steps each fit 5 signed bits: two bytes, x at bit 0.
+bool NudgeOf(const std::int8_t *turn, std::uint8_t *out) {
+  for (int axis = 0; axis < 3; ++axis)
+    if (turn[axis] < -proto::kPoseNudgeSteps || turn[axis] >= proto::kPoseNudgeSteps)
+      return false;
+  const auto bits =
+      static_cast<std::uint16_t>((turn[0] & 31) | (turn[1] & 31) << 5 | (turn[2] & 31) << 10);
+  out[0] = static_cast<std::uint8_t>(bits);
+  out[1] = static_cast<std::uint8_t>(bits >> 8);
+  return true;
+}
+
+void NudgeTurn(const std::uint8_t *in, std::int8_t *turn) {
+  const auto bits = static_cast<std::uint16_t>(in[0] | in[1] << 8);
+  for (int axis = 0; axis < 3; ++axis) {
+    const int steps = (bits >> (5 * axis)) & 31;
+    turn[axis] = static_cast<std::int8_t>(steps >= 16 ? steps - 32 : steps);
+  }
+}
 } // namespace
 
 proto::PoseFrame PoseEncoder::Encode(const proto::PoseState &pose) {
-  proto::PoseFrame frame{
-      .player = pose.player, .seq = pose.seq, .timeUs = pose.timeUs, .hips = pose.hips};
+  proto::PoseFrame frame{.player = pose.player, .seq = pose.seq, .hips = pose.hips};
   const bool key = !m_haveKey || m_sinceKey + 1 >= m_everyFrames || pose.timeUs < m_keyUs ||
-                   pose.timeUs - m_keyUs >= m_everyUs;
+                   pose.timeUs - m_keyUs >= std::min(m_everyUs, kMaxKeyUs);
   frame.key = key ? pose.seq : m_keySeq;
+  // A key says its time whole; the frames after it its low 32 bits.
+  frame.timeUs = key ? pose.timeUs : pose.timeUs & proto::kPoseTimeMask;
   frame.rotations.reserve(proto::kPoseBones * proto::kPoseFrameRotationBytes);
   std::uint8_t packed[proto::kPoseFrameRotationBytes];
   std::int8_t turn[3];
@@ -311,6 +332,11 @@ proto::PoseFrame PoseEncoder::Encode(const proto::PoseState &pose) {
     if (!key && Angle(q, m_key[slot]) <= m_threshold)
       continue; // kBoneKept
     if (!key && TurnOf(m_key[slot], q, turn)) {
+      if (NudgeOf(turn, packed)) {
+        SetCode(frame, slot, proto::kBoneNudge);
+        frame.rotations.insert(frame.rotations.end(), packed, packed + proto::kPoseNudgeBytes);
+        continue;
+      }
       SetCode(frame, slot, proto::kBoneTurn);
       frame.rotations.insert(frame.rotations.end(), reinterpret_cast<std::uint8_t *>(turn),
                              reinterpret_cast<std::uint8_t *>(turn) + proto::kPoseTurnBytes);
@@ -354,8 +380,16 @@ std::optional<proto::PoseState> PoseDecoder::Decode(const proto::PoseFrame &fram
       ++m_otherKey;
     }
   }
-  Key decoded{.seq = frame.seq};
+  Key decoded{.seq = frame.seq, .timeUs = frame.timeUs};
+  // Its time whole again: the one with these low 32 bits nearest its key's
+  // (within 36 minutes of it: the encoder's keys are seconds apart).
+  if (!key) {
+    const auto ahead = static_cast<std::int32_t>(static_cast<std::uint32_t>(frame.timeUs) -
+                                                 static_cast<std::uint32_t>(base->timeUs));
+    decoded.timeUs = static_cast<std::uint64_t>(static_cast<std::int64_t>(base->timeUs) + ahead);
+  }
   std::size_t at = 0;
+  std::int8_t turn[3];
   for (std::size_t slot = 0; slot < proto::kPoseBones; ++slot) {
     const auto code = frame.Code(slot);
     if (code == proto::kBoneWhole) {
@@ -371,12 +405,18 @@ std::optional<proto::PoseState> PoseDecoder::Decode(const proto::PoseFrame &fram
       decoded.bones[slot] = Turned(
           base->bones[slot], reinterpret_cast<const std::int8_t *>(frame.rotations.data() + at));
       at += proto::kPoseTurnBytes;
+    } else if (code == proto::kBoneNudge) {
+      if (at + proto::kPoseNudgeBytes > frame.rotations.size())
+        return std::nullopt;
+      NudgeTurn(frame.rotations.data() + at, turn);
+      decoded.bones[slot] = Turned(base->bones[slot], turn);
+      at += proto::kPoseNudgeBytes;
     } else {
       decoded.bones[slot] = base->bones[slot];
     }
   }
   proto::PoseState state{
-      .player = frame.player, .seq = frame.seq, .timeUs = frame.timeUs, .hips = frame.hips};
+      .player = frame.player, .seq = frame.seq, .timeUs = decoded.timeUs, .hips = frame.hips};
   for (std::size_t slot = 0; slot < proto::kPoseBones; ++slot)
     PackQuat(decoded.bones[slot], state.rotations.data() + slot * proto::kPoseRotationBytes);
   if (key) {
