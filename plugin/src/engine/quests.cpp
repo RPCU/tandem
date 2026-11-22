@@ -45,6 +45,7 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "../degradations.hpp"
 #include "../log.hpp"
 #include "access.hpp"
 #include "quests.hpp"
@@ -456,10 +457,14 @@ std::uint8_t Detour(void *phase, void *node, void *context, const void *socket, 
   if (firstOfPhase)
     log::Debug("quest: freezing {} phase {:#x} (resource {:#x}, depth {})", gig ? "gig" : "story",
                hash, ResourceOf(phaseAddress), depth);
-  if (overflowed)
+  if (overflowed) {
     log::Error("quest: more than {} signals held: the guest's own story lost some, its leave "
                "must reload its last save",
                kMaxHeld);
+    Degradations::Get().Fallback("quest signals dropped",
+                                 "more signals held than there is room for: the guest's own "
+                                 "story lost some");
+  }
   return kRefused;
 }
 
@@ -531,6 +536,7 @@ int GiveBack(const std::vector<Held> &held) {
     ReadAt(reinterpret_cast<std::uintptr_t>(system) + kSystemRoot, root);
   if (!root) {
     log::Error("quest: no quests system: {} held signals dropped", held.size());
+    Degradations::Get().Fallback("quest signals dropped", "no quests system to give them back to");
     return -1;
   }
   const auto executePath = g_replayOk.load() ? ExecutePathOf(root) : nullptr;
@@ -538,6 +544,8 @@ int GiveBack(const std::vector<Held> &held) {
     log::Error("quest: this game's quest phases are not laid out as on 2.50: {} held signals "
                "dropped, the guest's own story must reload its last save",
                held.size());
+    Degradations::Get().Fallback("quest signals dropped",
+                                 "the quest phases are not laid out as on 2.50");
     return -1;
   }
   auto *lock = reinterpret_cast<RED4ext::SharedSpinLock *>(
@@ -618,7 +626,7 @@ bool CheckQuests() {
   if (nodes)
     FeatureOn(feature::kQuestNodes);
   if (!g_freezeAllowed) {
-    FeatureNotAsked(feature::kQuestFreeze, "tandem.ini quest_freeze = off");
+    FeatureSwitchedOff(feature::kQuestFreeze, "tandem.ini quest_freeze = off");
     return nodes;
   }
   // The freeze gives its held signals back through these: without them it

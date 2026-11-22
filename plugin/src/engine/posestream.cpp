@@ -49,6 +49,7 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "../degradations.hpp"
 #include "../log.hpp"
 #include "../perf.hpp"
 #include "../runtime.hpp"
@@ -892,8 +893,10 @@ void BindPosePuppet(std::uint32_t player, const RED4ext::Handle<RED4ext::ent::En
         break;
       }
   if (!slot) {
-    if (instance != 0)
+    if (instance != 0) {
       log::Warn("pose stream: no room to bind player {}", player);
+      Degradations::Get().Fallback("no room", std::format("no pose slot for player {}", player));
+    }
     return;
   }
   if (slot->instance.load() == instance && slot->player.load() == player)
@@ -920,8 +923,10 @@ void SetPoseActorSource(std::uint32_t npc, const RED4ext::Handle<RED4ext::ent::E
         break;
       }
   if (!slot) {
-    if (object != 0)
+    if (object != 0) {
       log::Warn("pose stream: no room to read actor {}", npc);
+      Degradations::Get().Fallback("no room", std::format("no pose slot to read actor {}", npc));
+    }
     return;
   }
   if (slot->object.load() == object && slot->npc.load() == npc)
@@ -955,8 +960,10 @@ void BindPoseActor(std::uint32_t npc, const RED4ext::Handle<RED4ext::ent::Entity
         break;
       }
   if (!slot) {
-    if (instance != 0)
+    if (instance != 0) {
       log::Warn("pose stream: no room to bind actor {}", npc);
+      Degradations::Get().Fallback("no room", std::format("no pose slot for actor {}", npc));
+    }
     return;
   }
   if (slot->instance.load() == instance && slot->player.load() == npc)
@@ -988,9 +995,11 @@ void BindPoseRig(std::uint32_t npc, std::uint8_t part, bool source,
         break;
       }
   if (!slot) {
-    if (instance != 0)
+    if (instance != 0) {
       log::Warn("pose stream: no room for npc {}'s {} rig", npc,
                 part == proto::kRigFace ? "face" : "body");
+      Degradations::Get().Fallback("no room", std::format("no rig slot for npc {}", npc));
+    }
     return;
   }
   if (slot->instance.load() == instance && slot->npc.load() == npc)

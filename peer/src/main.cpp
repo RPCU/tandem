@@ -133,6 +133,7 @@
 
 #include "tandem/combat.hpp"
 #include "tandem/comms.hpp"
+#include "tandem/degraded.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/interpolation.hpp"
 #include "tandem/mods.hpp"
@@ -3905,6 +3906,11 @@ std::string PaintText(const tandem::proto::CarPaint &paint) {
 
 std::string DescribeCombat(const tandem::proto::Message &message) {
   namespace proto = tandem::proto;
+  // (tools/scenario.sh reads this line: a game that runs without something
+  // a scenario did not declare fails it.)
+  if (const auto *degraded = std::get_if<proto::Degraded>(&message))
+    return std::format("degraded: player {}'s game runs without: {}", degraded->player,
+                       tandem::degraded::Describe(*degraded));
   if (const auto *paint = std::get_if<proto::CarPaint>(&message))
     return std::format("player {}'s car is painted: {} (car {:#x})", paint->player,
                        PaintText(*paint), paint->vehicle);

@@ -4,6 +4,9 @@
 // engine safely"): every address-library hash goes through Find, every
 // hand-measured layout through a check, and what does not match this game
 // turns one feature off, with one log line, instead of ending the process.
+// Never silently: a feature that goes off is registered with what the game
+// runs without (../degradations.hpp), so the player and the other players
+// are told, and a core one (tandem/degraded.hpp) means no session.
 //
 // A feature is a named piece of engine access. Its state is decided at the
 // first frame (CheckAccess, game thread), listed in one log line
@@ -56,6 +59,11 @@ template <class Fn> Fn Find(std::string_view feature, const char *what, std::uin
 void FeatureOn(std::string_view feature);
 void FeatureOff(std::string_view feature, std::string_view reason);
 void FeatureNotAsked(std::string_view feature, std::string_view why);
+// Not asked for because tandem.ini switched a path of the sync off (pose,
+// quest_freeze…): the lesser path is the player's choice, and still listed
+// with what the game runs without (degradations.hpp), as chosen.
+void FeatureSwitchedOff(std::string_view feature, std::string_view why);
+bool FeatureIsOff(std::string_view feature);
 // False for a feature that is off, not asked for, or not checked yet.
 bool FeatureIsOn(std::string_view feature);
 

@@ -8,6 +8,7 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "combat.hpp"
+#include "degradations.hpp"
 #include "log.hpp"
 #include "regions.hpp"
 #include "runtime.hpp"
@@ -309,6 +310,12 @@ struct TandemFight : Red::IScriptable {
       // Each player's car's paint: kept here for Paint.reds (TandemProgress).
       if (const auto *paint = std::get_if<proto::CarPaint>(&message)) {
         Combat::Get().NotePaint(*paint);
+        continue;
+      }
+      // What each other game runs without: kept for Degraded.reds
+      // (TandemDegraded), which tells the player.
+      if (const auto *degraded = std::get_if<proto::Degraded>(&message)) {
+        Degradations::Get().NoteRemote(*degraded);
         continue;
       }
       // The session's vendors: kept here for Vendors.reds (TandemProgress).

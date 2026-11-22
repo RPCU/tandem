@@ -248,8 +248,17 @@ public:
   // session is chosen or started, and the co-op menu says why
   // (TandemNative.CompatProblems).
   bool Blocked() const { return config.compat && !Problems().empty(); }
-  // Why, one sentence each for the player (whatever compat says).
+  // Why, one sentence each for the player (whatever compat says): a startup
+  // problem, Phantom Liberty, or a core feature that is off in this game
+  // (degradations.hpp: no session without one, degraded::CoreProblem).
   std::vector<std::string> Problems() const;
+  // Game thread, when what the game runs without changed: a session chosen
+  // (tandem.ini, the menu) and not started yet is dropped when co-op is off
+  // now. A running one is the scripts' to leave, with words (Degraded.reds).
+  void RecheckChoice();
+  // True once after a chosen session was dropped because a core feature is
+  // off (the scripts tell the player why nothing starts).
+  bool TakeCoreRefusal() { return m_coreRefused.exchange(false); }
   // What differs between our game and another player's (net thread writes,
   // one line each; kept for the menu and the report until the next session).
   void NoteDifference(std::string line);
@@ -863,6 +872,7 @@ private:
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock
   std::atomic<proto::PlayerId> m_poseLoopback{0};
   std::atomic<std::int32_t> m_expansion{0}; // compat::Expansion
+  std::atomic_bool m_coreRefused{false};
   std::uint32_t m_loopSeq{};
   mutable std::mutex m_posesLock;
   std::map<proto::PlayerId, pose::PoseTrack> m_poses;

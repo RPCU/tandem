@@ -20,6 +20,7 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "../degradations.hpp"
 #include "../log.hpp"
 #include "scenes.hpp"
 
@@ -101,9 +102,13 @@ bool LayoutOk() {
       log::Info(
           "scenes: sceneFile +{:#x}, category +{:#x}, actors +{:#x} (each {:#x}, name +{:#x})",
           sceneFile, g_category, g_actors, g_actorSize, g_actorName);
-    } else
+    } else {
       log::Error("scenes: questSceneNodeDefinition, scnSceneResource or scnActorDef differ "
                  "from 2.50: every scene counts as important (none private)");
+      Degradations::Get().Start("scene privacy",
+                                "the scene classes differ from 2.50: every scene counts as "
+                                "important (none private)");
+    }
   }
   return g_layoutOk;
 }

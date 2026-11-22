@@ -23,6 +23,7 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "../degradations.hpp"
 #include "../log.hpp"
 #include "casts.hpp"
 
@@ -97,6 +98,9 @@ void Prepare() {
   if (!workspots || !device) {
     log::Warn("casts: WorkspotGameSystem or Device is not in the RTTI: every interaction counts "
               "as casting its doer");
+    Degradations::Get().Start("interaction casts",
+                              "WorkspotGameSystem or Device is not in the RTTI: every "
+                              "interaction counts as casting its doer");
     return;
   }
   const CBaseFunction *native = nullptr;
@@ -117,9 +121,13 @@ void Prepare() {
              Code(enter, size) != nullptr;
   if (sinks.ok)
     log::Info("casts: reading device callbacks (Device.EnterWorkspot: {} bytes of bytecode)", size);
-  else
+  else {
     log::Warn("casts: the functions are not as measured on 2.50: every interaction counts as "
               "casting its doer");
+    Degradations::Get().Start("interaction casts",
+                              "the device functions are not as measured on 2.50: every "
+                              "interaction counts as casting its doer");
+  }
 }
 
 struct Index {

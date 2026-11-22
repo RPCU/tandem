@@ -2,6 +2,7 @@
 
 #include "comms.hpp"
 #include "config.hpp"
+#include "degradations.hpp"
 #include "engine/access.hpp"
 #include "engine/guards.hpp"
 #include "engine/hooks.hpp"
@@ -101,6 +102,14 @@ bool OnRunningUpdate(RED4ext::CGameApplication *) {
   // (engine/access.hpp). A blocked plugin touches nothing and checks nothing.
   if (!tandem::plugin::engine::AccessChecked() && !tandem::plugin::Runtime::Get().Blocked())
     tandem::plugin::engine::CheckAccess();
+  // A core feature went off (the check above, or a first use later): a
+  // session chosen and not started is dropped, the menu says why.
+  static std::uint64_t s_degradedSeen = 0;
+  if (const auto changes = tandem::plugin::Degradations::Get().Local().Changes();
+      changes != s_degradedSeen) {
+    s_degradedSeen = changes;
+    tandem::plugin::Runtime::Get().RecheckChoice();
+  }
   if (!tandem::plugin::Runtime::Get().Started())
     return false;
   Red::ScriptGameInstance game;
@@ -246,7 +255,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     if (runtime.config.pose)
       engine::InstallPoseStream(sdk, handle);
     else
-      engine::FeatureNotAsked(engine::feature::kPoseStream, "tandem.ini pose = off");
+      engine::FeatureSwitchedOff(engine::feature::kPoseStream, "tandem.ini pose = off");
     // The quest node hook (engine/quests.cpp): the guest's quest freeze, only
     // when asked for, and which scene each game plays (scene privacy).
     // Whatever the role (a session may be chosen in the co-op menu): it
@@ -259,7 +268,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     } else {
       const char *why = "tandem.ini quest_freeze, scene_privacy and scene_replay off";
       engine::FeatureNotAsked(engine::feature::kQuestNodes, why);
-      engine::FeatureNotAsked(engine::feature::kQuestFreeze, why);
+      engine::FeatureSwitchedOff(engine::feature::kQuestFreeze, why);
     }
     // The scripted moments marked by hand (docs/architecture/scripted-moments.md,
     // "The moment list"): shipped beside the DLL, plus tandem.ini's.

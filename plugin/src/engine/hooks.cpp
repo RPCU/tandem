@@ -1,6 +1,7 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "../degradations.hpp"
 #include "../log.hpp"
 #include "../runtime.hpp"
 #include "access.hpp"
@@ -136,6 +137,8 @@ bool AttachController(std::uint32_t player, const RED4ext::Handle<RED4ext::ent::
   }
   if (!move) {
     log::Warn("puppet {}: no move component, can't drive it", player);
+    Degradations::Get().Fallback("puppet not driven",
+                                 std::format("puppet {} has no move component", player));
     return false;
   }
 
