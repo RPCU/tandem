@@ -57,6 +57,17 @@
 //                         system's own)
 //   upload                the upload running on our V (an NPC's hack or
 //                         trace), percent: its QuickHackUpload pool
+//   prompt [player N | npc N]  the prompts on the first remote player's
+//                         puppet (player N's, the proxy of NPC N), as
+//                         Prompts.reds carries them: "PATH STATE layer on|off
+//                         active B shown B choice KIND activations N shows N
+//                         presses N". PATH game (the game's own interaction)
+//                         or drawn; STATE how far the game's has proven
+//                         itself there (unproven, activated, shown,
+//                         pressed; drawn); active: our V activates the
+//                         layer (the component's own list); shown: the
+//                         game's prompt on screen holds our choice. none:
+//                         no prompt was ever asked on that body
 public class TandemTestQuery {
   public static func Run(game: GameInstance, system: ref<TandemSystem>, command: String) -> Void {
     let words = StrSplit(command, " ");
@@ -169,6 +180,22 @@ public class TandemTestQuery {
       let prevention = GameInstance.GetScriptableSystemsContainer(game).Get(n"PreventionSystem") as PreventionSystem;
       if IsDefined(prevention) {
         value = IntToString(Cast<Int32>(prevention.GetHeatStageAsInt()));
+      }
+    } else if Equals(what, "prompt") {
+      let prompts = system.Prompts();
+      let body: ref<GameObject>;
+      if Equals(arg, "player") && count > 4 {
+        body = system.PuppetOf(Cast<Uint32>(StringToInt(words[4], 0)));
+      } else if Equals(arg, "npc") && count > 4 {
+        body = GameInstance.FindEntityByID(game, system.ProxyOfNpc(Cast<Uint32>(StringToInt(words[4], 0)))) as GameObject;
+      } else {
+        let others = system.PuppetPlayers();
+        if ArraySize(others) > 0 {
+          body = system.PuppetOf(others[0]);
+        }
+      }
+      if IsDefined(prompts) {
+        value = prompts.StatusLine(body);
       }
     } else if Equals(what, "upload") {
       let pools = GameInstance.GetStatPoolsSystem(game);

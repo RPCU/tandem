@@ -38,6 +38,10 @@ public class TandemDonor {
   // Its HitPhysicalQueryMesh collider: the shape bullets and blows are
   // tested against (V's TPP template has none, so nothing ever hit a puppet).
   public let hitMesh: ref<IComponent>;
+  // Its interaction component (ScriptedPuppet's `Interaction`: an NPC's
+  // Talk, Loot and Grapple layers): what the prompts on another player are
+  // set on (Prompts.reds) when V's template has none of its own.
+  public let interaction: ref<IComponent>;
 }
 
 public class TandemBodies {
@@ -49,6 +53,9 @@ public class TandemBodies {
   // while a job thread dispatches one hung the game (2026-11-17). Stopping
   // only turns the handler off.
   private let m_active: Bool;
+  // tandem.ini native_prompts, read at the start (the graft runs on job
+  // threads): off, a body gets no interaction component from its donor.
+  private let m_interactive: Bool;
 
   public static func FemaleRecord() -> String {
     return "Character.TandemPuppetWa";
@@ -61,6 +68,7 @@ public class TandemBodies {
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
     this.m_active = true;
+    this.m_interactive = NotEquals(TandemNative.Setting("native_prompts"), "off");
     this.m_startedAt = this.Now();
     this.m_female = new TandemDonor();
     this.m_female.record = "Character.TandemDonorWa";
@@ -171,9 +179,11 @@ public class TandemBodies {
     } else if Equals(id, TDBID.Create(TandemBodies.FemaleRecord())) {
       this.Graft("female", this.m_female, components);
       this.MakeVisible("female", this.m_female, builder);
+      this.MakeInteractive("female", this.m_female, builder, components);
     } else if Equals(id, TDBID.Create(TandemBodies.MaleRecord())) {
       this.Graft("male", this.m_male, components);
       this.MakeVisible("male", this.m_male, builder);
+      this.MakeInteractive("male", this.m_male, builder, components);
     }
   }
 
@@ -197,7 +207,11 @@ public class TandemBodies {
     donor.visible = null;
     donor.senses = null;
     donor.hitMesh = null;
+    donor.interaction = null;
     for component in components {
+      if Equals(component.GetName(), n"Interaction") && IsDefined(component as InteractionComponent) {
+        donor.interaction = component;
+      }
       if Equals(component.GetClassName(), n"senseVisibleObjectComponent") {
         donor.visible = component;
       } else if Equals(component.GetClassName(), n"senseComponent") {
@@ -231,7 +245,7 @@ public class TandemBodies {
     }
     TandemNative.Log(s"body: donor \(donor.record) meshes:\(meshes)");
     donor.ready = true;
-    TandemNative.Log(s"body: donor \(donor.record) captured, \(ArraySize(donor.rootSets)) root and \(ArraySize(donor.extensionSets)) extension sets, state features \(TandemBodies.Names(donor.stateFeatures)), visible object \(IsDefined(donor.visible))");
+    TandemNative.Log(s"body: donor \(donor.record) captured, \(ArraySize(donor.rootSets)) root and \(ArraySize(donor.extensionSets)) extension sets, state features \(TandemBodies.Names(donor.stateFeatures)), visible object \(IsDefined(donor.visible)), interaction \(IsDefined(donor.interaction))");
   }
 
   // A puppet is seen by NPCs as its V is by them: the donor's visible
@@ -249,6 +263,30 @@ public class TandemBodies {
       builder.GetTemplate().AddComponent(donor.hitMesh.Clone() as IComponent);
     }
     TandemNative.Log(s"body: \(body) body visible to NPCs (senses \(IsDefined(donor.senses)), hit mesh \(IsDefined(donor.hitMesh)))");
+  }
+
+  // A puppet takes the game's own prompts (Prompts.reds) on the component
+  // ScriptedPuppet looks for, `Interaction`: its template's own, else the
+  // donor's, cloned into the body being built with its layers (GenericTalk
+  // among them). Said either way: Prompts.reds draws the prompts itself on
+  // a body left without one.
+  private func MakeInteractive(body: String, donor: ref<TandemDonor>, builder: ref<EntityBuilderWrapper>, components: array<ref<IComponent>>) -> Void {
+    for component in components {
+      if Equals(component.GetName(), n"Interaction") && IsDefined(component as InteractionComponent) {
+        TandemNative.Log(s"body: \(body) body has an Interaction component of its own");
+        return;
+      }
+    }
+    if !this.m_interactive {
+      TandemNative.Log(s"body: \(body) body has no Interaction component, none grafted (native_prompts = off)");
+      return;
+    }
+    if !donor.ready || !IsDefined(donor.interaction) {
+      TandemNative.Log(s"body: no Interaction component for the \(body) body (donor ready \(donor.ready)): its prompts are drawn");
+      return;
+    }
+    builder.GetTemplate().AddComponent(donor.interaction.Clone() as IComponent);
+    TandemNative.Log(s"body: \(body) body given \(donor.record)'s Interaction component");
   }
 
   private func Graft(body: String, donor: ref<TandemDonor>, components: array<ref<IComponent>>) -> Void {
