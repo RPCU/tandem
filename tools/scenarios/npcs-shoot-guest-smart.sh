@@ -13,8 +13,10 @@ expect_peer 'npc [0-9]+ fires at player [0-9]+ \(guided\)' 15
 expect 'shots: npc [0-9]+.s guided round at us fired from its proxy \(homing on our V.s' 20
 reject 'shots: npc [0-9]+.s guided round has no targeting component'
 # The time between hits still decides: some land, reported to the host.
-expect 'shots: npc [0-9]+.s shot hit our V \(our game.s decision\), reported to the host' 25
-expect_peer 'player [0-9]+ reports npc [0-9]+.s shot hit their V' 5
+expect 'shots: npc [0-9]+.s shot hit our V \(our game.s decision\)' 25
+# ...and told to everyone as the hit it was (the puppet reacts to it).
+expect 'hit taken: our V.s first, by npc [0-9]+, told to the others' 5
+expect_peer 'player [0-9]+ took a hit: by npc [0-9]+' 5
 query after health
 expect_changed "$before" "$after" down
 # Seen (a person there): the rounds bend toward V in flight, as a smart

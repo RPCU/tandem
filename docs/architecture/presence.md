@@ -72,7 +72,7 @@ still see or hear.
 | draws, swaps, holsters | the item appears or disappears in the hand | draw: the engine's own equip notification when the item enters the slot (nothing added); holster: `AudioNotifyItemUnequippedEvent` for the item put away | both are heard; if the draw is silent, queue the equip notification too |
 | uses the mantis blades, other arms | held and swung as any weapon | as any weapon (draw, swing, impact) | the unsheathing sound |
 | triggers the Sandevistan | the trail effect on the puppet (Time.reds); silent | the sounds of V's own status effect (`SandevistanPlayerBuff`'s SFX records) played on the puppet, stopped when it ends; Kerenzikov the same | those sounds exist and are positional (they may be authored for V's own ears) |
-| is hurt | nothing (on the host, the hit reaction of a reported NPC shot) | a fall of its health → V's pain (voice `onPlayerHit`), by how much health was lost | voice |
+| is hurt | nothing (on the host, the hit reaction of a reported NPC shot) | a fall of its health → V's pain (voice `onPlayerHit`), by how much health was lost; the reaction is the hit's own (Hit reactions, "a V is shot") | voice |
 | goes down | the collapse (pose), the outline | a cry (voice `stlh_death`: V's own death cry is native and has no script name) | whether that context suits; else pick one by ear (`cmd presence vo NAME`) |
 
 **Voices.** The puppet records have an empty `voiceTag`. If V's contexts
@@ -89,9 +89,58 @@ one run with `cmd presence vo onPlayerHit` decides.
 | an NPC blocks, parries, has its guard broken | nothing | the same (feature + `PlayBlock` / `PlayParry`) | — |
 | an NPC ragdolls (explosion, fall, thrown) and gets up | only a knock-out ragdolled | every ragdoll, with its impulse, and its end | getting up without its AI |
 | an NPC dies | the proxy is killed: no death animation plays without the AI | the host's death animation (direction, body part, variation) or its ragdoll; a proxy told neither within 0.6 s ragdolls, so a dead proxy never stands | the animation matches the host's |
-| a V is shot | on the host only: the hit reaction of an NPC shot its guest reported | on every game: a twitch of the puppet's body and a flinch over its pose (0.45 s, the way the hit went when known), from the fall of its health; the body never moves from where its player has it | the flinch reads well at each strength (`cmd presence flinch`) |
+| a V is hit (shot, struck, caught in a blast) | on the host only: the hit reaction of an NPC shot its guest reported (queued with no hit shape, so the hit reaction component returned at once: nothing played) | on every game, **the hit it was** (`HitTaken`, below): queued on the puppet through the game's own damage pipeline, dealing nothing, so the hit reaction component picks the direction, the body part and the variation as for any hit; a flinch over its pose the way the hit went (0.45 s); the body never moves from where its player has it | direction and body part match the hit (`cmd presence hit [npc]`); the flinch reads well at each strength |
+| a V loses health to no hit (burning, poison, a fall) or its hit is not told (a lost message) | — | the fall of its health: a twitch from the front on the belly and a flinch, a quarter of a second after the fall, unless a hit was shown on the puppet around it | `cmd presence flinch` |
 | a V staggers, is knocked down | its body does it (pose stream; `Felled` places the body freely) | unchanged: the owner's body is the truth | — |
 | a V would lose a limb | never (Outcomes.reds, `KeepsLimbs`) | unchanged; the puppet's twitch carries no wound | — |
+
+**A hit a V took** (`scripts/tandem/HitsTaken.reds`, `proto::HitTaken`,
+protocol 18; not yet run in game). V's health stays its own game's (the
+authority table): this is presentation.
+
+- _Told_: where our damage pipeline ends (`DamageSystem.ProcessPipeline`,
+  `Combat.reds`), a hit on our V that took health (`hitFlag.SuccessfulAttack`;
+  not damage over time, not a blocked or dodged one) is told to everyone:
+  who made it when both games know it (a session NPC, ours or a proxy:
+  `HitBy::Npc`; another V: `HitBy::Player`; else `World`), the attack's
+  record and type, the hit shape's zone and kind (`EHitReactionZone`,
+  `EHitShapeType`; a forwarded hit has none), the share of V's health it
+  took, where it landed from V's position and the way it went, whether V
+  is staggered or knocked down, critical. At most one every 0.1 s. State
+  channel, relayed by the host as a `Cue` is, 26 bytes (`proto::Snapped`:
+  place and way a signed byte an axis); a one-shot, never kept.
+- _Shown_ (`TandemHitsTaken.Show`): a `gameHitEvent` on the puppet with
+  the attack (`TandemCombat.AttackRecord`: a stand-in for one we lack),
+  its type, the attacker's entity as source and instigator, a hit shape of
+  the zone (the zone at the hit's height and side when none came,
+  `ZoneAt`), `DealNoDamage`, queued with `DamageSystem.QueueHitEvent`. Our
+  pipeline's stages know it (`IsShown`): none drops it (another V's hit is
+  otherwise left to its game, `IsRemoteComputed`), `ModifyHitData` and
+  `PostProcess` are skipped (no dodge roll, no status effect of the attack
+  on the puppet: `StatusVisuals` shows V's). 0.15 s later the hit reaction
+  component is read (`GetLastHitTimeStamp`, `GetHitReactionData`): a twitch
+  it played is the game's (`hit taken: … reacts by the game's pipeline`);
+  a reaction it chose that is a task of the AI (impact, stagger: a puppet
+  runs none) or a hit it let pass (its own pacing) gets the body's own
+  twitch with the direction and part chosen (`… twitches (…)`). A stagger
+  or a knockdown itself is V's body's, in the pose stream.
+- _No source_: a hit by nobody both games know cannot enter the pipeline
+  (`CheckForQuickExit` wants a source): the body's twitch, its direction
+  from the hit's way as the game computes it
+  (`GameObject.GetLocalAngleForDirectionInInt`), its part from the zone.
+- _Never twice_: a hit our own game ran on the puppet reacted here as it
+  landed (our V's under friendly fire; the swing of an NPC we run: noted
+  where it enters our pipeline, `TandemHitsTaken.Native`): the same hit
+  told back within 1.5 s is not shown again. A shot of an NPC we run is
+  not such a hit (the target's game fires and decides it, `time.md`): it
+  is shown when told. `ShotHit` is no longer sent by a game (the host
+  still takes it: the simulated V says it).
+- Tests: `tests/protocol_test.cpp`, `endpoint_test.cpp` (stamped,
+  relayed, never kept), `referee_test.cpp`, `budget_test.cpp` (two a
+  second each way in the fight); the mock player's `--hurt-hit
+world|npc|you`; scenario `presence-hit-taken`; `cmd presence hit [npc]`,
+  `cmd presence report` (told, shown by the pipeline, by the twitch, left
+  to our own game's hit).
 
 ### 3. Bullet visuals
 
@@ -333,7 +382,8 @@ Scenarios (`tools/scenario.sh NAME`), each checking the game's log:
 <!-- prettier-ignore -->
 | Scenario | Proves |
 | --- | --- |
-| `presence-audio` | footsteps (their source), the shot and its bullet, pain and the flinch, holster and draw |
+| `presence-audio` | footsteps (their source), the shot and its bullet, pain and the flinch (a fall of health no hit explains), holster and draw |
+| `presence-hit-taken` | as a guest: each hit the host's V takes from an NPC is shown on its puppet through the game's pipeline (direction, part), with no flinch of ours for the fall of its health; one by nobody known twitches |
 | `presence-moves` | jump, landing, climb, the blade's swing and its impact |
 | `presence-swim` | into the water, strokes, a dive, back up, out: each heard on the puppet, its water gone with it |
 | `presence-hud` | the entry, health, menu, down, off screen with its arrow, the nameplate; logs the camera's projection |

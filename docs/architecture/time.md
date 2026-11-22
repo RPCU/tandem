@@ -400,8 +400,8 @@ slow-motion cue on (…)`, `time: the slow-motion cue off`. Tested in
     side from the proxy, which has the NPC's record and weapon and plays
     at the host's difficulty; the proxy turns hostile to our V when it
     fires at it, so the hit is not dropped as friendly fire); a hit is
-    reported (`ShotHit`) and the host plays the hit reaction on the
-    puppet. The shot reaches the guest about RTT/2 late: its projectile
+    told to everyone as any hit our V takes (`HitTaken`, `presence.md`)
+    and every game plays the hit reaction on the puppet. The shot reaches the guest about RTT/2 late: its projectile
     runs faster for 0.25 s to catch up (`TimeBubbles::ShotCatchUp`), so
     the guest dodges against the host's timeline. Melee, explosions and
     NPCs the guest has no proxy of stay the host's (`PlayerHit`). Cheating

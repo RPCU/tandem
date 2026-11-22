@@ -594,7 +594,9 @@ decline`, `busy KIND|off`, `busy report`, `apartment report`. Scenarios
   `--charge N` charges its weapon every N s (`Cue` Charge: charging, ready,
   full, then the shot and its end), `--melee N` swings every N s and lands
   it (a `Cue`); `--hurt N` takes a quarter of its V's health every N s (full
-  again under 30%), `--menu-at N` is "in a menu" N s in, for 5 s (both as
+  again under 30%; `--hurt-hit world|npc|you`: each as the hit it was, a
+  `HitTaken`: a bullet on its left leg by nobody known, by the first
+  shared NPC, or by the other V), `--menu-at N` is "in a menu" N s in, for 5 s (both as
   `Presence`); `host --react-npcs N` has one of the NPCs it sends play a
   hit reaction every N s (twitch, impact, stagger, knockdown, ragdoll, its
   end); `--status REC@FROM-TO[,REC@FROM-TO]` puts status effects on its V
