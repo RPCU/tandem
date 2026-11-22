@@ -129,6 +129,21 @@ target, effectName, effectTag, opt statusEffect)` (252966) runs
   puppet's body (an NPC entity) has that slot is not known: tandem probes
   it (`ScriptedPuppet.GetSlotComponent().GetSlotTransform(n"grapple")`)
   and reads the mount back (`architecture/stealth.md`). [2.5-untested]
+  - Measured on instance b (2026-11-22): **V has no `grapple` slot
+    either**: none of her slot components (`slots`, `OccupantSlots` with
+    `bothHands` and `leftShoulder` on `WeaponLeft`, `ItemAttachmentSlots`…)
+    names one, so vanilla's mount does not place the NPC by a slot. A
+    proxy mounted on a puppet on `grapple` is taken (`IsBeingGrappled`
+    true) but stays where it stood, 3 to 3.5 m away. [2.5-verified]
+  - **A slot cannot be added from script**: on the body being built
+    (Codeware `Entity/Extract`), a slot appended to `Item_Attachment_Slot`,
+    an `entFallbackSlot` (`grapple` → `Root`), an existing slot renamed
+    `grapple`, and a new `SlotComponent` (its binding cloned from
+    `Item_Attachment_Slot`) with `grapple` and `leftShoulder`, are each in
+    the component's `slots` but `GetSlotTransform(n"grapple")` stays false:
+    the name lookup is built with the template (`entSlotComponent`
+    `unk140..0x1A0`). Left: a native that rebuilds it, or the slot in the
+    template's resource (ArchiveXL). [2.5-verified]
 - **A thrown body leaves at `ThrowEvents.OnExit`**, not `OnEnter` (the
   kill, `ThrownNPC`, the pose): direction from the camera at the release,
   an aim assist turn, the impulse between `ragdollMaxImpulse` and
