@@ -47,10 +47,19 @@ V (`GetActivatorsForLayer`, `GetActiveInputLayers`, asked every tick) and
 again every 0.25 s while the game's prompt does not hold it, 8 times per
 activation at most.
 
-On a player's puppet the NPC layers are switched off when its first prompt
-is offered (`Grapple`, the takedown and finisher layers, `Loot`,
-`ReturnTalk`): a grafted component brings them all. The `GenericTalk`
+On a player's puppet the NPC layers are switched off (`Grapple`, the
+takedown and finisher layers, `Loot`, `GenericTalk`, `ReturnTalk`): a
+grafted component brings them all. Each puppet is met within a second of
+its body existing, offered a prompt or not (`TandemPrompts.Sweep`), and
+its layers are switched off again every 5 s (vanilla turns the takedown
+layers back on when an NPC gets up, `ScriptedPuppet.OnResurrected`); not
+with `native_prompts = off`, which touches nothing. The `GenericTalk`
 layer is on only while a prompt is offered.
+
+A lead, not used: `PlayerPuppet.OnIncapacitated` turns on a layer named
+`Revive` (the cut multiplayer's), so V's own templates may carry an
+interaction component with that layer; `prompts layer Revive` tries our
+choices on it.
 
 ## One body, two ways
 
@@ -110,7 +119,8 @@ The fallbacks (`TandemPrompts.Carry`, `Tick`):
 - `tools/game.sh cmd prompts`: every body and the game's prompt now;
   `prompts off | on` (all drawn | the game's again, bodies adopted again);
   `prompts face [N]` (our V turned to player N's puppet, or put 1.2 m in
-  front of it); `prompts press` (a choice event queued on the body that
+  front of it); `prompts layer NAME` (our choices on another layer, bodies
+  adopted again); `prompts press` (a choice event queued on the body that
   carries a choice: the way from the event to the feature, no key).
 - `cmd test query prompt [player N | npc N]` = `game|drawn STATE layer
 on|off active B shown B choice KIND activations N shows N presses N`
@@ -142,8 +152,9 @@ choice event`, and no `back to drawn prompts`); no prompt from behind a
 5. `prompts-revive`, then by hand on a body lying down: looking down at
    it shows "Revive"; holding F fills the bar, letting go stops it
    (`revive: stopped reviving NAME (released)`).
-6. No grapple, takedown or loot prompt on a player's puppet; no "Talk" on
-   one when nothing is offered (in combat).
+6. No grapple, takedown or loot prompt on a player's puppet (crouched
+   behind it, on a downed one, with `trade = off` too); no "Talk" on one
+   when nothing is offered (in combat).
 7. `vendor-guest` with the default: the prompt on the proxy, the shop
    opening on the key.
 8. A hold action for Revive ("[Hold F]"): the `action` of
