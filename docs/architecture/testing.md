@@ -256,6 +256,7 @@ read):
 | `journal PATH [CLASS]` | the entry's state (`JournalManager`: `Inactive`, `Active`, `Succeeded`…) |
 | `position` | our V's X Y Z |
 | `mounted [player N \| puppet]` | `RECORD SLOT ENTITYHASH` of the vehicle our V (player N's puppet, the first remote player's) is mounted in (`MountingFacility`) |
+| `held [player N \| puppet]` | `RIGHT LEFT HOW`: the records in the right and left hand slots of our V (player N's puppet, the first remote player's; `none`: empty; `TransactionSystem`) and `dual` when the game dual wields them (our V: its state machine's `IsDualWielding`; a puppet: two weapons in hand, both tagged `DualWield`), else `single` |
 | `npc ID health` | a shared NPC's health, percent: our own NPC or our proxy |
 | `wanted` | our V's wanted level, 0..5 (`PreventionSystem.GetHeatStageAsInt`) |
 | `threat puppet` | the largest threat value an NPC we run near our V holds on the first remote player's puppet (`TargetTrackerComponent`) |
@@ -484,7 +485,8 @@ on` its camera's views go out, scene or not, for a guest to spectate
   scenario `time-menus`).
 - **Fights**: `join --hit-npcs N` hits one of the host's NPCs every N s
   as a strike, `--strike KIND` its outcome (`plain`, `nonlethal`, `cap`,
-  `poise`, `head`, `blade`); as the host of a replay it applies strikes by
+  `poise`, `head`, `blade`, `offhand`: the left hand's weapon's, with
+  `--hold-left`); as the host of a replay it applies strikes by
   the game's rules (`StrikeLoss`) and answers with health, poise,
   knock-outs, wounds and deaths; `host --hit-you N` has one of its NPCs (a
   replayed one if any) hit every guest's V for 10 physical every N s; a
@@ -579,7 +581,9 @@ decline`, `busy KIND|off`, `busy report`, `apartment report`. Scenarios
   `front-badlink`, `drive-badlink`, `npcs-guest-badlink`.
 - **Presence** (any mode; `presence.md`): `--hold RECORD` puts an item in
   its V's right hand (a weapon, so `--shoot` and `--melee` are seen and
-  heard), `--holster-at N` puts it away N s after another player is there
+  heard), `--hold-left RECORD` one in its left (dual wielding: `--shoot`,
+  `--charge` and `--smart` then alternate hands, the left hand's said as
+  the left's), `--holster-at N` puts them away N s after another player is there
   and draws it 5 s later; `--shoot N` also sends where the bullet ended (a
   `Cue` 6 m past the other V; `--ricochet`: and a ricochet on from there),
   `--charge N` charges its weapon every N s (`Cue` Charge: charging, ready,
@@ -778,7 +782,11 @@ clang-cl)` (`task build:plugin`: Ubuntu's LLVM 20, the MSVC CRT and
   Windows SDK 10.0.22621 from xwin 0.9.0, cached; `tandem.dll` and
   `tandem.pdb` are uploaded as the run's artifact `tandem-<commit>`).
   `task scripts:check` compiles against the game's own scripts and is not
-  run: it needs the game machine.
+  run: it needs the game machine. (Those scripts as text, at the game's
+  version: `tools/scripts-decompile.sh` decompiles the cached bundle with
+  redscript's own decompiler, `nix-build -A redscriptCli`, into
+  `~/.cache/tandem/ref/gamescripts/game/final.reds`; the public dump
+  `vanilla/final.reds` predates patch 2.4.)
 - **Memory** (`.github/actions/build-host`): the runner (4 cores, 16 GB)
   gets 16 GB of swap and one compile job per 3 GB of RAM, at most one per
   core (4). Swap only
