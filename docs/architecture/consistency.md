@@ -48,7 +48,9 @@ others stay on what was decided, and what happens when they do not.
   session's record (`TandemSync.SharedNpcs`): a proxy whose NPC the host no
   longer shares goes, a shared NPC with no proxy is spawned where its track
   is, a proxy whose body is gone (streamed out, a fast travel) is spawned
-  again; a second spawn of an NPC that has a proxy is ignored. Puppets
+  again (no `proxy respawned` fallback within 60 s of a long move of our V,
+  a gap in the checks, a clock skip or any rebuild of our world,
+  `TandemSync.Rebuilds`); a second spawn of an NPC that has a proxy is ignored. Puppets
   against the roster: a puppet of a player no longer in the session goes, a
   player with no puppet gets one.
 - **Stale time-sensitive events.** Kept with their arrival time and dropped

@@ -15,6 +15,8 @@
 
 #include <RedLib.hpp>
 
+#include <atomic>
+
 namespace tandem::plugin {
 // One NPC the host shares, where it is now (its track) or was announced.
 // Plain fields only (the script VM aligns struct locals to 8).
@@ -81,8 +83,18 @@ struct TandemSync : Red::IScriptable {
   // Our world was rebuilt around our V (proto::kEpoch*: 1 a loading screen,
   // 2 fast travel, 3 a time skip, 4 back from a standstill: photo mode).
   static void WorldRebuilt(std::int32_t reason) {
+    ++RebuildCount();
     if (reason >= proto::kEpochLoading && reason <= proto::kEpochFrozen)
       Runtime::Get().RequestEpoch(static_cast<std::uint8_t>(reason));
+  }
+  // How many times our world was rebuilt since the game started, in a
+  // session or not: the NPCs' checks (Npcs.reds Check) take a change for a
+  // world streamed again (a respawn's 10 s loading screen moved EngineTime
+  // by under the 3 s gap they look for: respawn-point, 2026-11-22).
+  static std::int32_t Rebuilds() { return RebuildCount().load(); }
+  static std::atomic<std::int32_t> &RebuildCount() {
+    static std::atomic<std::int32_t> count{0};
+    return count;
   }
 
   RTTI_IMPL_TYPEINFO(TandemSync);
@@ -113,4 +125,5 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemSync, "TandemSync", {
   RTTI_METHOD(Players);
   RTTI_METHOD(InSession);
   RTTI_METHOD(WorldRebuilt);
+  RTTI_METHOD(Rebuilds);
 });

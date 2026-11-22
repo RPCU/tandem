@@ -29,4 +29,6 @@ public native class TandemSync extends IScriptable {
   public static native func InSession(player: Uint32) -> Bool
   // Our world was rebuilt around our V: 1 a loading screen, 2 a fast travel.
   public static native func WorldRebuilt(reason: Int32)
+  // How many times WorldRebuilt was called since the game started.
+  public static native func Rebuilds() -> Int32
 }

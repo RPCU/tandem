@@ -142,6 +142,7 @@ public class TandemNpcs {
   private let m_vJumpedAt: Float;
   private let m_clockAt: Float;
   private let m_checkedAt: Float;
+  private let m_rebuilds: Int32;
   private let m_known: array<ref<TandemNpcKnown>>;
   private let m_next: Uint32;
   private let m_last: Float;
@@ -1730,6 +1731,16 @@ public class TandemNpcs {
     if this.m_checkedAt > 0.0 && now - this.m_checkedAt > 3.0 {
       this.m_vJumpedAt = now;
     }
+    // So does every rebuild of our world (a fast travel, a respawn, a time
+    // skip): a respawn's 10 s loading screen stalled the game thread in one
+    // frame, EngineTime moved by less than the gap above, and three bodies
+    // of the game's own, handed over in place to the guest as our V left,
+    // streamed out as fallbacks (respawn-point, 2026-11-22).
+    let rebuilds = TandemSync.Rebuilds();
+    if this.m_checkedAt > 0.0 && rebuilds != this.m_rebuilds {
+      this.m_vJumpedAt = now;
+    }
+    this.m_rebuilds = rebuilds;
     this.m_checkedAt = now;
     let v = GetPlayer(this.m_game);
     if IsDefined(v) {
