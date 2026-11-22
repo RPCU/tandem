@@ -370,8 +370,6 @@ moved() {
   cmd "$@"
   # The watchdog says "silent" after 5 s without a tick.
   sleep 7
-  # The watchdog speaks 5 s into the silence: after a teleport, wait for it.
-  [ "$(since | grep -c 'elsewhere: a teleport' || true)" = "$moves" ] || sleep 7
   past_loading "$silent" "$back"
 }
 fixture_file=tools/scenarios/fixtures.txt
