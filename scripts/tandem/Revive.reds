@@ -1576,6 +1576,8 @@ public class TandemRevive {
     this.m_lastRevival = this.m_now;
     let nearest = 0u;
     let best = -1.0;
+    let prompts = IsDefined(this.m_system) ? this.m_system.Prompts() : null;
+    let text = TandemText.Get("Revive-Prompt");
     if able {
       for p in others {
         let body = this.PuppetOf(p);
@@ -1585,15 +1587,26 @@ public class TandemRevive {
         // has stopped.
         if TandemNative.RemoteLife(p) == 1 && IsDefined(body) && !TandemElsewhere.BodyHidden(this.m_game, p) {
           let seated = this.Seated(p);
-          let d = Vector4.Distance(body.GetWorldPosition(), here);
-          let reach = seated ? 2.5 : 2.0;
-          let fits = !seated || (this.Facing(body, here) && this.SpeedOf(p) <= 1.0);
-          if d <= reach && fits && (best < 0.0 || d < best) {
-            best = d;
-            nearest = p;
+          if !seated && this.m_holding == 0u && IsDefined(prompts) && prompts.OfferOn(TandemPromptKind.Revive(), p, body, true, this.NameOf(p), text) {
+            // Lying in the open: the game's own prompt on the body
+            // (Prompts.reds: its range, its look-at). One in a seat keeps
+            // the rules below, and the prompt we draw.
+          } else {
+            let d = Vector4.Distance(body.GetWorldPosition(), here);
+            let reach = seated ? 2.5 : 2.0;
+            let fits = !seated || (this.Facing(body, here) && this.SpeedOf(p) <= 1.0);
+            if d <= reach && fits && (best < 0.0 || d < best) {
+              best = d;
+              nearest = p;
+            }
           }
         }
       }
+    }
+    // The key on the game's own prompt.
+    let pressed = IsDefined(prompts) ? prompts.TakePress(TandemPromptKind.Revive()) : 0u;
+    if pressed != 0u && able && this.m_holding == 0u && TandemNative.RemoteLife(pressed) == 1 {
+      this.PressedOn(pressed, prompts);
     }
     if this.m_holding != 0u {
       this.HoldOn(player, able, dt);
@@ -1654,12 +1667,37 @@ public class TandemRevive {
     if !Equals(ListenerAction.GetName(action), n"Choice1") {
       return false;
     }
+    // The key itself, for the prompts the game shows (Prompts.reds): the
+    // game's choice event says the press, only this the release.
+    let prompts = IsDefined(this.m_system) ? this.m_system.Prompts() : null;
+    if IsDefined(prompts) {
+      if ListenerAction.IsButtonJustPressed(action) {
+        prompts.KeyIs(true);
+      } else if ListenerAction.IsButtonJustReleased(action) {
+        prompts.KeyIs(false);
+      }
+    }
     if ListenerAction.IsButtonJustPressed(action) && this.m_holding == 0u && this.m_target != 0u {
       this.StartHold(this.m_target, false);
     } else if ListenerAction.IsButtonJustReleased(action) && this.m_holding != 0u && !this.m_testHold {
       this.CancelHold("released");
     }
     return false;
+  }
+
+  // The key on a downed player's own prompt (the game's choice event): the
+  // hold begins if the key is still down. Its release is our listener's to
+  // see: a press that listener never saw cannot be held.
+  private func PressedOn(target: Uint32, prompts: ref<TandemPrompts>) -> Void {
+    if prompts.KeyHeld() {
+      this.StartHold(target, false);
+    } else if prompts.TestPress() {
+      this.StartHold(target, true);
+    } else if prompts.KeyUpFor() <= 1.0 {
+      TandemNative.Log(s"revive: the key on \(this.NameOf(target))'s prompt was let go before the hold began");
+    } else {
+      prompts.Distrust(this.PuppetOf(target), "a press came as the game's choice event and our input listener saw no key: a hold cannot be followed");
+    }
   }
 
   private func StartHold(target: Uint32, test: Bool) -> Void {
