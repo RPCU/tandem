@@ -27,6 +27,48 @@
   grapple; a refused pick up is a forced drop. A disposed body is gone for
   everyone (`NpcGone` reason 2: proxies deleted). A guest's proxy killed by
   the host during its own takedown dies once its animation is over.
+  - _The grapple as the game's own mount_ (2026-11-22, not yet run in
+    game). Vanilla's grapple is two steps: the takedown effect (the NPC's
+    workspot, which gives it `BaseStatusEffect.Grappled`), then the NPC
+    mounted on V, slot `grapple` (`GrappleMountEvents.OnEnter`);
+    `TakedownUnmountPreyEvents` unmounts it. With a puppet as activator the
+    effect's workspot does not take (engine facts §13.46), and tandem held
+    the NPC by teleporting it 0.6 m in front of the puppet every tick, the
+    last per-tick teleport of a character. Now each puppet's body is looked
+    at once as it comes (`ProbePuppets`: its slot component has a
+    `grapple` slot, `NoGrappleSlot`), and said: `takedowns: player N's
+puppet: grapple by the game's mount | by the fallback: WHY`. With the
+    slot, the NPC's owner mounts the real NPC on the puppet's grapple slot
+    (`MountGrapple`, right after the effect) and every other game its proxy
+    on its own puppet of that player (`OnHold`); half a second on the
+    mount is read back (`GrappleMountFault`: the mounting facility has the
+    NPC on that holder's grapple slot, within 2 m of it) and undone when it
+    did not take. The owner then says which way the hold goes: `… grapple
+by the game's mount`, `… by the game's workspot (no mount: WHY)` or
+    `… by the fallback: WHY (held in front of the puppet)`, the teleport as
+    before; the Grappled status is applied where the workspot did not give
+    it, in every case. Anything that follows the grapple (a takedown, a
+    release, the shoulder, the holder gone, the session's end) unmounts
+    first. `cmd takedown probe` (each puppet's slots), `cmd takedown mount`
+    (the nearest proxy onto the first puppet's grapple slot whatever the
+    probe said, read back, unmounted); scenarios `takedowns-mount`,
+    `takedowns-host`.
+  - _A hold's end by the animation's workspot_ (2026-11-22, not yet run in
+    game): a takedown's or finisher's hold ended on a timer (6 s for our own
+    on a proxy, 4 and 5 s on the owner). It now ends when the body, seen in
+    the animation's workspot, has left it (`WorkspotGameSystem.IsActorInWorkspot`,
+    read each tick for the held bodies only: `AnimationOver`), the timer
+    kept as the limit (no workspot with a puppet as activator: unproven
+    either way); a death that waited for our animation is flushed with it.
+    The log says which: `… hold (how 3) ended after S s (its workspot's
+end | the L s limit: no workspot seen)`.
+  - _A throw is told at its release_: `ThrowEvents.OnExit` (vanilla's
+    release; `OnEnter` is the wind-up), with the impulse `OnExit` gives the
+    body (the camera's way at the release, its strength by the camera's
+    pitch between `ragdollMaxImpulse` and `ragdollMinImpulse`, 30 when
+    combat is not allowed), not the wind-up's camera at full strength. Its
+    aim assist (a turn of a few degrees towards a target of the thrower's
+    game) is not carried.
 - **"The player" reactions on the host** (`scripts/tandem/Reactions.reds`):
   NPC code that reacts to "the player" uses whoever acted. An NPC entering
   combat with a guest's puppet gives the host's V no second chance or gag;
