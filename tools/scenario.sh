@@ -200,11 +200,17 @@ ensure() {
   # (coop on instance b, 2026-11-22): wait it out. The scenario still reads
   # from its mark (the session's first lines are its to read): only the
   # hang check starts after it (boot_line).
-  if remote "tail -n 80 '$mark_file'" | grep -q 'elsewhere: a teleport'; then
-    pause 8
-    local waited=$SECONDS
-    while (($(watchdog_lines silent) > $(watchdog_lines back))) && ((SECONDS - waited < 90)); do
-      sleep 2
+  local teleport since_t silent back start=$SECONDS
+  teleport=$(remote "grep -n 'elsewhere: a teleport' '$mark_file' | tail -1 | cut -d: -f1")
+  if [ -n "$teleport" ]; then
+    while ((SECONDS - start < 30)); do
+      since_t=$(remote "tail -n +$teleport '$mark_file'")
+      silent=$(grep -c 'watchdog: game thread silent' <<<"$since_t" || true)
+      back=$(grep -c 'watchdog: game thread back' <<<"$since_t" || true)
+      if ((silent > 0 && back >= silent)) || ((silent == 0 && SECONDS - start >= 8)); then
+        break
+      fi
+      sleep 1
     done
     boot_line=$(remote "wc -l < '$mark_file'")
   fi
