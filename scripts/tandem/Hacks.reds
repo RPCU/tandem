@@ -733,6 +733,16 @@ public class TandemHacks extends ScriptableSystem {
     TandemNative.Log(s"hacks: vehicle \(id) marked: hacked by player \(player) for \(seconds) s, registered \(mark.mappin.value != 0ul)");
   }
 
+  // (Traffic.reds) A shared vehicle left: its mark goes at the next tick,
+  // before its body is another vehicle's (the body pool).
+  public func CarGone(id: Uint32) -> Void {
+    for mark in this.m_carMarks {
+      if mark.id == id {
+        mark.until = 0.0;
+      }
+    }
+  }
+
   // Each tick: the marks whose hack is over (all: the session's end).
   private func EndCarMarks(game: GameInstance, all: Bool) -> Void {
     let kept: array<ref<TandemCarMark>>;

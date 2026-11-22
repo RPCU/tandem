@@ -65,7 +65,8 @@ public class TandemCar {
   public let siren: Bool;
   // Our V is getting in: we no longer move it (the claim is on its way).
   public let claimed: Bool;
-  // Someone has sat in it here: its body is never deleted (engine-knowledge §13.6).
+  // Someone has sat in it here: its body is never deleted (engine-knowledge
+  // §13.6; it stays in the pool, TandemPooled.seated).
   public let seated: Bool;
   // Proxies: where we last put it.
   public let x: Float;
@@ -96,11 +97,33 @@ public class TandemAdopted {
   public let at: Float;
 }
 
-// A proxy no longer shown that cannot be deleted: kept to be the next proxy
-// of the same record.
-public class TandemRetired {
+// The body of a proxy no longer shown: parked out of the world, to be the
+// body of the next vehicle of its record (traffic.md, "Proxy bodies").
+public class TandemPooled {
   public let body: EntityID;
   public let record: TweakDBID;
+  // The look it wears.
+  public let appearance: CName;
+  // When it left (real time).
+  public let since: Float;
+  // In its parking place: which level, where, and what holds it there.
+  public let placed: Bool;
+  public let slot: Int32;
+  public let x: Float;
+  public let y: Float;
+  public let z: Float;
+  public let i: Float;
+  public let j: Float;
+  public let k: Float;
+  public let r: Float;
+  public let move: ref<TandemMoved>;
+  // Never the body of another vehicle (a wreck, damaged, over the pool's
+  // bounds, unused too long): deleted once that is safe.
+  public let spent: Bool;
+  // Someone has sat in it: never deleted (engine-knowledge §13.6).
+  public let seated: Bool;
+  // Asked for and not here yet when its vehicle left.
+  public let coming: Bool;
 }
 
 public class TandemTraffic {
@@ -117,7 +140,16 @@ public class TandemTraffic {
   // Vehicles that are a player's car now (ours too): never shared again.
   private let m_taken: array<EntityID>;
   private let m_adopted: array<ref<TandemAdopted>>;
-  private let m_retired: array<ref<TandemRetired>>;
+  // Proxy bodies not in use (the body pool), and what became of every proxy
+  // body asked for in this run of the game (`street count`).
+  private let m_pool: array<ref<TandemPooled>>;
+  private let m_poolSwept: Float;
+  private let m_created: Int32;
+  private let m_reused: Int32;
+  private let m_relooked: Int32;
+  private let m_parked: Int32;
+  private let m_deleted: Int32;
+  private let m_lost: Int32;
   // Proxies, the checks: vehicles shared that we do not show, since when.
   private let m_missingIds: array<Uint32>;
   private let m_missingSince: array<Float>;
@@ -149,6 +181,34 @@ public class TandemTraffic {
     return 48;
   }
 
+  // The body pool (traffic.md, "Proxy bodies"): how many parked bodies may
+  // wait for another vehicle, in all and of one record; how long one waits
+  // unused; how long a body is parked before it may be deleted; where they
+  // are parked (under the place they left, one level each).
+  public static func PoolSize() -> Int32 {
+    return 32;
+  }
+
+  public static func PoolPerRecord() -> Int32 {
+    return 3;
+  }
+
+  public static func PoolIdle() -> Float {
+    return 300.0;
+  }
+
+  public static func PoolDeleteAfter() -> Float {
+    return 5.0;
+  }
+
+  public static func PoolDepth() -> Float {
+    return 600.0;
+  }
+
+  public static func PoolLevel() -> Float {
+    return 10.0;
+  }
+
   // The NPC racers of a street race of ours that partners race in
   // (Races.reds): shared as far as a race spreads.
   public static func RacerRange() -> Float {
@@ -174,8 +234,10 @@ public class TandemTraffic {
 
   // Every tick, session or not (TandemSystem.OnTick): the vehicles that came
   // and went since, as their wraps queued them (job threads while the world
-  // streams in: VehicleObject.OnGameAttached, OnDetach).
+  // streams in: VehicleObject.OnGameAttached, OnDetach); and the parked
+  // bodies, which outlive a session.
   public func Drain() -> Void {
+    this.Keep();
     let streamed = TandemStreaming.TakeStreamed(TandemStreamKind.Vehicle());
     for event in streamed {
       if event.attached {
@@ -281,7 +343,28 @@ public class TandemTraffic {
     }
     let area = TandemArea.Owns() ? "ours" : s"player \(TandemRegions.AreaOwner(this.m_you))'s";
     let shared = TandemStreet.Shared();
-    return s"count: \(ArraySize(this.m_cars)) (\(mine) run by us, \(ArraySize(this.m_cars) - mine) shown as proxies; \(parked) parked, \(wrecks) wrecks, \(own) bodies of our own world), area \(area), \(ArraySize(shared)) proxies in the session's record, \(ArraySize(this.m_live)) vehicles in our world, \(ArraySize(this.m_taken)) taken by players, \(ArraySize(this.m_retired)) proxies kept for reuse, \(this.m_given) given, \(this.m_taken2) taken over, \(bodies) proxy body(ies) here, \(this.m_yields) stop(s) for a player on foot";
+    return s"count: \(ArraySize(this.m_cars)) (\(mine) run by us, \(ArraySize(this.m_cars) - mine) shown as proxies; \(parked) parked, \(wrecks) wrecks, \(own) bodies of our own world), area \(area), \(ArraySize(shared)) proxies in the session's record, \(ArraySize(this.m_live)) vehicles in our world, \(ArraySize(this.m_taken)) taken by players, \(this.m_given) given, \(this.m_taken2) taken over, \(bodies) proxy body(ies) here, \(this.m_yields) stop(s) for a player on foot, \(this.PoolReport())";
+  }
+
+  // (test) what became of every proxy body asked for in this run of the
+  // game, and the pool now.
+  public func PoolReport() -> String {
+    let ready = 0;
+    let spent = 0;
+    let kept = 0;
+    let coming = 0;
+    for entry in this.m_pool {
+      if entry.coming {
+        coming += 1;
+      } else if !entry.spent {
+        ready += 1;
+      } else if entry.seated {
+        kept += 1;
+      } else {
+        spent += 1;
+      }
+    }
+    return s"bodies: \(this.m_created) created, \(this.m_reused) re-used (\(this.m_relooked) with another look), \(this.m_parked) parked, \(this.m_deleted) deleted, \(this.m_lost) lost; pool \(ArraySize(this.m_pool)) (\(ready) ready, \(spent) to delete, \(kept) kept for good, \(coming) not here yet)";
   }
 
   // The shared vehicle a body is (0: none), whoever runs it.
@@ -447,11 +530,8 @@ public class TandemTraffic {
       car.own = true;
       TandemNative.Log(s"street: vehicle \(car.id) is our own placed \(TDBID.ToStringDEBUG(car.record))");
     } else {
-      car.body = this.Reuse(car.record, at, turn);
-      if !EntityID.IsDefined(car.body) {
-        car.body = TandemTraffic.SpawnProxy(car.record, car.appearance, at, turn);
-      }
-      TandemNative.Log(s"street: vehicle \(car.id) \(TDBID.ToStringDEBUG(car.record)) of player \(TandemStreet.RunBy(car.id)) (flags \(car.flags)) spawning at (\(event.x), \(event.y), \(event.z))");
+      let parked = this.Obtain(car, at, turn);
+      TandemNative.Log(s"street: vehicle \(car.id) \(TDBID.ToStringDEBUG(car.record)) of player \(TandemStreet.RunBy(car.id)) (flags \(car.flags)) \(parked ? "takes a parked body" : "spawning") at (\(event.x), \(event.y), \(event.z))");
     }
     ArrayPush(this.m_cars, car);
   }
@@ -473,23 +553,273 @@ public class TandemTraffic {
     return TandemEntities.Create(spec);
   }
 
-  // A retired proxy of the same record, put where the new one is.
-  private func Reuse(record: TweakDBID, position: Vector4, orientation: Quaternion) -> EntityID {
-    let i = 0;
-    while i < ArraySize(this.m_retired) {
-      if this.m_retired[i].record == record {
-        let body = this.m_retired[i].body;
-        ArrayErase(this.m_retired, i);
-        let entity = GameInstance.GetDynamicEntitySystem().GetEntity(body) as GameObject;
-        if IsDefined(entity) {
-          GameInstance.GetTeleportationFacility(this.m_game).Teleport(entity, position, Quaternion.ToEulerAngles(orientation));
-          return body;
+  // ---- the body pool (traffic.md, "Proxy bodies") ----
+  // A proxy that leaves is not deleted and the next one not created: its
+  // body is parked out of the world and becomes the body of the next
+  // vehicle of its record. Only a body that stands as it spawned is used
+  // again; the others, and the ones over the pool's bounds, are deleted
+  // later, one at a time, never while one is being created (§13.140) and
+  // never one someone sat in (§13.6).
+
+  // The body of a vehicle shown from now on: a parked one of its record put
+  // there (true), else a new one asked of the game.
+  private func Obtain(car: ref<TandemCar>, position: Vector4, orientation: Quaternion) -> Bool {
+    let pooled = this.Take(car.record, car.appearance, position, orientation);
+    if IsDefined(pooled) {
+      car.body = pooled.body;
+      car.seated = pooled.seated;
+      this.m_reused += 1;
+      return true;
+    }
+    car.body = TandemTraffic.SpawnProxy(car.record, car.appearance, position, orientation);
+    this.m_created += 1;
+    return false;
+  }
+
+  // A parked body of this record, out of the pool and put at the new
+  // vehicle's place (a discontinuity: a teleport, and the first move of its
+  // new TandemCar is one too, TandemSystem.MoveBody). One that wears the
+  // look asked for first; another is asked to change its look. Its state is
+  // the new vehicle's to write (Drive: `ready` is false on a new TandemCar,
+  // so Show runs once); what Show does not write is why only a body that
+  // stands as it spawned is taken (Pristine, Sound).
+  private func Take(record: TweakDBID, appearance: CName, position: Vector4, orientation: Quaternion) -> ref<TandemPooled> {
+    let found = -1;
+    let body: ref<VehicleObject>;
+    // One that wears the look asked for first, then any of the record.
+    let pass = 0;
+    while pass < 2 && found < 0 {
+      let i = 0;
+      while i < ArraySize(this.m_pool) && found < 0 {
+        let candidate = this.m_pool[i];
+        let same = !IsNameValid(appearance) || Equals(candidate.appearance, appearance);
+        if !candidate.spent && !candidate.coming && candidate.record == record && (pass == 1 || same) {
+          body = TandemTraffic.Body(this.m_game, candidate.body);
+          // (Not here: gone from where it was parked, the sweep sorts it out.)
+          if IsDefined(body) {
+            if !this.Sound(body) {
+              // Something happened to it where it was parked.
+              candidate.spent = true;
+            } else if !this.Occupied(body) {
+              found = i;
+            }
+          }
         }
-      } else {
         i += 1;
       }
+      pass += 1;
     }
-    return EntityID.FromHash(0ul);
+    if found < 0 {
+      return null;
+    }
+    let entry = this.m_pool[found];
+    ArrayErase(this.m_pool, found);
+    if IsNameValid(appearance) && NotEquals(body.GetCurrentAppearanceName(), appearance) {
+      body.ScheduleAppearanceChange(appearance);
+      this.m_relooked += 1;
+    }
+    GameInstance.GetTeleportationFacility(this.m_game).Teleport(body, position, Quaternion.ToEulerAngles(orientation));
+    return entry;
+  }
+
+  // A proxy as its owner had it when it left: never damaged, burning or a
+  // wreck, no tyre or dent said of it (Wheels.reds), not rammed by our car.
+  private func Pristine(car: ref<TandemCar>) -> Bool {
+    if car.wrecked || (car.flags & 12) != 0 || car.health < 0.99 {
+      return false;
+    }
+    let damage = TandemWheels.DamageOf(TandemWheels.StreetOf(car.id));
+    if damage.known {
+      return false;
+    }
+    return !ArrayContains(this.m_ramBodies, car.body);
+  }
+
+  // A body as it spawned, as far as a script reads it: not destroyed,
+  // exploded or drowned, its health whole (a hit of ours on a proxy lands on
+  // its own health at once), no flat tyre.
+  private func Sound(body: ref<VehicleObject>) -> Bool {
+    if body.IsDestroyed() {
+      return false;
+    }
+    let state = body.GetVehiclePS();
+    if IsDefined(state) && (state.GetIsDestroyed() || state.GetIsSubmerged() || state.GetHasExploded()) {
+      return false;
+    }
+    let health = GameInstance.GetStatPoolsSystem(this.m_game).GetStatPoolValue(Cast<StatsObjectID>(body.GetEntityID()), gamedataStatPoolType.Health, true);
+    if health < 99.0 {
+      return false;
+    }
+    let wheeled = body as WheeledObject;
+    return !IsDefined(wheeled) || wheeled.GetFlatTireIndex() < 0;
+  }
+
+  // Someone sits in it: each seat read as the seat check reads it (Evict).
+  private func Occupied(body: ref<VehicleObject>) -> Bool {
+    let seats: array<wref<VehicleSeat_Record>>;
+    VehicleComponent.GetSeats(this.m_game, body, seats);
+    let mounting = GameInstance.GetMountingFacility(this.m_game);
+    for seat in seats {
+      let slotId: MountingSlotId;
+      slotId.id = seat.SeatName();
+      let info = mounting.GetMountingInfoSingleWithIds(EntityID.FromHash(0ul), body.GetEntityID(), slotId);
+      if EntityID.IsDefined(info.childId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // (test reset) No parked body waits for the next scenario's vehicles: all
+  // are let go (deleted by the sweep as any other; one someone sat in
+  // stays, never used again), and the counts start again.
+  public func ResetPool() -> Void {
+    for entry in this.m_pool {
+      entry.spent = true;
+    }
+    this.m_created = 0;
+    this.m_reused = 0;
+    this.m_relooked = 0;
+    this.m_parked = 0;
+    this.m_deleted = 0;
+    this.m_lost = 0;
+  }
+
+  // Over the pool's bounds the bodies parked longest are let go (the sweep
+  // deletes them); one someone sat in stays.
+  private func Bound(record: TweakDBID) -> Void {
+    let all = 0;
+    let same = 0;
+    for entry in this.m_pool {
+      if !entry.spent {
+        all += 1;
+        if entry.record == record {
+          same += 1;
+        }
+      }
+    }
+    for entry in this.m_pool {
+      if !entry.spent && !entry.seated {
+        if entry.record == record && same > TandemTraffic.PoolPerRecord() {
+          entry.spent = true;
+          same -= 1;
+          all -= 1;
+        } else if all > TandemTraffic.PoolSize() {
+          entry.spent = true;
+          all -= 1;
+          if entry.record == record {
+            same -= 1;
+          }
+        }
+      }
+    }
+  }
+
+  // Into its parking place: 600 m under where it left, a level of its own
+  // (no two parked bodies touch), out of sight and out of every collision.
+  // Held there by the move every other proxy is moved by (a first move: a
+  // teleport; then nothing while it rests there, the kinematic move when it
+  // sagged 5 cm).
+  private func Place(entry: ref<TandemPooled>, body: ref<VehicleObject>, system: ref<TandemSystem>) -> Void {
+    let slot = 0;
+    let free = false;
+    while !free {
+      free = true;
+      for other in this.m_pool {
+        if other.placed && other.slot == slot {
+          free = false;
+        }
+      }
+      if !free {
+        slot += 1;
+      }
+    }
+    let at = body.GetWorldPosition();
+    let turn = body.GetWorldOrientation();
+    entry.slot = slot;
+    entry.x = at.X;
+    entry.y = at.Y;
+    entry.z = -TandemTraffic.PoolDepth() - TandemTraffic.PoolLevel() * Cast<Float>(slot);
+    entry.i = turn.i;
+    entry.j = turn.j;
+    entry.k = turn.k;
+    entry.r = turn.r;
+    entry.placed = true;
+    entry.move = new TandemMoved();
+    system.MoveBody(entry.move, body, new Vector4(entry.x, entry.y, entry.z, 1.0), turn);
+  }
+
+  // Every tick, session or not: a body that left is parked once nobody sits
+  // in it (until then it stands where it was), a parked one is held in its
+  // place; twice a second the sweep.
+  private func Keep() -> Void {
+    if ArraySize(this.m_pool) == 0 {
+      return;
+    }
+    let system = TandemSystem.Of(this.m_game);
+    if !IsDefined(system) {
+      return;
+    }
+    for entry in this.m_pool {
+      let body = TandemTraffic.Body(this.m_game, entry.body);
+      if IsDefined(body) {
+        entry.coming = false;
+        if entry.placed {
+          system.MoveBody(entry.move, body, new Vector4(entry.x, entry.y, entry.z, 1.0), new Quaternion(entry.i, entry.j, entry.k, entry.r));
+        } else if !this.Occupied(body) {
+          this.Place(entry, body, system);
+        }
+      }
+    }
+    let now = TandemClock.Real(this.m_game);
+    if now - this.m_poolSwept >= 0.5 || now < this.m_poolSwept {
+      this.m_poolSwept = now;
+      this.Sweep(now);
+    }
+  }
+
+  // Twice a second: a body unused for PoolIdle is let go; one let go (or
+  // never fit to be used again) is deleted once it has been parked for
+  // PoolDeleteAfter, exists (never one being created: §13.140) and nobody
+  // sits in it, one deletion a sweep; one someone sat in is never deleted
+  // (§13.6); one that is gone (a save loaded, streamed out) or never came
+  // is forgotten.
+  private func Sweep(now: Float) -> Void {
+    let entities = GameInstance.GetDynamicEntitySystem();
+    let kept: array<ref<TandemPooled>>;
+    let deleted = false;
+    for entry in this.m_pool {
+      let keep = true;
+      if !entities.IsManaged(entry.body) {
+        keep = false;
+        this.m_lost += 1;
+      } else {
+        let body = TandemTraffic.Body(this.m_game, entry.body);
+        if !IsDefined(body) {
+          if !entities.IsSpawning(entry.body) && now - entry.since > TandemEntities.WaitLimit() {
+            TandemEntities.Delete(entry.body);
+            keep = false;
+            this.m_lost += 1;
+            TandemNative.LogDebug(s"street: pool: body \(EntityID.ToDebugString(entry.body)) is not here (\(entry.coming ? "it never came" : "gone from its parking place")): forgotten");
+          }
+        } else {
+          if !entry.spent && !entry.seated && now - entry.since > TandemTraffic.PoolIdle() {
+            entry.spent = true;
+          }
+          if entry.spent && !entry.seated && entry.placed && !deleted && now - entry.since >= TandemTraffic.PoolDeleteAfter() && entities.IsSpawned(entry.body) && !this.Occupied(body) {
+            TandemEntities.Delete(entry.body);
+            deleted = true;
+            keep = false;
+            this.m_deleted += 1;
+            TandemNative.LogDebug(s"street: pool: body \(EntityID.ToDebugString(entry.body)) deleted, parked \(now - entry.since) s");
+          }
+        }
+      }
+      if keep {
+        ArrayPush(kept, entry);
+      }
+    }
+    this.m_pool = kept;
   }
 
   // No longer shared: out of range, removed, or a player's car now.
@@ -587,31 +917,60 @@ public class TandemTraffic {
     body.QueueEvent(new StealVehicleEvent());
   }
 
-  // A proxy no longer shown. Deleted when nobody ever sat in it, else kept
-  // for the next vehicle of its record (a body that has had an occupant
-  // must not be deleted, §13.6); a body of our own world stays (and a crowd
-  // car we held drives on).
+  // A proxy no longer shown: its body goes to the pool (parked by Keep, to
+  // be the next vehicle of its record, or deleted later when it is not fit
+  // for that); a body of our own world stays (and a crowd car we held
+  // drives on), and so does one a player got into (ours: our V).
   private func Retire(car: ref<TandemCar>) -> Void {
     if car.held {
-      let body = TandemTraffic.Body(this.m_game, car.body);
-      if IsDefined(body) {
-        body.TandemHold(false);
+      let held = TandemTraffic.Body(this.m_game, car.body);
+      if IsDefined(held) {
+        held.TandemHold(false);
       }
       car.held = false;
     }
     if car.own || !EntityID.IsDefined(car.body) || !GameInstance.GetDynamicEntitySystem().IsManaged(car.body) {
       return;
     }
-    if car.seated || car.claimed || GameInstance.GetMountingFacility(this.m_game).IsMountedToAnything(car.body) {
-      if !car.claimed {
-        let retired = new TandemRetired();
-        retired.body = car.body;
-        retired.record = car.record;
-        ArrayPush(this.m_retired, retired);
-      }
+    if car.claimed || ArrayContains(this.m_taken, car.body) {
       return;
     }
-    TandemEntities.Delete(car.body);
+    // Its hack mark goes with it, not with its body's next vehicle.
+    let hacks = TandemHacks.Get(this.m_game);
+    if IsDefined(hacks) {
+      hacks.CarGone(car.id);
+    }
+    let entry = new TandemPooled();
+    entry.body = car.body;
+    entry.record = car.record;
+    entry.appearance = car.appearance;
+    entry.since = TandemClock.Real(this.m_game);
+    entry.seated = car.seated || GameInstance.GetMountingFacility(this.m_game).IsMountedToAnything(car.body);
+    let body = TandemTraffic.Body(this.m_game, car.body);
+    if IsDefined(body) {
+      if this.Occupied(body) {
+        entry.seated = true;
+      }
+      entry.spent = !this.Pristine(car) || !this.Sound(body);
+      if car.siren {
+        body.ToggleSiren(false);
+      }
+    } else {
+      // Asked for and not here yet: it is parked when it comes rather than
+      // deleted while it is being created (§13.140).
+      entry.coming = true;
+    }
+    ArrayPush(this.m_pool, entry);
+    this.m_parked += 1;
+    this.Bound(entry.record);
+    let how = entry.spent ? "not to be used again" : "ready";
+    if entry.coming {
+      how = "not here yet";
+    }
+    if entry.seated {
+      how += ", someone sat in it";
+    }
+    TandemNative.LogDebug(s"street: pool: vehicle \(car.id)'s body \(EntityID.ToDebugString(car.body)) parked (\(how))");
   }
 
   private func OnStatus(event: TandemStreetEvent) -> Void {
@@ -860,8 +1219,9 @@ public class TandemTraffic {
         let body = TandemTraffic.Body(this.m_game, car.body);
         // A body that does not come is asked for again later each time (3 s,
         // 6, 12… up to a minute), the one before it deleted first: asked for
-        // every 5 s with the old ones left to come, 181 bodies in 90 s ended
-        // in the engine's crash on a riding guest (2026-11-22).
+        // every 5 s with the old ones left to come, a riding guest had 181
+        // bodies waiting after 90 s (2026-11-22; why none came: engine
+        // vehicles.md §13.141. That night's crash was another: re.md §13.142).
         let wait = MinF(3.0 * PowF(2.0, Cast<Float>(car.goneTries)), 60.0);
         if IsDefined(body) {
           car.goneSince = 0.0;
@@ -872,18 +1232,20 @@ public class TandemTraffic {
           car.goneSince = this.m_now;
         } else if this.m_now - car.goneSince > wait {
           TandemEntities.Delete(car.body);
+          this.m_deleted += 1;
           car.goneTries += 1;
           let at = TandemStreet.Position(car.id);
           if at.W == 0.0 {
             at = new Vector4(car.x, car.y, car.z, 1.0);
           }
           at.W = 1.0;
-          car.body = TandemTraffic.SpawnProxy(car.record, car.appearance, at, TandemStreet.Orientation(car.id));
           car.ready = false;
           car.wrecked = false;
           car.siren = false;
           car.seated = false;
+          car.move = null;
           car.goneSince = 0.0;
+          this.Obtain(car, at, TandemStreet.Orientation(car.id));
           TandemNative.Log(s"street: check: vehicle \(car.id)'s body was gone for \(wait) s: spawned again (\(car.goneTries) in a row)");
         }
       }

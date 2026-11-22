@@ -498,6 +498,9 @@ struct Options {
   // riding in our car by then: its proxies spawn during the ride).
   int trafficAtSeconds{0};
   std::string trafficVehicle{"Vehicle.v_standard2_archer_hella"};
+  // ... one of the driving cars withdrawn this often (0: never) and a new
+  // one of its record announced in its place half that time later.
+  int trafficChurnSeconds{0};
   int wreckAtSeconds{-1};
   int ramTrafficSeconds{0};
   // Guest: quickhack the nearest shared vehicle this long in, once (-1: never).
@@ -955,6 +958,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --traffic-at N     host --traffic: the cars are announced N seconds after the guest\n"
          "                     is with us (default 0), round where it is then\n"
          "  --traffic-vehicle REC  the cars' record (Vehicle.v_standard2_archer_hella)\n"
+         "  --traffic-churn N  host --traffic: every N seconds a driving car goes out of range\n"
+         "                     (TrafficGone) and, half that later, a new vehicle of its record\n"
+         "                     is announced where it would be (never the first car)\n"
          "  --wreck-at N       host --traffic: the first car burns N seconds in, then blows up\n"
          "  --ram-traffic N    join: ram a shared vehicle every N seconds (TrafficHit)\n"
          "  --hack-traffic S   join: quickhack the nearest shared vehicle S seconds into the\n"
@@ -1996,6 +2002,10 @@ Options Parse(int argc, char **argv) {
       options.trafficAtSeconds = Number<int>(value);
     } else if (flag == "--traffic-vehicle") {
       options.trafficVehicle = std::string(value);
+    } else if (flag == "--traffic-churn") {
+      options.trafficChurnSeconds = Number<int>(value);
+      if (options.trafficChurnSeconds < 0)
+        Usage("--traffic-churn is 0 or more seconds");
     } else if (flag == "--wreck-at") {
       options.wreckAtSeconds = Number<int>(value);
     } else if (flag == "--ram-traffic") {
@@ -4913,6 +4923,13 @@ int main(int argc, char **argv) {
   tandem::traffic::Budget streetBudget;
   auto nextStreetState = std::chrono::steady_clock::now();
   int wreckStep = 0;
+  // --traffic-churn: when the next car goes, which one is away (-1: none)
+  // and when its replacement comes, the ids given so far, the rounds done.
+  std::optional<std::chrono::steady_clock::time_point> nextChurn;
+  int churnAway = -1;
+  std::size_t churnNext = 1;
+  std::uint32_t streetIds = 0;
+  int churned = 0;
   std::map<tandem::proto::TrafficId, tandem::proto::TrafficSpawn> sharedCars;
   auto nextRam = std::chrono::steady_clock::now() + 5s;
   bool hackedTraffic = false;
@@ -7614,6 +7631,7 @@ int main(int argc, char **argv) {
                                       .flags = car.flags});
           street.push_back(car);
         }
+        streetIds = static_cast<std::uint32_t>(options.trafficCars + 1);
         Log("street: {} cars of {} round player {}, one parked", options.trafficCars,
             options.trafficVehicle, firstRemote->player);
         // A driver in the first one (--npc): an NPC like any other, seated.
@@ -7640,6 +7658,38 @@ int main(int argc, char **argv) {
         if (otherV)
           viewers.push_back(otherV->position);
         endpoint->SendTrafficStates({.cars = streetBudget.Pick(cars, viewers)});
+      }
+      // --traffic-churn: a driving car (never the first: it may have a
+      // driver, it may burn) goes out of range; half a period later a new
+      // vehicle of its record is announced where it would be by then.
+      if (options.trafficChurnSeconds > 0 && options.trafficCars > 1) {
+        const auto period = std::chrono::milliseconds(options.trafficChurnSeconds * 1000);
+        if (!nextChurn)
+          nextChurn = now + period;
+        if (now >= *nextChurn && churnAway < 0) {
+          churnAway = static_cast<int>(churnNext);
+          churnNext =
+              churnNext + 1 >= static_cast<std::size_t>(options.trafficCars) ? 1 : churnNext + 1;
+          auto &car = street[static_cast<std::size_t>(churnAway)];
+          car.gone = true;
+          endpoint->SendTrafficGone({.id = car.id, .reason = proto::kTrafficAway});
+          Log("street: vehicle {:#x} out of range (churn)", car.id);
+          nextChurn = now + period / 2;
+        } else if (now >= *nextChurn && churnAway >= 0) {
+          auto &car = street[static_cast<std::size_t>(churnAway)];
+          car.id = proto::MakeTrafficId(endpoint->You(), ++streetIds);
+          car.gone = false;
+          const auto at = place(car);
+          endpoint->SendTrafficSpawn({.id = car.id,
+                                      .record = TweakDBID(options.trafficVehicle),
+                                      .position = at.position,
+                                      .orientation = at.orientation,
+                                      .flags = car.flags});
+          ++churned;
+          Log("street: vehicle {:#x} announced in its place (churn {})", car.id, churned);
+          churnAway = -1;
+          nextChurn = now + period / 2;
+        }
       }
       // --wreck-at: the first car burns, then blows up 4 s later.
       if (options.wreckAtSeconds >= 0 && !street.front().gone) {

@@ -552,25 +552,26 @@ body `IsManaged`, neither `IsSpawning` nor `IsSpawned`.
 - **How it was measured** (instance b, 30 frames/s; a vehicle asked 14 m
   from V and an NPC 8 m from it, the time until `GetEntity` returns each):
 
-  | V is                                                        | vehicle           | NPC          |
-  | ----------------------------------------------------------- | ----------------- | ------------ |
-  | on foot                                                     | 0.07 s            | 0.20 s       |
-  | at the wheel of its own real car (the host)                 | within the frame  | not measured |
-  | in a seat of a dynamic car nobody moves                     | 0.07 s            | 0.06 s       |
-  | in that seat, the car teleported to where it is every frame | never (10.7 s)    | never (9.3 s) |
-  | … the teleports stopped                                     | 0.065 s later     | 0.39 s later |
-  | in that seat, the car teleported every 2nd frame            | 0.10 s            | not measured |
-  | in that seat, the car teleported every 4th frame            | 0.09 s            | not measured |
-  | in the host's car copy, followed every frame                | never (8.9 s)     | never (7.5 s) |
-  | … the follow stopped                                        | 0.10 s later      | 0.39 s later |
-  | … the follow back on, another asked                         | never (6.5 s)     | not measured |
-  | … out of the seat                                           | 0.075 s later     | not measured |
+  | V is                                                        | vehicle          | NPC           |
+  | ----------------------------------------------------------- | ---------------- | ------------- |
+  | on foot                                                     | 0.07 s           | 0.20 s        |
+  | at the wheel of its own real car (the host)                 | within the frame | not measured  |
+  | in a seat of a dynamic car nobody moves                     | 0.07 s           | 0.06 s        |
+  | in that seat, the car teleported to where it is every frame | never (10.7 s)   | never (9.3 s) |
+  | … the teleports stopped                                     | 0.065 s later    | 0.39 s later  |
+  | in that seat, the car teleported every 2nd frame            | 0.10 s           | not measured  |
+  | in that seat, the car teleported every 4th frame            | 0.09 s           | not measured  |
+  | in the host's car copy, followed every frame                | never (8.9 s)    | never (7.5 s) |
+  | … the follow stopped                                        | 0.10 s later     | 0.39 s later  |
+  | … the follow back on, another asked                         | never (6.5 s)    | not measured  |
+  | … out of the seat                                           | 0.075 s later    | not measured  |
 
   A car teleported every frame with nobody of ours in it stops nothing
   (the street's proxies, `vehicle probe`). It is not the seat, its
   workspot, the car being a dynamic entity, nor speed: the car stood
   still. Whether one frame without a teleport among many is enough was not
   measured (every 2nd and every 4th were). [2.5-verified]
+
 - **`Entity.SetWorldTransform`** (Codeware: the placed component's
   transform) does not move a vehicle: asked every frame for a point up to
   20 m away, the car stayed within 0.003 m of where it was, V in it.
@@ -614,6 +615,70 @@ body `IsManaged`, neither `IsSpawning` nor `IsSpawned`.
   (`0xC0000005` at `+0x2AE4A10`, a job thread, once; `tools/game.sh reload`
   on instance b, 2026-11-22): restart the game instead while it is in a
   session. [2.5-verified]
+
+### 13.143 Moving a stub: the engine's own stub teleport, traffic slots, Codeware's enable and disable (2026-11-22, game 2.50, exe and Codeware source read)
+
+All [2.5-static]: decompiled, nothing called.
+
+- **One function sets a stub's place**: `0x14046A170` (hash 1625104190)
+  `(stub data, WorldTransform const &, const char *reason)`, where the stub
+  data is `[stub + 0x30]` (§13.140's). Under the data's lock (+0xD1): when
+  an entity is attached (+0xA8) and has a transform component (+0xB0) it
+  sets that component's transform (`0x14061DDC8`: position +0xC0,
+  orientation +0xD0, then a queued update; §13.141's
+  `Entity.SetWorldTransform`, which does not move a vehicle's body); unless
+  that entity is attached for good (state byte +0x156 = 4) it writes the
+  stub's own place (position +0x80..+0x88 as floats from the fixed-point
+  transform, orientation +0x70..+0x7F); then `0x14046A304`, which, when
+  the place moved more than 0.1 m since it last did, tells the stub's
+  owner (`0x14046A3A0` on `[data+0xA0]`, with the reason) and remembers it
+  (+0x8C..+0x94).
+- **Eighteen callers**, each with its reason string: the stub's own
+  constructor (`EntityStub`, `0x1402FAA48`), `TeleportEntityStubToTrafficSlot`
+  (`0x140469C88`, hash 2537235010), `TeleportStub(Immediate)`,
+  `EntityStubRootMotionCmdHandler` (twice: a despawned NPC's AI commands
+  move its stub), `Teleporting summoned vehicle`,
+  `VehicleSystem::BuildFixedUpdateJobs`,
+  `MountingFacility::ProcessStubsToUpdate` (twice), `teleport stub to VFA's
+parking spot`, `HandleAllowedAISpotsChangeForEntityStub`,
+  `SetAllowedAISpotsWithReservation`,
+  `LowLevelSystem::TooFarApartExecuteFallback`, `HandleCommandInternal`,
+  `companion`, `EndRidAction`, two without a string. So the engine keeps
+  the stub of a despawned thing where its simulation has it.
+- **A traffic slot**, by the string's name, is an entry of a table an
+  update walks (`0x1405370DC`, hash 18551433, called from `0x14071EDD0`;
+  whose update was not read: for each object of a list, pointers at +0x640,
+  count +0x650, it calls `0x140469BE8`, hash 1535907055): 0x18 bytes, a
+  transform pointer, 8 bytes not read here, and the stub that holds the
+  slot; the table at `object+0xD8`, count +0xE4, lock +0xF8. Each update every
+  slot's stub is put on the slot's transform
+  (`TeleportEntityStubToTrafficSlot` builds the transform from the slot's
+  position and direction; it does nothing while the stub's entity is
+  attached, state 4). `0x1405014A4` (hash 52764839) swaps the stubs of two
+  slots. That is how a pooled traffic car reappears where its lane has it:
+  the lane simulation moves the slot, the slot moves the stub, the pooling
+  update (§13.140) reads the stub's place. (`VehicleObject.HasTrafficSlot`
+  is the script's read of it.)
+- **What a stub of ours at its owner's place would need**: `FindStub`
+  (`gameEntityStubSystem` slot +0x1D0, §13.101) with the body's id, then
+  the function above with the owner's transform, once a tick for a body
+  that is despawned; a body registered with `alwaysSpawned = false`
+  (Codeware passes the flag through). A native, behind a startup check (the
+  hash, the slot's address). Not measured: at what distance the population
+  system despawns and respawns such a registration, and what a respawned
+  body keeps (an entity made anew from the request: appearance, nothing
+  else, by Codeware's request fields).
+- **Codeware's `DisableEntity` / `EnableEntity`**
+  (`DynamicEntitySystem.cpp`, MIT): disable is `RemoveEntity` then
+  `DeleteStub`, the calls of `DeleteEntity`, with the entity's state (id,
+  tags, spec) kept; enable is `CreateStub` again from the spec, at the
+  position and orientation first asked (the spec is never updated). A
+  disable before the stub's callback finds no stub and returns false with
+  the spec marked inactive; the callback then registers the body all the
+  same. Neither moves anything, and a disabled body is destroyed like a
+  deleted one.
+- **tandem** (`docs/architecture/traffic.md`, "Proxy bodies"): none of this
+  is called; proxy bodies are kept in a pool by the scripts.
 
 ### 13.150 CrystalCoat / TwinTone: a vehicle's custom paint (2026-11-22, 2.50 scripts read, not run in game)
 
@@ -662,8 +727,8 @@ All from the decompiled 2.50 scripts (`final.reds`), nothing run:
   kept as `VehicleComponent.m_customizationComponent` from the component's
   `OnGameAttach`) gets `SetDefaultDecalsEnabled(false)` and
   `SetupGenericCustomization(record.ExcludedComponentsGeneric(),
-  record.GenericCustomizationMask(), packedA, packedB, isInstant,
-  record.CustomizeCarRims())` (a colour packed as
+record.GenericCustomizationMask(), packedA, packedB, isInstant,
+record.CustomizeCarRims())` (a colour packed as
   `r + g / 100 + b / 10000`, each 0.01 to 0.99: `PackColorForEffect`), or
   `SetupUniqueCustomization` and `ShowUniqueCustomizationDecalsWithDisolve`.
   The lights event (`OnProcessVehicleVisualCustomizationLights`) reads the

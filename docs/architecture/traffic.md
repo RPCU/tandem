@@ -300,28 +300,154 @@ from that moment: `NpcSeat` out, then its states as for any NPC.
   so the owner's V is not blamed for a car a guest blew up. The heat is
   the offender's game's (its own hit on the proxy; `police.md`).
 
+## Proxy bodies: the pool, and the engine's own spawning
+
+Written 2026-11-22; the scripts compile, **nothing of it has run in game**.
+Engine facts: `research/engine/vehicles.md` §13.143, `re.md` §13.142.
+
+**The churn.** Each proxy was one body created when it appeared and deleted
+when it left. Two sessions of 2026-11-21 on a guest: 291 arrivals of 52
+vehicle records in 12 min (16 to 44 a minute), 540 of 71 records in 15 min
+(up to 129 a minute, riding). The re-use there was (`Reuse`, `m_retired`)
+kept only a body someone had sat in (3 in those 12 min), where it stood,
+without bound and for ever; every other body was deleted the moment its
+vehicle left, so it absorbed nothing.
+
+### (a) The body pool: done
+
+`TandemTraffic` (`Traffic.reds`): `Retire`, `Keep`, `Place`, `Take`,
+`Sweep`, `Bound`.
+
+- **A proxy leaves**: its body goes to the pool, whatever it is (not a
+  body of our own world, not one a player got into: those stay as before).
+  `Keep` (every tick, session or not: the pool outlives a session) parks it
+  once no seat is occupied: 600 m under the place it left, on a level of its
+  own (10 m apart: no two parked bodies touch), by the move every proxy is
+  moved by (`TandemSystem.MoveBody`: a first move is a teleport; then
+  nothing while the body rests there, the kinematic move when it sagged
+  5 cm). No script call hides a vehicle for good, puts its physics to sleep
+  or takes its collisions away: the place does all three (out of sight,
+  nothing to touch, no traffic near it). Until it is parked it stands where
+  it was, as a body someone sat in always did.
+- **A vehicle of that record arrives** (`OnSpawn`, and the check that asks
+  again for a body that did not come: `Obtain`): `Take` picks a parked body
+  of the record, one that wears the look asked for first, teleports it to
+  the vehicle's place (a discontinuity, `vehicles.md` "How a copy is
+  moved") and hands it to a new `TandemCar`. The log says `takes a parked
+body` where it said `spawning`.
+- **Only a body that stands as it spawned is used again** (the table
+  below); any other is parked all the same and deleted later.
+- **Bounds**: 32 bodies ready to be used again in all, 3 of one record,
+  one unused for 300 s let go; over a bound the one parked longest goes.
+  With the 48 shown at most (`kMaxShared`) that is 80 street bodies, plus
+  the ones someone sat in. Why not more: a pool per record cannot absorb a
+  street of 50 to 70 records. Replayed on the two sessions above (a proxy
+  taken to live 20 to 90 s): these bounds re-use 24 to 60 % of the
+  arrivals, 48 bodies and 4 a record 35 to 69 %, no bound at all 44 to 73 %
+  with up to 143 bodies parked. The rest of the churn is the share range's
+  (120 m in, 150 m out, on a street driven through), not the pool's.
+- **Deleting** (`Sweep`, twice a second, one deletion a sweep, through
+  `TandemEntities.Delete`): a body let go or never fit to be used again,
+  parked for 5 s or more, that exists (`IsSpawned`: never one being
+  created, §13.140) and has nobody in a seat. A body someone sat in is
+  never deleted (§13.6): it stays in the pool, used again if it is fit,
+  else parked for good. A body whose vehicle left before it came is kept
+  (`not here yet`) and parked when it comes; one that does not come in
+  10 s, or is gone from its parking place (a save loaded, the engine's own
+  removal), is forgotten (`lost`).
+- **`test reset`** lets every parked body go and starts the counts again
+  (`ResetPool`).
+- **`street count`** ends with the pool: `bodies: N created, N re-used (N
+with another look), N parked, N deleted, N lost;` then `pool N (N ready,
+N to delete, N kept for good, N not here yet)`. A line per body at
+  `log = debug` (`street: pool: …`).
+
+What a re-used body carries, against a fresh spawn's:
+
+| State                                                                            | Fresh spawn                  | Re-used body: where it is rewritten, or why it cannot differ                                                                                                                                           |
+| -------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| place, speed                                                                     | the spec's place             | `Take`: a teleport; the new `TandemCar` has no `move`, so its first `MoveBody` is a teleport to where the owner says, then the kinematic move                                                          |
+| look                                                                             | the spec's appearance        | a body of that look first; else `ScheduleAppearanceChange` (the old look shows while the new one loads: to see)                                                                                        |
+| paint (CrystalCoat, `Paint.reds`)                                                | none                         | none: `CarPaint` is a player's car's, applied to its copy (`Tandem.Vehicle`); the game writes one itself only when our V mounts, and a body our V got into is never parked (`claimed`, `m_taken`)      |
+| health                                                                           | `Show` once the body is here | the same call: `ready` is false on the new `TandemCar`; the body's own was 99 % or more (`Sound`)                                                                                                      |
+| wreck, fire, explosion, drowned                                                  | `Show` when flagged          | the same call; a body that ever was any of them is not used again (`Pristine`: `wrecked`, flags 4 and 8; `Sound`: `IsDestroyed`, the state's destroyed, submerged, exploded)                           |
+| dents, parts off, glass                                                          | none                         | no script reads them: a body is used again only with its health whole here and at its owner's (a hit lands on the health), no damage word (`TandemWheels.DamageOf`), no ram by our car (`m_ramBodies`) |
+| tyres                                                                            | whole                        | `Sound`: `GetFlatTireIndex` below 0; `Pristine`: no damage word (a flat tyre is one)                                                                                                                   |
+| doors, windows, lights, engine                                                   | closed, off                  | nothing of ours opens or switches a proxy's (a seat is an instant mount; flag 32 is not sent); a body a V got into is never parked                                                                     |
+| siren                                                                            | off, `Show` when flagged     | `Retire` switches it off (`ToggleSiren`); `siren` is false on the new `TandemCar`, `Show` as for a fresh one                                                                                           |
+| radio                                                                            | off                          | `Radio.reds` sets players' cars only                                                                                                                                                                   |
+| occupants, seated NPC proxies                                                    | none                         | `Keep` parks and `Take` takes only a body with every seat empty (`Occupied`, read as `Evict` reads a seat); the NPC proxies leave by their owner's word (`Npcs.reds`: `FollowSeat`, `Remove`)          |
+| `seated` (someone sat in it)                                                     | false                        | carried from the pool (`TandemPooled.seated`): still never deleted                                                                                                                                     |
+| hack mark                                                                        | none                         | `Retire`: `TandemHacks.CarGone` ends the vehicle's mark at the next tick                                                                                                                               |
+| `ready`, `wrecked`, `claimed`, `held`, `own`, `goneSince`, `goneTries`, `yields` | a new `TandemCar`            | a new `TandemCar` (`OnSpawn`); the check resets them before `Obtain`                                                                                                                                   |
+| tyres and dents put on it (`TandemWheelsCopy`)                                   | by vehicle id                | by vehicle id: a new vehicle is a new record                                                                                                                                                           |
+
+To settle in game (`traffic-pool`, then a drive as a guest): that a parked
+body stays where it is parked (`vehicle moves` says no body fails to
+follow, `street count` says `0 lost`), that none is seen or met, that one
+taken back shows no trace of its last use, the pop of a changed look, and
+the counts: `re-used` a third to a half of `created` plus `re-used` on a
+street, `deleted` well below `created`, no `body was gone`.
+
+**NPC proxies have no pool.** A street's NPCs are of many more records and
+looks than its cars; what a use leaves on a puppet is not rewritten by the
+join path and much of it cannot be read or undone from a script (dead or
+defeated, a ragdoll, a hit reaction or a workspot in progress, status
+effects, weapons drawn, its level and scaling modifiers, the native
+controller and puppet id); a corpse stays where it fell; and a parked
+puppet has no place to stand (its movement is its controller's). Each
+proxy keeps its own body, deleted when it goes.
+
+### (b) The engine keeps the body's lifetime: possible, a native, not done
+
+With `alwaysSpawned = false` the population system despawns and respawns
+a registered body by distance; its pooling update reads the place from the
+body while it is attached and from its stub otherwise (§13.140), and the
+engine does move stubs: one function (hash 1625104190) sets a stub's place,
+called from 18 places, its own traffic among them (each update the traffic
+system puts the stub of every pooled car on its traffic slot, the place
+its lane has it at: §13.143). So a proxy's stub could follow its owner. It
+needs a native (the stub by `FindStub`, then that function, behind a
+startup check), and it would not remove the churn here: a proxy goes at
+150 m because its owner says so, well inside any streaming distance, and a
+respawned body is a new one, to be dressed again by `Show`. Where it would
+help is what is far and still: the players' parked car copies, never
+deleted today. Codeware's `DisableEntity` / `EnableEntity` are a delete
+and a create that keep the id and the tags (the body is destroyed, the new
+stub is at the place first asked): nothing over `TandemEntities.Delete`.
+
+### (c) Stubs of our own with the engine's `CancelStub`: not needed
+
+`CancelStub` (hash 303576408) only matters for a body deleted before its
+stub exists. Tandem waits until it does (`TandemEntities.Delete`), and the
+pool keeps such a body rather than delete it. The crash of 2026-11-22 was
+not that path (§13.142): an NPC detached in the middle of an action, in the
+engine's own detach job; neither the back-off of the street's check nor
+`CancelStub` covers it. What would: a guard of that one read in the plugin
+(`guards.cpp`, as §13.98's).
+
 ## Consistency
 
-| How it diverges                                           | What the player would see                            | Guard                                                                                                                                                      |
-| --------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| a late joiner                                             | an empty street                                      | spawns (at the latest transform), statuses and seats are kept and sent with the NPC domain                                                                 |
-| a spawn, a removal or a status lost (a bug, a full queue) | a missing car, a ghost, a car that should be a wreck | the shared set and each status are hashed into the NPC digest; a resync opens with `TrafficSet`                                                            |
-| sent twice (a resync, a duplicate)                        | two cars in one place                                | a known id is not announced again; statuses equal to the copy are dropped; hits and claims are one-shots                                                   |
-| a state overtakes its `TrafficGone` (other channel)       | a car back from nowhere                              | states only for known ids                                                                                                                                  |
-| the owner's world is rebuilt (fast travel)                | cars drawn where the old street was                  | `TrafficStates` share the NPC states' numbering: `Epoch::firstNpcSeq` fences both                                                                          |
-| a hit or a claim aimed at the owner's old world           | a wrong car damaged or taken                         | behind the epoch fence, like `NpcHit`                                                                                                                      |
-| hits queued behind a loading screen                       | a car wrecked the moment the world is back           | dropped after 3 s                                                                                                                                          |
-| a proxy's body streamed out or lost in our fast travel    | an invisible car                                     | the script's check against the session's record, once a second: spawned again after 3 s                                                                    |
-| our V rides in a car another game moves (its copy here, teleported every frame) | no proxy of anyone's traffic, nor of their NPCs: an empty street from the seat | every vehicle another game runs is moved by the engine's kinematic move, no teleport (`vehicles.md`, "How a copy is moved"; engine-knowledge §13.141) |
-| the owner vanishes                                        | frozen cars                                          | the session ends on the 5 s timeout; proxies go with it, our crowd and traffic come back                                                                   |
-| a guest vanishes in a car it took                         | —                                                    | it was its car: it stays parked with its puppet's car copy, as any car of a player that left                                                               |
-| a guest vanishes mid-claim                                | a car nobody drives                                  | the claim was granted or not; if granted the body is its (parked) car, if not nothing changed                                                              |
-| a proxy that had an occupant must go                      | a crash (engine-knowledge §13.6)                     | never deleted: kept out of range and reused for the next vehicle of its record                                                                             |
-| a guest owner's spawn or removal lost                     | a car missing for its linked players, or a ghost     | its vehicles are hashed into the `OwnedDigest` with its NPCs; twice different, it sends its whole set (`TrafficSet` from the guest, its spawns, statuses)  |
-| a hand-over step lost                                     | a car nobody runs, or run twice                      | one owner at every moment (the host moves it when the giver's state arrives); each step retried 3 times; a repeated state is answered with the same `Done` |
-| the receiver cannot run it, or leaves mid hand-over       | a frozen car                                         | it goes for everyone (`TrafficGone` away); a receiver that vanished is an owner that vanished                                                              |
-| a request aimed at the old owner                          | a hit or a claim lost                                | routed by the session's owner map at the host: the new owner gets it                                                                                       |
-| a guest's word about a vehicle it does not run            | a car moved or wrecked by two games                  | the host drops it (and the referee flags it: `authority.not-owner`)                                                                                        |
+| How it diverges                                                                 | What the player would see                                                      | Guard                                                                                                                                                      |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a late joiner                                                                   | an empty street                                                                | spawns (at the latest transform), statuses and seats are kept and sent with the NPC domain                                                                 |
+| a spawn, a removal or a status lost (a bug, a full queue)                       | a missing car, a ghost, a car that should be a wreck                           | the shared set and each status are hashed into the NPC digest; a resync opens with `TrafficSet`                                                            |
+| sent twice (a resync, a duplicate)                                              | two cars in one place                                                          | a known id is not announced again; statuses equal to the copy are dropped; hits and claims are one-shots                                                   |
+| a state overtakes its `TrafficGone` (other channel)                             | a car back from nowhere                                                        | states only for known ids                                                                                                                                  |
+| the owner's world is rebuilt (fast travel)                                      | cars drawn where the old street was                                            | `TrafficStates` share the NPC states' numbering: `Epoch::firstNpcSeq` fences both                                                                          |
+| a hit or a claim aimed at the owner's old world                                 | a wrong car damaged or taken                                                   | behind the epoch fence, like `NpcHit`                                                                                                                      |
+| hits queued behind a loading screen                                             | a car wrecked the moment the world is back                                     | dropped after 3 s                                                                                                                                          |
+| a proxy's body streamed out or lost in our fast travel                          | an invisible car                                                               | the script's check against the session's record, once a second: spawned again after 3 s                                                                    |
+| our V rides in a car another game moves (its copy here, teleported every frame) | no proxy of anyone's traffic, nor of their NPCs: an empty street from the seat | every vehicle another game runs is moved by the engine's kinematic move, no teleport (`vehicles.md`, "How a copy is moved"; engine-knowledge §13.141)      |
+| the owner vanishes                                                              | frozen cars                                                                    | the session ends on the 5 s timeout; proxies go with it, our crowd and traffic come back                                                                   |
+| a guest vanishes in a car it took                                               | —                                                                              | it was its car: it stays parked with its puppet's car copy, as any car of a player that left                                                               |
+| a guest vanishes mid-claim                                                      | a car nobody drives                                                            | the claim was granted or not; if granted the body is its (parked) car, if not nothing changed                                                              |
+| a proxy that had an occupant must go                                            | a crash (engine-knowledge §13.6)                                               | never deleted: parked in the body pool and used for the next vehicle of its record ("Proxy bodies")                                                        |
+| a guest owner's spawn or removal lost                                           | a car missing for its linked players, or a ghost                               | its vehicles are hashed into the `OwnedDigest` with its NPCs; twice different, it sends its whole set (`TrafficSet` from the guest, its spawns, statuses)  |
+| a hand-over step lost                                                           | a car nobody runs, or run twice                                                | one owner at every moment (the host moves it when the giver's state arrives); each step retried 3 times; a repeated state is answered with the same `Done` |
+| the receiver cannot run it, or leaves mid hand-over                             | a frozen car                                                                   | it goes for everyone (`TrafficGone` away); a receiver that vanished is an owner that vanished                                                              |
+| a request aimed at the old owner                                                | a hit or a claim lost                                                          | routed by the session's owner map at the host: the new owner gets it                                                                                       |
+| a guest's word about a vehicle it does not run                                  | a car moved or wrecked by two games                                            | the host drops it (and the referee flags it: `authority.not-owner`)                                                                                        |
 
 ## Stages
 
@@ -336,8 +462,9 @@ Built in this change:
 2. **Mock player**: `tandem-peer host --traffic N [--npc REC]
 [--wreck-at S] [--traffic-at S]` drives N cars round the guest and parks
    one (announced S seconds after the guest is there: during its ride,
-   with `--mode drive`); `join --ram-traffic S`, `--steal-at S`
-   (`--steal-driven`: a car with a driver).
+   with `--mode drive`); `--traffic-churn S` takes a driving car away every
+   S seconds and announces a new vehicle of its record S/2 later; `join
+--ram-traffic S`, `--steal-at S` (`--steal-driven`: a car with a driver).
 3. **Plugin**: `street_natives.cpp` (`TandemStreet`), the runtime's queues
    and per-vehicle tracks, the packet budget on the game thread.
 4. **Scripts**: `Traffic.reds` (the owner's share loop, proxies, status,
@@ -369,7 +496,7 @@ Not built, in the order I would do them:
 
 ## Scenarios to run in game
 
-`tools/scenario.sh traffic-guest traffic-host wheels-guest-area` and `ride-traffic traffic-yield` (with
+`tools/scenario.sh traffic-guest traffic-host wheels-guest-area` and `ride-traffic traffic-yield traffic-pool` (with
 `police-guest police-host`, see `police.md`).
 
 - **traffic-guest**: the game joins a mock host that drives four cars
@@ -398,6 +525,13 @@ puppet`) with no second copy. Look for: the rammed driver's
   `YIELD_OFFSET`: the default spot is a guess, `cmd street lanes` helps to
   pick one). Checks that a car of ours stops for it. Look for: the car
   stopping short and honking, the queue behind it, the puppet never pushed.
+- **traffic-pool** (written 2026-11-22, not yet run): the game joins a
+  mock host whose street churns (`--traffic 4 --traffic-churn 8`). Checks
+  that five bodies are created in all, that every vehicle announced later
+  takes a parked one, nothing deleted or lost meanwhile, and that the pool
+  keeps three of the record and deletes two once the host is gone. Look
+  for: a car coming back with no pop, nothing left where a car went out of
+  range, nothing falling past a bridge or lying under the sea.
 - **wheels-guest-area**: the game hosts; a mock guest 400 m away owns its
   area and runs three cars of its own (the first driven by its NPC, chasing
   us once we meet). It walks up (its cars appear as proxies, its chase

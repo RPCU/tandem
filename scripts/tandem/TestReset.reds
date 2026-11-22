@@ -128,6 +128,11 @@ public class TandemTestReset {
         // body in it froze the game, System.reds ProcessLeaving).
         if IsDefined(this.m_system) {
           this.m_system.ClearTestCars();
+          // No parked street body waits for the next scenario's vehicles.
+          let traffic = this.m_system.Traffic();
+          if IsDefined(traffic) {
+            traffic.ResetPool();
+          }
         }
         TandemTravel.ExpectMove(this.m_game);
         GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, TandemTestReset.Field(), TandemYawAngles(0.0));
