@@ -140,7 +140,7 @@ public class TandemBodies {
     spec.persistSpawn = false;
     spec.spawnInView = true;
     ArrayPush(spec.tags, n"Tandem.Donor");
-    donor.id = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+    donor.id = TandemEntities.Create(spec);
     if !EntityID.IsDefined(donor.id) {
       TandemNative.Log(s"body: no donor \(donor.record)");
     }

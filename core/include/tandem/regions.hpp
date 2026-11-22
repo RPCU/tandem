@@ -108,6 +108,19 @@ private:
 proto::PlayerId Taker(const proto::Vec3 &npc, proto::PlayerId owner, const Places &places,
                       const Links &links, proto::PlayerId host = 1, const Holders &holders = {});
 
+// A vehicle is not handed to a player whose V it is on top of: one it has
+// just run into, carries on its hood or is about to hit (kHandoverClear from
+// the vehicle's origin: half a car and a couple of metres). A car handed
+// over wakes up as a real one of the receiver's traffic and drives on, its
+// own V on it (a host's V carried 750 m, 2026-11-22). A place not known is
+// clear.
+inline constexpr float kHandoverClear = 4.f;
+inline bool ClearOf(const proto::Vec3 &vehicle, proto::PlayerId player, const Places &places) {
+  const auto place = places.find(player);
+  return place == places.end() || !place->second.known ||
+         Distance(vehicle, place->second.position) > kHandoverClear;
+}
+
 // The player that inherits an NPC whose owner is gone (kNoPlayer: nobody is
 // near, it goes): the highest-ranked of `candidates` (the players that were
 // linked with the owner) whose V is known to be within kKeep of it.

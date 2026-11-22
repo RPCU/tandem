@@ -164,17 +164,56 @@ public abstract class TandemVehicles {
     spec.spawnInView = true;
     spec.active = true;
     ArrayPush(spec.tags, n"Tandem.Vehicle");
-    return GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+    return TandemEntities.Create(spec);
   }
 
-  // Puts the copy where the driver's game says (interpolated in the plugin).
+  // Puts the copy where the driver's game says (interpolated in the plugin):
+  // TandemSystem.MoveBody (the engine's kinematic move; a teleport for a
+  // jump).
   public static func Follow(game: GameInstance, car: ref<GameObject>, player: Uint32) -> Void {
     let position = TandemNative.RemoteVehiclePosition(player);
+    let system = TandemSystem.Of(game);
     if position.W == 0.0 {
+      if IsDefined(system) {
+        system.SettleBody(system.MoverOf(car.GetEntityID()), car);
+      }
       return;
     }
     position.W = 1.0;
-    let angles = Quaternion.ToEulerAngles(TandemNative.RemoteVehicleOrientation(player));
-    GameInstance.GetTeleportationFacility(game).Teleport(car, position, angles);
+    let orientation = TandemNative.RemoteVehicleOrientation(player);
+    if IsDefined(system) {
+      system.MoveBody(system.MoverOf(car.GetEntityID()), car, position, orientation);
+    } else {
+      GameInstance.GetTeleportationFacility(game).Teleport(car, position, Quaternion.ToEulerAngles(orientation));
+    }
   }
+}
+
+// A vehicle another game runs, as our game moves its body
+// (TandemSystem.MoveBody).
+public class TandemMoved {
+  public let body: EntityID;
+  // Placed here at least once.
+  public let placed: Bool;
+  // Where it was last sent, and when (the world's time).
+  public let x: Float;
+  public let y: Float;
+  public let z: Float;
+  public let i: Float;
+  public let j: Float;
+  public let k: Float;
+  public let r: Float;
+  public let at: Float;
+  // The last move was the kinematic one, from here.
+  public let kinematic: Bool;
+  public let px: Float;
+  public let py: Float;
+  public let pz: Float;
+  // At rest where its owner says: left alone.
+  public let rested: Bool;
+  // Frames in a row it did not move when asked; woken up once; then
+  // teleported for good.
+  public let stalls: Int32;
+  public let woken: Bool;
+  public let teleportOnly: Bool;
 }

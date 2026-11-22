@@ -250,7 +250,7 @@ public class TandemLedger {
     let body = new TandemLedgerBody();
     body.entity = death.entity;
     body.knockedOut = death.knockedOut;
-    body.id = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+    body.id = TandemEntities.Create(spec);
     ArrayPush(this.m_bodies, body);
     TandemNative.Log(s"ledger: a body for placed npc \(EntityID.ToDebugString(death.entity)) (\(death.knockedOut ? "knocked out" : "dead") \(death.age) s ago, player \(death.by)'s) at (\(death.x), \(death.y), \(death.z))");
   }

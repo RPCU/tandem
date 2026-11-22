@@ -401,7 +401,9 @@ void Endpoint::ArbitrateTraffic(std::uint64_t now, std::vector<SessionEvent> &ou
     }
     const auto owner = TrafficOwnerOf(id);
     const auto taker = regions::Taker(spawn.position, owner, m_places, m_links, m_host, m_holders);
-    if (taker == proto::kNoPlayer)
+    // Not while it is on top of the taker's V (regions::ClearOf): asked again
+    // on a later pass, once it has driven clear.
+    if (taker == proto::kNoPlayer || !regions::ClearOf(spawn.position, taker, m_places))
       continue;
     m_trafficHandoffs[id] = {.from = owner, .to = taker, .state = std::nullopt, .sentUs = now};
     ++asked;

@@ -117,6 +117,24 @@ to player N's FootStepSprint` (debug). Scenario `stealth-footsteps`;
   because in `player` hostility to one V becomes hostility to all: so
   hostility to one guest's V reaches neither the host's V nor another
   guest's.
+- **A puppet against a V in the same spot** (2026-11-22, read, not run): a
+  riding guest went in and out of combat twice (one host NPC's meter on
+  its puppet 25 to 100 % in 3 s) with the host, in the same car, out of
+  it; nothing named the NPC. By design an NPC can be hostile to one V
+  alone (the puppets' own attitude groups), and that guest had been
+  detected earlier in the session: likely that. What our game tells the
+  senses about a puppet is its V's own (the Visibility stat as the
+  detection multiplier, the visible point's height, camo); two things
+  differ: the visible object's sense type (the donor NPC body's `Npc`; a
+  V's is `Player`, `PlayerPuppet.OnGameAttached`, `final.reds:40150`) and
+  that nothing says it sits in a vehicle (no script rule exists for a V
+  either: the senses' own trace). Not changed blind: the type is what
+  native senses read for a player, and what else they do with it is not
+  known. To settle in one run: the owner logs `stealth: our npc N <record>
+has detected players MASK …` with its detection of and attitude to every
+  V; `tools/game.sh cmd npc parity` lists the same for every NPC that
+  notices a V; `cmd npc sense player` (back: `npc sense npc`) types the
+  puppets' visible object as a player's, to compare the two meters.
 - **Movement noise, to verify in game**: the `stealth: a puppet's …` line
   (the footstep records' radius and tags); that a guard turns to a partner
   sprinting behind it and not to one crouch-walking; that it goes after the

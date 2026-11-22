@@ -494,6 +494,9 @@ struct Options {
   // and blows up this long in (-1: never). Guest: ram a shared vehicle this
   // often (0: never); get into the nearest one this long in (-1: never).
   int trafficCars{0};
+  // ... announced this long after the guest is with us (a guest already
+  // riding in our car by then: its proxies spawn during the ride).
+  int trafficAtSeconds{0};
   std::string trafficVehicle{"Vehicle.v_standard2_archer_hella"};
   int wreckAtSeconds{-1};
   int ramTrafficSeconds{0};
@@ -942,6 +945,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --traffic N        host: N cars drive round where the guest was first heard, one\n"
          "                     more is parked there (shared world vehicles); --npc REC puts\n"
          "                     a driver in the first; hits wear them down to wrecks\n"
+         "  --traffic-at N     host --traffic: the cars are announced N seconds after the guest\n"
+         "                     is with us (default 0), round where it is then\n"
          "  --traffic-vehicle REC  the cars' record (Vehicle.v_standard2_archer_hella)\n"
          "  --wreck-at N       host --traffic: the first car burns N seconds in, then blows up\n"
          "  --ram-traffic N    join: ram a shared vehicle every N seconds (TrafficHit)\n"
@@ -1976,6 +1981,8 @@ Options Parse(int argc, char **argv) {
       options.trafficCars = Number<int>(value);
       if (options.trafficCars < 0 || options.trafficCars > 64)
         Usage("--traffic is 0 to 64");
+    } else if (flag == "--traffic-at") {
+      options.trafficAtSeconds = Number<int>(value);
     } else if (flag == "--traffic-vehicle") {
       options.trafficVehicle = std::string(value);
     } else if (flag == "--wreck-at") {
@@ -7554,7 +7561,8 @@ int main(int argc, char **argv) {
     const double shared =
         sharedSince ? std::chrono::duration<double>(now - *sharedSince).count() : -1.0;
     // --traffic: cars round where the guest was first heard, one parked.
-    if (options.host && options.trafficCars > 0 && firstRemote && shared >= 0.0) {
+    if (options.host && options.trafficCars > 0 && firstRemote &&
+        shared >= static_cast<double>(options.trafficAtSeconds)) {
       namespace proto = tandem::proto;
       const auto place = [&](const StreetCar &car) {
         tandem::traffic::Car at{.id = car.id};

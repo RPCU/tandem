@@ -207,7 +207,7 @@ public native class TandemStory extends IScriptable {
   public static native func MomentListed(tracked: String) -> Int32;
   public static native func MomentsTest(verdict: Int32) -> Void;
   public static native func MomentsReport(tracked: String) -> String;
-  public static native func SpectateUpdate(hostMoment: Bool, hostWatch: Bool, hostPrivate: Bool, grouped: Bool, ourAway: Bool, hostElsewhere: Bool, hostTier: Int32, hostRiding: Bool, inVehicle: Bool, cannotLoad: Bool, hostKnown: Bool, hostX: Float, hostY: Float, hostZ: Float, x: Float, y: Float, z: Float) -> Int32;
+  public static native func SpectateUpdate(hostMoment: Bool, hostWatch: Bool, hostPrivate: Bool, grouped: Bool, ourAway: Bool, hostElsewhere: Bool, hostTier: Int32, hostRiding: Bool, hostFree: Bool, inVehicle: Bool, cannotLoad: Bool, hostKnown: Bool, hostX: Float, hostY: Float, hostZ: Float, x: Float, y: Float, z: Float) -> Int32;
   public static native func SpectateHostWatch() -> Bool;
   public static native func SpectateWhy() -> Int32;
   public static native func SpectateShared() -> Bool;

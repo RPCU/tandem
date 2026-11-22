@@ -631,3 +631,41 @@ TEST_CASE("interiors the guest's game cannot load: watched near the host, moment
   CHECK(spectator.Leave() == Change::Stop);
   CHECK(spectator.Update(in) == Change::None);
 }
+
+TEST_CASE("a host in free roam under a restriction alone is never taken from its guests") {
+  using Change = story::Spectator::Change;
+  using Why = story::Spectator::Why;
+  story::SpectateInput in{.on = true,
+                          .hostMoment = true,
+                          .grouped = true,
+                          .hostTier = 1,
+                          .hostRiding = true,
+                          .hostFree = true,
+                          .hostKnown = true,
+                          .host = {0.f, 0.f, 0.f},
+                          .guest = {10.f, 0.f, 0.f}};
+  story::Spectator spectator;
+  CHECK(spectator.Update(in) == Change::None);
+  CHECK(spectator.Shared());
+  // It drives off in its own car: past the 30 m of a moment's ride, then
+  // beyond reach. Its own way to go: we play on.
+  in.host = {story::kSpectateLeftBehind + 30.f, 0.f, 0.f};
+  CHECK(spectator.Update(in) == Change::None);
+  in.host = {story::kSpectateReach + 60.f, 0.f, 0.f};
+  CHECK(spectator.Update(in) == Change::None);
+  CHECK_FALSE(spectator.Watching());
+  in.hostRiding = false; // on foot, as far
+  CHECK(spectator.Update(in) == Change::None);
+  // The same ride in a scene, or one its quest drives: taken at once.
+  in.hostRiding = true;
+  in.hostFree = false;
+  CHECK(spectator.Update(in) == Change::Start);
+  CHECK(spectator.Reason() == Why::Taken);
+  // Watching it, the scene over while the ride goes on: until the ride ends.
+  in.hostFree = true;
+  CHECK(spectator.Update(in) == Change::None);
+  CHECK(spectator.Watching());
+  in.hostRiding = false;
+  in.guest = in.host;
+  CHECK(spectator.Update(in) == Change::Stop);
+}

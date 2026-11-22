@@ -98,8 +98,9 @@ public class TandemSpectate {
   // Quest restrictions on how the V moves (no sprint, no jump, forced walk,
   // no vehicle...): a moment. Weapons kept away alone is a place's rule (a
   // club, a safe area), not a moment: Restrictions.reds shares it as is.
+  // The phone kept away alone is none either (TandemRestrictions.PhoneOnly).
   public static func Restricts(record: wref<StatusEffect_Record>) -> Bool {
-    return TandemRestrictions.IsShared(record) && !TandemRestrictions.KeepsWeaponsAway(record.GetID());
+    return TandemRestrictions.IsShared(record) && !TandemRestrictions.KeepsWeaponsAway(record.GetID()) && !TandemRestrictions.PhoneOnly(record);
   }
 
   // A scripted body or camera mode the story holds the V in (no movement,
@@ -244,13 +245,16 @@ public class TandemSpectate {
     let transit = IsDefined(system) ? system.Transit() : null;
     let hostCar = IsDefined(system) ? system.CarOf(host) : EntityID.FromHash(0ul);
     let hostRiding = EntityID.IsDefined(hostCar);
+    // Restrictions alone (no scene, no ride its scene or quest drives:
+    // Transit kind 3): where its V goes is its own free roam, never (c).
+    let hostFree = story.TierOf(host) < 2 && TandemNative.RemoteTransitKind(host) != 3;
     // Riding along in the host's copy (seated or carried) or in a car of our
     // own: we play. Our spectating's own carry is not a ride.
     let inVehicle = !this.m_carried && (VehicleComponent.IsMountedToVehicle(this.m_game, player) || (IsDefined(transit) && transit.CarriedBy() != 0u));
     // The host among quest interiors our game cannot load (StoryWorld.reds).
     let world = story.World();
     let cannotLoad = this.m_testMissing || (IsDefined(world) && world.CannotLoad());
-    let change = TandemStory.SpectateUpdate((flags & 16) != 0, (flags & 64) != 0, (flags & 8) != 0, story.Grouped(), TandemElsewhere.Inside(this.m_game), TandemElsewhere.IsElsewhere(this.m_game, host), story.TierOf(host), hostRiding, inVehicle, cannotLoad, at.W >= 0.5, at.X, at.Y, at.Z, here.X, here.Y, here.Z);
+    let change = TandemStory.SpectateUpdate((flags & 16) != 0, (flags & 64) != 0, (flags & 8) != 0, story.Grouped(), TandemElsewhere.Inside(this.m_game), TandemElsewhere.IsElsewhere(this.m_game, host), story.TierOf(host), hostRiding, hostFree, inVehicle, cannotLoad, at.W >= 0.5, at.X, at.Y, at.Z, here.X, here.Y, here.Z);
     let why = TandemStory.SpectateWhy();
     if change == 2 {
       this.m_why = why;
@@ -653,7 +657,7 @@ public class TandemSpectate {
       spec.spawnInView = true;
       spec.active = true;
       ArrayPush(spec.tags, n"Tandem.Spectate");
-      this.m_camera = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+      this.m_camera = TandemEntities.Create(spec);
       this.m_cameraAsked = true;
       this.m_cameraLogged = false;
       TandemNative.Log("spectate: a camera for the host's view asked for");

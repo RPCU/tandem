@@ -228,6 +228,10 @@ struct SpectateInput {
   bool hostElsewhere{}; // the host's V is in another world (Elsewhere)
   std::uint8_t hostTier{};
   bool hostRiding{}; // the host's V is in a vehicle (its copy here)
+  // The host's moment is restrictions alone: no scene (tier under 2) and no
+  // ride its scene or quest drives. Its V walking or driving off then is
+  // its own free roam: never (c).
+  bool hostFree{};
   bool inVehicle{};  // our V rides (along with the host, or a car of its own)
   bool cannotLoad{}; // the host's quests have prefabs on that our game does not load
   bool hostKnown{};

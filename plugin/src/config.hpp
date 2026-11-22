@@ -97,6 +97,10 @@
 //                        ; untested), off (only off deep inside it) (ini only)
 //   overlap_despawn = off ; on: our own crowd cars left inside such a region are
 //                        ; asked to despawn (a probe, untested) (ini only)
+//   kinematic_ride = on  ; off: the vehicles other games run (their cars, their
+//                        ; traffic) are teleported every frame instead of moved
+//                        ; by the engine's kinematic vehicle move (the fallback,
+//                        ; vehicles.md "How a copy is moved") (ini only)
 //   death_ledger = on    ; off: placed NPCs another player killed in the session
 //                        ; stay alive in our game (ini only)
 //   death_bodies = on    ; off: no body where a placed NPC another player
@@ -251,6 +255,7 @@ struct Config {
   // vendor are the game's own interactions (scripts/tandem/Prompts.reds);
   // off: all drawn by us, as before.
   bool nativePrompts{true};
+  bool kinematicRide{true};
   // Where it was read from (the settings page writes there).
   std::filesystem::path file;
   // What a guest's game does once it is out of a session (Saves.reds).

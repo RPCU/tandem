@@ -30,6 +30,8 @@ public class TandemNpcKnown {
   // The last guest who hit it, and when: its killer when the game names none.
   public let lastHitBy: Uint32;
   public let lastHitAt: Float;
+  // Which Vs it has detected, as last said (Detected's mask).
+  public let detects: Int32;
   // When our own V last hit it (KillerOf: a guest's later hit or takedown
   // wins over the game naming our V).
   public let lastOwnHitAt: Float;
@@ -510,6 +512,9 @@ public class TandemNpcs {
     if EntityID.IsDefined(proxy.seatedIn) && IsDefined(body) {
       TandemVehicles.Unseat(this.m_game, body, proxy.seatedIn, proxy.seatedSlot);
     }
+    if EntityID.IsDefined(proxy.seatedIn) {
+      TandemNative.HoldPuppet(TandemNative.NpcPuppetId(proxy.npc), false);
+    }
     let none = EntityID.FromHash(0ul);
     proxy.seatedIn = none;
   }
@@ -943,6 +948,13 @@ public class TandemNpcs {
         ArrayPush(orientations, npc.GetWorldOrientation());
         let mask = this.Detected(npc, watched);
         ArrayPush(detected, mask);
+        if mask != known.detects {
+          // Said when it changes: which NPC puts a guest in combat (a riding
+          // guest went in and out of combat twice with the host out of it,
+          // and nothing named the NPC: 2026-11-21).
+          TandemNative.Log(s"stealth: our npc \(known.npc) \(TDBID.ToStringDEBUG(npc.GetRecordID())) has detected players \(mask) (bit: player - 1; was \(known.detects)), \(this.SenseLine(npc, watched))");
+          known.detects = mask;
+        }
         this.Notice(known.npc, npc, watched, mask);
         if sampling {
           this.m_anims.Sample(npc, known.npc, this.m_you);
@@ -1116,6 +1128,73 @@ public class TandemNpcs {
       p += 1u;
       bit *= 2;
     }
+  }
+
+  // An NPC of ours against every V here: how far it is in detecting each
+  // (0..100), its attitude to each (EAIAttitude: 0 friendly, 1 neutral,
+  // 2 hostile) and whether that V sits in a vehicle. The first is our own V.
+  private func SenseLine(npc: ref<ScriptedPuppet>, watched: array<ref<GameObject>>) -> String {
+    let senses = npc.GetSensesComponent();
+    let mounting = GameInstance.GetMountingFacility(this.m_game);
+    let line = "";
+    let p = 1u;
+    for v in watched {
+      if IsDefined(v) {
+        let detection = IsDefined(senses) ? senses.GetDetection(v.GetEntityID()) : -1.0;
+        line += s"\(p == this.m_you ? "our V" : s"player \(p)"): detection \(detection), attitude \(EnumInt(GameObject.GetAttitudeTowards(npc, v))), in a vehicle \(mounting.IsMountedToAnything(v.GetEntityID())); ";
+      }
+      p += 1u;
+    }
+    return line;
+  }
+
+  // (test) "npc parity": every NPC we run that notices any V or is hostile
+  // to one, with SenseLine (twelve at most): the same NPC must be as far
+  // with a puppet as with our own V in the same spot. "npc sense player" /
+  // "npc sense npc": the puppets' visible object typed as a player's (what
+  // V's own is, PlayerPuppet.OnGameAttached, final.reds:40150) or as the
+  // donor NPC body's (what it is today): the one thing our game tells the
+  // senses about a puppet that differs from a V, to compare with parity.
+  public func SenseCommand(command: String, system: ref<TandemSystem>) -> Void {
+    let player = GetPlayer(this.m_game);
+    if !IsDefined(player) {
+      return;
+    }
+    let watched = this.Watched(player);
+    if StrBeginsWith(command, "npc sense ") {
+      let asPlayer = Equals(command, "npc sense player");
+      let n = 0;
+      let p = 1u;
+      for v in watched {
+        if IsDefined(v) && p != this.m_you {
+          let typed = new VisibleObjectTypeEvent();
+          typed.type = asPlayer ? gamedataSenseObjectType.Player : gamedataSenseObjectType.Npc;
+          v.QueueEvent(typed);
+          n += 1;
+        }
+        p += 1u;
+      }
+      TandemNative.Log(s"npc sense: \(n) puppet(s) seen as \(asPlayer ? "a player" : "an NPC") by the senses");
+      return;
+    }
+    let said = 0;
+    for known in this.m_known {
+      let npc = GameInstance.FindEntityByID(this.m_game, known.id) as ScriptedPuppet;
+      if IsDefined(npc) && said < 12 && !npc.IsDead() {
+        let senses = npc.GetSensesComponent();
+        let notices = false;
+        for v in watched {
+          if IsDefined(v) && ((IsDefined(senses) && senses.GetDetection(v.GetEntityID()) > 0.0) || Equals(GameObject.GetAttitudeTowards(npc, v), EAIAttitude.AIA_Hostile)) {
+            notices = true;
+          }
+        }
+        if notices {
+          TandemNative.Log(s"npc parity: npc \(known.npc) \(TDBID.ToStringDEBUG(npc.GetRecordID())): \(this.SenseLine(npc, watched))");
+          said += 1;
+        }
+      }
+    }
+    TandemNative.Log(s"npc parity: \(said) NPC(s) of ours notice a V or are hostile to one");
   }
 
   private func IsPuppet(id: EntityID) -> Bool {
@@ -1409,6 +1488,7 @@ public class TandemNpcs {
     let none = EntityID.FromHash(0ul);
     if EntityID.IsDefined(proxy.seatedIn) {
       TandemVehicles.Unseat(game, npc, proxy.seatedIn, proxy.seatedSlot);
+      TandemNative.HoldPuppet(TandemNative.NpcPuppetId(proxy.npc), false);
       proxy.seatedIn = none;
       proxy.reattachAt = now + 0.5;
       TandemNative.Log(s"npcs: proxy \(proxy.npc) out of its seat");
@@ -1440,6 +1520,11 @@ public class TandemNpcs {
     proxy.seatedSlot = slot;
     proxy.seatChanged = false;
     proxy.reattachAt = 0.0;
+    // The seat places its body: its controller keeps still (a mounted
+    // body's own transform reads as nonsense, (-16351, -14557, -16348), and
+    // the controller walked it towards its target from there, 27 km away
+    // in its own belief, for as long as it sat: 2026-11-21).
+    TandemNative.HoldPuppet(TandemNative.NpcPuppetId(proxy.npc), true);
     TandemNative.Log(s"npcs: proxy \(proxy.npc) seated in \(NameToString(slot)) of player \(proxy.seatOwner)'s vehicle");
   }
 
@@ -1493,7 +1578,7 @@ public class TandemNpcs {
     proxy.poise = -1.0;
     proxy.record = record;
     proxy.appearance = appearance;
-    proxy.id = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+    proxy.id = TandemEntities.Create(spec);
     ArrayPush(this.m_proxies, proxy);
   }
 
@@ -1875,6 +1960,7 @@ public class TandemNpcs {
         } else if EntityID.IsDefined(proxy.seatedIn) && IsDefined(body) {
           // Out of its seat first, deleted once off it (ProcessLeaving).
           TandemVehicles.Unseat(this.m_game, body, proxy.seatedIn, proxy.seatedSlot);
+          TandemNative.HoldPuppet(TandemNative.NpcPuppetId(npc), false);
           let leaving = new TandemNpcLeaving();
           leaving.id = proxy.id;
           leaving.at = this.m_now;
@@ -1953,7 +2039,7 @@ public class TandemNpcs {
         ArrayPush(spec.tags, n"Tandem.Proxy");
         this.Dispose(proxy);
         proxy.native = false;
-        proxy.id = entities.CreateEntity(spec);
+        proxy.id = TandemEntities.Create(spec);
         proxy.ready = false;
         proxy.seenAt = 0.0;
         proxy.dead = false;
@@ -2295,7 +2381,7 @@ public class TandemNpcs {
     spec.active = true;
     ArrayPush(spec.tags, n"Tandem.Adopted");
     TandemEntities.Delete(known.id);
-    known.id = entities.CreateEntity(spec);
+    known.id = TandemEntities.Create(spec);
     known.pendingUntil = this.m_now + 3.0;
     known.health = health / 100.0;
     TandemNative.Log(s"regions: npc \(known.npc) did not wake up: spawned again in place");
@@ -2335,6 +2421,8 @@ public class TandemNpcs {
         proxy.seatedIn = known.seatVehicle;
         proxy.seatedSlot = known.seat;
         proxy.seatOwner = known.seatOwner;
+        // Its seat places it: the controller it gets keeps still.
+        TandemNative.HoldPuppet(TandemNative.NpcPuppetId(npc), true);
         proxy.seatSlot = known.seat;
       }
       ArrayPush(this.m_proxies, proxy);

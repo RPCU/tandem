@@ -235,7 +235,9 @@ story restrict` (report), `story restrict on|off REC` (a test
     - _The host's moment_, read four times a second from its own V, no
       list of quests: a scene of tier 2 and up, quest restrictions on how
       it moves (`Restrictions.reds` `IsShared`, but not a weapons-only zone:
-      a club's rule), a ride its scene drives (`Transit.reds` kind Scene),
+      a club's rule, nor the phone kept away alone: `PhoneOnly`, NoPhone and
+      PhoneInterrupted, which a save can hold through hours of free roam
+      and which are then not shared either), a ride its scene drives (`Transit.reds` kind Scene),
       a scripted body mode (GameplayRestriction effects NoMovement,
       NoCameraControl, ForceCrouch; not its own activities), a camera
       animation (the CameraAnimation tag), another world, or a
@@ -268,7 +270,17 @@ story restrict` (report), `story restrict on|off REC` (a test
       away (`story::kSpectateReach`: the NPC links' reach; in reach again
       at 120 m, carried there by `Follow`; watching while the host rides, it
       stays (c) until that ride ends); the host riding, (c) already at 30 m
-      (`story::kSpectateLeftBehind`: the moment's ride left without it). Or
+      (`story::kSpectateLeftBehind`: the moment's ride left without it).
+      (c) needs a scene or a scripted ride: while the host's moment is
+      restrictions alone (its tier under 2 and no ride its scene or quest
+      drives, Transit kind 3: `SpectateInput::hostFree`), where its V
+      walks or drives is its own free roam and nobody is made to watch
+      (2026-11-22: a host driving off put its guest "in a scene"; the
+      cases (c) was written for, a quest car ride and a scene, are tier 2
+      or kind 3, and a watch already on lasts until that ride ends as
+      before; a quest teleport under a restriction alone, no scene, is no
+      longer watched: the guest stays where it is and regroups as after
+      any travel). Scenario `spectate-freeroam`. Or
       (e), moment or not, while the host's quests have prefabs on that its
       game cannot load and the host is within 150 m (170 m to stop). Each
       start logs its letter and why

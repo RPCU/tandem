@@ -77,6 +77,16 @@ public class TandemRestrictions {
     return true;
   }
 
+  // The phone kept away and nothing else (NoPhone, PhoneInterrupted: a save
+  // can hold them for hours of free roam): no moment by itself, and not
+  // shared outside one (a guest's phone was blocked, and a host driving off
+  // was "a moment's ride" its guest was made to watch: 2026-11-22). In a
+  // scene or beside another restriction it is shared like the rest.
+  public static func PhoneOnly(record: wref<StatusEffect_Record>) -> Bool {
+    let name = TDBID.ToStringDEBUG(record.GetID());
+    return StrContains(name, "NoPhone") || StrContains(name, "PhoneInterrupted");
+  }
+
   // Weapons away: the restrictions the game answers by holstering or
   // blocking the weapon wheel (NoCombat, final.reds:246203 and 540443;
   // NoWeapons, :540826; fists or melee only, :246185).
@@ -108,9 +118,14 @@ public class TandemRestrictions {
     GameInstance.GetStatusEffectSystem(this.m_game).GetAppliedEffects(player.GetEntityID(), effects);
     let ids: array<TweakDBID>;
     let sources = "";
+    // One of them is more than the phone kept away.
+    let more = false;
     for effect in effects {
       let record = effect.GetRecord();
       if TandemRestrictions.IsShared(record) && !ArrayContains(ids, record.GetID()) {
+        if !TandemRestrictions.PhoneOnly(record) {
+          more = true;
+        }
         ArrayPush(ids, record.GetID());
         // Not Codeware's StatusEffect.sourcesData: its elements are class
         // values without a ref, and indexing one in script overwrites the
@@ -130,6 +145,12 @@ public class TandemRestrictions {
     if emptyHands && !ArrayContains(ids, t"GameplayRestriction.NoCombat") {
       ArrayPush(ids, t"GameplayRestriction.NoCombat");
       sources += " GameplayRestriction.NoCombat (hands forced empty)";
+      more = true;
+    }
+    // The phone kept away alone, outside a scene: our own, as in solo.
+    if !more && tier < 2 {
+      ArrayClear(ids);
+      sources = "";
     }
     this.m_restricted = ArraySize(ids) > 0;
     if TandemStory.SendRestrictions(ids) {

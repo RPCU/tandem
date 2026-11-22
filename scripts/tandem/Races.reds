@@ -1243,7 +1243,7 @@ public class TandemRaces {
       spec.spawnInView = true;
       spec.active = true;
       ArrayPush(spec.tags, n"Tandem.RaceCar");
-      this.m_ourCar = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+      this.m_ourCar = TandemEntities.Create(spec);
       this.m_placing = 1;
       TandemNative.Log(s"races: our race car \(TDBID.ToStringDEBUG(record)) spawning in slot \(this.m_slot)");
       return;

@@ -660,7 +660,8 @@ ENTITY:CHOICE[:DETAIL][@SECONDS]` has a guest's V use the host's object
   (any mode) shoots it (every other shot a tyre); `--gunner N
 [--gunner-seat SLOT]` takes the gun of another player's car, aims and
   fires for 20 s; `join --ram-npcs N` runs into one of the host's NPCs at
-  12 m/s; `host --traffic N --chase N` has the first car chase the guest
+  12 m/s; `host --traffic N --traffic-at S` announces the street S seconds after
+  the guest is there (during its ride: `ride-traffic`); `host --traffic N --chase N` has the first car chase the guest
   for 20 s. As the owner of a car it applies the hits it gets (1000 health
   points a car) and says how the car stands; everything heard is logged.
   The game side's test commands: `tools/game.sh cmd wheels`, `wheels

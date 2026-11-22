@@ -1012,9 +1012,9 @@ struct TandemStory : Red::IScriptable {
   // watching now, 3 stops now (story::Spectator); why: SpectateWhy.
   static std::int32_t SpectateUpdate(bool hostMoment, bool hostWatch, bool hostPrivate,
                                      bool grouped, bool ourAway, bool hostElsewhere,
-                                     std::int32_t hostTier, bool hostRiding, bool inVehicle,
-                                     bool cannotLoad, bool hostKnown, float hostX, float hostY,
-                                     float hostZ, float x, float y, float z) {
+                                     std::int32_t hostTier, bool hostRiding, bool hostFree,
+                                     bool inVehicle, bool cannotLoad, bool hostKnown, float hostX,
+                                     float hostY, float hostZ, float x, float y, float z) {
     auto &spectator = Story::Get().Spectator();
     const auto change = spectator.Update({.on = SpectateOn(),
                                           .hostMoment = hostMoment,
@@ -1025,6 +1025,7 @@ struct TandemStory : Red::IScriptable {
                                           .hostElsewhere = hostElsewhere,
                                           .hostTier = Byte(hostTier),
                                           .hostRiding = hostRiding,
+                                          .hostFree = hostFree,
                                           .inVehicle = inVehicle,
                                           .cannotLoad = cannotLoad,
                                           .hostKnown = hostKnown,

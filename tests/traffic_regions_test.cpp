@@ -331,7 +331,7 @@ TEST_CASE("players part: a vehicle goes to the one beside it with its state and 
 
   // And back: the host walks off, a comes back to it.
   Place(*s->host, -60);
-  Place(*s->a, 35);
+  Place(*s->a, 45); // 13 m from the car: not on top of it (regions::ClearOf)
   REQUIRE(s->Until([&] { return s->ga.running.contains(car) && s->a->OwnsTraffic(car); }));
   REQUIRE(s->Until([&] { return s->host->TrafficOwnerOf(car) == s->a->You(); }));
   CHECK(s->h.proxies == std::set<proto::TrafficId>{car});
@@ -339,6 +339,27 @@ TEST_CASE("players part: a vehicle goes to the one beside it with its state and 
   CHECK(s->gb.proxies.empty());
   CHECK(s->h.duplicateSpawns + s->ga.duplicateSpawns + s->gb.duplicateSpawns == 0);
   CHECK(s->h.strayGones + s->ga.strayGones + s->gb.strayGones == 0);
+}
+
+TEST_CASE("a vehicle on top of a player's V is not handed to that player until it is clear") {
+  auto s = Start(true);
+  Place(*s->host, 0);
+  Place(*s->a, 70);
+  Place(*s->b, 400);
+  REQUIRE(s->Until([&] { return s->a->Linked().size() == 1 && s->a->OwnsArea(); }));
+  // a's car, 2 m from the host's V: it ran into it, or carries it.
+  s->ga.Announce(1, {2.f, 0.f, 0.f});
+  const auto car = MakeTrafficId(s->a->You(), 1);
+  REQUIRE(s->Until([&] { return s->h.proxies.contains(car); }));
+  // a walks off: any other car would be the host's now. This one stays a's.
+  Place(*s->a, 140);
+  s->For(1500ms);
+  CHECK(s->ga.asked.empty());
+  CHECK(s->a->OwnsTraffic(car));
+  CHECK(s->host->TrafficHandovers() == 0);
+  // It drives clear of the host's V: handed over like any other.
+  s->ga.Drive(car, {30.f, 0.f, 0.f});
+  REQUIRE(s->Until([&] { return s->h.running.contains(car) && s->host->OwnsTraffic(car); }));
 }
 
 TEST_CASE("a vehicle handed to a third player: the others show it from its new owner") {
