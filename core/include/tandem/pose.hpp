@@ -77,13 +77,17 @@ proto::Quat UnpackQuat5(const std::uint8_t *in);
 // sender's broadcast, or the host's relay of one player). A key frame goes
 // at least every kKeyFrames frames and kKeyUs; between keys only the bones
 // further than kThreshold from their key's rotation are sent: as a small
-// turn from the key's (3 bytes) when it is within half a radian, else
-// whole (5 bytes).
+// turn from the key's when it is within half a radian (3 bytes; 2 when each
+// of its steps fits 5 bits, the same turn), else whole (5 bytes). A key
+// says its time whole, the frames after it the low 32 bits.
 class PoseEncoder {
 public:
   static constexpr std::uint32_t kKeyFrames = 15;
   static constexpr std::uint64_t kKeyUs = 500'000;
   static constexpr float kThreshold = 0.002f; // rad (0.11 degrees)
+  // However slow the cadence, a key at least this often: a frame's short
+  // time is completed from its key's (within 2^31 us of it).
+  static constexpr std::uint64_t kMaxKeyUs = 1'000'000'000;
 
   // Another cadence than a V's (a scene actor's stream is slower: scene::Pacer).
   void Pace(std::uint32_t keyFrames, std::uint64_t keyUs, float threshold) {
@@ -110,7 +114,8 @@ private:
 // The receiving end: a frame back to a whole PoseState. Keeps the last few
 // keys; a frame whose key was lost takes the bones it leaves out from the
 // newest key it has (they moved little since: within the threshold of
-// theirs), or is dropped when there is none.
+// theirs), or is dropped when there is none. A frame's time is made whole
+// from that key's.
 class PoseDecoder {
 public:
   static constexpr std::size_t kKeys = 4;
@@ -121,6 +126,7 @@ public:
 private:
   struct Key {
     std::uint32_t seq{};
+    std::uint64_t timeUs{};
     std::array<proto::Quat, proto::kPoseBones> bones{};
   };
   std::array<Key, kKeys> m_keys{};

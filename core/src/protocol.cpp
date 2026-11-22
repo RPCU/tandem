@@ -39,6 +39,127 @@ bool Fits(const CarPaint &paint) {
   return paint.flags == 0 || paint.vehicle != 0;
 }
 
+namespace {
+// What a bone takes in a pose frame's rotations, by its code.
+constexpr std::size_t PoseCodeBytes(std::uint8_t code) {
+  return code == kBoneWhole   ? kPoseFrameRotationBytes
+         : code == kBoneTurn  ? kPoseTurnBytes
+         : code == kBoneNudge ? kPoseNudgeBytes
+                              : 0;
+}
+// A key's codes: every bone whole.
+constexpr std::uint8_t kWholeCodes =
+    kBoneWhole | kBoneWhole << 2 | kBoneWhole << 4 | kBoneWhole << 6;
+static_assert(kPoseBones % 4 == 0, "a key's codes fill their bytes");
+} // namespace
+
+// A pose frame's own wire form (v17, the largest stream: netcode.md), which
+// zpp_bits finds by the frame's namespace: the player in a byte (there are
+// at most kMaxPlayerId), the sequence, how
+// many frames back the key is (a varint, 0: a key); a key's time whole,
+// another frame's low 32 bits and its codes (a key's are all whole); the
+// hips; the rotations, as many bytes as the codes say.
+template <class Archive> zpp::bits::errc serialize(Archive &out, const PoseFrame &frame) {
+  const bool key = frame.key == frame.seq;
+  if (auto result = out(static_cast<std::uint8_t>(frame.player), frame.seq,
+                        zpp::bits::vuint32_t{frame.seq - frame.key});
+      zpp::bits::failure(result))
+    return result;
+  if (auto result =
+          key ? out(frame.timeUs) : out(static_cast<std::uint32_t>(frame.timeUs), frame.codes);
+      zpp::bits::failure(result))
+    return result;
+  return out(frame.hips, zpp::bits::unsized(frame.rotations));
+}
+
+template <class Archive> zpp::bits::errc serialize(Archive &in, PoseFrame &frame) {
+  zpp::bits::vuint32_t back;
+  std::uint8_t player = 0;
+  if (auto result = in(player, frame.seq, back); zpp::bits::failure(result))
+    return result;
+  frame.player = player;
+  frame.key = frame.seq - back.value;
+  std::size_t bytes = 0;
+  if (back.value == 0) {
+    if (auto result = in(frame.timeUs); zpp::bits::failure(result))
+      return result;
+    frame.codes.fill(kWholeCodes);
+    bytes = kPoseBones * kPoseFrameRotationBytes;
+  } else {
+    std::uint32_t low = 0;
+    if (auto result = in(low, frame.codes); zpp::bits::failure(result))
+      return result;
+    frame.timeUs = low;
+    for (std::size_t slot = 0; slot < kPoseBones; ++slot)
+      bytes += PoseCodeBytes(frame.Code(slot));
+  }
+  frame.rotations.resize(bytes);
+  return in(frame.hips, zpp::bits::unsized(frame.rotations));
+}
+
+// The other streams of every frame and every shot (v17): the player in a
+// byte, not four; the rest as zpp_bits would write it.
+template <class Archive> zpp::bits::errc serialize(Archive &out, const PlayerMotion &motion) {
+  return out(static_cast<std::uint8_t>(motion.player), motion.seq, motion.timeUs, motion.position,
+             motion.yaw, motion.velocity, motion.stance, motion.flags);
+}
+
+template <class Archive> zpp::bits::errc serialize(Archive &in, PlayerMotion &motion) {
+  std::uint8_t player = 0;
+  const auto result = in(player, motion.seq, motion.timeUs, motion.position, motion.yaw,
+                         motion.velocity, motion.stance, motion.flags);
+  motion.player = player;
+  return result;
+}
+
+template <class Archive> zpp::bits::errc serialize(Archive &out, const VehicleMotion &motion) {
+  return out(static_cast<std::uint8_t>(motion.player), motion.seq, motion.timeUs, motion.position,
+             motion.orientation, motion.velocity);
+}
+
+template <class Archive> zpp::bits::errc serialize(Archive &in, VehicleMotion &motion) {
+  std::uint8_t player = 0;
+  const auto result =
+      in(player, motion.seq, motion.timeUs, motion.position, motion.orientation, motion.velocity);
+  motion.player = player;
+  return result;
+}
+
+// A cue: the player in a byte; a charge's `at` is its level and its hand, a
+// byte each (kChargeLevels steps: ChargeLevel), the other kinds' a place.
+template <class Archive> zpp::bits::errc serialize(Archive &out, const Cue &cue) {
+  if (auto result = out(static_cast<std::uint8_t>(cue.player), cue.seq, cue.kind, cue.arg);
+      zpp::bits::failure(result))
+    return result;
+  if (cue.kind != CueKind::Charge)
+    return out(cue.at);
+  return out(static_cast<std::uint8_t>(ChargeLevel(cue.at.x) * kChargeLevels + 0.5f),
+             static_cast<std::uint8_t>(cue.at.y == kChargeLeftHand ? 1 : 0));
+}
+
+template <class Archive> zpp::bits::errc serialize(Archive &in, Cue &cue) {
+  std::uint8_t player = 0, level = 0, hand = 0;
+  if (auto result = in(player, cue.seq, cue.kind, cue.arg); zpp::bits::failure(result))
+    return result;
+  cue.player = player;
+  if (cue.kind != CueKind::Charge)
+    return in(cue.at);
+  const auto result = in(level, hand);
+  // Another hand than the two: none (Decode refuses it).
+  cue.at = {static_cast<float>(level) / kChargeLevels,
+            hand == 0   ? kChargeRightHand
+            : hand == 1 ? kChargeLeftHand
+                        : -1.f,
+            0.f};
+  return result;
+}
+
+float ChargeLevel(float level) {
+  // Not a number: none.
+  const float within = level > 0.f ? std::min(level, 1.f) : 0.f;
+  return static_cast<float>(static_cast<int>(within * kChargeLevels + 0.5f)) / kChargeLevels;
+}
+
 std::vector<std::byte> Encode(const Message &message) {
   std::vector<std::byte> bytes;
   auto out = zpp::bits::out(bytes);
@@ -72,17 +193,19 @@ std::optional<Message> ReadMessage(Reader &in, std::size_t id) {
   return readers[id](in);
 }
 
-// A pose frame's codes are 0-2 only, none past the last bone, its rotations
-// exactly what the codes say; a key is whole.
+// A pose frame's codes name none past the last bone, its rotations are
+// exactly what the codes say; a key is whole; another frame's time is its
+// low 32 bits.
 bool Fits(const PoseFrame &frame) {
   std::size_t bytes = 0;
   const bool key = frame.key == frame.seq;
+  if (!key && frame.timeUs > kPoseTimeMask)
+    return false;
   for (std::size_t slot = 0; slot < kPoseCodeBytes * 4; ++slot) {
     const auto code = frame.Code(slot);
-    if (code == 3 || (slot >= kPoseBones && code != 0) ||
-        (key && slot < kPoseBones && code != kBoneWhole))
+    if ((slot >= kPoseBones && code != 0) || (key && slot < kPoseBones && code != kBoneWhole))
       return false;
-    bytes += code == kBoneTurn ? kPoseTurnBytes : code == kBoneWhole ? kPoseFrameRotationBytes : 0;
+    bytes += PoseCodeBytes(code);
   }
   return frame.rotations.size() == bytes;
 }
@@ -289,7 +412,9 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *cue = std::get_if<Cue>(&message);
       cue &&
       (cue->kind < CueKind::Trace || cue->kind > CueKind::Charge ||
-       (cue->kind == CueKind::Charge ? cue->arg > kChargeMax : (cue->arg & ~kTraceFlags) != 0)))
+       (cue->kind == CueKind::Charge ? cue->arg > kChargeMax || (cue->at.y != kChargeRightHand &&
+                                                                 cue->at.y != kChargeLeftHand)
+                                     : (cue->arg & ~kTraceFlags) != 0)))
     return std::nullopt;
   if (const auto *reaction = std::get_if<NpcReaction>(&message);
       reaction && reaction->type > kReactionMax)

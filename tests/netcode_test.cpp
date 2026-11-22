@@ -14,6 +14,8 @@
 #include <doctest/doctest.h>
 
 #include <functional>
+#include <utility>
+#include <vector>
 
 using namespace std::chrono_literals;
 using namespace tandem;
@@ -55,24 +57,91 @@ TEST_CASE("a 5-byte quaternion is within 0.0015 rad") {
 TEST_CASE("a pose stream is delta coded: keys whole, frames with the bones that moved") {
   pose::PoseEncoder encoder;
   pose::PoseDecoder decoder;
-  std::size_t bytes = 0, frames = 0, keys = 0;
+  std::size_t bytes = 0, frames = 0, keys = 0, nudges = 0, turns = 0;
   float worst = 0.f;
   for (std::uint32_t i = 1; i <= 300; ++i) {
     const auto pose = WirePose(static_cast<float>(i) / 30.f, i);
     const auto frame = encoder.Encode(pose);
-    bytes += proto::Encode(frame).size();
+    const auto wire = proto::Encode(frame);
+    bytes += wire.size();
     ++frames;
     keys += frame.key == frame.seq;
-    const auto back = decoder.Decode(frame);
+    for (std::size_t slot = 0; slot < proto::kPoseBones; ++slot) {
+      nudges += frame.Code(slot) == proto::kBoneNudge;
+      turns += frame.Code(slot) == proto::kBoneTurn;
+    }
+    // As the wire carries it: the same frame, its time whole again.
+    const auto heard = proto::Decode(wire);
+    REQUIRE(heard);
+    REQUIRE(std::get<proto::PoseFrame>(*heard) == frame);
+    const auto back = decoder.Decode(std::get<proto::PoseFrame>(*heard));
     REQUIRE(back);
+    CHECK(back->timeUs == pose.timeUs);
+    CHECK(back->seq == pose.seq);
     worst = std::max(worst, WorstAngle(*back, pose));
   }
   const auto whole = proto::Encode(WirePose(1.f, 1)).size();
   MESSAGE("pose: ", bytes / frames, " bytes a frame (was ", whole, "), ", keys,
-          " keys in 300 frames, worst bone ", worst, " rad");
+          " keys in 300 frames, ", nudges, " bones in 2 bytes, ", turns, " in 3, worst bone ",
+          worst, " rad");
   CHECK(keys == 20);                                     // every 15 frames
   CHECK(worst < pose::PoseEncoder::kThreshold + 0.004f); // a turn's step
   CHECK(bytes / frames < whole / 2);
+  CHECK(nudges > 0);
+  CHECK(turns > 0);
+
+  SUBCASE("a turn in two bytes is the same turn as in three") {
+    // Every turn that fits 5 bits a step, as PoseEncoder writes it and as
+    // PoseDecoder reads it: bit for bit what the 3-byte form gives.
+    const auto key = WirePose(0.f, 1);
+    pose::PoseEncoder sender;
+    pose::PoseDecoder receiver;
+    REQUIRE(receiver.Decode(sender.Encode(key)));
+    for (int x = -proto::kPoseNudgeSteps; x < proto::kPoseNudgeSteps; x += 5)
+      for (int y = -proto::kPoseNudgeSteps; y < proto::kPoseNudgeSteps; y += 3)
+        for (int z = -proto::kPoseNudgeSteps; z < proto::kPoseNudgeSteps; ++z) {
+          proto::PoseFrame frame{.player = 2, .seq = 2, .timeUs = 7, .key = 1};
+          auto longer = frame;
+          const std::int8_t turn[3] = {static_cast<std::int8_t>(x), static_cast<std::int8_t>(y),
+                                       static_cast<std::int8_t>(z)};
+          const auto bits = static_cast<std::uint16_t>((x & 31) | (y & 31) << 5 | (z & 31) << 10);
+          frame.codes[0] = proto::kBoneNudge;
+          frame.rotations = {static_cast<std::uint8_t>(bits), static_cast<std::uint8_t>(bits >> 8)};
+          longer.codes[0] = proto::kBoneTurn;
+          for (const auto step : turn)
+            longer.rotations.push_back(static_cast<std::uint8_t>(step));
+          const auto two = receiver.Decode(frame), three = receiver.Decode(longer);
+          REQUIRE(two);
+          REQUIRE(three);
+          REQUIRE(two->rotations == three->rotations);
+        }
+  }
+  SUBCASE("a frame's short time is made whole across the 32-bit turn and out of order") {
+    pose::PoseEncoder sender;
+    pose::PoseDecoder receiver;
+    const std::uint64_t turnUs = 7ull << 32;
+    std::vector<std::pair<proto::PoseFrame, std::uint64_t>> sent;
+    for (std::uint32_t i = 1; i <= 45; ++i) {
+      auto pose = WirePose(static_cast<float>(i) / 30.f, i);
+      pose.timeUs = turnUs - 20 * kFrame + i * kFrame; // the 20th is at the turn
+      sent.emplace_back(sender.Encode(pose), pose.timeUs);
+    }
+    CHECK(sent[19].first.timeUs < proto::kPoseTimeMask); // short: not a key
+    for (std::size_t i = 0; i < sent.size(); ++i) {
+      // The 17th comes after the next key (the 31st).
+      const auto at = i >= 16 && i < 30 ? i + 1 : i == 30 ? 16 : i;
+      const auto back = receiver.Decode(sent[at].first);
+      REQUIRE(back);
+      CHECK(back->timeUs == sent[at].second);
+    }
+    // Its key lost, from a key past the turn: back across it.
+    pose::PoseDecoder late;
+    REQUIRE(late.Decode(sent[30].first));
+    const auto back = late.Decode(sent[17].first);
+    REQUIRE(back);
+    CHECK(back->timeUs == sent[17].second);
+    CHECK(back->timeUs < turnUs);
+  }
 
   SUBCASE("a lost key: the next frames use the newest key there is") {
     pose::PoseEncoder sender;
@@ -83,8 +152,10 @@ TEST_CASE("a pose stream is delta coded: keys whole, frames with the bones that 
       const auto frame = sender.Encode(pose);
       if (i == 16)
         continue; // the second key, lost
-      if (const auto back = receiver.Decode(frame))
+      if (const auto back = receiver.Decode(frame)) {
         error = std::max(error, WorstAngle(*back, pose));
+        CHECK(back->timeUs == pose.timeUs); // from the older key's time
+      }
     }
     CHECK(receiver.OtherKey() == 14);
     CHECK(receiver.Dropped() == 0);

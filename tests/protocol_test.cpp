@@ -2,6 +2,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -131,18 +132,39 @@ TEST_CASE("every message survives encoding") {
   CHECK_FALSE(
       Decode(Encode(ModList{.mods = std::vector<ModEntry>(kMaxModEntries + 1)})).has_value());
   // Netcode (netcode.md): the compact pose and NPC streams.
-  PoseFrame frame{.player = 2, .seq = 40, .timeUs = 1'800'000'000'000'000, .key = 31};
+  // Between keys a frame's time is its low 32 bits (PoseDecoder completes it).
+  PoseFrame frame{.player = 2, .seq = 40, .timeUs = 1'800'000'000, .key = 31};
   frame.hips = {1, -2, 3};
-  frame.codes[0] = kBoneWhole | kBoneTurn << 4; // bone 0 whole, bone 2 turned
-  frame.rotations.assign(kPoseFrameRotationBytes + kPoseTurnBytes, 7);
+  // Bone 0 whole, bone 2 turned, bone 3 turned in two bytes.
+  frame.codes[0] = kBoneWhole | kBoneTurn << 4 | kBoneNudge << 6;
+  frame.rotations.assign(kPoseFrameRotationBytes + kPoseTurnBytes + kPoseNudgeBytes, 7);
   RoundTrips(frame);
   CHECK(frame.Code(0) == kBoneWhole);
   CHECK(frame.Code(1) == kBoneKept);
   CHECK(frame.Code(2) == kBoneTurn);
+  CHECK(frame.Code(3) == kBoneNudge);
+  // 1 id, 1 player, 4 seq, 1 key distance, 4 time, the codes, 6 hips.
+  CHECK(Encode(frame).size() == 17 + kPoseCodeBytes + frame.rotations.size());
+  // A time that is not short does not go between keys.
+  auto late = frame;
+  late.timeUs = 1'800'000'000'000'000;
+  const auto cut = Decode(Encode(late));
+  REQUIRE(cut);
+  CHECK(std::get<PoseFrame>(*cut).timeUs == (late.timeUs & kPoseTimeMask));
+  // A key: its time whole, every bone whole, no codes on the wire.
+  PoseFrame keyFrame{.player = 2, .seq = 41, .timeUs = 1'800'000'000'000'000, .key = 41};
+  keyFrame.codes.fill(kBoneWhole | kBoneWhole << 2 | kBoneWhole << 4 | kBoneWhole << 6);
+  keyFrame.rotations.assign(kPoseBones * kPoseFrameRotationBytes, 9);
+  RoundTrips(keyFrame);
+  CHECK(Encode(keyFrame).size() == 21 + keyFrame.rotations.size());
+  // A key far back (a slow stream: an actor's) is still named.
+  auto far = frame;
+  far.key = far.seq - 70'000;
+  RoundTrips(far);
   CHECK(std::string(NameOf(PoseFrame{})) == "PoseFrame");
   CHECK(ChannelOf(PoseFrame{}) == Channel::State);
-  // The rotations must be exactly what the codes say, no code past the last
-  // bone, no code 3, a key whole.
+  // The rotations must be exactly what the codes say (a whole bone, the last
+  // bone's turn and a two-byte turn with no bytes for them), a key whole.
   auto lying = frame;
   lying.codes[0] |= kBoneWhole << 2;
   CHECK_FALSE(Decode(Encode(lying)));
@@ -163,7 +185,7 @@ TEST_CASE("every message survives encoding") {
                           .velocity = {150, -20, 0},
                           .stance = 3,
                           .flags = 0x8001});
-  CHECK(Encode(PlayerMotion{}).size() == 40);
+  CHECK(Encode(PlayerMotion{}).size() == 37); // the player in a byte
   CHECK(Encode(PlayerMotion{}).size() < Encode(PlayerState{}).size() * 2 / 3 + 1);
   RoundTrips(VehicleMotion{.player = 2,
                            .seq = 9,
@@ -171,6 +193,7 @@ TEST_CASE("every message survives encoding") {
                            .position = {1, 2, 3},
                            .orientation = {1, 2, 3, 4, 5},
                            .velocity = {2000, 0, -5}});
+  CHECK(Encode(VehicleMotion{}).size() == 37);
   CHECK(ChannelOf(PlayerMotion{}) == Channel::State);
   CHECK(ChannelOf(VehicleMotion{}) == Channel::State);
   RoundTrips(NpcMotion{.seq = 5,
@@ -1374,6 +1397,22 @@ TEST_CASE("presence, cues and NPC reactions round-trip, on the right channels, a
                  .kind = CueKind::Charge,
                  .arg = kChargeCharging,
                  .at = {0.4f, kChargeLeftHand, 0.f}});
+  // A charge's level and hand in a byte each (v17), the other kinds' place
+  // whole.
+  for (const float level : {0.f, 0.3f, 0.6f, 1.f, 7.f, -1.f}) {
+    const Cue charge{.player = 8,
+                     .seq = 80,
+                     .kind = CueKind::Charge,
+                     .arg = kChargeCharging,
+                     .at = {ChargeLevel(level), kChargeLeftHand, 0.f}};
+    RoundTrips(charge);
+    CHECK(charge.at.x >= 0.f);
+    CHECK(charge.at.x <= 1.f);
+    CHECK(std::abs(charge.at.x - std::clamp(level, 0.f, 1.f)) <= 0.5f / kChargeLevels + 1e-6f);
+  }
+  CHECK(ChargeLevel(std::nanf("")) == 0.f);
+  CHECK(Encode(Cue{.kind = CueKind::Charge}).size() == 10);
+  CHECK(Encode(Cue{.kind = CueKind::Trace}).size() == 20);
   const NpcReaction stagger{.npc = 12,
                             .by = 2,
                             .type = 3,
