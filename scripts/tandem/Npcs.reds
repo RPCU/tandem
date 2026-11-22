@@ -137,6 +137,9 @@ public class TandemSentDamage {
 
 public class TandemNpcs {
   private let m_game: GameInstance;
+  // Our V where the last check saw it, and when it last moved far at once.
+  private let m_vAt: Vector4;
+  private let m_vJumpedAt: Float;
   private let m_known: array<ref<TandemNpcKnown>>;
   private let m_next: Uint32;
   private let m_last: Float;
@@ -1715,6 +1718,20 @@ public class TandemNpcs {
   // Each waits 2 s first, in case the event that fixes it is on its way.
   private func Check(now: Float) -> Void {
     let entities = GameInstance.GetDynamicEntitySystem();
+    // A long move of our V (fast travel, a respawn, a regroup) streams the
+    // place it left out, the proxies' bodies there with it: those are
+    // spawned again as always, but are no fallback (respawn-point and
+    // phone-regroup, 2026-11-22: 4 bodies each).
+    let v = GetPlayer(this.m_game);
+    if IsDefined(v) {
+      let here = v.GetWorldPosition();
+      if this.m_vAt.W > 0.0 && Vector4.Distance(here, this.m_vAt) > 150.0 {
+        this.m_vJumpedAt = now;
+      }
+      this.m_vAt = here;
+      this.m_vAt.W = 1.0;
+    }
+    let streamed = this.m_vJumpedAt > 0.0 && now - this.m_vJumpedAt < 20.0;
     let kept: array<ref<TandemNpcProxy>>;
     let lost: array<Uint32>;
     for proxy in this.m_proxies {
@@ -1736,7 +1753,9 @@ public class TandemNpcs {
           proxy.goneSince = now;
         } else if now - proxy.goneSince >= 3.0 {
           TandemNative.Log(s"consistency: proxy \(proxy.npc) lost its body\(proxy.dead ? ", corpse dropped" : ", spawned again")");
-          TandemDegraded.Fallback("proxy respawned", s"proxy \(proxy.npc) lost its body\(proxy.dead ? ": its corpse is dropped" : "")");
+          if !streamed {
+            TandemDegraded.Fallback("proxy respawned", s"proxy \(proxy.npc) lost its body\(proxy.dead ? ": its corpse is dropped" : "")");
+          }
           keep = false;
           // (A body of the game's own that streamed out comes back as one
           // of ours.)
