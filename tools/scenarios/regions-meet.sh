@@ -10,7 +10,8 @@ address=$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')
 peer join "$address":27450 --name far --mode region --region-far 400 --region-walk-at 10 --region-leave-at 50 --region-speed 20 --region-npcs 3
 expect 'in the session as player|joined \(player' 30
 # Apart at first: nothing of theirs here.
-expect 'regions: linked with nobody' 20
+# ("linked with nobody" is said on a change only: a game whose last session
+# ended unlinked says nothing here. Nothing of theirs shown is the check.)
 cmd npc count
 expect 'npcs shared: [0-9]+, .*proxies 0'
 # They walk up: linked 150 m out, their three NPCs shown as proxies.
