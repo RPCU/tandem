@@ -83,8 +83,8 @@ Counts at the end. Evidence names a scenario, a code path or a dated check.
 | Attack | On the host's V | On a guest's V | Seen on the other game |
 | --- | --- | --- | --- |
 | Choosing whom to attack (threat weights) | W vanilla | U the guest's puppet weighed as a player (the player's base and terms, `BlockTargetingPlayer` honoured: `Threats.reds`, `npcs-target-guest`; not yet run in game; **was D**: weighed as an NPC, 0.01 against V's 1.0) | U the proxy's target (`NpcAnims`) |
-| Gunfire | W vanilla | U fired from the proxy and applied on the guest's game, whether it may land the host's time between hits on the puppet (`npcs-shoot-guest`; **was B** too: every shot missed, the proxy's line of sight reads 0), by a player's rules: the group and cover coefficients and a V's base, which the game gives no NPC target (`TandemShouldHitAsPlayer`, `npcs-shoot-puppet`; not yet run in game); **was B**: those hits were dropped as a proxy's own (`IsProxyComputed`), fixed here (`TandemShots.IsSimulatedHit`) | U the shot on the proxy (`NpcShot`) |
-| Smart weapons | W vanilla | U the proxy fires the guided round the host's AI tracks (`NpcShotAt` `kShotAtTracked`: its smart weapon locked on the puppet), homing on the guest's V; a round its time between hits says misses flies past; the hit is still the guest's (`npcs-shoot-guest-smart`; not yet run in game; **was D**: plain rounds, no lock) | U |
+| Gunfire | W vanilla | W fired from the proxy and applied on the guest's game (seen 2026-11-22: 5 % of V's health a hit, the world between muzzle and V stops it as in solo, said per shot), whether it may land the host's time between hits on the puppet (`npcs-shoot-guest`; **was B** too: every shot missed, the proxy's line of sight reads 0), by a player's rules: the group and cover coefficients and a V's base, which the game gives no NPC target (`TandemShouldHitAsPlayer`, `npcs-shoot-puppet`; not yet run in game); **was B**: those hits were dropped as a proxy's own (`IsProxyComputed`), fixed here (`TandemShots.IsSimulatedHit`) | U the shot on the proxy (`NpcShot`) |
+| Smart weapons | W vanilla | W the proxy fires the guided round the host's AI tracks (`NpcShotAt` `kShotAtTracked`: its smart weapon locked on the puppet), homing on the guest's V; a round its time between hits says misses flies past; the hit is still the guest's (`npcs-shoot-guest-smart`, passed 2026-11-22; **was D**: plain rounds, no lock) | U |
 | Melee | W vanilla | U the host's hit is held until the proxy's swing lands on the guest's screen, then run on its V (`TandemFight.MeleeHold`, `combat-melee-guest`) | U the NPC's animation (`NpcAnims`) |
 | Blocking an NPC's melee | W vanilla | U on the guest's game (`ProcessDefensiveState`), and the host's NPC recoils (`Defended`, `combat-defend`) | U |
 | Deflect and parry | W vanilla | U as blocking; the parry's stagger on the host's NPC | U |
@@ -261,12 +261,11 @@ the guest's game, as shots were (time.md), was weighed and not done:
 
 - Everything U above: the scenarios to run are `combat-throw-host`,
   `combat-throw-guest`, `combat-throw-bounce`, `combat-friendly-fire`, `combat-friendly-fire-off`,
-  `combat-defend`, `combat-melee-guest`, then `npcs-shoot-guest` again (its
-  hits were dropped) and the `outcomes-*` ones.
+  `combat-defend`, `combat-melee-guest` and the `outcomes-*` ones.
 - Gorilla arms' one-punch slow motion and System Collapse's buffs on the
   host for a guest's hit (coop-perks §5.3, §6.2); Breach Protocol in game
   (`breach-guest`, `breach-host`; built, not run);
-  NPC knives and launchers shown on guests. Run `npcs-shoot-guest-smart`,
+  NPC knives and launchers shown on guests. Run
   `presence-ricochet` and `presence-charge` (built 2026-11-21).
 - A grenade's copy put back on its path: whether the new parabola starts
   from the place given (engine/presence.md §13.93), to see in

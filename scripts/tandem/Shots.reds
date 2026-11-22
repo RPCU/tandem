@@ -438,6 +438,14 @@ public class TandemShots {
     }
     WeaponObject.TriggerWeaponEffects(weapon, gamedataFxAction.Shoot);
     AnimationControllerComponent.PushEventToReplicate(weapon, n"Shoot");
+    // The world between the proxy's muzzle and our V (a wall, a railing)
+    // stops the bullet there, as it stops an NPC's in single player: said per
+    // shot (a scenario's shooter behind a building had none land, 2026-11-22).
+    let muzzle = weapon.GetWorldPosition();
+    let wall: TraceResult;
+    if GameInstance.GetSpatialQueriesSystem(this.m_game).SyncRaycastByCollisionGroup(muzzle, aim + offset, n"Static", wall, true, false) && TraceResult.IsValid(wall) {
+      TandemNative.LogDebug(s"shots: npc \(shot.npc)'s shot at us stops in the world \(Vector4.Distance(muzzle, Vector4.Vector3To4(wall.position))) m from its proxy's muzzle (our V \(Vector4.Distance(muzzle, aim)) m away)");
+    }
     this.m_fired += 1;
     // The first five of each session, then every tenth.
     if this.m_fired <= 5 || this.m_fired % 10 == 0 {

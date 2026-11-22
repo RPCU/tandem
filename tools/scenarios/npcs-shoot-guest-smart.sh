@@ -6,6 +6,8 @@ host_world recordings/npcs.rec --mode idle --body female --shoot-you 3 \
 expect 'in the session as player' 30
 query before health
 expect_value "$before" '>' 0
+# In the shooter's line of fire (npcs-shoot-guest says why).
+at "-912.86 1868.53 38.36"
 expect 'puppet 6[0-9]{4}: controller handed to the engine' 30
 expect_peer 'npc [0-9]+ fires at player [0-9]+ \(guided\)' 15
 # The proxy holds the smart gun and fires a guided round at one of our V's
@@ -17,7 +19,7 @@ expect 'shots: npc [0-9]+.s shot hit our V \(our game.s decision\)' 25
 # ...and told to everyone as the hit it was (the puppet reacts to it).
 expect 'hit taken: our V.s first, by npc [0-9]+, told to the others' 5
 expect_peer 'player [0-9]+ took a hit: by npc [0-9]+' 5
-query after health
+query after health low
 expect_changed "$before" "$after" down
 # Seen (a person there): the rounds bend toward V in flight, as a smart
 # gun's do in single player; a round meant to miss flies past.
