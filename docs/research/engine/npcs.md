@@ -304,7 +304,9 @@ within 20 s of every ride, five rides in five, at one of two places.
   and why its object is null were not found. A wait of 1 s after the
   body came, and the controller not held, changed nothing. tandem seats no
   proxy while our own V is mounted (`TandemNpcs.FollowSeat`: it waits out
-  of sight). [2.5-verified]
+  of sight). A proxy seated 1.5 s after our V got out of a seat died the
+  same way (instance c, 20:41:31, a street car's driver): it now waits 5 s
+  after our V was last mounted. [2.5-verified]
 - **`gamePuppet.HideIrreversibly` on an NPC that holds a weapon**:
   `0xC0000005` at `+0x253048` (a read of `0x68`), game thread or a job,
   within a tick or two of the call, three times (a quest's armed "freaks",

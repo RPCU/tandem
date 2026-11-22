@@ -173,6 +173,8 @@ public class TandemNpcs {
   private let m_freshIds: array<EntityID>;
   // (test: npc seats off) proxies are not seated in shared vehicles.
   private let m_noStreetSeats: Bool;
+  // When our V was last seen mounted (FollowSeat waits 5 s after it).
+  private let m_rodeAt: Float;
   private let m_noSeatHold: Bool;
   private let m_seatWaits: Int32;
   // (test: npc hide off) our own NPCs held back keep their looks.
@@ -1597,8 +1599,15 @@ public class TandemNpcs {
     // out of sight, its controller held, and takes its seat when our V is on
     // its feet again: from our seat the others' cars have nobody at the
     // wheel meanwhile.
+    // Nor in the seconds after our V got out: a proxy seated 1.5 s after
+    // our V left a seat took the game down the same way (2026-11-22, a
+    // riding guest getting out).
     let own = GetPlayer(game);
-    let riding = IsDefined(own) && GameInstance.GetMountingFacility(game).IsMountedToAnything(own.GetEntityID());
+    let mounted = IsDefined(own) && GameInstance.GetMountingFacility(game).IsMountedToAnything(own.GetEntityID());
+    if mounted {
+      this.m_rodeAt = this.m_now;
+    }
+    let riding = mounted || this.m_rodeAt > 0.0 && this.m_now - this.m_rodeAt < 5.0;
     if riding || (this.m_noStreetSeats && TandemStreet.IsStreetSeat(proxy.seatOwner)) {
       if !proxy.seatWaits {
         proxy.seatWaits = true;

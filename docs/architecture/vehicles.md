@@ -38,6 +38,34 @@
   | frames a second while driving, host / guest | 28 to 30 / 19 to 22 | 20 to 23 / 10 to 17 |
   | script tick, mean, host / guest | 2.7 / 3.2 ms | 5.9 / 6.2 ms at worst |
 
+  **Again 2026-11-22 evening** (instances a and c, the host on AutoDrive
+  150 s from the street by the test field, the guest riding; our own
+  vehicles in another game's area removed, `traffic.md`; `street list` on
+  both games at once and `tools/street-compare.py`):
+
+  <!-- prettier-ignore -->
+  | | teleports | kinematic body |
+  | --- | --- | --- |
+  | the ride, both Vs | whole, health 100 and 100 | whole, health 100 and 100, three rides (after the readiness guard below; the first try died on both games, and a proxy seated just after the guest got out killed it once: `npcs.md` §13.154) |
+  | vehicles within 100 m of either V on both games | 12 of 12, 14 of 14, 6 of 6 | 12 of 12, 15 of 15, 1 of 1 |
+  | shared ones with a body on both, apart (median) | 2.1 to 2.3 m | 0.004 to 0.04 m, 1.8 to 2.2 m in a third ride (lists 0.2 s apart: mostly the traffic's own 200 ms of delay) |
+  | frames our seat's car was held for a spawn | 2637 | none |
+  | error of a moved body | none | 0.000004 m |
+  | script tick a second, host / guest | 19 to 30 / 24 to 30 | 20 to 30 / 23 to 30 |
+  | script tick, mean, host / guest | 1.7 to 4.7 / 1.6 to 4.1 ms | 2.3 to 3.7 / 1.8 to 3.6 ms |
+
+  Screenshot pairs: `kinematic-mid1-a.png` / `-c.png` and the teleport
+  ones, scratch only. Wheels and sound not judged (no proxy close in the
+  shots). Before any car existed on one game only (the riding guest's own
+  traffic, 19 to 36 within 100 m) both paths had cars crash into copies on
+  the guest: the guest's copy of the host's car burnt out and the guest's
+  V lost health, the host's car intact.
+  - **Readiness**: a body is held and moved by the engine only once its
+    physics object has its `+0x60`, `+0x68` and `+0xD0` (the setter reads
+    `+0x68` without a check: on a copy just spawned both games died,
+    `0xC0000005` at `+0x53A742`); until then it is teleported, counted as
+    not held yet in the report, and tried again the next frame.
+
   One run each on one machine running both games (30 frames a second at
   rest), so the frame rates are an indication, not a benchmark; the
   velocity move did not come out cheaper, and its copies collide with the
@@ -50,8 +78,7 @@
   paths, by `tandem.ini` `vehicle_move` (`kinematic_ride = on`, its older
   form, reads as `velocity`): `teleport`, `kinematic` (below, the clean
   target), `velocity`.
-  - **The kinematic body** (`vehicle_move = kinematic`; built 2026-11-22,
-    not yet ridden in game): what today's netcode does with a physics
+  - **The kinematic body** (`vehicle_move = kinematic`): what today's netcode does with a physics
     object another machine owns. The copy is not simulated here: it is
     put in the engine's own physics state for a vehicle driven
     kinematically (bit `0x100` of `vehicleBaseObject`'s physics state, set

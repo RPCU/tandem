@@ -375,9 +375,11 @@ does about its own ambient crowd and traffic, beyond the three rules above:
   a cover, or anywhere while another game runs our area, is held back:
   never announced while in there, announced like any other once it has
   driven out and we run our area. Not quest, police, player or wrecked
-  vehicles, nor one a V sits in. With `overlap_despawn = on` (a probe, off
-  by default) each held back car is asked once to leave
-  (`PreventionSpawnSystem.RequestDespawnVehicleAndPassengers`).
+  vehicles, nor one a V sits in. With `overlap_despawn = remove` (the
+  default) each is taken out of our world with its riders
+  (`traffic.md`, "One street, one game's vehicles"); `ask` asks it once
+  to leave (`PreventionSpawnSystem.RequestDespawnVehicleAndPassengers`,
+  which waits until nobody looks); `off`.
 - **Restored when apart**: the covers go with the link (or the session):
   density is reset, the null areas are disabled, held back cars are shared
   again. NPCs hidden meanwhile stay hidden until they stream out (§10).
@@ -670,9 +672,9 @@ See the tags in [`../research/engine/regions.md`](../research/engine/regions.md)
 5. **Traffic and parked cars** follow the NPCs' ownership (`traffic.md`,
    built, not run in game). Our own crowd's cars where another game runs
    the street are held back and kept from spawning (§6, "The overlap, held
-   back"); a car already there is only removed if the `overlap_despawn`
-   probe works (no call is known to remove one, `engine/traffic-police.md`
-   §13.32): until then it drives on, seen by us alone.
+   back") and removed from our world (`overlap_despawn = remove`,
+   `entEntity.Dispose`; measured 2026-11-22: none left within 100 m of a
+   riding guest).
 6. **The epoch fence** covers requests aimed at the host's world only; a
    hit in flight at a guest owner whose world was just rebuilt is dropped
    by that guest because it no longer owns the NPC.
