@@ -98,6 +98,8 @@ struct ScriptFrame {
 
 bool OnRunningUpdate(RED4ext::CGameApplication *) {
   tandem::plugin::threads::NoteFrame();
+  // What the crash guards skipped on job threads (engine/guards.cpp).
+  tandem::plugin::engine::ReportCrashGuards();
   // Once, at the first frame: what of the engine this game lets us use
   // (engine/access.hpp). A blocked plugin touches nothing and checks nothing.
   if (!tandem::plugin::engine::AccessChecked() && !tandem::plugin::Runtime::Get().Blocked())
@@ -251,6 +253,9 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     // Proton only: an engine crash of its own, made likelier by our proxies'
     // deletions (engine/guards.cpp). Whatever the role: solo plays too.
     const auto guard = engine::InstallCrashGuards(sdk, handle);
+    // Every platform: an NPC detached in the middle of an action (re.md
+    // §13.142), which our proxies' deletions make likelier too.
+    const auto dismemberment = engine::InstallDismembermentGuard(sdk, handle);
     sdk->gameStates->Add(handle, RED4ext::EGameStateType::Running, &g_running);
     if (runtime.config.pose)
       engine::InstallPoseStream(sdk, handle);
@@ -293,11 +298,11 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
       if (runtime.config.trace || runtime.config.mirror)
         hooks += ", anim trace";
       log::Info("tandem: {} (hooks idle: {}; script wraps gated on a session); recorder {}; "
-                "transform guard {}",
+                "transform guard {}; dismemberment guard {}",
                 runtime.config.role == Config::Role::Off
                     ? std::string("solo, passive")
                     : std::format("co-op at load as {}", NameOf(runtime.config.role)),
-                hooks, runtime.config.recorder ? "on" : "off", guard);
+                hooks, runtime.config.recorder ? "on" : "off", guard, dismemberment);
     }
     // The session starts when scripts report a loaded game (TandemNative.Start).
     break;

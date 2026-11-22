@@ -805,6 +805,7 @@ bt_known() {
       site(0x821360, 0x82139a, "AI workspot: the spot user'\''s end, its actor gone (§13.98)")
       site(0x82139c, 0x821408, "AI workspot: its result to the actor'\''s motion planner, its actor gone (§13.98)")
       site(0x4f5c18, 0x4f5f0a, "population pooling: a registration whose entity stub was freed, a body deleted before it existed (§13.140)")
+      site(0x25302c, 0x25307e, "dismemberment component told of a mask change after its own detach: the dismemberment guard was off (§13.142)")
     }
     function site(first, last, what) { lo[n] = first; hi[n] = last; name[n++] = what }
     /^Backtracing for thread/ { thread = $4 }
