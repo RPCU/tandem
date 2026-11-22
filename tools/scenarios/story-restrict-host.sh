@@ -13,6 +13,9 @@ expect_peer 'story restrictions: [1-9][0-9]* on player 1' 5
 cmd story restrict off GameplayRestriction.NoJump
 expect 'story: our restrictions lifted' 5
 expect_peer 'story restrictions: none on player 1' 5
+# NoJump above is a moment, as it should be: the checks below are for the
+# menu and phone blocks alone.
+mark
 # A menu block is the host's own, never shared.
 cmd story restrict on GameplayRestriction.BlockAllHubMenu
 cmd story restrict
