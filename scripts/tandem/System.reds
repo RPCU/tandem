@@ -47,6 +47,10 @@ public class TandemPuppet {
   // No free seat for it in the vehicle it rides here (a quest NPC sits
   // there): hidden until one frees; tried again at this time.
   public let seatRetryAt: Float;
+  // Seated: when its place in its seat is checked next (CheckSeat), and how
+  // many times it was seated again for being off it.
+  public let seatCheckAt: Float;
+  public let seatTries: Int32;
   // Rides (Transit.reds): the rides received we acted on; on the NCART, 1
   // seated in a train of ours, 2 hidden and carried along; that train; when
   // the hidden body was last placed; the notices shown; its last station.
@@ -121,6 +125,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_rebuild: array<Uint32>;
   private let m_gates: ref<TandemGates>;
   private let m_vehicleProbe: ref<TandemVehicleProbe>;
+  // (test) a ride measured every frame (RideWatch.reds).
+  private let m_rideWatch: ref<TandemRideWatch>;
   // Bodies asked for that are not here yet (TandemEntities.Create).
   private let m_asked: array<ref<TandemAsked>>;
   // The car our V rides in that another game drives (Vehicles.reds Follow):
@@ -128,6 +134,10 @@ public class TandemSystem extends ScriptableSystem {
   private let m_rideFrames: Int32;
   private let m_rideHeld: Int32;
   private let m_rideSaidAt: Float;
+  // (test: "vehicle ride hold off") never hold our seat's car for a spawn.
+  private let m_rideHoldOff: Bool;
+  // (test: "vehicle move PATH") the path asked for this run, over tandem.ini.
+  private let m_moveAsked: String;
   private let m_rideParent: EntityID;
   private let m_rideParentAt: Float;
   // How the vehicles other games run are moved here (MoveBody): the path
@@ -176,6 +186,8 @@ public class TandemSystem extends ScriptableSystem {
   // World vehicles (Traffic.reds: kept for the game's whole run, it knows
   // every vehicle of our world) and police heat (Police.reds).
   private let m_traffic: ref<TandemTraffic>;
+  // The traffic lights in step with our area owner's (Lights.reds).
+  private let m_lights: ref<TandemLights>;
   private let m_police: ref<TandemPolice>;
   // Vehicle combat (Wheels.reds: damage, hits, exits, guns, collisions, chases).
   private let m_wheels: ref<TandemWheelsSync>;
@@ -298,6 +310,8 @@ public class TandemSystem extends ScriptableSystem {
     }
     this.m_traffic = new TandemTraffic();
     this.m_traffic.Start(this.GetGameInstance());
+    this.m_lights = new TandemLights();
+    this.m_lights.Start(this.GetGameInstance());
     this.m_police = new TandemPolice();
     this.m_police.Start(this.GetGameInstance());
     this.m_wheels = new TandemWheelsSync();
@@ -1231,6 +1245,10 @@ public class TandemSystem extends ScriptableSystem {
       this.ShowCode();
     }
     TandemNative.PerfMark(9);
+    // Where the cars were drawn last frame, before anything moves them.
+    if IsDefined(this.m_rideWatch) {
+      this.m_rideWatch.Tick(this.GetGameInstance(), this.WorldNow(), this.m_puppets);
+    }
     if this.m_playing && this.m_you != 0u {
       this.CheckPuppets();
     }
@@ -1239,6 +1257,9 @@ public class TandemSystem extends ScriptableSystem {
     if this.m_playing && this.m_you != 0u {
       if IsDefined(this.m_traffic) {
         this.m_traffic.Tick(this.Now(), this.m_you, this);
+      }
+      if IsDefined(this.m_lights) {
+        this.m_lights.Tick(this.Now(), this.m_you);
       }
       // The police dispatch at the world's pace, as the game's own does.
       if IsDefined(this.m_police) {
@@ -1652,9 +1673,71 @@ public class TandemSystem extends ScriptableSystem {
     } else if Equals(command, "street count") {
       // (test) the world vehicles shared in the session, as we have them.
       TandemNative.Log(s"street \(IsDefined(this.m_traffic) ? this.m_traffic.Report() : "count: no vehicles"); \(this.MoveReport())");
+    } else if Equals(command, "lights") {
+      // (test, Lights.reds) the traffic lights: ours said, our area owner's
+      // followed, and the colour of each within 60 m.
+      if IsDefined(this.m_lights) {
+        this.m_lights.Report();
+      }
     } else if Equals(command, "vehicle moves") {
       // (test) how the vehicles other games run were moved here.
       TandemNative.Log(s"vehicle \(this.MoveReport())");
+    } else if Equals(command, "vehicle ride watch") {
+      // (test, RideWatch.reds) our car's motion frame by frame and where a
+      // seated puppet's body is in its car: said, and started over.
+      if IsDefined(this.m_rideWatch) {
+        this.m_rideWatch.Report();
+        this.m_rideWatch.Detail(this.GetGameInstance(), this.m_puppets);
+      } else {
+        TandemNative.Log("ride watch: on");
+      }
+      if !IsDefined(this.m_rideWatch) {
+        this.m_rideWatch = new TandemRideWatch();
+      }
+    } else if StrBeginsWith(command, "vehicle smooth ") {
+      // (test) the others' vehicles drawn at a smoothed moment (on) or at
+      // the host clock's estimate less the delay, as it comes (off).
+      TandemNative.VehicleSmoothing(Equals(command, "vehicle smooth on"));
+      TandemNative.Log(s"vehicle smooth: \(command)");
+    } else if StrBeginsWith(command, "vehicle move ") {
+      // (test) "vehicle move teleport|kinematic|velocity": this run's path,
+      // over tandem.ini's; the bodies held so far get their physics back.
+      this.m_moveAsked = StrAfterFirst(command, "move ");
+      for moved in this.m_held {
+        this.Release(moved);
+      }
+      ArrayClear(this.m_held);
+      for moved in this.m_movers {
+        moved.placed = false;
+      }
+      this.m_moveRead = false;
+      this.MovePath();
+    } else if Equals(command, "vehicle reseat") {
+      // (test) every seated puppet out of its seat and in again.
+      for puppet in this.m_puppets {
+        let seatedBody = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
+        if EntityID.IsDefined(puppet.seatedIn) && IsDefined(seatedBody) {
+          TandemVehicles.Unseat(this.GetGameInstance(), seatedBody, puppet.seatedIn, puppet.seatedSlot);
+          puppet.seatedIn = EntityID.FromHash(0ul);
+          puppet.wantsSeat = true;
+          puppet.seatRetryAt = this.Now() + 0.3;
+          TandemNative.Log(s"vehicle reseat: player \(puppet.player)");
+        }
+      }
+    } else if StrBeginsWith(command, "vehicle ride hold ") {
+      this.m_rideHoldOff = Equals(command, "vehicle ride hold off");
+      TandemNative.Log(s"vehicle ride hold: \(this.m_rideHoldOff ? "off" : "on")");
+    } else if StrBeginsWith(command, "vehicle camera ") {
+      // (test) our V's camera in a car: "vehicle camera fpp|close|medium|far".
+      let how = StrAfterFirst(command, "camera ");
+      let view = new vehicleRequestCameraPerspectiveEvent();
+      view.cameraPerspective = Equals(how, "far") ? vehicleCameraPerspective.TPPFar : Equals(how, "medium") ? vehicleCameraPerspective.TPPMedium : Equals(how, "close") ? vehicleCameraPerspective.TPPClose : vehicleCameraPerspective.FPP;
+      GetPlayer(this.GetGameInstance()).QueueEvent(view);
+      TandemNative.Log(s"vehicle camera: \(how)");
+    } else if StrBeginsWith(command, "pose hips ") {
+      // (test) a seated puppet's hips: "pose hips seat" (their height only,
+      // the puppet's own place in its seat) or "pose hips stream".
+      TandemNative.PoseSeatedHips(Equals(command, "pose hips seat") ? 1 : 0);
     } else if Equals(command, "street list") {
       // (test) every shared vehicle as we have it, to compare two games.
       if IsDefined(this.m_traffic) {
@@ -3256,6 +3339,8 @@ public class TandemSystem extends ScriptableSystem {
       }
       if puppet.wantsSeat && this.Now() >= puppet.seatRetryAt {
         this.TrySeat(puppet);
+      } else if EntityID.IsDefined(puppet.seatedIn) && puppet.seatCheckAt > 0.0 && this.Now() >= puppet.seatCheckAt {
+        this.CheckSeat(puppet);
       }
     if EntityID.IsDefined(puppet.car) && puppet.car != this.m_wheel && !this.DrivenByOther(puppet.car, puppet.player) {
         let car = TandemTraffic.Body(this.GetGameInstance(), puppet.car);
@@ -3578,6 +3663,7 @@ public class TandemSystem extends ScriptableSystem {
     puppet.seatedIn = none;
     puppet.wantsSeat = false;
     puppet.seatRetryAt = 0.0;
+    puppet.seatTries = 0;
     // Hidden for want of a seat: seen again (TrySeat hides it again if the
     // new seat is taken too).
     TandemVisibility.Show(game, puppet.player, n"noseat", 0.3);
@@ -3673,10 +3759,52 @@ public class TandemSystem extends ScriptableSystem {
     TandemVehicles.Seat(game, body, vehicle, slot);
     puppet.seatedIn = vehicle.GetEntityID();
     puppet.wantsSeat = false;
+    puppet.seatCheckAt = this.Now() + 0.3;
     let theirs = NameToString(puppet.seatedSlot);
     let moved = Equals(slot, puppet.seatedSlot) ? "" : " (theirs, " + theirs + ", is taken here)";
     TandemNative.Log(s"player \(puppet.player): seated in \(NameToString(slot))\(moved) of player \(owner)'s car");
     puppet.seatedSlot = slot;
+  }
+
+  // A seated puppet must sit in its seat, in its car's frame, whatever moves
+  // the car (a copy teleported or moved every frame, our own car). Mounted
+  // into a car copy the frame it was placed, the puppet kept the gap
+  // between the car's place then and now as a fixed offset: the driver's
+  // puppet 2.5 m behind its copy, or 9 m ahead of it through the windscreen
+  // (two games, 2026-11-22). Checked 0.3 s after each seat and every 2 s
+  // after that: farther than 0.5 m from its seat (the car's own slot), or
+  // out of the car where the slot cannot be read, it is seated again (five
+  // times at most in a row).
+  private func CheckSeat(puppet: ref<TandemPuppet>) -> Void {
+    let game = this.GetGameInstance();
+    puppet.seatCheckAt = this.Now() + 2.0;
+    let car = GameInstance.FindEntityByID(game, puppet.seatedIn) as GameObject;
+    let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
+    if !IsDefined(car) || !IsDefined(body) {
+      return;
+    }
+    let at = TandemVehicles.InCar(car, body.GetWorldPosition());
+    let seat = TandemVehicles.SeatInCar(car, puppet.seatedSlot);
+    let off = seat.W > 0.0 ? Vector4.Length(at - new Vector4(seat.X, seat.Y, seat.Z, 0.0))
+      : AbsF(at.X) > 1.5 || AbsF(at.Y) > 2.5 || at.Z < -1.0 || at.Z > 2.0 ? Vector4.Length(at) : 0.0;
+    if off <= 0.5 {
+      puppet.seatTries = 0;
+      return;
+    }
+    if puppet.seatTries >= 5 {
+      if puppet.seatTries == 5 {
+        puppet.seatTries += 1;
+        TandemNative.Log(s"player \(puppet.player): still \(off) m off its seat in its car after 5 tries: left there");
+      }
+      return;
+    }
+    puppet.seatTries += 1;
+    TandemNative.Log(s"player \(puppet.player): \(off) m off its seat \(NameToString(puppet.seatedSlot)) in its car (at \(at.X) \(at.Y) \(at.Z) in the car, the seat at \(seat.X) \(seat.Y) \(seat.Z), read \(seat.W > 0.0)): seated again (\(puppet.seatTries))");
+    TandemVehicles.Unseat(game, body, puppet.seatedIn, puppet.seatedSlot);
+    puppet.seatedIn = EntityID.FromHash(0ul);
+    puppet.wantsSeat = true;
+    puppet.seatRetryAt = this.Now() + 0.2;
+    puppet.seatCheckAt = 0.0;
   }
 
   // (experiment) pacify each test proxy as soon as it exists; report how it
@@ -4067,7 +4195,7 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     this.m_moveRead = true;
-    this.m_moveMode = TandemNative.Setting("vehicle_move");
+    this.m_moveMode = StrLen(this.m_moveAsked) > 0 ? this.m_moveAsked : TandemNative.Setting("vehicle_move");
     let off = !Equals(this.m_moveMode, "kinematic") && !Equals(this.m_moveMode, "velocity");
     let hold = Equals(this.m_moveMode, "kinematic");
     let can = !off && TandemWheels.CanMove() && (!hold || TandemWheels.CanHold());
@@ -4171,6 +4299,9 @@ public class TandemSystem extends ScriptableSystem {
   // 0.1 s).
   private func RideTeleportAllowed() -> Bool {
     this.m_rideFrames += 1;
+    if this.m_rideHoldOff {
+      return true;
+    }
     let waiting = this.BodiesWaiting();
     if waiting == 0 || this.m_rideFrames % 2 != 0 {
       return true;

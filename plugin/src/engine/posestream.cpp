@@ -140,6 +140,22 @@ std::atomic_uint64_t g_reads{0}, g_readSkips{0}, g_writes{0}, g_writeMisses{0};
 std::atomic_uint64_t g_actorReads{0}, g_actorSkips{0}, g_actorWrites{0}, g_actorMisses{0};
 // (g_writeMisses: no pose for the player yet, or a reduced level of detail)
 
+// The hips' place off the root in model space (metres, x and y: across and
+// along the body), the largest since the last report: V's as read, a
+// puppet's as written, a seated puppet's apart (test: `pose stream`).
+struct HipsSeen {
+  float x = 0.f, y = 0.f, z = 0.f;
+  void Note(float nx, float ny, float nz) {
+    if (std::hypot(nx, ny) >= std::hypot(x, y))
+      x = nx, y = ny, z = nz;
+  }
+};
+std::mutex g_hipsLock;
+HipsSeen g_hipsRead, g_hipsWritten, g_hipsSeated;
+// A seated puppet's hips (PoseSeatedHips): 0 where its player's are, 1 the
+// height only (across and along: the puppet's own, in its seat).
+std::atomic_int g_seatedHips{0};
+
 template <class... Args>
 void Once(std::atomic_bool &flag, std::format_string<Args...> f, Args &&...a) {
   if (!flag.exchange(true))
@@ -278,6 +294,10 @@ void ReadSource(std::uintptr_t object) {
   }
   Runtime::Get().SubmitLocalPose(pose::Pack(pose::FromModel(model, hips, referenceHips)));
   g_reads.fetch_add(1, std::memory_order_relaxed);
+  {
+    std::lock_guard _(g_hipsLock);
+    g_hipsRead.Note(hips.x, hips.y, hips.z);
+  }
 }
 
 // ---- the read side, scene actors: an NPC's skeleton, mapped the same way ----
@@ -426,7 +446,10 @@ std::atomic_bool g_warnedTarget{false};
 
 // `remote` written into the sampled pose of a body rig's root instance.
 // False: not written (the rig does not take poses, or a lower level of detail).
-bool WritePose(const pose::Pose &remote, std::uintptr_t instance, void *sampled) {
+// `onto`: what it writes to (a scene actor's proxy, a puppet on foot or seated).
+enum class Onto { Actor, Foot, Seated, SeatedOwnHips };
+bool WritePose(const pose::Pose &remote, std::uintptr_t instance, void *sampled,
+               Onto onto = Onto::Actor) {
   std::uintptr_t rig = 0, bonesAddress = 0;
   std::uint32_t count = 0;
   const auto base = reinterpret_cast<std::uintptr_t>(sampled);
@@ -474,15 +497,24 @@ bool WritePose(const pose::Pose &remote, std::uintptr_t instance, void *sampled)
     out.rotation[3] = q.r;
   }
   auto &hips = bones[map.index[pose::kHips]].translation;
-  hips[0] = remote.hips.x * map.referenceHips;
-  hips[1] = remote.hips.y * map.referenceHips;
+  if (onto != Onto::SeatedOwnHips) {
+    hips[0] = remote.hips.x * map.referenceHips;
+    hips[1] = remote.hips.y * map.referenceHips;
+  }
   hips[2] = remote.hips.z * map.referenceHips;
+  if (onto != Onto::Actor) {
+    std::lock_guard _(g_hipsLock);
+    (onto == Onto::Foot ? g_hipsWritten : g_hipsSeated).Note(hips[0], hips[1], hips[2]);
+  }
   return true;
 }
 
 void WritePuppet(std::uint32_t player, std::uintptr_t instance, void *sampled) {
   pose::Pose remote;
-  if (Runtime::Get().PoseOf(player, remote) && WritePose(remote, instance, sampled))
+  const auto onto = !Runtime::Get().PlacementOf(player).seated          ? Onto::Foot
+                    : g_seatedHips.load(std::memory_order_relaxed) == 1 ? Onto::SeatedOwnHips
+                                                                        : Onto::Seated;
+  if (Runtime::Get().PoseOf(player, remote) && WritePose(remote, instance, sampled, onto))
     g_writes.fetch_add(1, std::memory_order_relaxed);
   else // no pose for the player yet, or a reduced level of detail
     g_writeMisses.fetch_add(1, std::memory_order_relaxed);
@@ -1062,7 +1094,25 @@ std::string PoseActorsReport() {
       g_trackReads.exchange(0), g_trackWrites.exchange(0));
 }
 
+void PoseSeatedHips(int mode) {
+  g_seatedHips = mode;
+  log::Info("pose stream: a seated puppet's hips {}",
+            mode == 1 ? "keep their own place across and along (the height is its player's)"
+                      : "are where its player's are");
+}
+
 void PoseStreamReport() {
+  {
+    std::lock_guard _(g_hipsLock);
+    const auto say = [](const HipsSeen &h) {
+      return std::format("({:.2f}, {:.2f}, {:.2f}) {:.2f} m off", h.x, h.y, h.z,
+                         std::hypot(h.x, h.y));
+    };
+    log::Info("pose stream: hips farthest off the root since the last report: V's read {}, "
+              "a puppet's on foot {}, seated {}",
+              say(g_hipsRead), say(g_hipsWritten), say(g_hipsSeated));
+    g_hipsRead = g_hipsWritten = g_hipsSeated = {};
+  }
   log::Info("pose stream: {} poses read ({} skipped), {} written ({} without a pose yet), "
             "source {:#x}, loopback player {}",
             g_reads.exchange(0), g_readSkips.exchange(0), g_writes.exchange(0),

@@ -42,7 +42,7 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 19: Degraded appended, and required: every game says what it runs
 // without (a game of 18 would stay silent about it, which is the failure
 // the message exists to end).
-inline constexpr std::uint16_t kProtocolVersion = 19;
+inline constexpr std::uint16_t kProtocolVersion = 20;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3321,6 +3321,33 @@ struct Degraded {
 // version knows.
 bool Fits(const Degraded &degraded);
 
+// The traffic lights round a game that runs its street (appended, protocol
+// 20; traffic.md, "Traffic lights"; Event channel): each light by its
+// entity's static id (a placed device: the same in every game) and its
+// colour as the game's own TrafficLightChangeEvent said it
+// (worldTrafficLightColor: kLightGreen, kLightRed, kLightYellow). A game
+// that owns its area says the lights that change, and all it knows round
+// its V every 5 s; the host passes it on as an owner's word (to the players
+// linked with that owner). A game follows only its area owner's: each light
+// that owner named shows that owner's colour, the rest the game's own.
+// Idempotent: a light already that colour is left alone.
+inline constexpr std::uint8_t kLightGreen = 0, kLightRed = 1, kLightYellow = 2;
+inline constexpr std::size_t kMaxLights = 64;
+struct TrafficLight {
+  std::uint64_t entity{};
+  std::uint8_t color{};
+  friend bool operator==(const TrafficLight &, const TrafficLight &) = default;
+};
+struct TrafficLights {
+  PlayerId owner{}; // whose lights: set by the host from the connection
+  bool full{};      // every light it knows round its V (not only changes)
+  std::vector<TrafficLight> lights;
+  friend bool operator==(const TrafficLights &, const TrafficLights &) = default;
+};
+// At most kMaxLights lights, each a real entity and a colour this version
+// knows.
+bool Fits(const TrafficLights &lights);
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -3343,7 +3370,7 @@ using MessageVariant = std::variant<
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
-    TrafficHack, CarPaint, HitTaken, Degraded>;
+    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,

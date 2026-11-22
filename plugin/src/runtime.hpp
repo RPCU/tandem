@@ -534,6 +534,17 @@ public:
   // TrafficClaim. The owner's moving vehicles go through the packet budget
   // here (game thread) and leave as one TrafficStates (newest only).
   void SubmitStreet(proto::Message message);
+  // Traffic lights (scripts/tandem/Lights.reds, traffic.md "Traffic
+  // lights"). net -> game: the other games' TrafficLights (ours leave
+  // through Combat). Any thread (a light's own event hook) -> game: a
+  // colour our game gave a light; game -> any thread: the lights that show
+  // another game's colours now (the hook drops our game's own change).
+  void PushLights(proto::TrafficLights lights);
+  std::vector<proto::TrafficLights> TakeLights();
+  void NoteLightSaid(std::uint64_t entity, std::uint8_t color);
+  std::vector<proto::TrafficLight> TakeLightsSaid();
+  void FollowLights(std::vector<std::uint64_t> entities);
+  bool FollowsLight(std::uint64_t entity) const;
   std::vector<proto::Message> TakeStreetOutbox();
   void SubmitTrafficCars(std::span<const traffic::Car> cars, std::span<const proto::Vec3> viewers);
   std::optional<proto::TrafficStates> TakeTrafficStates();
@@ -768,6 +779,8 @@ public:
 
   // The session clock, set by the net thread (host clock = steady clock + offset).
   void SetClockOffset(std::int64_t offsetUs) { m_clockOffsetUs.store(offsetUs); }
+  // (test) remote vehicles drawn at a smoothed moment (sync::RenderClock).
+  void SetVehicleSmoothing(bool on) { m_vehicleSmoothing.store(on); }
   std::uint64_t HostNowUs() const;
 
   // Watchdog: the game thread stamps each frame (TakeEvents, every tick);
@@ -837,28 +850,32 @@ private:
   std::vector<proto::Message> m_streetOutbox;                                        // m_lock
   std::optional<proto::TrafficStates> m_trafficStates;                               // m_lock
   std::vector<StreetEvent> m_streetEvents;                                           // m_lock
-  std::map<proto::TrafficId, proto::TrafficSpawn> m_sharedTraffic;                   // m_lock
-  std::map<proto::TrafficId, proto::TrafficStatus> m_trafficStatus;                  // m_lock
-  std::set<proto::TrafficId> m_trafficShown;                                         // m_lock
-  std::map<proto::TrafficId, proto::PlayerId> m_trafficOwners;                       // m_lock
-  std::optional<proto::Heat> m_localHeat;                                            // m_lock
-  std::map<proto::PlayerId, proto::Heat> m_heat;                                     // m_lock
-  traffic::Budget m_trafficBudget;                                                   // game thread
-  std::map<proto::TrafficId, sync::VehicleTrack> m_trafficTracks;                    // m_tracksLock
-  std::vector<NpcEvent> m_npcEvents;                                                 // m_lock
-  std::vector<proto::Message> m_wheelsOutbox;                                        // m_lock
-  std::vector<WheelsEvent> m_wheelsEvents;                                           // m_lock
-  std::map<proto::VehicleRef, proto::VehicleDamage> m_ownDamage;                     // m_lock
-  std::map<proto::VehicleRef, proto::VehicleDamage> m_vehicleDamage;                 // m_lock
-  std::map<proto::VehicleRef, proto::Gunner> m_gunners;                              // m_lock
-  std::map<proto::VehicleRef, proto::GunnerAim> m_aims;                              // m_lock
-  std::map<proto::PlayerId, proto::VehicleCombat> m_seatCombat;                      // m_lock
-  vehiclecombat::BumpLedger m_bumps;                                                 // m_lock
-  std::vector<consistency::Timed<proto::PlayerHit>> m_playerHits;                    // m_lock
-  std::vector<proto::Message> m_hackOutbox;                                          // m_lock
-  std::vector<HackEvent> m_hackEvents;                                               // m_lock
-  std::vector<std::pair<proto::PlayerId, proto::NpcActionReply>> m_npcReplies;       // m_lock
-  std::vector<ActionEvent> m_actionEvents;                                           // m_lock
+  std::vector<proto::TrafficLights> m_lightsIn;                                      // m_lock
+  mutable std::mutex m_lightsLock;               // a light's hook: never held across an engine call
+  std::vector<proto::TrafficLight> m_lightsSaid; // m_lightsLock
+  std::vector<std::uint64_t> m_lightsFollowed; // sorted                             // m_lightsLock
+  std::map<proto::TrafficId, proto::TrafficSpawn> m_sharedTraffic;             // m_lock
+  std::map<proto::TrafficId, proto::TrafficStatus> m_trafficStatus;            // m_lock
+  std::set<proto::TrafficId> m_trafficShown;                                   // m_lock
+  std::map<proto::TrafficId, proto::PlayerId> m_trafficOwners;                 // m_lock
+  std::optional<proto::Heat> m_localHeat;                                      // m_lock
+  std::map<proto::PlayerId, proto::Heat> m_heat;                               // m_lock
+  traffic::Budget m_trafficBudget;                                             // game thread
+  std::map<proto::TrafficId, sync::VehicleTrack> m_trafficTracks;              // m_tracksLock
+  std::vector<NpcEvent> m_npcEvents;                                           // m_lock
+  std::vector<proto::Message> m_wheelsOutbox;                                  // m_lock
+  std::vector<WheelsEvent> m_wheelsEvents;                                     // m_lock
+  std::map<proto::VehicleRef, proto::VehicleDamage> m_ownDamage;               // m_lock
+  std::map<proto::VehicleRef, proto::VehicleDamage> m_vehicleDamage;           // m_lock
+  std::map<proto::VehicleRef, proto::Gunner> m_gunners;                        // m_lock
+  std::map<proto::VehicleRef, proto::GunnerAim> m_aims;                        // m_lock
+  std::map<proto::PlayerId, proto::VehicleCombat> m_seatCombat;                // m_lock
+  vehiclecombat::BumpLedger m_bumps;                                           // m_lock
+  std::vector<consistency::Timed<proto::PlayerHit>> m_playerHits;              // m_lock
+  std::vector<proto::Message> m_hackOutbox;                                    // m_lock
+  std::vector<HackEvent> m_hackEvents;                                         // m_lock
+  std::vector<std::pair<proto::PlayerId, proto::NpcActionReply>> m_npcReplies; // m_lock
+  std::vector<ActionEvent> m_actionEvents;                                     // m_lock
   mutable std::mutex m_heldLock;
   std::set<proto::PlayerId> m_heldPuppets;                   // m_heldLock
   std::vector<proto::Message> m_lootOutbox, m_lootInbox;     // m_lock
@@ -891,6 +908,7 @@ private:
   std::map<proto::PlayerId, sync::Track> m_tracks;
 
   std::atomic<std::int64_t> m_clockOffsetUs{0};
+  std::atomic_bool m_vehicleSmoothing{true}; // sync::RenderClock (test: off)
   std::atomic<std::uint64_t> m_lastFrameUs{0};
   // Each NPC's word with when it came (host clock): every owner lists only
   // its own NPCs, so an entry ends by going stale, not by being left out.

@@ -47,6 +47,7 @@ struct Game {
   // The ledger (regions.md §14): the placed NPCs said, the deaths heard.
   std::map<proto::NpcId, std::uint64_t> placed;
   std::vector<proto::NpcDeath> deaths;
+  std::vector<proto::TrafficLights> lights; // the other games' traffic lights
 
   void Announce(std::uint32_t counter, proto::Vec3 at = {}) {
     const auto npc = MakeNpcId(endpoint->You(), counter);
@@ -82,6 +83,8 @@ struct Game {
           placed[place->npc] = place->entity;
         if (const auto *death = std::get_if<proto::NpcDeath>(&combat->message))
           deaths.push_back(*death);
+        if (const auto *said = std::get_if<proto::TrafficLights>(&combat->message))
+          lights.push_back(*said);
         npcWords += std::holds_alternative<proto::NpcWound>(combat->message) ||
                             std::holds_alternative<proto::NpcPoise>(combat->message) ||
                             std::holds_alternative<proto::NpcScale>(combat->message)
@@ -428,6 +431,34 @@ TEST_CASE("an owner's word on its NPC reaches only the games that show it") {
   CHECK(s->h.scales[theirs] == 2);
   CHECK(s->gb.proxies.empty());
   CHECK(s->gb.duplicateSpawns == 0);
+}
+
+TEST_CASE("traffic lights are an owner's word: for the games linked with it, never back") {
+  // The host and a linked; b apart.
+  auto s = Start(true);
+  Place(*s->host, 0);
+  Place(*s->a, 100);
+  Place(*s->b, -(regions::kLinkOut + 5.f));
+  const auto a = s->a->You(), b = s->b->You();
+  REQUIRE(
+      s->Until([&] { return s->b->Apart() && !s->host->LinkedWith(b) && s->host->LinkedWith(a); }));
+  // In a name not its own: stamped by the host with a's.
+  CHECK(s->a->SendCombat(proto::TrafficLights{
+      .owner = 77, .full = true, .lights = {{.entity = 5, .color = proto::kLightRed}}}));
+  CHECK(s->host->SendCombat(
+      proto::TrafficLights{.lights = {{.entity = 6, .color = proto::kLightYellow}}}));
+  // What the wire would refuse is not said.
+  CHECK_FALSE(s->host->SendCombat(proto::TrafficLights{.lights = {{.entity = 0}}}));
+  CHECK_FALSE(s->host->SendCombat(proto::TrafficLights{.lights = {{.entity = 6, .color = 3}}}));
+  REQUIRE(s->Until([&] { return s->h.lights.size() == 1 && s->ga.lights.size() == 1; }));
+  s->For(200ms);
+  CHECK(s->h.lights.size() == 1);
+  CHECK(s->h.lights[0].owner == a);
+  CHECK(s->h.lights[0].full);
+  CHECK(s->h.lights[0].lights == std::vector<proto::TrafficLight>{{.entity = 5, .color = 1}});
+  CHECK(s->ga.lights.size() == 1); // the host's, never its own back
+  CHECK(s->ga.lights[0].owner == s->host->You());
+  CHECK(s->gb.lights.empty()); // apart: nobody's
 }
 
 TEST_CASE("players apart share no NPC; meeting shows both sets; parting drops them again") {

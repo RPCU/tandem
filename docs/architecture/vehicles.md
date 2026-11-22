@@ -178,6 +178,34 @@ body(ies) that do not follow, N refused, N frame(s) our seat's car was
 not teleported, largest error E m in the last 10 to 20 s`. Scenarios
     `ride-traffic`, `ride-kinematic`.
 
+- **A puppet in its seat** (`TandemSystem.CheckSeat`; written 2026-11-22,
+  not yet run in game). Measured on two games (`vehicle ride watch`,
+  `scripts/tandem/RideWatch.reds`: a seated puppet's origin and hips in its
+  car's frame): on the driver's game the rider's puppet, in the real car,
+  stayed within 4 mm of where it sat at rest up to 16 m/s; on the rider's
+  game the driver's puppet, mounted into the copy of its car, sat 2.5 m
+  behind the copy in one session and 9.3 m ahead of it (3.5 m to the side)
+  in another, a fixed offset, the same at rest: the car's place when it was
+  mounted, not where it is (a puppet drawn ahead of the windscreen). So a
+  seated puppet is checked 0.3 s after each seat and every 2 s after:
+  farther than 0.5 m from its seat (the car's own slot, from whichever slot
+  component has it; out of the car's box when no slot reads), it is seated
+  again, five times at most in a row (`player N: … m off its seat …: seated
+again`).
+- **The moment a copy is drawn at** (`sync::RenderClock`, `Runtime::VehicleOf`,
+  `TrafficOf`; not yet run in game): it runs with our own clock and moves
+  toward the host clock less the delay by at most a tenth of the time
+  passed, so a step of the clock estimate or of the body's delay is spread
+  over frames (at 20 m/s a 10 ms step was a 20 cm jolt under a passenger's
+  camera); a gap over 250 ms is taken at once.
+- **Ride tests**: `vehicle ride watch` (said and started over: our car's
+  acceleration and jerk frame by frame, rms, largest, frames over 10, 50
+  and 200 m/s², and each seated puppet in its car's frame), `vehicle camera
+fpp|close|medium|far`, `vehicle move teleport|kinematic|velocity` (this
+  run's path), `vehicle smooth on|off`, `vehicle ride hold on|off` (the
+  every-other-frame hold of our seat's car), `vehicle reseat`, `pose hips
+seat|stream` (a seated puppet's hips: their height only, or its
+  player's), and `pose stream` (now with the hips farthest off the root).
 - **A partner's car** ([`garage.md`](garage.md), not run in game yet): a
   parked copy remembers whose car it was; a V that takes the wheel of a
   copy is checked against its owner's word (`CarLend`, `tandem.ini`

@@ -796,6 +796,8 @@ struct TandemNative : Red::IScriptable {
     log::Info("pose stream: loopback {}", player ? std::format("to player {}", player) : "off");
   }
   static void PoseStreamReport() { engine::PoseStreamReport(); }
+  static void PoseSeatedHips(std::int32_t mode) { engine::PoseSeatedHips(mode); }
+  static void VehicleSmoothing(bool on) { Runtime::Get().SetVehicleSmoothing(on); }
 
   // Our V's look (customization keys + the clothes shown), sent when it
   // changes. Answers the number of look keys (0: the state was not usable).
@@ -2514,6 +2516,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(PoseBind);
   RTTI_METHOD(PoseLoop);
   RTTI_METHOD(PoseStreamReport);
+  RTTI_METHOD(PoseSeatedHips);
+  RTTI_METHOD(VehicleSmoothing);
   RTTI_METHOD(SendRegroup);
   RTTI_METHOD(SendRegroupAnswer);
   RTTI_METHOD(TakeRegroups);

@@ -1538,6 +1538,12 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
         NotePaint(*paint, out);
       return;
     }
+    // Another game's traffic lights (an owner's word): never our own back.
+    if (const auto *lights = std::get_if<proto::TrafficLights>(&message)) {
+      if (lights->owner != m_you && lights->owner != proto::kNoPlayer)
+        out.push_back(events::Combat{message});
+      return;
+    }
     if (const auto *degraded = std::get_if<proto::Degraded>(&message)) {
       if (degraded->player != m_you && degraded->player != proto::kNoPlayer)
         NoteDegraded(*degraded, out);
@@ -4270,6 +4276,15 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     auto mine = *paint;
     mine.player = player;
     NotePaint(mine, out);
+  } else if (const auto *lights = std::get_if<proto::TrafficLights>(&message)) {
+    // Its traffic lights: who says is the connection; for the players
+    // linked with it, as its NPCs are.
+    auto mine = *lights;
+    mine.owner = player;
+    if (const auto peer = PeerOf(player))
+      ShareNpc(mine, player, *peer);
+    if (Sees(m_you, player))
+      out.push_back(events::Combat{mine});
   } else if (const auto *degraded = std::get_if<proto::Degraded>(&message)) {
     // What its own game runs without: who says is the connection.
     auto mine = *degraded;
@@ -4539,6 +4554,15 @@ bool Endpoint::SendCombat(proto::Message message) {
   }
   if (!IsJoined() || m_ended || !proto::IsCombat(message))
     return false;
+  if (auto *lights = std::get_if<proto::TrafficLights>(&message)) {
+    // Our lights, while our game runs our street (the scripts ask): for the
+    // players linked with us.
+    if (!proto::Fits(*lights))
+      return false;
+    lights->owner = m_you;
+    SayNpc(message);
+    return true;
+  }
   // The session's level is the host's endpoint's to work out.
   if (std::holds_alternative<proto::SessionLevel>(message))
     return false;

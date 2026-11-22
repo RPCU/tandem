@@ -575,6 +575,8 @@ public native class TandemNative extends IScriptable {
   public static native func PoseBind(player: Uint32, entity: ref<Entity>)
   public static native func PoseLoop(player: Uint32)
   public static native func PoseStreamReport()
+  public static native func PoseSeatedHips(mode: Int32)
+  public static native func VehicleSmoothing(on: Bool)
   public static native func SendRegroup(to: Uint32, reason: Int32, point: TweakDBID, marker: NodeRef, position: Vector4, orientation: Quaternion, label: String) -> Uint32
   public static native func SendRegroupAnswer(to: Uint32, offer: Uint32, accepted: Bool)
   public static native func TakeRegroups() -> array<TandemRegroup>

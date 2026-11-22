@@ -213,6 +213,7 @@ TANDEM_SAID_BY(Either, Race)
 // What a proxy cannot do, asked of the NPC's owner (AsksOwner).
 TANDEM_SAID_BY(Either, WeakSpotHit)
 TANDEM_SAID_BY(Either, HackTraced)
+TANDEM_SAID_BY(Either, TrafficLights)
 #undef TANDEM_SAID_BY
 
 // A new message without its SaidBy line above fails here ("incomplete type").
@@ -314,6 +315,8 @@ p::PlayerId *SenderOf(p::Message &message) {
                       std::is_same_v<M, p::Tag> || std::is_same_v<M, p::TimeSkip> ||
                       std::is_same_v<M, p::TimeSkipVote> || std::is_same_v<M, p::Trade>)
           return &m.from;
+        else if constexpr (std::is_same_v<M, p::TrafficLights>)
+          return &m.owner;
         else if constexpr (std::is_same_v<M, p::WorldItem>)
           return &m.dropper;
         else if constexpr (std::is_same_v<M, p::WorldItemTaken>)
@@ -868,6 +871,9 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::Degraded>) {
           // Ids as the registry writes them, sorted, each once; known flags.
           inRange = p::Fits(m);
+        } else if constexpr (std::is_same_v<M, p::TrafficLights>) {
+          // Lights by their entity, colours the game has, a bounded list.
+          inRange = p::Fits(m);
         } else if constexpr (std::is_same_v<M, p::TrafficSpawn>) {
           finite = Finite(m.position) && Finite(m.orientation);
         } else if constexpr (std::is_same_v<M, p::Crime>) {
@@ -1388,6 +1394,9 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
         } else if constexpr (std::is_same_v<M, p::Degraded>) {
           // What another player's game runs without; never ours back.
           notOurs(m.player);
+        } else if constexpr (std::is_same_v<M, p::TrafficLights>) {
+          // Another game's traffic lights; never ours back.
+          notOurs(m.owner);
         } else if constexpr (std::is_same_v<M, p::Revive>) {
           forUs(m.target);
           NeedPlayer(m.player, name);

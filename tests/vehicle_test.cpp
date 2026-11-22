@@ -32,6 +32,38 @@ TEST_CASE("a car is drawn between its states, then along its velocity, then held
   CHECK(view.velocity.x == 0.f);
 }
 
+TEST_CASE("the moment a car is drawn at spreads a step of the clock over frames") {
+  sync::RenderClock clock;
+  constexpr std::uint64_t kFrame = 33'333;
+  std::uint64_t local = 5'000'000, target = 1'000'000;
+  CHECK(clock.At(local, target) == target);
+  // A steady clock: the moment follows it exactly.
+  for (int i = 0; i < 10; ++i) {
+    local += kFrame;
+    target += kFrame;
+    CHECK(clock.At(local, target) == target);
+  }
+  // The estimate steps 20 ms ahead: never more than a tenth of a frame more
+  // per frame, always forward, and caught up within 7 frames.
+  target += 20'000;
+  std::uint64_t last = clock.At(local, target);
+  int frames = 0;
+  while (last + 1 < target && frames < 100) {
+    local += kFrame;
+    target += kFrame;
+    const auto now = clock.At(local, target);
+    CHECK(now > last);
+    CHECK(now - last <= kFrame + kFrame / 10 + 1);
+    last = now;
+    ++frames;
+  }
+  CHECK(frames <= 7);
+  // A jump (a loading screen, a new clock): taken at once.
+  target += 2'000'000;
+  local += kFrame;
+  CHECK(clock.At(local, target) == target);
+}
+
 TEST_CASE("where a player sits reaches a late joiner") {
   std::string error;
   auto host = Endpoint::Host({"host"}, 41901, error);
