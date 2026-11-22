@@ -44,6 +44,23 @@ bool Fits(const HitTaken &hit) {
          (hit.flags & ~kHitTakenFlags) == 0;
 }
 
+bool Fits(const Degraded &degraded) {
+  if (degraded.entries.size() > kMaxDegraded)
+    return false;
+  const std::string *last = nullptr;
+  for (const auto &entry : degraded.entries) {
+    if (entry.id.empty() || entry.id.size() > kMaxDegradedId || (entry.flags & ~kDegradedFlags))
+      return false;
+    for (const char c : entry.id)
+      if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == ' ' || c == '-'))
+        return false;
+    if (last && !(*last < entry.id))
+      return false;
+    last = &entry.id;
+  }
+  return true;
+}
+
 namespace {
 // What a bone takes in a pose frame's rotations, by its code.
 constexpr std::size_t PoseCodeBytes(std::uint8_t code) {
@@ -516,6 +533,8 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *taken = std::get_if<HitTaken>(&message); taken && !Fits(*taken))
     return std::nullopt;
+  if (const auto *degraded = std::get_if<Degraded>(&message); degraded && !Fits(*degraded))
+    return std::nullopt;
   // A live vendor names its NPC; a dead one only its entity.
   if (const auto *vendor = std::get_if<NpcVendor>(&message);
       vendor && (vendor->entity == 0 || (vendor->flags & ~kVendorDead) != 0 ||
@@ -681,10 +700,10 @@ bool IsCombat(const Message &message) {
          (message.index() >= kId<Throw> && message.index() <= kId<Defended>) ||
          (message.index() >= kId<PlayerLevel> && message.index() <= kId<NpcLevel>) ||
          std::holds_alternative<CarLend>(message) || std::holds_alternative<CarPaint>(message) ||
-         std::holds_alternative<NpcScale>(message) || std::holds_alternative<NpcVendor>(message) ||
-         std::holds_alternative<ThrowPath>(message) || std::holds_alternative<NpcPlaced>(message) ||
-         std::holds_alternative<NpcDeath>(message) || std::holds_alternative<Race>(message) ||
-         std::holds_alternative<WeakSpotHit>(message) ||
+         std::holds_alternative<Degraded>(message) || std::holds_alternative<NpcScale>(message) ||
+         std::holds_alternative<NpcVendor>(message) || std::holds_alternative<ThrowPath>(message) ||
+         std::holds_alternative<NpcPlaced>(message) || std::holds_alternative<NpcDeath>(message) ||
+         std::holds_alternative<Race>(message) || std::holds_alternative<WeakSpotHit>(message) ||
          std::holds_alternative<HackTraced>(message);
 }
 
@@ -871,7 +890,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "TurretBusy",
                                    "TrafficHack",
                                    "CarPaint",
-                                   "HitTaken"};
+                                   "HitTaken",
+                                   "Degraded"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

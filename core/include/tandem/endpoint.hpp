@@ -835,6 +835,12 @@ public:
   // nowhere). Only cars that have one: stock paint is kept nowhere. A
   // guest's own is not kept here; the host's is.
   const std::map<proto::PlayerId, proto::CarPaint> &CarPaints() const { return m_paints; }
+  // What each player's game runs without, as they said (Degraded through
+  // SendCombat, as CarPaint: ours kept and said as soon as we are in; the
+  // host stamps who, keeps everyone's and tells all; a repeat is applied
+  // nowhere). Only games with something off: an empty list is kept nowhere.
+  // A guest's own is not kept here; the host's is.
+  const std::map<proto::PlayerId, proto::Degraded> &Degradations() const { return m_degraded; }
   // The shared NPCs that are placed vendors (their entities), and the
   // entities whose vendor died in the session (docs/architecture/progression.md).
   const std::map<proto::NpcId, proto::NpcVendor> &NpcVendors() const { return m_npcVendors; }
@@ -1806,6 +1812,12 @@ private:
   std::map<proto::PlayerId, proto::CarPaint> m_paints;
   void SendLocalPaintNow();
   bool NotePaint(const proto::CarPaint &paint, std::vector<SessionEvent> &out);
+  // What each game runs without, the same way: ours, and the others' that
+  // have something off.
+  std::optional<proto::Degraded> m_localDegraded;
+  std::map<proto::PlayerId, proto::Degraded> m_degraded;
+  void SendLocalDegradedNow();
+  bool NoteDegraded(const proto::Degraded &degraded, std::vector<SessionEvent> &out);
   // Trade. Host: the table, and its word passed on (to our own game: an
   // event). Every game: the trades whose commit it has applied.
   trade::Table m_trades;

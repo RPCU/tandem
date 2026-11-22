@@ -167,6 +167,7 @@ TANDEM_SAID_BY(Either, Trade)
 TANDEM_SAID_BY(Either, TradeOffer)
 TANDEM_SAID_BY(Either, CarLend)
 TANDEM_SAID_BY(Either, CarPaint)
+TANDEM_SAID_BY(Either, Degraded)
 TANDEM_SAID_BY(Either, Mark)
 TANDEM_SAID_BY(Either, Tag)
 TANDEM_SAID_BY(Either, Link)
@@ -341,9 +342,10 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::VehicleMotion> || std::is_same_v<M, p::Throw> ||
                            std::is_same_v<M, p::ThrowEnd> || std::is_same_v<M, p::Activity> ||
                            std::is_same_v<M, p::CarLend> || std::is_same_v<M, p::CarPaint> ||
-                           std::is_same_v<M, p::Link> || std::is_same_v<M, p::Waypoint> ||
-                           std::is_same_v<M, p::Defended> || std::is_same_v<M, p::TradeOffer> ||
-                           std::is_same_v<M, p::Breach> || std::is_same_v<M, p::StatusVisuals> ||
+                           std::is_same_v<M, p::Degraded> || std::is_same_v<M, p::Link> ||
+                           std::is_same_v<M, p::Waypoint> || std::is_same_v<M, p::Defended> ||
+                           std::is_same_v<M, p::TradeOffer> || std::is_same_v<M, p::Breach> ||
+                           std::is_same_v<M, p::StatusVisuals> ||
                            std::is_same_v<M, p::QuestInteract> || std::is_same_v<M, p::Fracture> ||
                            std::is_same_v<M, p::DeviceFire> || std::is_same_v<M, p::ThrowPath> ||
                            std::is_same_v<M, p::TurretHands> || std::is_same_v<M, p::Race> ||
@@ -863,6 +865,9 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           // Flags this version knows, a template or colours, a hue in degrees.
           finite = std::isfinite(m.lightsHue);
           inRange = !finite || p::Fits(m);
+        } else if constexpr (std::is_same_v<M, p::Degraded>) {
+          // Ids as the registry writes them, sorted, each once; known flags.
+          inRange = p::Fits(m);
         } else if constexpr (std::is_same_v<M, p::TrafficSpawn>) {
           finite = Finite(m.position) && Finite(m.orientation);
         } else if constexpr (std::is_same_v<M, p::Crime>) {
@@ -1379,6 +1384,9 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
           notOurs(m.player);
         } else if constexpr (std::is_same_v<M, p::CarPaint>) {
           // Another player's car's paint; never ours back.
+          notOurs(m.player);
+        } else if constexpr (std::is_same_v<M, p::Degraded>) {
+          // What another player's game runs without; never ours back.
           notOurs(m.player);
         } else if constexpr (std::is_same_v<M, p::Revive>) {
           forUs(m.target);

@@ -1776,3 +1776,38 @@ TEST_CASE("street races: Race survives encoding, is reliable, kinds and lists ch
                                  .entries = std::vector<RaceEntry>(kMaxRacers + 1)}))
                   .has_value());
 }
+
+TEST_CASE("what a game runs without survives encoding: reliable, small, appended, one form") {
+  const Degraded some{.player = 2,
+                      .entries = {{.id = "looks"},
+                                  {.id = "puppet movement", .flags = kDegradedCore},
+                                  {.id = "vehicle move", .flags = kDegradedChosen}}};
+  RoundTrips(some);
+  RoundTrips(Degraded{.player = 3});                                     // nothing off
+  CHECK(Message(Degraded{}).index() == Message(HitTaken{}).index() + 1); // appended
+  CHECK(std::string(NameOf(Degraded{})) == "Degraded");
+  CHECK(ChannelOf(Degraded{}) == Channel::Event);
+  CHECK(IsReliable(Degraded{}));
+  CHECK(IsCombat(Degraded{}));
+  CHECK_FALSE(IsStory(Degraded{}));
+  CHECK(Encode(some).size() <= 64);
+  // Refused on the wire: ids out of order or twice (a repeat must be equal),
+  // an empty or long id, a character the registry never writes, a flag of
+  // another version, more entries than there are states.
+  const auto refused = [](const Degraded &said) { return !Decode(Encode(said)).has_value(); };
+  CHECK(refused({.entries = {{.id = "vehicle move"}, {.id = "looks"}}}));
+  CHECK(refused({.entries = {{.id = "looks"}, {.id = "looks"}}}));
+  CHECK(refused({.entries = {{.id = ""}}}));
+  CHECK(refused({.entries = {{.id = std::string(kMaxDegradedId + 1, 'a')}}}));
+  CHECK_FALSE(refused({.entries = {{.id = std::string(kMaxDegradedId, 'a')}}}));
+  CHECK(refused({.entries = {{.id = "Looks"}}}));
+  CHECK(refused({.entries = {{.id = "looks\n"}}}));
+  CHECK(refused({.entries = {{.id = "looks", .flags = 4}}}));
+  Degraded many;
+  for (std::size_t i = 0; i <= kMaxDegraded; ++i)
+    many.entries.push_back({.id = std::string(1 + i / 26, static_cast<char>('a' + i % 26))});
+  std::ranges::sort(many.entries, {}, &DegradedEntry::id);
+  CHECK(refused(many));
+  many.entries.pop_back();
+  CHECK_FALSE(refused(many));
+}
