@@ -118,6 +118,23 @@ target, effectName, effectTag, opt statusEffect)` (252966) runs
   within seconds by a stopped game thread (watchdog, no backtrace taken);
   tandem now applies `BaseStatusEffect.Unconscious` directly instead, as
   `TakedownUnmountPreyEvents` does. [2.5-tested: cause not confirmed]
+- **The grapple is two steps** (2.50 scripts, 2026-11-22): after the
+  effect, `GrappleMountEvents.OnEnter` mounts the NPC on V
+  (`MountingRequest`, child the NPC, parent V, slot `grapple`), and
+  `TakedownUnmountPreyEvents.OnEnter` unmounts it (an `UnmountingRequest`
+  with the child alone). `ScriptedPuppet.IsBeingGrappled` is true for the
+  `Grappled` status **or** for a mount on the slot `grapple` alone;
+  `NPCPuppet.OnHitVFX` and `HitReactionComponent.EvaluateHit` read the
+  same mount (the human shield effect, the grappled twitch). Whether a
+  puppet's body (an NPC entity) has that slot is not known: tandem probes
+  it (`ScriptedPuppet.GetSlotComponent().GetSlotTransform(n"grapple")`)
+  and reads the mount back (`architecture/stealth.md`). [2.5-untested]
+- **A thrown body leaves at `ThrowEvents.OnExit`**, not `OnEnter` (the
+  kill, `ThrownNPC`, the pose): direction from the camera at the release,
+  an aim assist turn, the impulse between `ragdollMaxImpulse` and
+  `ragdollMinImpulse` by the camera's pitch, 30 when combat is not
+  allowed; applied 0.1 s later (`CreateRagdollApplyImpulseEvent`).
+  [2.5-untested]
 - **A failed grapple, vanilla's way**: `TakedownGrappleFailedDecisions`
   (535796) enters when `ShouldInstantlyBreakFree` (530408: a massive target
   of too high a level); `GrappleBreakFreeDecisions.EnterCondition` (537741)

@@ -25,6 +25,12 @@ public class TandemHeldNpc {
   // Host: placed in front of the holder each tick (the workspot did not take).
   public let followed: Bool;
   public let mounted: Bool;
+  // Grappled the game's way: mounted on its holder's `grapple` slot (the
+  // real NPC on its owner, a proxy elsewhere).
+  public let grappled: Bool;
+  // A takedown's or finisher's body was seen in the animation's workspot:
+  // the hold ends when it leaves it.
+  public let worked: Bool;
   // Host: the outcome still owed when the animation ends (3 kill, 4 knock
   // out, 6 finisher kill, 0 none) and when; then the hold ends.
   public let outcome: Int32;
@@ -53,6 +59,14 @@ public class TandemTakedowns extends ScriptableSystem {
   // Host: NPC reactions that vanilla gives "the player" run for another V
   // (Reactions.reds): our V's second chance and gag are off meanwhile.
   private let m_suppressAvoid: Bool;
+  // The puppets whose body was looked at as it came (ProbePuppets), and
+  // those with the slot vanilla mounts a grappled NPC on.
+  private let m_probed: array<Uint32>;
+  private let m_slotted: array<Uint32>;
+  // (test) cmd takedown mount: the body mounted, on whose puppet, read at.
+  private let m_testBody: wref<NPCPuppet>;
+  private let m_testPlayer: Uint32;
+  private let m_testAt: Float;
 
   public static func Get(game: GameInstance) -> ref<TandemTakedowns> {
     return GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemTakedowns") as TandemTakedowns;
@@ -131,6 +145,7 @@ public class TandemTakedowns extends ScriptableSystem {
     held.outcome = 0;
     held.endAt = 0.0;
     held.checked = false;
+    held.worked = false;
     return held;
   }
 
@@ -258,9 +273,159 @@ public class TandemTakedowns extends ScriptableSystem {
         TandemReactions.OnCue(this.GetGameInstance(), event.npc, event.action);
       }
     }
+    this.ProbePuppets();
     // The NPCs we run, then the proxies we show (each skips the other's).
     this.HostTick();
     this.GuestTick();
+    if this.m_testAt > 0.0 && now >= this.m_testAt {
+      this.TestMounted();
+    }
+  }
+
+  // ---- the grapple as the game's own mount ----
+  // Vanilla's grapple is two steps: the takedown effect (the NPC's
+  // workspot, TakedownGrapplePreyEvents.OnEnter), then the NPC mounted on V,
+  // slot `grapple` (GrappleMountEvents.OnEnter); TakedownUnmountPreyEvents
+  // unmounts it. With a puppet as activator the effect's workspot does not
+  // take (engine facts §13.46); the mount carries the NPC with its holder
+  // when the puppet's body has that slot.
+
+  // Each puppet's body, once as it comes: has it the slot? Said once a
+  // body, so the log tells which way a grapple by that player goes.
+  private func ProbePuppets() -> Void {
+    let system = this.System();
+    if !IsDefined(system) {
+      return;
+    }
+    let players = system.PuppetPlayers();
+    let probed: array<Uint32>;
+    let slotted: array<Uint32>;
+    for player in players {
+      if ArrayContains(this.m_probed, player) {
+        ArrayPush(probed, player);
+        if ArrayContains(this.m_slotted, player) {
+          ArrayPush(slotted, player);
+        }
+      } else {
+        let body = system.PuppetOf(player) as ScriptedPuppet;
+        if IsDefined(body) && body.IsAttached() {
+          ArrayPush(probed, player);
+          let why = TandemTakedowns.NoGrappleSlot(body);
+          if Equals(why, "") {
+            ArrayPush(slotted, player);
+            TandemNative.Log(s"takedowns: player \(player)'s puppet: grapple by the game's mount (its body has the grapple slot)");
+          } else {
+            TandemNative.Log(s"takedowns: player \(player)'s puppet: grapple by the fallback: \(why)");
+          }
+        }
+      }
+    }
+    // A player gone is looked at again when one comes under its id.
+    this.m_probed = probed;
+    this.m_slotted = slotted;
+  }
+
+  // Why a body cannot carry a grappled NPC the game's way ("": it can).
+  public static func NoGrappleSlot(body: ref<ScriptedPuppet>) -> String {
+    let slots = IsDefined(body) ? body.GetSlotComponent() : null;
+    if !IsDefined(slots) {
+      return "its body has no slot component";
+    }
+    let transform: WorldTransform; // assigned on every path: read only when GetSlotTransform filled it
+    if !slots.GetSlotTransform(n"grapple", transform) {
+      return "its body has no grapple slot";
+    }
+    return "";
+  }
+
+  // The NPC on its holder's `grapple` slot, as GrappleMountEvents.OnEnter
+  // mounts a grabbed NPC on V.
+  public static func MountGrapple(game: GameInstance, body: ref<NPCPuppet>, holder: ref<GameObject>) -> Void {
+    let info: MountingInfo;
+    info.childId = body.GetEntityID();
+    info.parentId = holder.GetEntityID();
+    info.slotId.id = n"grapple";
+    let request = new MountingRequest();
+    request.lowLevelMountingInfo = info;
+    GameInstance.GetMountingFacility(game).Mount(request);
+  }
+
+  // TakedownUnmountPreyEvents.OnEnter.
+  public static func UnmountGrapple(game: GameInstance, body: ref<NPCPuppet>) -> Void {
+    let info: MountingInfo;
+    info.childId = body.GetEntityID();
+    let request = new UnmountingRequest();
+    request.lowLevelMountingInfo = info;
+    GameInstance.GetMountingFacility(game).Unmount(request);
+  }
+
+  // Why the mount did not take ("": it did): the mounting facility has the
+  // NPC on that holder's grapple slot, and the slot carries it (within 2 m
+  // of its holder).
+  public static func GrappleMountFault(game: GameInstance, body: ref<NPCPuppet>, holder: ref<GameObject>) -> String {
+    let info = GameInstance.GetMountingFacility(game).GetMountingInfoSingleWithObjects(body);
+    if !EntityID.IsDefined(info.childId) || info.parentId != holder.GetEntityID() {
+      return "the mounting facility did not take the mount";
+    }
+    if NotEquals(info.slotId.id, n"grapple") {
+      return s"mounted on the slot \(NameToString(info.slotId.id))";
+    }
+    let apart = Vector4.Distance(body.GetWorldPosition(), holder.GetWorldPosition());
+    if apart > 2.0 {
+      return s"mounted, but \(apart) m from its holder";
+    }
+    return "";
+  }
+
+  // A hold that was the game's mount ends: out of its holder's arms.
+  private func Ungrapple(body: ref<NPCPuppet>, held: ref<TandemHeldNpc>) -> Void {
+    if IsDefined(held) && held.grappled {
+      held.grappled = false;
+      if IsDefined(body) {
+        TandemTakedowns.UnmountGrapple(this.GetGameInstance(), body);
+      }
+    }
+  }
+
+  // A takedown's or finisher's animation is over: its body was in the
+  // animation's workspot and has left it (WorkspotGameSystem), `limit`
+  // seconds at most (no workspot with a puppet as activator, a body that
+  // never leaves it).
+  private func AnimationOver(held: ref<TandemHeldNpc>, body: ref<NPCPuppet>, limit: Float) -> Bool {
+    let lasted = this.m_now - held.since;
+    let inSpot = IsDefined(body) && GameInstance.GetWorkspotSystem(this.GetGameInstance()).IsActorInWorkspot(body);
+    if inSpot {
+      held.worked = true;
+    }
+    if held.worked && !inSpot && lasted > 0.5 {
+      TandemNative.Log(s"takedowns: \(held.npc): player \(held.player)'s hold (how \(held.how)) ended after \(lasted) s (its workspot's end)");
+      return true;
+    }
+    if lasted > limit {
+      TandemNative.Log(s"takedowns: \(held.npc): player \(held.player)'s hold (how \(held.how)) ended after \(lasted) s (the \(limit) s limit: \(held.worked ? "still in its workspot" : "no workspot seen"))");
+      return true;
+    }
+    return false;
+  }
+
+  // (test) cmd takedown mount, half a second on: what the mount made.
+  private func TestMounted() -> Void {
+    this.m_testAt = 0.0;
+    let body = this.m_testBody;
+    let holder = this.PuppetOf(this.m_testPlayer);
+    if !IsDefined(body) || !IsDefined(holder) {
+      TandemNative.Log("takedown mount: the body or the puppet is gone");
+      return;
+    }
+    let game = this.GetGameInstance();
+    let why = TandemTakedowns.GrappleMountFault(game, body, holder);
+    let apart = Vector4.Distance(body.GetWorldPosition(), holder.GetWorldPosition());
+    if Equals(why, "") {
+      TandemNative.Log(s"takedown mount: on player \(this.m_testPlayer)'s puppet by the game's mount (\(apart) m from it, IsBeingGrappled \(ScriptedPuppet.IsBeingGrappled(body))); unmounted");
+    } else {
+      TandemNative.Log(s"takedown mount: on player \(this.m_testPlayer)'s puppet refused: \(why) (IsBeingGrappled \(ScriptedPuppet.IsBeingGrappled(body))); unmounted");
+    }
+    TandemTakedowns.UnmountGrapple(game, body);
   }
 
   // We run this shared NPC (regions): its owner's part is ours.
@@ -271,6 +436,8 @@ public class TandemTakedowns extends ScriptableSystem {
 
   private func EndSession() -> Void {
     for held in this.m_held {
+      // Out of a puppet's arms before the puppet goes.
+      this.Ungrapple(this.BodyOf(held.npc), held);
       TandemNative.HoldPuppet(TandemNative.NpcPuppetId(held.npc), false);
     }
     for npc in this.m_unholdNpc {
@@ -286,6 +453,9 @@ public class TandemTakedowns extends ScriptableSystem {
     ArrayClear(this.m_disposedNpc);
     ArrayClear(this.m_disposedBy);
     ArrayClear(this.m_disposedAt);
+    ArrayClear(this.m_probed);
+    ArrayClear(this.m_slotted);
+    this.m_testAt = 0.0;
     this.m_suppressAvoid = false;
     this.m_you = 0u;
   }
@@ -316,9 +486,13 @@ public class TandemTakedowns extends ScriptableSystem {
       } else if !EntityID.IsDefined(TandemTakedowns.ProxyEntity(this.GetGameInstance(), held.npc)) {
         // Its proxy is gone (disposed of, out of range).
         TandemNative.HoldPuppet(TandemNative.NpcPuppetId(held.npc), false);
-      } else if held.player == this.m_you && (held.how == 3 || held.how == 4) && this.m_now - held.since > 6.0 {
+      } else if held.player == this.m_you && (held.how == 3 || held.how == 4) && this.AnimationOver(held, this.BodyOf(held.npc), 6.0) {
         this.UnholdLater(held.npc, 0.0);
       } else {
+        if held.how == 1 && held.grappled && !held.checked && this.m_now - held.since > 0.5 {
+          held.checked = true;
+          this.CheckProxyGrapple(held);
+        }
         ArrayPush(kept, held);
       }
     }
@@ -329,7 +503,8 @@ public class TandemTakedowns extends ScriptableSystem {
     let da: array<Float>;
     i = 0;
     while i < ArraySize(this.m_deferredNpc) {
-      if this.m_now >= this.m_deferredAt[i] {
+      // Its time, or our animation ended sooner (its hold is over).
+      if this.m_now >= this.m_deferredAt[i] || !IsDefined(this.Find(this.m_deferredNpc[i])) {
         let tracked = this.Npcs();
         if IsDefined(tracked) {
           this.m_flushing = true;
@@ -346,6 +521,23 @@ public class TandemTakedowns extends ScriptableSystem {
     this.m_deferredNpc = dn;
     this.m_deferredKiller = dk;
     this.m_deferredAt = da;
+  }
+
+  // A proxy mounted on its holder's puppet half a second ago: did the
+  // mount take here?
+  private func CheckProxyGrapple(held: ref<TandemHeldNpc>) -> Void {
+    let proxy = this.BodyOf(held.npc);
+    let puppet = this.PuppetOf(held.player);
+    if !IsDefined(proxy) || !IsDefined(puppet) {
+      return;
+    }
+    let why = TandemTakedowns.GrappleMountFault(this.GetGameInstance(), proxy, puppet);
+    if Equals(why, "") {
+      TandemNative.Log(s"takedowns: \(held.npc) held by player \(held.player): grapple by the game's mount");
+    } else {
+      this.Ungrapple(proxy, held);
+      TandemNative.Log(s"takedowns: \(held.npc) held by player \(held.player): grapple by the fallback: \(why) (the proxy stays where it was grabbed)");
+    }
   }
 
   // ---- host ----
@@ -388,7 +580,7 @@ public class TandemTakedowns extends ScriptableSystem {
     }
     if held.player == this.m_you {
       // Our own V: vanilla runs it; the hold ends with the animation.
-      if held.endAt > 0.0 && this.m_now >= held.endAt {
+      if held.endAt > 0.0 && this.AnimationOver(held, body, held.endAt - held.since) {
         this.Announce(held.npc, 0u, 0, n"None");
         return false;
       }
@@ -404,14 +596,32 @@ public class TandemTakedowns extends ScriptableSystem {
     }
     if held.how == 1 && !held.checked && this.m_now - held.since > 0.5 {
       held.checked = true;
-      if !ScriptedPuppet.IsBeingGrappled(body) {
-        // The grapple effect did not take with a puppet: keep the NPC still
-        // and in its arms ourselves.
-        StatusEffectHelper.ApplyStatusEffect(body, t"BaseStatusEffect.Grappled", puppet.GetEntityID());
-        held.followed = true;
-        TandemNative.Log(s"takedowns: \(held.npc) grappled by player \(held.player) (fallback: held in front of the puppet)");
+      let game = this.GetGameInstance();
+      // The mount (Apply), read back; why there is none.
+      let why = "";
+      if held.grappled {
+        why = TandemTakedowns.GrappleMountFault(game, body, puppet);
+        if NotEquals(why, "") {
+          this.Ungrapple(body, held);
+        }
       } else {
-        TandemNative.Log(s"takedowns: \(held.npc) grappled by player \(held.player) (workspot)");
+        why = TandemTakedowns.NoGrappleSlot(puppet as ScriptedPuppet);
+      }
+      // The effect's workspot gives the NPC the Grappled status (still and
+      // harmless in its holder's arms); where it did not take with a
+      // puppet, the status itself.
+      let spot = GameInstance.GetStatusEffectSystem(game).HasStatusEffect(body.GetEntityID(), t"BaseStatusEffect.Grappled");
+      if !spot {
+        StatusEffectHelper.ApplyStatusEffect(body, t"BaseStatusEffect.Grappled", puppet.GetEntityID());
+      }
+      if held.grappled {
+        TandemNative.Log(s"takedowns: \(held.npc) grappled by player \(held.player): grapple by the game's mount (the takedown effect's workspot \(spot ? "took" : "did not take"))");
+      } else if spot {
+        TandemNative.Log(s"takedowns: \(held.npc) grappled by player \(held.player): grapple by the game's workspot (no mount: \(why))");
+      } else {
+        // Neither took: in its arms by our own placing, each tick.
+        held.followed = true;
+        TandemNative.Log(s"takedowns: \(held.npc) grappled by player \(held.player): grapple by the fallback: \(why) (held in front of the puppet)");
       }
     }
     if held.followed && held.how == 1 {
@@ -425,7 +635,7 @@ public class TandemTakedowns extends ScriptableSystem {
       // Its death, by the effect or the outcome, is this player's kill.
       this.NoteActor(held.npc, held.player);
     }
-    if held.endAt > 0.0 && this.m_now >= held.endAt {
+    if held.endAt > 0.0 && this.AnimationOver(held, body, held.endAt - held.since) {
       this.Outcome(body, held, puppet);
       this.Free(body, held, false);
       this.Announce(held.npc, 0u, 0, n"None");
@@ -564,9 +774,20 @@ public class TandemTakedowns extends ScriptableSystem {
   private func Apply(body: ref<NPCPuppet>, puppet: ref<GameObject>, event: TandemNpcAction) -> Void {
     let kind = event.action;
     let game = this.GetGameInstance();
+    if kind != 1 {
+      // Whatever follows a grapple (a takedown, a release, the shoulder):
+      // out of its holder's arms first, as vanilla unmounts its prey.
+      this.Ungrapple(body, this.Find(event.npc));
+    }
     if kind == 1 {
-      this.Hold(event.npc, event.player, 1, event.name);
+      let grabbed = this.Hold(event.npc, event.player, 1, event.name);
       TakedownGameEffectHelper.FillTakedownData(puppet, puppet, body, n"takedowns", event.name, "");
+      // Vanilla's second step: the NPC on its holder's grapple slot, when
+      // the puppet's body has one (read back half a second on: HostKeep).
+      if ArrayContains(this.m_slotted, event.player) && !grabbed.grappled {
+        TandemTakedowns.MountGrapple(game, body, puppet);
+        grabbed.grappled = true;
+      }
       this.Announce(event.npc, event.player, 1, event.name);
     } else if kind == 3 || kind == 4 || kind == 5 {
       let held = this.Hold(event.npc, event.player, 3, event.name);
@@ -653,6 +874,7 @@ public class TandemTakedowns extends ScriptableSystem {
   // carrier's shoulder. `alive`: it fights back (vanilla's break free).
   private func Free(body: ref<NPCPuppet>, held: ref<TandemHeldNpc>, alive: Bool) -> Void {
     let game = this.GetGameInstance();
+    this.Ungrapple(body, held);
     if held.mounted {
       TandemTakedowns.Unmount(game, body);
       held.mounted = false;
@@ -792,6 +1014,10 @@ public class TandemTakedowns extends ScriptableSystem {
     let game = this.GetGameInstance();
     let proxy = this.BodyOf(event.npc);
     let held = this.Find(event.npc);
+    // Out of the grapple's mount when the hold ends or becomes another.
+    if event.player == 0u || event.action != 1 {
+      this.Ungrapple(proxy, held);
+    }
     if event.player == 0u {
       if IsDefined(held) && IsDefined(proxy) {
         if held.mounted {
@@ -825,6 +1051,12 @@ public class TandemTakedowns extends ScriptableSystem {
     } else if IsNameValid(event.name) {
       TakedownGameEffectHelper.FillTakedownData(puppet, puppet, proxy, n"takedowns", event.name, "");
     }
+    // A grapple: the proxy on that puppet's grapple slot, as its real NPC is
+    // on its owner's (read back half a second on: GuestTick).
+    if event.action == 1 && ArrayContains(this.m_slotted, event.player) && !held.grappled {
+      TandemTakedowns.MountGrapple(game, proxy, puppet);
+      held.grappled = true;
+    }
     TandemNative.Log(s"takedowns: \(event.npc) held by player \(event.player) (how \(event.action))");
   }
 
@@ -840,13 +1072,30 @@ public class TandemTakedowns extends ScriptableSystem {
 
   // (test) tools/game.sh cmd takedown grab|kill|knockout|release|finisher|
   // pickup|drop|throw|list: our V's request on the nearest proxy, without
-  // the animation (guest), or the list of holds.
+  // the animation (guest), or the list of holds. takedown probe: each
+  // puppet's slots again. takedown mount: the nearest proxy mounted on the
+  // first puppet's grapple slot whatever the probe said, read back half a
+  // second on, then unmounted.
   public func Command(command: String) -> Void {
     if Equals(command, "takedown list") {
       TandemNative.Log(s"takedowns: \(ArraySize(this.m_held)) held");
       for held in this.m_held {
-        TandemNative.Log(s"takedowns: \(held.npc) by player \(held.player), how \(held.how)");
+        TandemNative.Log(s"takedowns: \(held.npc) by player \(held.player), how \(held.how), grapple mount \(held.grappled), followed \(held.followed)");
       }
+      return;
+    }
+    let system = this.System();
+    if Equals(command, "takedown probe") && IsDefined(system) {
+      let all = system.PuppetPlayers();
+      for other in all {
+        let puppet = system.PuppetOf(other) as ScriptedPuppet;
+        let slots = IsDefined(puppet) ? puppet.GetSlotComponent() : null;
+        let transform: WorldTransform; // assigned on every path: read only when GetSlotTransform filled it
+        let grapple = IsDefined(slots) && slots.GetSlotTransform(n"grapple", transform);
+        let shoulder = IsDefined(slots) && slots.GetSlotTransform(n"leftShoulder", transform);
+        TandemNative.Log(s"takedown probe: player \(other)'s puppet: slot component \(IsDefined(slots)), grapple slot \(grapple), leftShoulder slot \(shoulder)");
+      }
+      TandemNative.Log(s"takedown probe: \(ArraySize(all)) puppet(s)");
       return;
     }
     let player = GetPlayer(this.GetGameInstance());
@@ -854,6 +1103,21 @@ public class TandemTakedowns extends ScriptableSystem {
     let target = IsDefined(npcs) ? npcs.NearestProxy(player.GetWorldPosition()) : null;
     if !IsDefined(target) {
       TandemNative.Log("takedown: no proxy");
+      return;
+    }
+    if Equals(command, "takedown mount") {
+      let holders = IsDefined(system) ? system.PuppetPlayers() : [];
+      let body = target as NPCPuppet;
+      let holder = ArraySize(holders) > 0 ? this.PuppetOf(holders[0]) : null;
+      if !IsDefined(body) || !IsDefined(holder) {
+        TandemNative.Log("takedown mount: no puppet to mount the proxy on");
+        return;
+      }
+      TandemTakedowns.MountGrapple(this.GetGameInstance(), body, holder);
+      this.m_testBody = body;
+      this.m_testPlayer = holders[0];
+      this.m_testAt = this.m_now + 0.5;
+      TandemNative.Log(s"takedown mount: proxy \(this.NpcOf(body)) asked onto player \(holders[0])'s puppet's grapple slot (probe: \(TandemTakedowns.NoGrappleSlot(holder as ScriptedPuppet)))");
       return;
     }
     let what = StrAfterFirst(command, "takedown ");
@@ -1017,11 +1281,34 @@ protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<Sta
   }
 }
 
+// The throw is told where vanilla lets the body go: ThrowEvents.OnExit
+// (OnEnter is the wind-up: the kill, the pose), with the impulse OnExit
+// gives it: the camera's way at the release, its strength by the camera's
+// pitch (ragdollMax/MinImpulse over ragdollMax/MinImpulsePitch), 30 when
+// combat is not allowed. Its aim assist (a turn of a few degrees towards a
+// target in front) is not carried: the target is one of our game's.
+@addMethod(ThrowEvents)
+private final func TandemReleaseImpulse(scriptInterface: ref<StateGameScriptInterface>) -> Vector4 {
+  let camera = scriptInterface.GetCameraWorldTransform();
+  let forward = Transform.GetForward(camera);
+  if !this.IsPlayerCombatAllowed(scriptInterface) {
+    return forward * 30.0;
+  }
+  let angles = Transform.ToEulerAngles(camera);
+  let maxPitch = this.GetStaticFloatParameterDefault("ragdollMaxImpulsePitch", 90.0);
+  let minPitch = this.GetStaticFloatParameterDefault("ragdollMinImpulsePitch", 90.0);
+  let scale = 0.0;
+  if AbsF(minPitch - maxPitch) > 0.001 {
+    scale = (ClampF(angles.Pitch, maxPitch, minPitch) - maxPitch) / (minPitch - maxPitch);
+  }
+  return forward * LerpF(scale, this.GetStaticFloatParameterDefault("ragdollMaxImpulse", 100.0), this.GetStaticFloatParameterDefault("ragdollMinImpulse", 100.0));
+}
+
 @wrapMethod(ThrowEvents)
-protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
+protected func OnExit(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
+  // Before vanilla's own: the same camera, the same frame.
+  let impulse = this.TandemReleaseImpulse(scriptInterface);
   wrappedMethod(stateContext, scriptInterface);
-  let forward = Transform.GetForward(scriptInterface.GetCameraWorldTransform());
-  let impulse = forward * this.GetStaticFloatParameterDefault("ragdollMaxImpulse", 100.0);
   let none = TDBID.None();
   let noEntity = EntityID.FromHash(0ul);
   TandemTakedowns.Get(scriptInterface.GetGame()).OurAction(scriptInterface.executionOwner, scriptInterface.owner, 9, n"None", none, noEntity, 0.0, impulse);
