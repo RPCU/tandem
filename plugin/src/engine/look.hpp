@@ -17,6 +17,13 @@
 #include <vector>
 
 namespace tandem::plugin::engine {
+// At the first frame (access.hpp): "looks" is the appearance changer's
+// schedule function (off: nothing is dressed, ScheduleLook and ApplyLook
+// answer -1); "look keys" is the customization state's four virtual slots
+// (off: our own look is not read, CollectLook is empty and ApplyLook -1;
+// looks received from others are still scheduled).
+bool CheckLooks();
+
 // The appearance keys of `state` for a whole third-person V (head, body,
 // arms), to send to the others. Empty when the state is unusable (logged).
 std::vector<proto::AppearanceKey>

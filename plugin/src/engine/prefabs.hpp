@@ -17,6 +17,10 @@
 #include <vector>
 
 namespace tandem::plugin::engine {
+// At the first frame (access.hpp): the RTTI sizes and the handler's SetMode.
+// The handler's and the streaming system's classes are checked at the first
+// use, when a quests system exists. Off: every call answers "unavailable".
+bool CheckPrefabs();
 // The layouts are as measured on 2.50 (checked once, said once in the log).
 bool QuestPrefabsAvailable();
 // The prefabs our quests have on now (ForceLoad), sorted. False: unavailable.

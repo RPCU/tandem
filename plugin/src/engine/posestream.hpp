@@ -18,6 +18,10 @@ namespace tandem::plugin::engine {
 // address-library hash). They do nothing until a source or a puppet is bound.
 bool InstallPoseStream(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle);
 void RemovePoseStream(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle);
+// At the first frame (access.hpp): the animated component's and the rig's
+// layouts. Off: nothing is bound, the hooks only call the engine's functions
+// (no pose is read or written; bodies keep their locomotion animation).
+bool CheckPoseStream();
 
 // Game thread. The local V whose pose is read (null: none). Cheap: call it
 // again whenever (the animation objects persist while the entity lives).

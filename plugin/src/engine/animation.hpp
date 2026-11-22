@@ -51,7 +51,12 @@ struct AnimationDriver {
   void Attach(RED4ext::ent::Entity *entity);
   void Detach();
   void Send(AnimationData &data);
-  float ClipLength(RED4ext::CName clip) const; // 0 when the rig has no such clip
+  // 0 when the rig has no such clip, or the engine's query is not in this
+  // game (feature "clip lengths": the gait then keeps its default pace).
+  float ClipLength(RED4ext::CName clip) const;
+  // Whether Attach, Detach and Send are in this game's address library
+  // (part of the "puppet movement" feature's check).
+  static bool Available();
 
   // Filled by the engine's Attach, zeroed by its Detach; only `component` is
   // read here. (anim::AnimFeature_Locomotion, anim::AnimFeature_CrowdLocomotion,
@@ -62,4 +67,7 @@ struct AnimationDriver {
   bool attached{};
 };
 static_assert(__builtin_offsetof(AnimationDriver, component) == 0x20);
+
+// At the first frame (access.hpp): the clip-length query.
+bool CheckClipLengths();
 } // namespace tandem::plugin::engine

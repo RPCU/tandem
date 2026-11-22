@@ -32,11 +32,11 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "../log.hpp"
+#include "access.hpp"
 #include "prefabs.hpp"
 
 #include <RED4ext/GameEngine.hpp>
 #include <RED4ext/RTTISystem.hpp>
-#include <RED4ext/Relocation.hpp>
 #include <RED4ext/SharedSpinLock.hpp>
 
 #include <windows.h>
@@ -94,6 +94,9 @@ RED4ext::CClass *NativeTypeOf(void *object) {
   }
 }
 
+// CheckPrefabs (the first frame): the RTTI sizes and SetMode.
+SetModeFn g_setMode = nullptr;
+bool g_startupOk = false;
 // What was found at the check: the handler, or why not.
 bool g_checked = false;
 bool g_ok = false;
@@ -107,16 +110,14 @@ void *QuestsSystem() {
   return engine->framework->gameInstance->GetSystem(type);
 }
 
+// Every size, so the log names each mismatch at once.
 bool SizesMatch() {
-  auto *rtti = RED4ext::CRTTISystem::Get();
-  const auto size = [&](const char *name) {
-    auto *type = rtti->GetClass(name);
-    return type ? type->GetSize() : 0u;
-  };
-  return size("questQuestsSystem") == kSystemSize &&
-         size("questQuestPrefabsHandler") == kHandlerSize &&
-         size("questQuestPrefabsEntry") == kEntrySize &&
-         size("worldRuntimeSystemWorldStreaming") == kStreamingSize;
+  const auto f = feature::kPrefabs;
+  bool ok = ClassSizeIs(f, "questQuestsSystem", kSystemSize);
+  ok = ClassSizeIs(f, "questQuestPrefabsHandler", kHandlerSize) && ok;
+  ok = ClassSizeIs(f, "questQuestPrefabsEntry", kEntrySize) && ok;
+  ok = ClassSizeIs(f, "worldRuntimeSystemWorldStreaming", kStreamingSize) && ok;
+  return ok;
 }
 
 // The handler of the quests system now (it lives as long as the game
@@ -124,6 +125,10 @@ bool SizesMatch() {
 void *Handler() {
   auto *system = QuestsSystem();
   std::uintptr_t handler = 0;
+  if (!g_startupOk) {
+    g_why = "its layouts or SetMode differ from 2.50 (said at startup)";
+    return nullptr;
+  }
   if (!system || !ReadAt(reinterpret_cast<std::uintptr_t>(system) + kSystemHandler, handler) ||
       !handler)
     return nullptr;
@@ -131,11 +136,8 @@ void *Handler() {
     g_checked = true;
     auto *rtti = RED4ext::CRTTISystem::Get();
     std::uintptr_t streaming = 0;
-    if (!SizesMatch())
-      g_why = "questQuestsSystem, questQuestPrefabsHandler, questQuestPrefabsEntry or "
-              "worldRuntimeSystemWorldStreaming differ from 2.50";
-    else if (NativeTypeOf(reinterpret_cast<void *>(handler)) !=
-             rtti->GetClass("questQuestPrefabsHandler"))
+    if (NativeTypeOf(reinterpret_cast<void *>(handler)) !=
+        rtti->GetClass("questQuestPrefabsHandler"))
       g_why = "the quests system holds no questQuestPrefabsHandler where 2.50 had it";
     else if (!ReadAt(handler + kHandlerStreaming, streaming) || !streaming ||
              NativeTypeOf(reinterpret_cast<void *>(streaming)) !=
@@ -148,6 +150,8 @@ void *Handler() {
     if (g_ok)
       log::Info("prefabs: the quests system's prefab handler is as measured on 2.50");
     else
+      FeatureOff(feature::kPrefabs, g_why);
+    if (!g_ok)
       log::Error("prefabs: {}: quest prefabs are not shared (a guest cannot see the host's "
                  "quest interiors)",
                  g_why);
@@ -180,6 +184,18 @@ bool ReadHeld(void *handler, std::vector<std::uint64_t> &out) {
                                    head.size * sizeof(std::uint64_t));
 }
 } // namespace
+
+bool CheckPrefabs() {
+  const bool sizes = SizesMatch();
+  g_setMode = Find<SetModeFn>(feature::kPrefabs, "the prefab handler's SetMode", kSetMode);
+  g_startupOk = sizes && g_setMode;
+  if (g_startupOk)
+    FeatureOn(feature::kPrefabs);
+  else
+    log::Error("prefabs: quest prefabs are not shared (a guest cannot see the host's quest "
+               "interiors)");
+  return g_startupOk;
+}
 
 bool QuestPrefabsAvailable() { return Handler() != nullptr; }
 
@@ -227,10 +243,9 @@ bool SetQuestPrefab(std::uint64_t prefab, bool on) {
   auto *handler = Handler();
   if (!handler || prefab == 0)
     return false;
-  static RED4ext::UniversalRelocFunc<SetModeFn> setMode(kSetMode);
   auto *lock = LockOf(handler);
   lock->Lock();
-  setMode(handler, prefab, on ? kForceLoad : kDisable);
+  g_setMode(handler, prefab, on ? kForceLoad : kDisable);
   lock->Unlock();
   return true;
 }

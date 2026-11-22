@@ -403,6 +403,12 @@ public native class TandemNative extends IScriptable {
   public static native func ClipLengths(entity: ref<Entity>) -> String
   public static native func ApplyLook(entity: ref<Entity>, state: ref<gameuiICharacterCustomizationState>, male: Bool) -> Int32
   public static native func TakeCommand() -> String
+  // Engine access (plugin/src/engine/access.hpp): whether one feature
+  // ("puppet movement", "looks", "quest freeze"...) is on in this game, the
+  // features that are off ("" when none), and the startup line (cmd engine).
+  public static native func EngineOn(feature: String) -> Bool
+  public static native func EngineOff() -> String
+  public static native func EngineReport() -> String
   public static native func MarkThirdPerson(entity: ref<Entity>) -> Bool
   public static native func IsMirror() -> Bool
   public static native func MirrorPlayerTo(entity: ref<Entity>)

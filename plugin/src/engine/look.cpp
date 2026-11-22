@@ -2,13 +2,14 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "../log.hpp"
+#include "access.hpp"
 #include "look.hpp"
 
-#include <RED4ext/Relocation.hpp>
 #include <RED4ext/ResourcePath.hpp>
 #include <RED4ext/Scripting/Natives/Generated/world/RuntimeSystemEntityAppearanceChanger.hpp>
 #include <RedLib.hpp>
 
+#include <format>
 #include <functional>
 #include <map>
 #include <memory>
@@ -37,13 +38,30 @@ using ScheduleChange = void (*)(RED4ext::world::RuntimeSystemEntityAppearanceCha
                                 std::uint32_t);
 
 // gameuiICharacterCustomizationState virtual slots (byte offsets in its
-// vtable), the ones NCO dressed remote players with on 2.5. Not in RTTI, so
-// IsBodyGenderMale is checked against what the game says first: a shifted
-// vtable answers wrong there before anything takes a key array.
+// vtable), the ones NCO dressed remote players with on 2.5. Not in RTTI:
+// each slot is compared with the function it holds on 2.50, named by its
+// address-library hash (read in the exe's vtable of
+// gameuiCharacterCustomizationState, 0x14324eb28; the RTTI native
+// IsBodyGenderMale, 0x142a23578, is `call [rax+0x120]`). A vtable with
+// another function in any of the four turns "look keys" off before a slot
+// is called. IsBodyGenderMale is also checked against what the game says.
 constexpr std::size_t kIsBodyGenderMale = 0x120;
 constexpr std::size_t kGetHeadKeys = 0x190;
 constexpr std::size_t kGetBodyKeys = 0x1A0;
 constexpr std::size_t kGetArmsKeys = 0x1B0;
+struct SlotCheck {
+  std::size_t offset;
+  std::uint32_t hash; // of the function in that slot on 2.50
+  const char *what;
+  std::uintptr_t address; // in this game (CheckLooks), 0 when not found
+};
+SlotCheck g_slots[] = {
+    {kIsBodyGenderMale, 4921241, "the state's IsBodyGenderMale", 0}, // 0x14075b594
+    {kGetHeadKeys, 3766105236, "the state's head keys getter", 0},   // 0x14075c9f8
+    {kGetBodyKeys, 56573295, "the state's body keys getter", 0},     // 0x1409ce0b8
+    {kGetArmsKeys, 110771572, "the state's arms keys getter", 0},    // 0x14075bfb8
+};
+ScheduleChange g_schedule = nullptr; // CheckLooks
 
 using IsMaleFn = bool (*)(const void *);
 using GetKeysFn = bool (*)(const void *, RED4ext::CName group, bool thirdPerson,
@@ -77,8 +95,34 @@ struct PendingChange {
 } // namespace
 
 namespace {
+// Whether the state's vtable holds the measured functions in the four slots.
+// Game thread; compared once per vtable.
+bool SlotsMatch(const void *object) {
+  static const std::uintptr_t *s_seen = nullptr;
+  static bool s_ok = false;
+  const auto *vtable = *reinterpret_cast<const std::uintptr_t *const *>(object);
+  if (vtable == s_seen)
+    return s_ok;
+  s_seen = vtable;
+  s_ok = InGameImage(reinterpret_cast<std::uintptr_t>(vtable));
+  std::size_t differs = 0;
+  for (const auto &slot : g_slots)
+    if (s_ok && (!slot.address || vtable[slot.offset / sizeof(void *)] != slot.address)) {
+      s_ok = false;
+      differs = slot.offset;
+    }
+  if (!s_ok)
+    FeatureOff(feature::kLookKeys,
+               std::format("the customization state's vtable is not the one measured on 2.50 "
+                           "(slot +0x{:X})",
+                           differs));
+  return s_ok;
+}
+
 bool UsableState(const RED4ext::Handle<RED4ext::game::ui::ICharacterCustomizationState> &state,
                  bool male) {
+  if (!FeatureIsOn(feature::kLookKeys))
+    return false;
   if (!state) {
     log::Warn("look: no customization state");
     return false;
@@ -89,6 +133,8 @@ bool UsableState(const RED4ext::Handle<RED4ext::game::ui::ICharacterCustomizatio
     return false;
   }
   const void *raw = state.GetPtr();
+  if (!SlotsMatch(raw))
+    return false;
   if (Slot<IsMaleFn>(raw, kIsBodyGenderMale)(raw) != male) {
     log::Error("look: the state's vtable is not the one measured (IsBodyGenderMale disagrees), "
                "not used");
@@ -99,6 +145,8 @@ bool UsableState(const RED4ext::Handle<RED4ext::game::ui::ICharacterCustomizatio
 
 std::int32_t Schedule(const RED4ext::Handle<RED4ext::ent::Entity> &entity,
                       std::shared_ptr<PendingChange> pending) {
+  if (!FeatureIsOn(feature::kLooks) || !g_schedule)
+    return -1;
   auto *changer = Red::GetRuntimeSystem<Red::world::RuntimeSystemEntityAppearanceChanger>();
   if (!changer) {
     log::Warn("look: no appearance changer");
@@ -113,8 +161,7 @@ std::int32_t Schedule(const RED4ext::Handle<RED4ext::ent::Entity> &entity,
   const std::function<void()> done = [pending, id] {
     log::Info("look: entity {:x} dressed ({} keys)", id, pending->keys.Size());
   };
-  static RED4ext::UniversalRelocFunc<ScheduleChange> schedule(kScheduleAppearanceChange);
-  schedule(changer, target, &none, &wanted, done, 0);
+  g_schedule(changer, target, &none, &wanted, done, 0);
   log::Info("look: {} keys scheduled on entity {:x}", count, id);
   return count;
 }
@@ -130,6 +177,21 @@ std::uint64_t HashOf(const std::vector<proto::AppearanceKey> &keys) {
   return hash;
 }
 } // namespace
+
+bool CheckLooks() {
+  g_schedule = Find<ScheduleChange>(feature::kLooks, "the appearance changer's schedule",
+                                    kScheduleAppearanceChange);
+  if (g_schedule)
+    FeatureOn(feature::kLooks);
+  bool keys = true;
+  for (auto &slot : g_slots) {
+    slot.address = FindAddress(feature::kLookKeys, slot.what, slot.hash);
+    keys = slot.address && keys;
+  }
+  if (keys)
+    FeatureOn(feature::kLookKeys);
+  return g_schedule && keys;
+}
 
 std::vector<proto::AppearanceKey>
 CollectLook(const RED4ext::Handle<RED4ext::game::ui::ICharacterCustomizationState> &state,

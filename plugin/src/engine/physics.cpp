@@ -17,6 +17,7 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "../log.hpp"
+#include "access.hpp"
 #include "physics.hpp"
 
 #include <windows.h>
@@ -66,18 +67,6 @@ constexpr Code kCode[] = {
     {kSlotCreate, 0x139, "488b9cf34001000033d241b8d0ff2f00488d8b88000000", "queue size"},
 };
 
-// RED4ext's own resolver: 0 for a hash this game does not have, where the
-// SDK's UniversalRelocBase::Resolve would end the process.
-std::uintptr_t Address(std::uint32_t hash) {
-  using Resolver = std::uintptr_t (*)(std::uint32_t);
-  static const auto s_resolve = [] {
-    const auto module = GetModuleHandleW(L"RED4ext.dll");
-    return module ? reinterpret_cast<Resolver>(GetProcAddress(module, "RED4ext_ResolveAddress"))
-                  : nullptr;
-  }();
-  return s_resolve ? s_resolve(hash) : 0;
-}
-
 int Nibble(char c) {
   if (c >= '0' && c <= '9')
     return c - '0';
@@ -87,7 +76,7 @@ int Nibble(char c) {
 }
 
 bool CodeMatches(const Code &code) {
-  const auto base = Address(code.hash);
+  const auto base = Resolve(code.hash);
   if (!base) {
     log::Error("physics watch: {} (hash {}) not in this game's address list", code.what, code.hash);
     return false;
@@ -149,7 +138,7 @@ std::int32_t PhysicsBacklog() {
     bool ok = true;
     for (const auto &code : kCode)
       ok = CodeMatches(code) && ok; // every mismatch named at once
-    g_system = ok ? Address(kPhysicsSystem) : 0;
+    g_system = ok ? Resolve(kPhysicsSystem) : 0;
     if (ok && !g_system) {
       log::Error("physics watch: the physics system's global (hash {}) not found", kPhysicsSystem);
       ok = false;
@@ -159,6 +148,10 @@ std::int32_t PhysicsBacklog() {
                 kPhysicsQueueCapacity);
     else
       log::Warn("physics watch: off (layout check failed); a long pause is not watched");
+    if (ok)
+      FeatureOn(feature::kPhysics);
+    else
+      FeatureOff(feature::kPhysics, "the physics queues' code differs from 2.50");
     return ok;
   }();
   if (!s_on)
@@ -171,4 +164,6 @@ std::int32_t PhysicsBacklog() {
   }
   return backlog;
 }
+
+bool CheckPhysics() { return PhysicsBacklog() >= 0; }
 } // namespace tandem::plugin::engine

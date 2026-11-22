@@ -23,6 +23,10 @@ struct WorkspotRead {
   std::uint64_t idle = 0;
 };
 
+// At the first frame (access.hpp): the two classes' RTTI sizes and the
+// system's instance lookup. Off: WorkspotOf answers None for everyone.
+bool CheckWorkspots();
+
 // Any thread: the instance is read under the system's shared lock, as the
 // game's IsActorInWorkspot does.
 WorkspotRead WorkspotOf(std::uint64_t entity);
