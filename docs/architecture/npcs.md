@@ -233,19 +233,37 @@ the first group session.
   puppet is in an attitude group of its own, `tandem_player_1` to `_3`
   (one per puppet at a time; `tandem_player`, the records' own, beyond
   that), declared as copies of the `Attitudes.Group_Player` record. A
-  group's relations are not in its record, and the only non-saved way to
-  set them, `SetAttitudeRelation`, sets attitudes between the agents in
-  the two groups at that moment, not the group relation
-  (engine-knowledge §13.17). So a puppet gets V's attitudes agent by
-  agent: once in its group, `SetAttitudeRelation` from it to every group
-  seen on an NPC near V or a puppet; then, every 2 s, each NPC within
-  60 m of V or a puppet gets the attitudes it and V have to each other on
-  the puppet's agent, once per NPC and puppet, again when the NPC's
-  attitude to V changes (a quest), forgotten 30 s after it leaves range.
-  What changed between an NPC and a puppet alone stays its own (that V
-  provoked it). An NPC that appears near a puppet sees it as friendly
-  (our groups' default) for up to 2 s. The persistent setter would set
-  the real group relations but writes the host's save: not used.
+  group's relations are not in its record: they are `Attitude` records
+  (`group1`, `group2`, `value`). `scripts/tandem/AttitudeTweak.reds`, a
+  scripted tweak (TweakXL's `ScriptableTweak`, run as the `.tweak` files
+  load), clones every `Attitude` record that names
+  `Attitudes.Group_Player` once per group of ours, the group in the
+  player's place (`Attitudes.TandemRelation<N>_<other group>`): the list
+  is the running game's, a patch's or a mod's changes included. Whether
+  the engine's relation table takes records TweakXL adds is **not yet
+  known**: each start logs
+  `attitudes: declared relations took|took in part|did NOT take: A of B
+  groups player is not friendly with read the same for tandem_player_1 …
+  (tweak: R Attitude records read, P with player, C cloned)`, read back
+  through `GetAttitudeRelation` (`cmd puppet relations` logs it again).
+  The runtime copy stays under it, for what the records cannot give and
+  as the net if they do not take; the only non-saved setter,
+  `SetAttitudeRelation`, sets attitudes between the agents in the two
+  groups at that moment, not the group relation (engine-knowledge
+  §13.17), so it works agent by agent: `SetAttitudeRelation` between a
+  puppet's group and a group seen on an NPC near V or a puppet, when the
+  declared relation is not V's (V's changed by a quest, or the records
+  did not take); and each NPC gets the attitudes it and V have to each
+  other on the puppet's agent where they differ, on the tick after it
+  came into the world (`NPCPuppet.OnGameAttached`, queued:
+  `TandemStreamKind.Npc`; `attitudes: fresh npc … engine alone:
+  same|differs, on its first tick: same`, debug) and every 2 s within
+  60 m of V or a puppet for what changed since (a quest), forgotten 30 s
+  after it leaves range. What changed between an NPC and a puppet alone
+  stays its own (that V provoked it). The police are left to `Police.reds`
+  by the runtime copy; their declared relation is `player`'s base one.
+  The persistent setter would set the real group relations but writes the
+  host's save: not used.
   Vs are friends to each other. Companions (the host's V's followers:
   Jackie, Panam, Judy, Takemura) see a guest as V does, and on the host
   take on whoever fights a guest (`TandemReactions.RallyCompanions`: an
@@ -258,9 +276,13 @@ the first group session.
   senses Body.reds grafts. `tools/game.sh cmd puppet attitude` logs each
   puppet's group and how the NPCs around V see it next to V; scenario
   `puppet-attitude` (it spawns a ganger near V so there is always an NPC
-  to compare). Verified in game: the groups are accepted. Failed twice:
-  civilians friendly to the puppet, neutral to V, and no NPC near V
-  (fixed since, to run again; engine-knowledge §13.17).
+  to compare); `puppet-attitude-fresh` fails when an NPC new to the world
+  does not see the puppet as it sees V on our first tick with it. Queries
+  (`testing.md`): `attitude group NAME`, `attitude npc ID|fresh|nearest`,
+  `attitude fresh`. Verified in game: the groups are accepted. Failed
+  twice: civilians friendly to the puppet, neutral to V, and no NPC near V
+  (fixed since, to run again; engine-knowledge §13.17). Not yet run: the
+  declared relations, the copy at the spawn.
 
 - **Whom NPCs attack** (`scripts/tandem/Threats.reds`, engine-knowledge
   §13.123): an NPC weighs each hostile threat in `AIActionTarget`, and only
@@ -341,7 +363,7 @@ the first group session.
   to verify in game with scenario `puppet-attitude`): see Inside the
   plugin. Known limits: a group seen only on devices (a turret's security
   system with no NPC of its faction near) keeps the record's default
-  attitude; a group relation V's own deeds change (if a provocation or a
+  attitude unless the declared relations took; a group relation V's own deeds change (if a provocation or a
   security breach by V changes a group relation, not a per-NPC attitude)
   reaches the puppets too; per-NPC attitudes a quest sets towards V are
   not copied.

@@ -103,6 +103,23 @@ taken)`, and no NPC was within 60 m of V when the command ran (the
   which reads back: §13.11). The persistent setter would give the real
   group copy (every NPC of the group, now and later) but writes the host's
   save; not used. [2.5-untested]
+- **Relations declared as records (2026-11-22, written, not run).**
+  `Attitude_Record.Group1()` / `Group2()` return `AttitudeGroup_Record`s
+  (flats `group1`, `group2`: foreign keys), `Value()` a String
+  (final.reds 515340). No dump of the game's TweakDB is in the repository
+  or the caches, so the player's records are read from the running game:
+  TweakXL 1.12.2's script API (`red4ext/plugins/TweakXL/Scripts/TweakXL.Global.reds`:
+  `TweakDBInterface.GetRecords(type: CName)`, `TweakDBManager.CloneRecord`,
+  `SetFlat`, `UpdateRecord`, class `ScriptableTweak` with `OnApply`)
+  clones each one that names `Attitudes.Group_Player` for our groups
+  (`scripts/tandem/AttitudeTweak.reds`). Unknown, each settled by one
+  start's `attitudes: declared relations …` line: the type name
+  `GetRecords` wants (`Attitude`, `Attitude_Record` and
+  `gamedataAttitude_Record` are tried: `R Attitude records read` is 0 if
+  none is right); whether the packed matrix is built from every `Attitude`
+  record in TweakDB when the attitude manager starts, TweakXL's included
+  (`took`), or from a list baked before (`did NOT take`: the records
+  exist, `C cloned` > 0, and the table still reads friendly). [2.5-untested]
 - **Why one group per V**: vanilla turns an NPC hostile to its target's
   whole group, `AttitudeAgent.SetAttitudeTowardsAgentGroup(target, owner,
 hostile)` (`TryChangingAttitudeToHostile` 169933, companions 152568);

@@ -42,6 +42,17 @@
 //                         the first remote player's car copy here: stock,
 //                         "primary R,G,B [secondary R,G,B] [lights HUE]",
 //                         "unique RECORD"; none: no such car
+//   attitude group NAME   "V a/b puppet c/d": the group's relation to V's
+//                         group / V's to it, then to the first puppet's
+//                         group / its to it (the engine's group table;
+//                         0 friendly, 1 neutral, 2 hostile)
+//   attitude npc WHICH    the same between agents, with the NPC's group:
+//                         WHICH is a shared NPC's id, `fresh` (the last NPC
+//                         that came into the world beside a puppet) or
+//                         `nearest` (to our V, within 60 m)
+//   attitude fresh        "N same M differ": the NPCs that came beside a
+//                         puppet, by what the engine's relations alone gave
+//                         it next to V's (before any copy of ours)
 //   wanted                our V's wanted level, 0..5 (the prevention
 //                         system's own)
 //   upload                the upload running on our V (an NPC's hack or
@@ -152,6 +163,8 @@ public class TandemTestQuery {
       } else if IsDefined(paints) {
         value = "unknown";
       }
+    } else if Equals(what, "attitude") {
+      value = TandemTestQuery.Attitude(game, system, arg, words[4]);
     } else if Equals(what, "wanted") {
       let prevention = GameInstance.GetScriptableSystemsContainer(game).Get(n"PreventionSystem") as PreventionSystem;
       if IsDefined(prevention) {
@@ -166,7 +179,7 @@ public class TandemTestQuery {
       value = "unknown";
     }
     if Equals(value, "unknown") {
-      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], held [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks, paint [puppet], wanted, upload)");
+      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], held [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks, paint [puppet], attitude group NAME | npc ID|fresh|nearest | fresh, wanted, upload)");
       return;
     }
     TandemNative.Log(s"test query: \(asked) = \(value)");
@@ -192,6 +205,59 @@ public class TandemTestQuery {
     let rightName = TDBID.IsValid(right) ? TDBID.ToStringDEBUG(right) : "none";
     let leftName = TDBID.IsValid(left) ? TDBID.ToStringDEBUG(left) : "none";
     return s"\(rightName) \(leftName) \(dual ? "dual" : "single")";
+  }
+
+  // The first puppet next to V: with a group, an NPC, or the count of
+  // fresh NPCs (Attitudes.reds).
+  private static func Attitude(game: GameInstance, system: ref<TandemSystem>, arg: String, which: String) -> String {
+    let attitudes = system.Attitudes();
+    let players = system.PuppetPlayers();
+    if !IsDefined(attitudes) {
+      return "none";
+    }
+    if Equals(arg, "fresh") {
+      return attitudes.QueryFresh();
+    }
+    let body: ref<GameObject>;
+    if ArraySize(players) > 0 {
+      body = system.PuppetOf(players[0]);
+    }
+    if !IsDefined(body) || !IsDefined(body.GetAttitudeAgent()) || StrLen(which) == 0 {
+      return "none";
+    }
+    if Equals(arg, "group") {
+      return attitudes.QueryGroup(StringToName(which), body.GetAttitudeAgent().GetAttitudeGroup());
+    }
+    if !Equals(arg, "npc") {
+      return "unknown";
+    }
+    let id = EntityID.FromHash(0ul);
+    if Equals(which, "fresh") {
+      id = attitudes.LastFresh();
+    } else if Equals(which, "nearest") {
+      let player = GetPlayer(game);
+      let best = 3600.0;
+      if IsDefined(player) {
+        let around = player.GetNPCsAroundObject(60.0);
+        for npc in around {
+          let agent = npc.GetAttitudeAgent();
+          let distance = Vector4.DistanceSquared(npc.GetWorldPosition(), player.GetWorldPosition());
+          if IsDefined(agent) && !TandemAttitudes.IsOurs(agent.GetAttitudeGroup()) && distance < best {
+            best = distance;
+            id = npc.GetEntityID();
+          }
+        }
+      }
+    } else {
+      let npcs = system.Npcs();
+      if IsDefined(npcs) {
+        id = npcs.EntityOfNpc(Cast<Uint32>(StringToInt(which, 0)));
+      }
+    }
+    if !EntityID.IsDefined(id) {
+      return "none";
+    }
+    return attitudes.QueryNpc(GameInstance.FindEntityByID(game, id) as GameObject, body);
   }
 
   private static func Health(game: GameInstance, object: ref<GameObject>) -> String {
