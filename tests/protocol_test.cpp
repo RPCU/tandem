@@ -1195,7 +1195,7 @@ TEST_CASE("what a proxy cannot do survives encoding, for its owner: reliable, sm
   RoundTrips(
       WeakSpotHit{.player = 2, .npc = 7, .record = 0x1122334455ULL, .index = 1, .drain = 35.5f});
   RoundTrips(HackTraced{.player = 3, .npc = 9});
-  CHECK(Message(WeakSpotHit{}).index() == Message(ScenePlace{}).index() + 1); // appended
+  CHECK(Message(WeakSpotHit{}).index() == Message(StoryGates{}).index() + 1); // appended
   CHECK(Message(HackTraced{}).index() == Message(WeakSpotHit{}).index() + 1);
   CHECK(std::string(NameOf(WeakSpotHit{})) == "WeakSpotHit");
   CHECK(std::string(NameOf(HackTraced{})) == "HackTraced");
