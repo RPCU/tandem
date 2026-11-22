@@ -152,7 +152,8 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
   } else if (key == "story" || key == "quest_freeze" || key == "quest_interact" ||
              key == "recorder" || key == "recorder_pose" || key == "friendly_fire" ||
              key == "markers" || key == "party_hud" || key == "enemy_scaling" ||
-             key == "death_ledger" || key == "death_bodies" || key == "overlap_despawn") {
+             key == "death_ledger" || key == "death_bodies" || key == "overlap_despawn" ||
+             key == "native_prompts") {
     auto &flag = key == "story"             ? config.story
                  : key == "quest_freeze"    ? config.questFreeze
                  : key == "quest_interact"  ? config.questInteract
@@ -164,6 +165,7 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
                  : key == "death_ledger"    ? config.deathLedger
                  : key == "death_bodies"    ? config.deathBodies
                  : key == "overlap_despawn" ? config.overlapDespawn
+                 : key == "native_prompts"  ? config.nativePrompts
                                             : config.recorderPose;
     if (value == "on" || value == "true")
       flag = true;
@@ -419,6 +421,8 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return config.overlap;
   if (key == "overlap_despawn")
     return OnOff(config.overlapDespawn);
+  if (key == "native_prompts")
+    return OnOff(config.nativePrompts);
   if (key == "nameplates")
     return config.nameplates == presence::Nameplates::Always ? "always"
            : config.nameplates == presence::Nameplates::Off  ? "off"
