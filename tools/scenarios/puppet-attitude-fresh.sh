@@ -1,5 +1,7 @@
 # An NPC that comes into the world beside a joined player's puppet sees it as it sees V from its first tick, not 2 s later
 # shellcheck shell=bash disable=SC2317,SC2154
+# Whether the declared relations take is what this reads (below).
+allow_fallback "attitude relations"
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female
 expect 'joined \(player [0-9]+' 20

@@ -1,5 +1,7 @@
 # A player holds a weapon from a mod our game lacks: a vanilla one of its type in the puppet's hand, said once
 # shellcheck shell=bash disable=SC2317
+# On purpose: a record of a mod our game lacks.
+allow_fallback "record substituted"
 ensure host
 # No game has Items.Tandem_Modded_Pistol: a mod's handgun, as a mod would add it.
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female \

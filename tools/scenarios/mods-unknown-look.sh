@@ -1,5 +1,7 @@
 # A player wears clothes from a mod our game lacks: plain trousers for theirs, their jacket left off, one notice for both
 # shellcheck shell=bash disable=SC2317
+# On purpose: records of a mod our game lacks.
+allow_fallback "record substituted"
 ensure host
 # No game has these: a mod's jacket and trousers.
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female \

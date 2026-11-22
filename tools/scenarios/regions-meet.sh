@@ -1,5 +1,7 @@
 # As host: a player with NPCs of its own walks into our region (proxies of its NPCs, a hit on one goes to it), then walks off leaving them: handed over to us, same bodies, their brains on
 # shellcheck shell=bash disable=SC2317
+# The handed-over NPC may need the respawn of regions.md §4 (below).
+allow_fallback "proxy respawned"
 ensure host
 # Two NPCs of our own: they stay ours throughout.
 cmd npc spawn 2

@@ -128,6 +128,11 @@ tasks:
       - python3 tools/scenarios-check.py
       - python3 tools/scenarios-patterns.py
 
+  degraded:check:
+    desc: "No silent fallback: every degradation id used is in the catalogue, with its texts (English + French) and its doc row"
+    cmds:
+      - python3 tools/degraded.py lint
+
   scenario:
     desc: "In-game scenarios against the mock player (task scenario -- NAME... | all | list)"
     deps: [build]
@@ -275,6 +280,7 @@ tasks:
       - task: menu:check
       - task: threads:check
       - task: scenarios:check
+      - task: degraded:check
       - task: scripts:check
       - task: k8s:check
       - task: docs:check

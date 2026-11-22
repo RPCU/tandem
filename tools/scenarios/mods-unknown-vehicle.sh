@@ -1,5 +1,7 @@
 # A player drives a car from a mod our game lacks: a vanilla two-seater copy spawns and the ride works, said once
 # shellcheck shell=bash disable=SC2317
+# On purpose: a record of a mod our game lacks.
+allow_fallback "record substituted"
 ensure host
 # No game has Vehicle.tandem_modded_coupe: a mod's two-seat car.
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode drive --body male \

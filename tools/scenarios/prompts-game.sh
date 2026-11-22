@@ -1,5 +1,7 @@
 # As host, the Trade prompt on another player is the game's own interaction: the puppet's Interaction component (its own or the donor's), our choice on its GenericTalk layer, the layer active and the game's prompt holding "Trade" once our V looks at the body from 1.2 m; drawn by us again after `prompts off`; and a choice event on the body asks the trade
 # shellcheck shell=bash disable=SC2317,SC2154
+# On purpose: `prompts off` draws them for a while, and the mock player is told.
+allow_fallback "drawn prompts"
 # The mock player copies our V 1.2 m beside it (mirror), so it stays in
 # reach wherever our V turns. The key itself is not pressed here: `prompts
 # press` queues the game's choice event on the body (the way from the event
