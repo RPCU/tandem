@@ -136,6 +136,8 @@ public class TandemTraffic {
   private let m_despawnRead: Bool;
   // Ours: how many times a car stopped for a partner's V on foot.
   private let m_yields: Int32;
+  // Ours: how many shared vehicles gave their place to a nearer one.
+  private let m_swapped: Int32;
 
   public static func ShareRange() -> Float {
     return 120.0;
@@ -248,6 +250,7 @@ public class TandemTraffic {
     ArrayClear(this.m_ramAt);
     ArrayClear(this.m_despawnAsked);
     this.m_heldBack = 0;
+    this.m_swapped = 0;
     this.m_next = 1u;
   }
 
@@ -281,7 +284,7 @@ public class TandemTraffic {
     }
     let area = TandemArea.Owns() ? "ours" : s"player \(TandemRegions.AreaOwner(this.m_you))'s";
     let shared = TandemStreet.Shared();
-    return s"count: \(ArraySize(this.m_cars)) (\(mine) run by us, \(ArraySize(this.m_cars) - mine) shown as proxies; \(parked) parked, \(wrecks) wrecks, \(own) bodies of our own world), area \(area), \(ArraySize(shared)) proxies in the session's record, \(ArraySize(this.m_live)) vehicles in our world, \(ArraySize(this.m_taken)) taken by players, \(ArraySize(this.m_retired)) proxies kept for reuse, \(this.m_given) given, \(this.m_taken2) taken over, \(bodies) proxy body(ies) here, \(this.m_yields) stop(s) for a player on foot";
+    return s"count: \(ArraySize(this.m_cars)) (\(mine) run by us, \(ArraySize(this.m_cars) - mine) shown as proxies; \(parked) parked, \(wrecks) wrecks, \(own) bodies of our own world), area \(area), \(ArraySize(shared)) proxies in the session's record, \(ArraySize(this.m_live)) vehicles in our world, \(ArraySize(this.m_taken)) taken by players, \(ArraySize(this.m_retired)) proxies kept for reuse, \(this.m_given) given, \(this.m_taken2) taken over, \(bodies) proxy body(ies) here, \(this.m_yields) stop(s) for a player on foot, \(this.m_swapped) swapped for a nearer one";
   }
 
   // The shared vehicle a body is (0: none), whoever runs it.
@@ -977,6 +980,8 @@ public class TandemTraffic {
     // higher-ranked player's region, its game announces the street).
     let live: array<wref<VehicleObject>>;
     let heldBack = 0;
+    let waiting: ref<VehicleObject>;
+    let waitingNear = 0.0;
     for vehicle in this.m_live {
       if IsDefined(vehicle) {
         ArrayPush(live, vehicle);
@@ -992,31 +997,67 @@ public class TandemTraffic {
         }
         // A racer of our street race is ours to share wherever it drives.
         let racer = !held && !away && TandemRaces.Racer(this.m_game, vehicle);
-        if (owns || racer) && !held && !away && !IsDefined(this.FindBody(body)) && this.Eligible(vehicle, body, entities) && ArraySize(this.m_cars) < TandemTraffic.MaxShared() {
-          if TandemTraffic.Nearest(at, viewers) <= (racer ? TandemTraffic.RacerRange() : TandemTraffic.ShareRange()) {
-            let known = new TandemCar();
-            known.id = TandemStreet.MakeId(this.m_you, this.m_next);
-            this.m_next += 1u;
-            known.body = body;
-            known.record = vehicle.GetRecordID();
-            known.appearance = vehicle.GetCurrentAppearanceName();
-            known.flags = this.FlagsOf(vehicle);
-            known.health = 1.0;
-            known.mine = true;
-            known.seen = true;
-            ArrayPush(this.m_cars, known);
-            // A placed vehicle is named by its own id: the same in every game.
-            let entity = EntityID.IsStatic(body) ? body : EntityID.FromHash(0ul);
-            TandemStreet.SendSpawn(known.id, known.record, known.appearance, entity, at, vehicle.GetWorldOrientation(), known.flags);
-            ArrayPush(ids, known.id);
-            ArrayPush(positions, at);
-            ArrayPush(orientations, vehicle.GetWorldOrientation());
-            ArrayPush(velocities, vehicle.GetLinearVelocity());
+        if (owns || racer) && !held && !away && !IsDefined(this.FindBody(body)) && this.Eligible(vehicle, body, entities) {
+          let near = TandemTraffic.Nearest(at, viewers);
+          if near <= (racer ? TandemTraffic.RacerRange() : TandemTraffic.ShareRange()) {
+            if ArraySize(this.m_cars) < TandemTraffic.MaxShared() {
+              let known = this.Announce(vehicle, body, at);
+              ArrayPush(ids, known.id);
+              ArrayPush(positions, at);
+              ArrayPush(orientations, vehicle.GetWorldOrientation());
+              ArrayPush(velocities, vehicle.GetLinearVelocity());
+            } else if !racer && (!IsDefined(waiting) || near < waitingNear) {
+              // The share is full: the nearest one left out may take the
+              // place of a far one (below).
+              waiting = vehicle;
+              waitingNear = near;
+            }
           }
         }
       }
     }
     this.m_live = live;
+    // The nearest first: with the share full (kMaxShared), a vehicle of ours
+    // left out nearer a V than the farthest one shared by 20 m or more (no
+    // flicker at the edge) takes its place, one a round. Parked cars by the
+    // start of a drive held the share full while the traffic around the
+    // riders went unshared (a ride's host: 53 vehicles, 48 shared,
+    // 2026-11-22).
+    if IsDefined(waiting) {
+      let far: ref<TandemCar>;
+      let farNear = 0.0;
+      for car in this.m_cars {
+        let farBody = car.mine && car.seen ? TandemTraffic.Body(this.m_game, car.body) : null;
+        if IsDefined(farBody) && !TandemRaces.Racer(this.m_game, farBody) {
+          let d = TandemTraffic.Nearest(farBody.GetWorldPosition(), viewers);
+          if d > farNear {
+            far = car;
+            farNear = d;
+          }
+        }
+      }
+      if IsDefined(far) && waitingNear + 20.0 <= farNear {
+        far.seen = false;
+        let i = ArraySize(ids) - 1;
+        while i >= 0 {
+          if ids[i] == far.id {
+            ArrayErase(ids, i);
+            ArrayErase(positions, i);
+            ArrayErase(orientations, i);
+            ArrayErase(velocities, i);
+          }
+          i -= 1;
+        }
+        let at = waiting.GetWorldPosition();
+        let swapped = this.Announce(waiting, waiting.GetEntityID(), at);
+        ArrayPush(ids, swapped.id);
+        ArrayPush(positions, at);
+        ArrayPush(orientations, waiting.GetWorldOrientation());
+        ArrayPush(velocities, waiting.GetLinearVelocity());
+        this.m_swapped += 1;
+        TandemNative.LogDebug(s"street: vehicle \(far.id) (\(farNear) m from the nearest V) gives its place to a nearer one (\(waitingNear) m)");
+      }
+    }
     if heldBack != this.m_heldBack {
       this.m_heldBack = heldBack;
       TandemNative.Log(s"street: \(heldBack) crowd vehicle(s) of our own held back (inside a higher-ranked player's region)");
@@ -1037,6 +1078,25 @@ public class TandemTraffic {
     if ArraySize(ids) > 0 {
       TandemStreet.SendStates(ids, positions, orientations, velocities, viewers);
     }
+  }
+
+  // A vehicle of our world shared from now on (TrafficSpawn).
+  private func Announce(vehicle: ref<VehicleObject>, body: EntityID, at: Vector4) -> ref<TandemCar> {
+    let known = new TandemCar();
+    known.id = TandemStreet.MakeId(this.m_you, this.m_next);
+    this.m_next += 1u;
+    known.body = body;
+    known.record = vehicle.GetRecordID();
+    known.appearance = vehicle.GetCurrentAppearanceName();
+    known.flags = this.FlagsOf(vehicle);
+    known.health = 1.0;
+    known.mine = true;
+    known.seen = true;
+    ArrayPush(this.m_cars, known);
+    // A placed vehicle is named by its own id: the same in every game.
+    let entity = EntityID.IsStatic(body) ? body : EntityID.FromHash(0ul);
+    TandemStreet.SendSpawn(known.id, known.record, known.appearance, entity, at, vehicle.GetWorldOrientation(), known.flags);
+    return known;
   }
 
   // Ours: a traffic car we run stops for a partner's V on foot in its lane,
@@ -1115,6 +1175,11 @@ public class TandemTraffic {
   // owner says. One line each: two games' lists are compared by id.
   public func ListReport() -> Void {
     let bodies = 0;
+    // Where our V is (two games' lists are compared around both Vs), with
+    // the world's time (lists of two games taken a moment apart).
+    let player = GetPlayer(this.m_game);
+    let here = IsDefined(player) ? player.GetWorldPosition() : new Vector4(0.0, 0.0, 0.0, 1.0);
+    TandemNative.Log(s"street list: our V at \(here.X) \(here.Y) \(here.Z)");
     for car in this.m_cars {
       let body = TandemTraffic.Body(this.m_game, car.body);
       if IsDefined(body) {
@@ -1128,12 +1193,32 @@ public class TandemTraffic {
             off = Vector4.Distance(at, to);
           }
         }
-        TandemNative.Log(s"street list: \(car.id) \(car.mine ? "ours" : "proxy") \(TDBID.ToStringDEBUG(car.record)) \(NameToString(body.GetCurrentAppearanceName())) at \(at.X) \(at.Y) \(at.Z) yaw \(body.GetWorldYaw()) flags \(car.flags) off \(off)");
+        let velocity = body.GetLinearVelocity();
+        TandemNative.Log(s"street list: \(car.id) \(car.mine ? "ours" : "proxy") \(TDBID.ToStringDEBUG(car.record)) \(NameToString(body.GetCurrentAppearanceName())) at \(at.X) \(at.Y) \(at.Z) yaw \(body.GetWorldYaw()) flags \(car.flags) off \(off) v \(velocity.X) \(velocity.Y)");
       } else {
         TandemNative.Log(s"street list: \(car.id) \(car.mine ? "ours" : "proxy") \(TDBID.ToStringDEBUG(car.record)) no body");
       }
     }
-    TandemNative.Log(s"street list: \(ArraySize(this.m_cars)) vehicle(s), \(bodies) with a body");
+    // The vehicles of our own world nobody else is shown, within 150 m of
+    // our V, and why (held back in another game's area, not shared by kind,
+    // farther than the share range from every V, the share's cap).
+    // (Not tandem's own spawns: the players' car copies and the proxies.)
+    let unshared = 0;
+    let owns = TandemArea.Owns();
+    let entities = GameInstance.GetDynamicEntitySystem();
+    for vehicle in this.m_live {
+      if IsDefined(vehicle) && !IsDefined(this.FindBody(vehicle.GetEntityID())) && !ArrayContains(this.m_taken, vehicle.GetEntityID()) && !entities.IsManaged(vehicle.GetEntityID()) && !vehicle.IsPlayerMounted() {
+        let at = vehicle.GetWorldPosition();
+        if Vector4.Distance(at, here) <= TandemTraffic.DropRange() {
+          let body = vehicle.GetEntityID();
+          let why = this.HeldBack(vehicle, body, at, owns, entities) ? "held back" : !this.Eligible(vehicle, body, entities) ? "not shared" : !owns ? "another game's area" : ArraySize(this.m_cars) >= TandemTraffic.MaxShared() ? "cap" : "not yet";
+          let velocity = vehicle.GetLinearVelocity();
+          TandemNative.Log(s"street list: own \(TDBID.ToStringDEBUG(vehicle.GetRecordID())) at \(at.X) \(at.Y) \(at.Z) unshared (\(why)) v \(velocity.X) \(velocity.Y)");
+          unshared += 1;
+        }
+      }
+    }
+    TandemNative.Log(s"street list: \(ArraySize(this.m_cars)) vehicle(s), \(bodies) with a body, \(unshared) of our own unshared within \(TandemTraffic.DropRange()) m");
   }
 
   // (test: `street lanes`) the cars we run that someone drives, nearest
@@ -1450,6 +1535,12 @@ public final func TandemYield(stop: Bool) -> Void {
 // (DelamainTaxi.GoToFreeRoam, final.reds:217147).
 @addMethod(VehicleObject)
 public final func TandemDriveOn(velocity: Vector4) -> Void {
+  // Ours from now on: out of the kinematic state our proxies are held in
+  // (TandemSystem.MoveBody), then awake.
+  let system = TandemSystem.Of(this.GetGame());
+  if IsDefined(system) {
+    system.ReleaseBody(this.GetEntityID());
+  }
   this.PhysicsWakeUp();
   if Vector4.Length(velocity) > 0.5 {
     let impulse = new PhysicalImpulseEvent();
