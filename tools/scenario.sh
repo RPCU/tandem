@@ -225,10 +225,17 @@ pilot() {
   [ "$status" = 0 ] || fail "the pilot's routine $1 did not pass ($cache/pilot.log)"
 }
 reset() {
-  local result status=0
+  local result status=0 silent back
+  silent=$(watchdog_lines silent)
+  back=$(watchdog_lines back)
   result=$($game test-reset 2>&1) || status=$?
   echo "  ${result:-test reset: no answer}"
   [ "$status" = 0 ] || fail "the game is not in its test state"
+  # The reset's teleport to the test field from far away goes through a
+  # loading screen (the watchdog's "silent" line, which scenarios reject):
+  # wait it out and mark after it (comms-objective on instance b,
+  # 2026-11-22).
+  past_loading "$silent" "$back"
 }
 sessioned=0
 host_world() {
@@ -485,8 +492,9 @@ on_game_thread() {
 # catalogue, checked by task degraded:check), and the check at its end: the
 # game's registry, then what the game told the mock player.
 # Allowed everywhere: the mock player sends no look unless --look, so its
-# puppet wears the stand-in body ("look not received").
-degraded_expected=() degraded_allowed=('look not received')
+# puppet wears the stand-in body ("look not received", and "stand-in look"
+# when no V body is at hand).
+degraded_expected=() degraded_allowed=('look not received' 'stand-in look')
 expect_degraded() {
   degraded_expected+=("$1")
   echo "  declared: the game runs without '$1'"
@@ -634,7 +642,7 @@ run() {
       reset
     fi
     referee_from=$(wc -l <"$peer_log" 2>/dev/null || echo 0)
-    degraded_expected=() degraded_allowed=('look not received')
+    degraded_expected=() degraded_allowed=('look not received' 'stand-in look')
     # shellcheck source=/dev/null
     source "$file"
     # What the mock player heard broke no protocol or authority rule.
