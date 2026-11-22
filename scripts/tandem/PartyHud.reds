@@ -766,6 +766,13 @@ public class TandemPartyHud {
       component = slots.GetName();
       let there = WorldPosition.ToVector4(WorldTransform.GetWorldPosition(transform));
       height = there.Z - feet.Z;
+      // Measured on a body that lies (downed), sits or is mid-jump, the
+      // slot's height above the feet is no standing one, and the lift from
+      // it put the plate at the top of the screen once the body stood
+      // (respawn-point, 2026-11-22): a standing chest's or the usual one.
+      if height < 1.0 || height > 1.8 {
+        height = 1.35;
+      }
     }
     // The slot sits where the game hangs a marker (roleMappin: at the chest,
     // 2026-11-22: the plate drew on Panam's chest); the plate goes 2 m above

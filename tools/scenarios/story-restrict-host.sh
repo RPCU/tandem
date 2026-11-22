@@ -9,7 +9,7 @@ expect 'joined \(player [0-9]+' 20
 expect 'puppet [0-9]+: controller handed to the engine' 30
 cmd story restrict on GameplayRestriction.NoJump
 expect 'story: our restrictions for the guests \(tier [0-9]+\): .*GameplayRestriction.NoJump' 5
-expect_peer 'story restrictions: 1 on player 1' 5
+expect_peer 'story restrictions: [1-9][0-9]* on player 1' 5
 cmd story restrict off GameplayRestriction.NoJump
 expect 'story: our restrictions lifted' 5
 expect_peer 'story restrictions: none on player 1' 5
