@@ -178,8 +178,7 @@ body(ies) that do not follow, N refused, N frame(s) our seat's car was
 not teleported, largest error E m in the last 10 to 20 s`. Scenarios
     `ride-traffic`, `ride-kinematic`.
 
-- **A puppet in its seat** (`TandemSystem.CheckSeat`; written 2026-11-22,
-  not yet run in game). Measured on two games (`vehicle ride watch`,
+- **A puppet in its seat** (`TandemSystem.CheckSeat`, `Remount`). Measured on two games (`vehicle ride watch`,
   `scripts/tandem/RideWatch.reds`: a seated puppet's origin and hips in its
   car's frame): on the driver's game the rider's puppet, in the real car,
   stayed within 4 mm of where it sat at rest up to 16 m/s; on the rider's
@@ -191,13 +190,26 @@ not teleported, largest error E m in the last 10 to 20 s`. Scenarios
   farther than 0.5 m from its seat (the car's own slot, from whichever slot
   component has it; out of the car's box when no slot reads), it is seated
   again, five times at most in a row (`player N: … m off its seat …: seated
-again`).
+again`): in place for a driver's seat or a seat of the car our V rides in
+  (unseated, the driver's empty seat put our riding V at the copy's wheel and
+  our game drove it away), else out and in. A seat the record lists and the
+  body has no slot for (the back seats of a two-seater) is never given
+  (`FreeSlot`): a V seated there sat at the car's origin. Two rides after
+  it (2026-11-22, teleports, up to 38 m/s, a forced reseat at speed): both
+  puppets' origins within 0.1 mm of their seat, hips within 0.15 m, no
+  wheel taken, both Vs at 100.
 - **The moment a copy is drawn at** (`sync::RenderClock`, `Runtime::VehicleOf`,
   `TrafficOf`; not yet run in game): it runs with our own clock and moves
   toward the host clock less the delay by at most a tenth of the time
   passed, so a step of the clock estimate or of the body's delay is spread
   over frames (at 20 m/s a 10 ms step was a 20 cm jolt under a passenger's
   camera); a gap over 250 ms is taken at once.
+- **The every-other-frame hold stays** (teleport path), measured on the
+  riding guest 2026-11-22: the copy's acceleration rms 565 m/s² with it
+  (78 % of frames over 200), 305 without it, the host's own car 75 to 116;
+  the smoothed moment changed nothing measurable (686); but without the
+  hold 260 proxy bodies in 50 s never came (cars missing from the
+  passenger's street). The jolts go only with the kinematic path.
 - **Ride tests**: `vehicle ride watch` (said and started over: our car's
   acceleration and jerk frame by frame, rms, largest, frames over 10, 50
   and 200 m/s², and each seated puppet in its car's frame), `vehicle camera

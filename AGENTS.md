@@ -179,6 +179,10 @@ build slots) and copies the DLL, `.pdb` and `tandem-peer` back; then
   `GetWorldPosition().X` from some other variable: the police forgot
   every remote V's level on the tick it was learnt (2026-11-21;
   `tools/scripts-temporaries.py`).
+- **Keep `TandemSystem.RunCommand` from growing**: a test command goes in
+  a command function of its own (`RideCommand`, `CoopCommand`): eight more
+  branches there and the game died at its next command (a call through a
+  null pointer on the script thread, 2026-11-22).
 - **A hook that may run on a job thread only reads, calls the wrapped
   method and enqueues** (`TandemStreaming.QueueStreamed`, or another native
   that only enqueues); its system acts on the tick. Such hooks: a wrap of a

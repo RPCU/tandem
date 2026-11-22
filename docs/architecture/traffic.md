@@ -209,7 +209,7 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
 
 ## Traffic lights
 
-Written 2026-11-22, not yet run in game. The game runs each crossing natively and tells each light entity its colour
+Run in game 2026-11-22 (a ride, the guest following the host: 736 colours heard, 153 shown, the same light red on both at 53 m). The game runs each crossing natively and tells each light entity its colour
 (`TrafficLightChangeEvent`; engine facts §13.156); two games ran their
 crossings apart, green on one screen and red on the other. **The area
 owner's lights are the truth** (`scripts/tandem/Lights.reds`,
