@@ -24,10 +24,10 @@ cmd vehicle probe
 expect 'vehicle probe: [0-9]+ frames' 10
 cmd vehicle probe stop
 # How they were moved: by teleports (the default), our seat's car not in the
-# frames a body of ours waited to spawn; or by the engine's kinematic move
-# (kinematic_ride = on), each body following.
+# frames a body of ours waited to spawn; or by the engine's own move
+# (vehicle_move = kinematic or velocity: ride-kinematic), each body following.
 cmd vehicle moves
-expect 'vehicle moves: path (teleport|kinematic), ' 5
+expect 'vehicle moves: path (teleport|kinematic|velocity), ' 5
 expect 'vehicle moves: .* 0 body\(ies\) that do not follow, 0 refused' 5
 query riding mounted
 expect_value "$riding" '~' '^Vehicle\.v_standard2_archer_hella_player seat_[a-z_]+ [0-9]+$'

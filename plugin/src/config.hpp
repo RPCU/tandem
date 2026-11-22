@@ -99,12 +99,12 @@
 //                        ; asked to despawn (a probe, untested) (ini only)
 //   saves = on           ; off: this game never saves (a test game: locked from
 //                        ; its first tick until it ends) (ini only)
-//   kinematic_ride = off ; on: the vehicles other games run (their cars, their
-//                        ; traffic) are moved by the engine's kinematic vehicle
-//                        ; move instead of teleported every frame (in game
-//                        ; 2026-11-22: it works, costs frames and a guest lost
-//                        ; its ride once: vehicles.md "How a copy is moved")
-//                        ; (ini only)
+//   vehicle_move = teleport ; how the vehicles other games run (their cars, their
+//                        ; traffic) are moved here: teleport (every frame),
+//                        ; kinematic (a kinematic body the engine puts where its
+//                        ; owner says), velocity (the engine's move on a simulated
+//                        ; body); vehicles.md "How a copy is moved" (ini only).
+//                        ; kinematic_ride = on, its older form: velocity
 //   death_ledger = on    ; off: placed NPCs another player killed in the session
 //                        ; stay alive in our game (ini only)
 //   death_bodies = on    ; off: no body where a placed NPC another player
@@ -259,7 +259,13 @@ struct Config {
   // vendor are the game's own interactions (scripts/tandem/Prompts.reds);
   // off: all drawn by us, as before.
   bool nativePrompts{true};
-  bool kinematicRide{false};
+  // How the vehicles other games run are moved here (vehicles.md, "How a
+  // copy is moved"): "teleport" (every frame, the measured default),
+  // "kinematic" (a kinematic body put where its owner says by the engine's
+  // own move) or "velocity" (the engine's move on a simulated body: the
+  // 2026-11-22 kinematic_ride = on). kinematic_ride = on is read as
+  // "velocity".
+  std::string vehicleMove{"teleport"};
   // off: a test game, which never saves (tools/instance.sh, tools/game.sh).
   bool saves{true};
   // Where it was read from (the settings page writes there).

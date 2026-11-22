@@ -135,6 +135,13 @@ public class TandemSystem extends ScriptableSystem {
   private let m_moveRead: Bool;
   private let m_savesRead: Bool;
   private let m_moveKinematic: Bool;
+  // The kinematic path (vehicle_move = kinematic): each body moved is held
+  // in the engine's kinematic state, and given its physics back once
+  // nothing moves it (TickHeld).
+  private let m_moveHold: Bool;
+  private let m_moveMode: String;
+  private let m_held: array<ref<TandemMoved>>;
+  private let m_heldReleased: Int32;
   private let m_movers: array<ref<TandemMoved>>;
   private let m_movedKinematic: Int32;
   private let m_movedTeleport: Int32;
@@ -1248,6 +1255,7 @@ public class TandemSystem extends ScriptableSystem {
       this.m_presence.Tick(this.Now(), this, this.m_you);
     }
     this.FollowLentCars();
+    this.TickHeld();
     this.Rebuild();
     TandemNative.PerfMark(11);
     // Our ride and the others' (the NCART, rides, quest scene vehicles).
@@ -2003,13 +2011,41 @@ public class TandemSystem extends ScriptableSystem {
         this.m_vehicleProbe.Stop();
         this.m_vehicleProbe = null;
       }
+    } else if Equals(command, "vehicle probe ride") {
+      // (test) our V into the probe car's front passenger seat.
+      let probe = IsDefined(this.m_vehicleProbe) ? this.m_vehicleProbe.Body() : null;
+      let player = GetPlayer(this.GetGameInstance());
+      if IsDefined(probe) {
+        let slot = TandemVehicles.FreeSlot(this.GetGameInstance(), probe, n"seat_front_right", player.GetEntityID());
+        if IsNameValid(slot) && !VehicleComponent.IsDriverSlot(slot) {
+          TandemVehicles.Seat(this.GetGameInstance(), player, probe, slot);
+          this.m_rideCar = probe.GetEntityID();
+          this.m_rideSlot = slot;
+          TandemNative.Log(s"vehicle probe: our V in the probe car, seat \(NameToString(slot))");
+        }
+      } else {
+        TandemNative.Log("vehicle probe: no probe car");
+      }
     } else if StrBeginsWith(command, "vehicle probe") {
       if IsDefined(this.m_vehicleProbe) {
         this.m_vehicleProbe.Stop();
       }
-      let record = StrLen(command) > 14 ? StrAfterFirst(StrAfterFirst(command, " "), " ") : "Vehicle.v_standard2_archer_hella_player";
+      // "vehicle probe [RECORD] [PATH]", in either order.
+      let record = "Vehicle.v_standard2_archer_hella_player";
+      let path = "teleport";
+      let words = StrSplit(command, " ");
+      let w = 2;
+      while w < ArraySize(words) {
+        let word = words[w];
+        if StrBeginsWith(word, "Vehicle.") {
+          record = word;
+        } else if StrLen(word) > 0 {
+          path = word;
+        }
+        w += 1;
+      }
       this.m_vehicleProbe = new TandemVehicleProbe();
-      this.m_vehicleProbe.Start(this.GetGameInstance(), record);
+      this.m_vehicleProbe.Start(this.GetGameInstance(), record, path);
     } else if Equals(command, "pose stream") {
       TandemNative.PoseStreamReport();
     } else if Equals(command, "pose loop") {
@@ -4014,24 +4050,78 @@ public class TandemSystem extends ScriptableSystem {
     return 8.0;
   }
 
-  // The path of this run, read once and said once: the engine's kinematic
-  // vehicle move (engine/vehicles.md §13.141), unless `kinematic_ride = off`
-  // or the vehicle class is not the one measured (the plugin says which).
+  // The path of this run, read once and said once (tandem.ini vehicle_move,
+  // vehicles.md "How a copy is moved"): teleports (the default); the
+  // kinematic body (a body in the engine's kinematic state, put where its
+  // owner says by the engine's own move, engine/vehicles.md §13.155); the
+  // velocity move (that move on a simulated body, §13.141). A moved path the
+  // layout check refused: teleports, said as a degradation.
   private func MovePath() -> Void {
     if this.m_moveRead {
       return;
     }
     this.m_moveRead = true;
-    let off = !Equals(TandemNative.Setting("kinematic_ride"), "on");
-    let can = !off && TandemWheels.CanMove();
+    this.m_moveMode = TandemNative.Setting("vehicle_move");
+    let off = !Equals(this.m_moveMode, "kinematic") && !Equals(this.m_moveMode, "velocity");
+    let hold = Equals(this.m_moveMode, "kinematic");
+    let can = !off && TandemWheels.CanMove() && (!hold || TandemWheels.CanHold());
     this.m_moveKinematic = can;
-    if this.m_moveKinematic {
-      TandemNative.Log(s"vehicles: the vehicles other games run are moved by the engine's kinematic move (a teleport beyond \(TandemSystem.SnapDistance()) m, at a spawn, and for a body that does not follow)");
+    this.m_moveHold = can && hold;
+    if this.m_moveHold {
+      TandemNative.Log(s"vehicles: the vehicles other games run are kinematic bodies the engine's move puts where their owner says (a teleport beyond \(TandemSystem.SnapDistance()) m, at a spawn, and for a body that does not follow)");
+    } else if this.m_moveKinematic {
+      TandemNative.Log(s"vehicles: the vehicles other games run are moved by the engine's velocity move (a teleport beyond \(TandemSystem.SnapDistance()) m, at a spawn, and for a body that does not follow)");
     } else {
-      TandemNative.Log(s"vehicles: the vehicles other games run are teleported every frame (\(off ? "kinematic_ride = off, the default" : "the vehicle layout check failed")); the car our own V rides in every other frame while a body spawns");
+      TandemNative.Log(s"vehicles: the vehicles other games run are teleported every frame (\(off ? "vehicle_move = teleport, the default" : "the vehicle layout check failed")); the car our own V rides in every other frame while a body spawns");
       // Teleports are the default (vehicles.md "How a copy is moved"): only
-      // a kinematic move asked for and unavailable is a degradation.
-      if !off { TandemDegraded.State("vehicle move", "kinematic_ride = on, but the vehicle layout check failed: vehicles are teleported every frame"); }
+      // a moved path asked for and unavailable is a degradation.
+      if !off { TandemDegraded.State("vehicle move", s"vehicle_move = \(this.m_moveMode), but the vehicle layout check failed: vehicles are teleported every frame"); }
+    }
+  }
+
+  // Every tick: a body held in the engine's kinematic state that nothing
+  // moved for half a second of world time (its owner's game no longer runs
+  // it here: a car taken, handed over, a session over) gets its physics
+  // back. A body at rest where its owner says is still moved (MoveBody sees
+  // it every frame) and stays held.
+  private func TickHeld() -> Void {
+    if ArraySize(this.m_held) == 0 {
+      return;
+    }
+    let now = this.WorldNow();
+    let kept: array<ref<TandemMoved>>;
+    for moved in this.m_held {
+      if moved.held && now - moved.at <= 0.5 && now >= moved.at {
+        ArrayPush(kept, moved);
+      } else {
+        this.Release(moved);
+      }
+    }
+    this.m_held = kept;
+  }
+
+  // A body of ours from now on (a proxy that becomes our car, a car our V
+  // drives again): its physics back at once.
+  public func ReleaseBody(body: EntityID) -> Void {
+    let kept: array<ref<TandemMoved>>;
+    for moved in this.m_held {
+      if moved.body == body {
+        this.Release(moved);
+      } else {
+        ArrayPush(kept, moved);
+      }
+    }
+    this.m_held = kept;
+  }
+
+  private func Release(moved: ref<TandemMoved>) -> Void {
+    if moved.held {
+      moved.held = false;
+      let car = GameInstance.FindEntityByID(this.GetGameInstance(), moved.body);
+      if IsDefined(car) && TandemWheels.Hold(car, false) {
+        this.m_heldReleased += 1;
+        TandemNative.LogDebug(s"vehicles: body \(EntityID.ToDebugStringDecimal(moved.body)) has its physics back");
+      }
     }
   }
 
@@ -4089,21 +4179,25 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   // A vehicle another game runs (a player's car copy, a proxy of its
-  // traffic) goes to where its owner says, every frame: by the engine's
-  // kinematic vehicle move, which gives the body the velocity that takes it
-  // there and is no teleport; by a teleport when it is new here, farther
-  // than SnapDistance, or does not follow the move (asked 15 frames in a
-  // row for 5 cm or more and not a fifth of the way there: woken up at the
-  // third, teleported from then on); by teleports alone when the path is off. A
-  // body at rest where its owner says (the same transform twice, within
-  // 3 mm) is left alone until either changes by 5 cm. No world time passed
-  // (a pause): nothing is moved.
+  // traffic) goes to where its owner says, every frame: by the engine's own
+  // move, no teleport (the kinematic path: a kinematic body put there, with
+  // the velocity of that motion; the velocity path: a simulated body given
+  // the velocity that takes it there); by a teleport when it is new here,
+  // farther than SnapDistance, or does not follow the move (asked 15 frames
+  // in a row for 5 cm or more and not a fifth of the way there: woken up at
+  // the third, teleported from then on); by teleports alone when the path
+  // is off. A body at rest where its owner says (the same transform twice,
+  // within 3 mm) is left alone until either changes by 5 cm. No world time
+  // passed (a pause): nothing is moved.
   public func MoveBody(moved: ref<TandemMoved>, car: ref<GameObject>, position: Vector4, orientation: Quaternion) -> Void {
     this.MovePath();
     let now = this.WorldNow();
     let id = car.GetEntityID();
     let first = moved.body != id || !moved.placed;
     if first {
+      if moved.held && moved.body != id {
+        this.ReleaseBody(moved.body);
+      }
       moved.body = id;
       moved.placed = false;
       moved.kinematic = false;
@@ -4151,6 +4245,7 @@ public class TandemSystem extends ScriptableSystem {
             }
             if this.m_moveStalledBodies >= 5 && this.m_moveFollowed == 0 {
               this.m_moveKinematic = false;
+              this.m_moveHold = false;
               TandemNative.Log("vehicles: the kinematic move moves nothing here (5 bodies, none followed): every vehicle is teleported from now on");
               TandemDegraded.State("vehicle move", "the kinematic move moves nothing here (5 bodies, none followed): every vehicle is teleported");
             }
@@ -4173,6 +4268,16 @@ public class TandemSystem extends ScriptableSystem {
     if same && moved.rested && gap < 1.0 {
       moved.at = now;
       return;
+    }
+    // The kinematic path: the body is held in the engine's kinematic state
+    // from its first placement (no fall or bounce on our ground, nothing of
+    // our world pushes it); TickHeld gives its physics back once nothing
+    // moves it.
+    if this.m_moveHold && !moved.held && !moved.teleportOnly && TandemWheels.Hold(car, true) {
+      moved.held = true;
+      if !ArrayContains(this.m_held, moved) {
+        ArrayPush(this.m_held, moved);
+      }
     }
     if this.m_moveKinematic && !moved.teleportOnly && !first && gap <= TandemSystem.SnapDistance() {
       if TandemWheels.Move(car, to, orientation, ClampF(step, 0.005, 0.2)) {
@@ -4240,7 +4345,8 @@ public class TandemSystem extends ScriptableSystem {
   public func MoveReport() -> String {
     this.MovePath();
     let error = MaxF(this.m_moveError, this.m_moveErrorBefore);
-    return s"moves: path \(this.m_moveKinematic ? "kinematic" : "teleport"), \(this.m_movedKinematic) kinematic, \(this.m_movedTeleport) teleports (\(this.m_snapFirst) first placements, \(this.m_snapJump) over \(TandemSystem.SnapDistance()) m, \(this.m_snapStalled) of bodies that do not follow, \(this.m_snapOff) with the path off), \(this.m_moveStalledBodies) body(ies) that do not follow, \(this.m_moveRefused) refused, \(this.m_rideHeld) frame(s) our seat's car was not teleported, largest error \(error) m in the last 10 to 20 s";
+    let path = this.m_moveHold ? "kinematic" : this.m_moveKinematic ? "velocity" : "teleport";
+    return s"moves: path \(path), \(this.m_movedKinematic) moved by the engine, \(ArraySize(this.m_held)) held kinematic now, \(this.m_heldReleased) given their physics back, \(this.m_movedTeleport) teleports (\(this.m_snapFirst) first placements, \(this.m_snapJump) over \(TandemSystem.SnapDistance()) m, \(this.m_snapStalled) of bodies that do not follow, \(this.m_snapOff) with the path off), \(this.m_moveStalledBodies) body(ies) that do not follow, \(this.m_moveRefused) refused, \(this.m_rideHeld) frame(s) our seat's car was not teleported, largest error \(error) m in the last 10 to 20 s";
   }
 
   private func TickDeleting() -> Void {

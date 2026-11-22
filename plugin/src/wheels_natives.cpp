@@ -80,6 +80,17 @@ struct TandemWheels : Red::IScriptable {
     return engine::MoveVehicle(vehicle.instance, position.X, position.Y, position.Z, orientation.i,
                                orientation.j, orientation.k, orientation.r, seconds);
   }
+  // The engine's kinematic state for a vehicle driven by Move
+  // (engine/vehiclemove.hpp): on, its body is kinematic and Move puts it
+  // where told; off, its physics are its own again. False: not so now (not
+  // a vehicle, or the setter is not the one measured: CanHold).
+  static bool CanHold() { return engine::CanHoldVehicles(); }
+  static bool Hold(Red::Handle<Red::ent::Entity> vehicle, bool on) {
+    return engine::HoldVehicle(vehicle.instance, on);
+  }
+  static bool Held(Red::Handle<Red::ent::Entity> vehicle) {
+    return engine::VehicleHeld(vehicle.instance);
+  }
 
   // A vehicle named across games: a player's car, a shared world vehicle.
   static std::uint32_t CarOf(std::uint32_t player) { return proto::PlayerCar(player); }
@@ -363,6 +374,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemWheelsPush, "TandemWheelsPush", {
 RTTI_DEFINE_CLASS(tandem::plugin::TandemWheels, "TandemWheels", {
   RTTI_METHOD(CanMove);
   RTTI_METHOD(Move);
+  RTTI_METHOD(CanHold);
+  RTTI_METHOD(Hold);
+  RTTI_METHOD(Held);
   RTTI_METHOD(CarOf);
   RTTI_METHOD(StreetOf);
   RTTI_METHOD(IsStreet);
