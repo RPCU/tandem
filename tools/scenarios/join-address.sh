@@ -20,7 +20,7 @@ expect "coop: join by address: \"$here\" -> $here:27450" 10
 expect "setting: last_address = $here:27450" 10
 expect 'session: starting as join of' 10
 expect 'in the session as player [0-9]+' 20
-remote "grep -q '^last_address = $here:27450\$' '$ini'" || fail "last_address not saved in $ini"
+remote "grep -q '^last_address = $here:$game_port\$' '$ini'" || fail "last_address not saved in $ini"
 cmd coop leave
 expect 'coop: left the session' 10
 # An empty answer: the last address.

@@ -192,6 +192,15 @@ ensure() {
   if grep -q '^launched' <<<"$output"; then
     mark
     mark_line=0
+    # The start's own test reset teleports V from where the save stands to
+    # the test field, through a loading screen whose "silent" line comes 5 s
+    # after (coop on instance b, 2026-11-22): wait it out, mark after it.
+    pause 8
+    local waited=$SECONDS
+    while (($(watchdog_lines silent) > $(watchdog_lines back))) && ((SECONDS - waited < 90)); do
+      sleep 2
+    done
+    mark
   elif [ -z "$mark_file" ]; then
     mark
   fi
