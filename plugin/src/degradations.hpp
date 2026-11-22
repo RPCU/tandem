@@ -51,14 +51,20 @@ public:
     degraded::Entry entry;
     bool over{}; // the state ended
   };
-  // Game thread: what was queued since the last call.
-  std::vector<News> TakeNews();
+  // Game thread, every tick of a session: the next notice's worth of what
+  // was queued, entries of one kind about one game (this game's states that
+  // started, its chosen ones, its fallbacks, what ended; another player's),
+  // and nothing more for kNewsGapUs: the HUD's notice line shows one message
+  // at a time, and each must be read.
+  static constexpr std::uint64_t kNewsGapUs = 6'000'000;
+  std::vector<News> TakeNews(std::uint64_t nowUs);
 
 private:
   degraded::Registry m_local;
   mutable std::mutex m_lock;
   std::map<proto::PlayerId, proto::Degraded> m_remote;
   std::vector<News> m_news;
+  std::uint64_t m_nextNewsUs{};
   void Queue(News news);
 };
 } // namespace tandem::plugin
