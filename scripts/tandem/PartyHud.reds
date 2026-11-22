@@ -694,7 +694,11 @@ public class TandemPartyHud {
     if NotEquals(why, "") {
       this.m_pathTicks += 1;
     }
-    if NotEquals(why, "") && !this.m_pathTold && this.m_pathTicks >= 100 && this.m_now - this.m_pathSince >= 5.0 {
+    // The game hiding its damage numbers (downed, a menu, a loading screen,
+    // a scene: respawn-viktor and regroup, 2026-11-22) is the HUD's own
+    // state, not the engine path failing: our plates follow it either way.
+    let hidden = Equals(why, "the game hides its damage numbers' widget");
+    if NotEquals(why, "") && !hidden && !this.m_pathTold && this.m_pathTicks >= 100 && this.m_now - this.m_pathSince >= 5.0 {
       this.m_pathTold = true;
       TandemDegraded.State("nameplate projection", why);
     }

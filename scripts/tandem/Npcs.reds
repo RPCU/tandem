@@ -1722,7 +1722,8 @@ public class TandemNpcs {
     // A long move of our V (fast travel, a respawn, a regroup) streams the
     // place it left out, the proxies' bodies there with it: those are
     // spawned again as always, but are no fallback (respawn-point and
-    // phone-regroup, 2026-11-22: 4 bodies each).
+    // phone-regroup, 2026-11-22: 4 bodies each; 60 s: a respawn's loading
+    // screen and the downed time before it count, respawn-point 8 bodies).
     let v = GetPlayer(this.m_game);
     if IsDefined(v) {
       let here = v.GetWorldPosition();
@@ -1739,7 +1740,7 @@ public class TandemNpcs {
       this.m_vJumpedAt = now;
     }
     this.m_clockAt = clock;
-    let streamed = this.m_vJumpedAt > 0.0 && now - this.m_vJumpedAt < 20.0;
+    let streamed = this.m_vJumpedAt > 0.0 && now - this.m_vJumpedAt < 60.0;
     let kept: array<ref<TandemNpcProxy>>;
     let lost: array<Uint32>;
     for proxy in this.m_proxies {
