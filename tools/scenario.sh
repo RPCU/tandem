@@ -444,6 +444,11 @@ reject() {
   if [[ $pattern == *'watchdog: game thread silent'* ]] && ((boot_line > mark_line)); then
     lines=$(tail -n +$((boot_line - mark_line + 1)) <<<"$lines")
   fi
+  # A teleport's loading screen (the test reset's, a scenario's own) is no
+  # hang: a "silent" line within 40 lines after "elsewhere: a teleport" goes.
+  if [[ $pattern == *'watchdog: game thread silent'* ]]; then
+    lines=$(awk '/elsewhere: a teleport/ { t = NR } /watchdog: game thread silent/ && t && NR - t <= 40 { next } { print }' <<<"$lines")
+  fi
   if grep -qE "$pattern" <<<"$lines"; then
     fail "unexpected: $(grep -E "$pattern" <<<"$lines" | head -1 | cut -c1-160)"
   else
