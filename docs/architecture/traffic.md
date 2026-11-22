@@ -277,6 +277,11 @@ the proxy in the vehicle's proxy, takes it out when the host says so, and
 deletes a seated proxy only once it is out (the rule for car copies). When
 the vehicle goes or is taken, the session clears its seats for everyone.
 
+While our own V sits in a vehicle no proxy is seated (mounting one then
+crashed the game, engine facts §13.154): it waits out of sight and takes
+its seat when our V is on foot again, so from a seat the others' cars have
+nobody at the wheel.
+
 A driver that gets out (a crash, a panic, pulled out) is an NPC on foot
 from that moment: `NpcSeat` out, then its states as for any NPC.
 

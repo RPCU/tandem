@@ -145,6 +145,7 @@ found through this table, each number once.
 | 13.142 | An NPC detached in the middle of an action: its dismemberment component read after its own detach | `re.md` |
 | 13.150 | CrystalCoat / TwinTone: a vehicle's custom paint | `vehicles.md` |
 | 13.151 | Dual wielding (akimbo): two weapons, two state machines, what tells them apart | `combat.md` |
+| 13.154 | Two crashes of a guest riding with the host (an NPC mounted while V is mounted; HideIrreversibly on an armed NPC); the senses' meter on an NPC body | `npcs.md` |
 | 13.153 | A choice of our own on a puppet's interaction component | `story.md` |
 
 ## Top traps (one line each)

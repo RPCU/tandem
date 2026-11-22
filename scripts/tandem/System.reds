@@ -4014,13 +4014,13 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     this.m_moveRead = true;
-    let off = Equals(TandemNative.Setting("kinematic_ride"), "off");
-    let can = TandemWheels.CanMove();
-    this.m_moveKinematic = !off && can;
+    let off = !Equals(TandemNative.Setting("kinematic_ride"), "on");
+    let can = !off && TandemWheels.CanMove();
+    this.m_moveKinematic = can;
     if this.m_moveKinematic {
       TandemNative.Log(s"vehicles: the vehicles other games run are moved by the engine's kinematic move (a teleport beyond \(TandemSystem.SnapDistance()) m, at a spawn, and for a body that does not follow)");
     } else {
-      TandemNative.Log(s"vehicles: the vehicles other games run are teleported every frame (\(off ? "kinematic_ride = off" : "the vehicle layout check failed")); the car our own V rides in every other frame while a body spawns");
+      TandemNative.Log(s"vehicles: the vehicles other games run are teleported every frame (\(off ? "kinematic_ride = off, the default" : "the vehicle layout check failed")); the car our own V rides in every other frame while a body spawns");
       if off { TandemDegraded.Chosen("vehicle move", "tandem.ini kinematic_ride = off"); } else { TandemDegraded.State("vehicle move", "the vehicle layout check failed: vehicles are teleported every frame"); }
     }
   }
@@ -4131,6 +4131,8 @@ public class TandemSystem extends ScriptableSystem {
           }
           if moved.stalls >= 15 {
             moved.teleportOnly = true;
+            moved.kinematic = false;
+            moved.stalls = 0;
             this.m_moveStalledBodies += 1;
             if this.m_moveStalledBodies <= 5 {
               TandemDegraded.Fallback("vehicle teleported", s"body \(EntityID.ToDebugStringDecimal(id)) does not follow the kinematic move (15 frames, \(gap) m from its place)");

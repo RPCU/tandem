@@ -283,3 +283,47 @@ workWorkspotInstance {resource, animName, idleAnim, entryId}`
   depot path hash) is at `+0x30`. Whether a community or crowd workspot's
   instance holds its resource is not yet seen (`npc seek: its workspot:`
   says). [2.5-untested]
+
+### 13.154 Two crashes of a guest riding with the host, and the senses' meter on an NPC body (2026-11-22, game 2.50, two instances, exe read)
+
+With spawns working from a seat (§13.141) a riding guest's game went down
+within 20 s of every ride, five rides in five, at one of two places.
+
+- **Mounting an NPC while our own V is mounted** (`MountingFacility.Mount`,
+  instant, an NPC proxy into a proxy vehicle: a driver of the other game's
+  traffic): `0xC0000005` at `+0x2AE4A10` on a job thread, 0.2 to 0.3 s
+  after the mount, five times; never in the ten mounts of the night before
+  made while V was on foot, never with the mounts switched off (one ride
+  of 150 s). The stack: `0x1401F8210`, `0x14082355C` (a list of handlers
+  run), `0x142C46940`, `0x142AE4A04`. `0x142C46940` is a virtual in a
+  vtable at `0x143774898`, between `gameActionEquipItemState`'s and
+  `gameActionRotateToObjectState`'s (not an RTTI class): its base
+  (`0x1408AAD70`) stores the entity id of a weak object handle, null or
+  not, and it then asks `0x142AE4A04` whether that object is the local
+  player's, which dereferences it (`object + 0xC0`). Which action it is
+  and why its object is null were not found. A wait of 1 s after the
+  body came, and the controller not held, changed nothing. tandem seats no
+  proxy while our own V is mounted (`TandemNpcs.FollowSeat`: it waits out
+  of sight). [2.5-verified]
+- **`gamePuppet.HideIrreversibly` on an NPC that holds a weapon**:
+  `0xC0000005` at `+0x253048` (a read of `0x68`), game thread or a job,
+  within a tick or two of the call, three times (a quest's armed "freaks",
+  Tyger Claws), and the crash of the first two-game session; never on the
+  unarmed crowd hidden the same way in the same rides (hundreds), never
+  with the hide switched off. The stack: `0x141085E34` (hash 3584363503),
+  `0x1408234A4`, `0x140823F24` (an entity's flags at `+0x158`, bit `0x20`
+  of `+0x15C`), `0x1403D1BF8` (every component's slot `+0x198`),
+  `0x14025302C`: a component whose `+0xA8` is null. A wait of 1 s after
+  the NPC was first seen changed nothing. tandem fades such an NPC out the
+  animation system's way, its weapon with it (`TandemVisibility.Fade`),
+  and hides the unarmed irreversibly as before: one ride of 150 s through
+  the same places, 279 NPCs held back, no crash. That the weapon is the
+  cause is the pattern, not a reading of the component. [2.5-verified]
+- **The senses fill their meter for any NPC body, whatever the attitude**:
+  a neutral `Character.HomelessMan` had a guest's puppet at
+  `GetDetection` 100 and the host's V at 0, both standing beside him on
+  foot, his attitude to both neutral (1). For a V the meter counts for
+  the hostile alone. tandem's "this NPC has detected that V" (and the
+  guest's meter) now asks for a hostile attitude as well
+  (`TandemNpcs.Detected`, `Notice`): a riding guest's combat that came
+  and went was this. Changed after the measure, not yet run. [2.5-verified]

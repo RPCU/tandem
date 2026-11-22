@@ -605,11 +605,21 @@ body `IsManaged`, neither `IsSpawning` nor `IsSpawned`.
   `kinematic_ride = off` to turn it off), a teleport for a first
   placement, over 8 m and for a body that does not follow; the car our V
   is mounted to never teleported two frames running while a body of ours
-  waits to spawn (`TandemEntities.Create` keeps the list). Built by CI,
-  **never called in game** (the game machine went off before its first
-  call): that the body and what is mounted to it follow, that the spawns
-  come, the wheels, the sound, a contact with our V, and that nothing
-  crashes are all to test. [2.5-untested]
+  waits to spawn (`TandemEntities.Create` keeps the list). **Run in game
+  2026-11-22** (two instances, a guest riding in the host's car): the body
+  and what is mounted to it follow (56 479 moves on the guest in one ride,
+  none refused; the body 0.35 m from where it was sent on the host, 2.9 to
+  3.8 m on the guest at speed), the spawns come (no body asked twice), no
+  crash traced to it. A parked proxy does not come nearer than 0.1 to
+  0.2 m of its owner's transform (its own suspension). It did not come out
+  cheaper than the teleports (10 to 17 frames a second on the guest
+  against 19 to 22, one run each), a copy with a speed collides with the
+  rider's world, and in one of two rides the driver's puppet left its seat
+  and the rider's V took the wheel. Off by default
+  (`docs/architecture/vehicles.md`, "How a copy is moved"). The lookup
+  goes through RED4ext's own resolver (0 for a missing hash: the feature
+  turns itself off), not the SDK's, which ends the process.
+  [2.5-verified]
 - **A hot reload of the scripts in a session** crashed the guest 5 s later
   (`0xC0000005` at `+0x2AE4A10`, a job thread, once; `tools/game.sh reload`
   on instance b, 2026-11-22): restart the game instead while it is in a

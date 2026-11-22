@@ -99,10 +99,12 @@
 //                        ; asked to despawn (a probe, untested) (ini only)
 //   saves = on           ; off: this game never saves (a test game: locked from
 //                        ; its first tick until it ends) (ini only)
-//   kinematic_ride = on  ; off: the vehicles other games run (their cars, their
-//                        ; traffic) are teleported every frame instead of moved
-//                        ; by the engine's kinematic vehicle move (the fallback,
-//                        ; vehicles.md "How a copy is moved") (ini only)
+//   kinematic_ride = off ; on: the vehicles other games run (their cars, their
+//                        ; traffic) are moved by the engine's kinematic vehicle
+//                        ; move instead of teleported every frame (in game
+//                        ; 2026-11-22: it works, costs frames and a guest lost
+//                        ; its ride once: vehicles.md "How a copy is moved")
+//                        ; (ini only)
 //   death_ledger = on    ; off: placed NPCs another player killed in the session
 //                        ; stay alive in our game (ini only)
 //   death_bodies = on    ; off: no body where a placed NPC another player
@@ -257,7 +259,7 @@ struct Config {
   // vendor are the game's own interactions (scripts/tandem/Prompts.reds);
   // off: all drawn by us, as before.
   bool nativePrompts{true};
-  bool kinematicRide{true};
+  bool kinematicRide{false};
   // off: a test game, which never saves (tools/instance.sh, tools/game.sh).
   bool saves{true};
   // Where it was read from (the settings page writes there).
