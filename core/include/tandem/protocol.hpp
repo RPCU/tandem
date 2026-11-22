@@ -39,7 +39,10 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // the player in a byte in PoseFrame, PlayerMotion, VehicleMotion and Cue;
 // a charge Cue's level and hand in a byte each.
 // 18: HitTaken appended (a game of 17 cannot read it).
-inline constexpr std::uint16_t kProtocolVersion = 18;
+// 19: Degraded appended, and required: every game says what it runs
+// without (a game of 18 would stay silent about it, which is the failure
+// the message exists to end).
+inline constexpr std::uint16_t kProtocolVersion = 19;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3289,6 +3292,34 @@ bool Fits(const HitTaken &hit);
 // steps; out of range: clamped, not a number: 0). 26 bytes with its id.
 // Endpoint::SendLocalHitTaken makes it so.
 HitTaken Snapped(HitTaken hit);
+// What a player's game runs without (docs/architecture/degradations.md):
+// the states of its registry (tandem/degraded.hpp) that hold now, each by
+// its id, so nobody plays beside a game that syncs less than it should
+// without knowing. Each game says its own, at its join and at every change;
+// the host stamps who, tells every other game (never back) and keeps
+// everyone's for late joiners; a repeat is applied nowhere; forgotten when
+// the player goes. State, with CarPaint: no entry is a game with nothing
+// off (also what nobody said). Event channel.
+inline constexpr std::uint8_t kDegradedChosen = 1; // the player's own tandem.ini switch
+inline constexpr std::uint8_t kDegradedCore = 2;   // co-op cannot be right without it
+inline constexpr std::uint8_t kDegradedFlags = 3;
+inline constexpr std::size_t kMaxDegraded = 32;
+inline constexpr std::size_t kMaxDegradedId = 32;
+struct DegradedEntry {
+  std::string id; // degraded::Catalogue()'s, or one a newer build knows
+  std::uint8_t flags{};
+  friend bool operator==(const DegradedEntry &, const DegradedEntry &) = default;
+};
+struct Degraded {
+  PlayerId player{};
+  std::vector<DegradedEntry> entries; // sorted by id, each once
+  friend bool operator==(const Degraded &, const Degraded &) = default;
+};
+// What a Degraded may say: at most kMaxDegraded entries, sorted by id and
+// each id once (one wire form per list, so a repeat is equal); an id of 1 to
+// kMaxDegradedId lower-case letters, digits, spaces and dashes; flags this
+// version knows.
+bool Fits(const Degraded &degraded);
 
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
@@ -3312,7 +3343,7 @@ using MessageVariant = std::variant<
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
-    TrafficHack, CarPaint, HitTaken>;
+    TrafficHack, CarPaint, HitTaken, Degraded>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
@@ -3326,7 +3357,8 @@ bool operator==(const Message &a, const Message &b);
 // endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit, Throw … Defended, ThrowPath),
-// a level (PlayerLevel … NpcLevel), a car's lending or paint (CarLend, CarPaint), an NPC's
+// a level (PlayerLevel … NpcLevel), a car's lending or paint (CarLend, CarPaint), what a
+// game runs without (Degraded), an NPC's
 // scale (NpcScale), a vendor (NpcVendor), a placed NPC (NpcPlaced), a
 // death of the ledger (NpcDeath), a street race (Race), or what a proxy
 // cannot do (WeakSpotHit, HackTraced): one path in endpoint.hpp too.

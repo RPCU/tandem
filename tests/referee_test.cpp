@@ -1188,3 +1188,34 @@ TEST_CASE("referee: a street race is described, seated, ordered and paid by its 
                 kSecond);
   CHECK(Rules(host) == std::vector<std::string>{"value.range"});
 }
+
+TEST_CASE("referee: what a game runs without is its own word, passed on, never back") {
+  auto guest = Guest();
+  guest.Received(
+      1,
+      proto::Degraded{
+          .player = 3,
+          .entries = {{.id = "looks"}, {.id = "vehicle move", .flags = proto::kDegradedChosen}}},
+      kSecond);
+  guest.Received(1, proto::Degraded{.player = 3}, kSecond); // nothing off any more
+  CHECK(Rules(guest).empty());
+  // Our own back, a player nobody knows, ids out of order, a flag of no
+  // version, an id the registry never writes.
+  guest.Received(1, proto::Degraded{.player = 2}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
+  guest.Received(1, proto::Degraded{.player = 9}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"ids.unknown-player"});
+  guest.Received(1,
+                 proto::Degraded{.player = 3, .entries = {{.id = "vehicle move"}, {.id = "looks"}}},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1, proto::Degraded{.player = 3, .entries = {{.id = "looks", .flags = 8}}},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1, proto::Degraded{.player = 3, .entries = {{.id = "LOOKS"}}}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  // Host: a guest says it in its own name.
+  auto host = Host();
+  host.Received(2, proto::Degraded{.player = 2, .entries = {{.id = "looks"}}}, kSecond);
+  CHECK(Rules(host).empty());
+}

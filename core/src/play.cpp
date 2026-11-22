@@ -340,7 +340,9 @@ bool KeepsSession(const proto::Message &message) {
                  std::is_same_v<M, proto::TrafficHit> || std::is_same_v<M, proto::TrafficClaim> ||
                  std::is_same_v<M, proto::TrafficHack> ||
                  // A quest interaction's question and answer: that session's.
-                 std::is_same_v<M, proto::QuestInteract>);
+                 std::is_same_v<M, proto::QuestInteract> ||
+                 // What the recorded games ran without: theirs, not a replay's.
+                 std::is_same_v<M, proto::Degraded>);
       },
       message);
 }

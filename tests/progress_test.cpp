@@ -797,3 +797,75 @@ TEST_CASE("a car's custom paint reaches everyone once, late joiners too, and goe
   }));
   CHECK(b->CarPaints().empty());
 }
+
+TEST_CASE("what a game runs without reaches everyone once, late joiners too, and goes with it") {
+  using namespace proto;
+  const Degraded looks{.entries = {{.id = "looks"}}};
+  const Degraded both{
+      .entries = {{.id = "looks"}, {.id = "vehicle move", .flags = kDegradedChosen}}};
+  CHECK_FALSE(consistency::IsOneShot(looks)); // state: a repeat is applied nowhere
+
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  REQUIRE_MESSAGE(host, error);
+  // What the wire would refuse is not said; nothing off is kept nowhere.
+  CHECK_FALSE(host->SendCombat(Degraded{.entries = {{.id = "Looks"}}}));
+  CHECK(host->SendCombat(Degraded{}));
+  CHECK(host->Degradations().empty());
+  CHECK(host->SendCombat(Degraded{.player = 77, .entries = {{.id = "workspots"}}})); // stamped
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  REQUIRE_MESSAGE(a, error);
+  // Said before it is in: kept, said as it joins.
+  CHECK_FALSE(a->SendCombat(looks));
+  Heard heard;
+  const auto said = [&](std::size_t game) {
+    std::vector<Degraded> out;
+    for (const auto &message : heard.at[game])
+      if (const auto *degraded = std::get_if<Degraded>(&message))
+        out.push_back(*degraded);
+    return out;
+  };
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return host->Degradations().size() == 2 && a->Degradations().size() == 1;
+  }));
+  CHECK(host->Degradations().at(host->You()).entries.front().id == "workspots");
+  CHECK(host->Degradations().at(a->You()).entries == looks.entries); // under a's own id
+  CHECK(a->Degradations().at(host->You()).entries.front().id == "workspots");
+  CHECK_FALSE(a->Degradations().contains(a->You()));
+  // Said again: nothing new anywhere.
+  CHECK(a->SendCombat(looks));
+  CHECK(host->SendCombat(Degraded{.entries = {{.id = "workspots"}}}));
+  PumpFor({host.get(), a.get()}, 150ms, std::ref(heard));
+  CHECK(said(0).size() == 1); // the host's game heard a's once
+  CHECK(said(1).size() == 1); // a's game heard the host's once
+
+  // A late joiner hears both; a's list grows; the host's empties (said to
+  // everyone, kept nowhere); a vanishes.
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error, kFast);
+  REQUIRE_MESSAGE(b, error);
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return b->Degradations().size() == 2;
+  }));
+  CHECK(a->SendCombat(both));
+  CHECK(host->SendCombat(Degraded{}));
+  const auto hostId = host->You();
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return b->Degradations().size() == 1 && b->Degradations().contains(a->You()) &&
+           b->Degradations().at(a->You()).entries == both.entries &&
+           !a->Degradations().contains(hostId);
+  }));
+  CHECK(host->Degradations().size() == 1);
+  // Nothing off is said as nothing but whose game it is.
+  CHECK(std::ranges::count(said(2), Degraded{.player = hostId}) == 1);
+  const auto aId = a->You();
+  a.reset();
+  REQUIRE(Pump({host.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return !host->Degradations().contains(aId) && !b->Degradations().contains(aId);
+  }));
+  CHECK(b->Degradations().empty());
+}
