@@ -123,9 +123,60 @@ the HUD layer (`scripts/tandem/PartyHud.reds`).
 | down / out | a notice, the outline, the revive prompt | "Down", "Reviving 7" while we hold the revive (its countdown), "Out"; the bar empties | — |
 | distance and direction off screen | the world marker | under the bar when the camera does not see them: an arrow turned their way and "124 m" / "1.2 km", in their colour | the arrow's sense |
 | in a scene, elsewhere, in a menu | notices only | one line in the HUD's red: "In a scene" (their tier 3 and up), "Cyberspace" / "Braindance"…, "In a menu" (the pause menu or any full-screen menu); most important first; keyed texts (`Party-*`, English in the log) | — |
-| nameplate | only the game's own, when aimed at | the name alone over the puppet's head, in their colour, for every partner, linked or not (health is the party entry's only: the user's call, 2026-11-19); hidden with the body. `nameplates = near` (default): full to 12 m, gone at 20 m; `always`: at any distance in view, full to 12 m then smaller and fainter to a floor at 150 m (55 % size, 50 % opacity, `NameplateLookOf`), only the near ones while our V talks (scene tier 2); `off`: none | its place over the head (the camera's field of view: see research); `always` in a crowded street |
+| nameplate | only the game's own, when aimed at | the name alone over the puppet's head, in their colour, for every partner, linked or not (health is the party entry's only: the user's call, 2026-11-19); hidden with the body. `nameplates = near` (default): full to 12 m, gone at 20 m; `always`: at any distance in view, full to 12 m then smaller and fainter to a floor at 150 m (55 % size, 50 % opacity, `NameplateLookOf`), only the near ones while our V talks (scene tier 2); `off`: none. Placed by the engine's own screen projection (below) | its place over the head, no lag when the camera turns; `always` in a crowded street |
 | the marker's name | its world label | one name over a player: the marker's label hides while the nameplate shows (`TandemPartyHud.PlateShown`), and with `nameplates = off` | no flicker at 20 m |
 | photo mode, cinematics | — | all of it hidden in photo mode, when our own scene tier is 3 or more, in a braindance, with no session | hidden in both |
+
+**The engine's projection.** A nameplate is placed by the engine's
+`inkScreenProjection`, as the game's own nameplate, damage numbers and
+chatter lines are: the engine follows the body and tells the place each
+time it projects, at its own field of view, aspect and scale; nothing of
+ours computes it. Not yet run in game (research §13.35).
+
+- **The carrier.** Only an `inkProjectedHUDGameController` registers a
+  projection (a protected native), and a game controller cannot be made
+  from script (Codeware's `AttachController` takes logic controllers; a
+  widget library of ours in an archive crashed the client). So three
+  `@addMethod`s on the game's `DamageDigitsGameController` reach
+  `RegisterScreenProjection`, `UnregisterScreenProjection` and `WakeUp`
+  for us. Why that one: it is all script, hears each projection through
+  its own listener (`inkScreenProjection.RegisterListener`) with the
+  controller's batch callback off (`SetShouldNotifyProjections(false)`),
+  so no handler of its own is ever handed ours. The game's nameplate
+  controller reads its projections by index (`projections.data[0..3]`),
+  the chatter and subtitle ones cast every projection's user data to their
+  own line; the mappin containers project natively.
+- **How.** `TandemPartyHud.Scan` finds the carrier on the HUD layer;
+  per puppet two projections, the head (the `roleMappin` slot of the
+  body's UI slot component, where its marker sits, `Markers.reds`) and
+  the chest 1 m lower (in view or not, for the list's arrow), each heard
+  by a `TandemPlateAnchor`; the plate is a child of a canvas under the
+  carrier's root, its margin set in the listener (`OnProjected`: the
+  anchor's own fields and its own widget only), its size in the root's
+  units with no window scale. A body without the slot: a world point 2 m
+  above its feet, moved each tick (`SetStaticWorldPosition`). In view is
+  the engine's `IsInScreen`; the plate's fade and the list's arrow stay
+  on our own distance and bearing (`BearingOf`; the engine's
+  `distanceToCamera` is logged beside ours until its unit is seen).
+- **The fallback**, by itself: our own projection (`presence::ProjectOf`
+  on the camera system's numbers, in window pixels) places the plate
+  until the engine has told a place, and for good when the carrier is not
+  on the HUD, is hidden (itself or a parent), registers nothing, or when
+  the engine's place is never told, off screen, or a quarter of the
+  screen's height from ours for 3 s while ours has the head well inside
+  the frame (the carrier is woken after 1 s: it sleeps between hits).
+  One line says which: `hud: nameplates placed by the engine's screen
+projection (carried by DamageDigitsGameController, its root W x H,
+slot 'roleMappin')` or `… by our own projection (WHY)`; per body `hud:
+player N's nameplate anchored by the engine: slot 'roleMappin' of
+'COMPONENT', H m above the feet`; each entry line ends `placed by the
+engine` or `placed by our projection`.
+- **The switch**: no `tandem.ini` key (none of the HUD's fits; a new one
+  is C++). `presence hud projection auto|engine|script` picks (engine:
+  never given up for standing apart), `presence hud slot NAME|none` the
+  slot; `test reset` puts both back.
+- **To see**: `test query nameplate` gives both projections of one tick
+  and their distance; scenario `nameplate-projection`.
 
 ### 5. Layout: where the list sits, what it yields to
 
@@ -147,8 +198,8 @@ layout was "under the health bar (full)", no holocall involved). So the
 list is drawn at the window's scale (`TandemPartyHud.WindowScale`:
 min(width / 3840, height / 2160) of `UISystem.GetCurrentWindowSize()`,
 1 at 2160p, 1/3 at 720p): its root scaled about its top left corner, its
-place times the scale; the nameplates are placed in window pixels and
-scaled the same; the race standings (`Races.reds`) too, when built. The
+place times the scale; the nameplates, when our own projection places
+them, are in window pixels and scaled the same; the race standings (`Races.reds`) too, when built. The
 list is anchored top left, as the health bar is, so it keeps to the left
 edge at every aspect. The log's layout line says the scale, the window
 and the game's own `GetInverseUIScale()` beside it. **Not yet run in
@@ -339,6 +390,7 @@ Scenarios (`tools/scenario.sh NAME`), each checking the game's log:
 | `presence-hud` | the entry, health, menu, down, off screen with its arrow, the nameplate; logs the camera's projection |
 | `hud-layout` | screenshots of each case: the list under the health bar, below a holocall (compact), with the boss bar, with the choice hub (compact), the game's HUD hidden, `party_hud = off`; the layout line with its scale. After a call between players, `phone-holocall-ring` asks that the list is back under the health bar, full (not yet run) |
 | `hud-linked` | a linked partner's entry with health, its plate the name alone; the link broken from its side: no entry, the plate stays; `nameplates = always`; a vanish takes plate and marker |
+| `nameplate-projection` | the engine's projection places the plate (the carrier found, the slot, the plate in the screen, less than a tenth of the screen's height from our own projection on the same tick); ours on demand, and back. Not yet run |
 | `names-prompt` | the pause menu's Host this game asks for a name while it is V; a bad one asked again; a good one saved, then hosting |
 | `names-duplicate` | two mock players named V and v beside our V: shown as V (2) and v (3), each told its own, markers and HUD entries under those names |
 | `presence-reactions` | as a guest: impact, stagger, knockdown, ragdoll and its end on a proxy |
@@ -354,6 +406,7 @@ sound NAME | fx NAME | flinch | bullet | hud [at X Y | fov h|v | camera] |
 react TYPE | status apply|remove REC | status block|unblock NAME |
 status report`, `presence swim both|fx|sound`; `presence trail`, `presence tracer
 both|bullet|trail`, `presence charge on|full|off [left]`, `presence bullet left` (the left hand's weapon); `coop name` (the name, and whether the menu would ask),
+`presence hud projection auto|engine|script`, `presence hud slot NAME|none` (the nameplates' projection),
 `coop name reset` (ask again), `coop name answer TEXT` / `coop name
 cancel` (answer the open name popup), `coop set nameplates
 near|always|off`.
@@ -376,6 +429,13 @@ REC@FROM-TO[,…]` (status effects on its V), `--camo N --camo-record REC`.
   travels as `Noise` like its gunshots, four footsteps a second
   (`presence::NoiseGate`); whether the owner's NPCs react to it from a
   puppet: [`stealth.md`](stealth.md).
+- The engine's projection, to see in game (`nameplate-projection`, then
+  by eye at two window sizes and two field of view settings): that the
+  carrier is on the HUD and shown outside a fight, that its root is the
+  projection's space (plate over the head, not offset or scaled), that a
+  body has the `roleMappin` slot and how high, that the carrier stays
+  awake while ours are enabled (no `its controller woken` line), that
+  damage numbers still show.
 - The world marker and the party entry both say where the partner is: once
   both are seen in game, decide whether the entry's arrow replaces the
   marker's distance text.
