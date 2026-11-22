@@ -256,13 +256,22 @@ In order of preference:
 1. **By name**: RTTI classes, properties and script functions
    (`CRTTISystem`, `ExecuteFunction` — with an out slot when the function
    returns something, or it silently does nothing), Codeware's APIs.
-2. **By address-library hash** (`RED4ext::UniversalRelocFunc`): hashes
+2. **By address-library hash**, through `engine::Find`
+   (`plugin/src/engine/access.hpp`), never `RED4ext::UniversalRelocFunc` or
+   `UniversalRelocBase::Resolve`: those end the process on a hash the game's
+   library lacks, ours answers null and turns the one feature off. Hashes
    survived the 2.31 → 2.5 patch; all the ones earlier projects used are in
    the 2.50 list.
 3. **Raw offsets and vtable slots**: only behind a **layout fingerprint**
-   checked once at startup (for example the class size from RTTI). On a
+   checked once at startup (the class size and property offsets from RTTI;
+   a vtable slot against the function it holds, named by its hash). On a
    mismatch the feature turns itself off and logs why; it never guesses.
    Every hand-measured layout records the game version it was measured on.
+
+Each such piece of access is a named feature, checked at the first frame
+and listed in one log line, `engine: N features on, M off: …`
+(`tools/game.sh engine`): the features, their checks and what each turns
+off are in [`architecture/engine-access.md`](architecture/engine-access.md).
 
 Before relying on any engine fact from `docs/research/`, check its tag:
 `[2.5-verified]` can be used, `[2.31-only]` and `[unverified]` need checking
@@ -330,6 +339,7 @@ plugin") and its open problems.
 - `travel.md`: fast travel together, regroup; region authority: `regions.md`.
 - `comms.md`: pings (the tag key outside the scanner), the link and what it shares (scanner tags, Ping reveals; `link = auto|ask|off`), waypoints, the danger callout; why no emotes, and no text chat (not wanted, the user's decision); the consistency of each.
 - `relay.md`: the relay's sessions, join codes, abuse limits, replicas (sharding, redirects, the entrance, drain, restarts), the packet path, wire format, deployment, the game side (a relay that goes silent is held through).
+- `engine-access.md`: the checked address lookup (`engine::Find`), every feature that goes by a hash, an offset or a vtable slot with its startup check and what it turns off, the `engine:` startup line. For any new hook or call by hash.
 - `testing.md`: test levels, scenarios, every `tandem-peer` mode and flag.
 - `recordings.md`: NPC record and replay, gameplay recordings (`.tplay`), recorded host sessions (`.tsession`), the recorder (`recorder = on`: play recorded as it happens, solo or in a session), the planned simulated second game.
 - `two-instances.md`: two real games on the game machine (tried 2026-11-19: they play a session over loopback; a guest froze once, starts under load trip the engine's watchdog): results and measurements, findings, the setup (`tools/instance.sh`: a game folder and a prefix per instance, outside Steam, sandboxed off the player's files), the first-try checklist; the plugin's `TANDEM_CONFIG`, `TANDEM_CMD`, `TANDEM_PORT`, `TANDEM_LOG` (`core/include/tandem/instance.hpp`).
