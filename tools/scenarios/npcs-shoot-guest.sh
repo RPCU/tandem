@@ -15,8 +15,10 @@ expect_peer 'npc [0-9]+ fires at player [0-9]+' 15
 expect 'shots: npc [0-9]+.s shot at us fired from its proxy' 20
 # Our game decides: a hit (reported to the host) or a miss by the target's
 # own rules. Over a few shots at least one lands on a V standing still.
-expect 'shots: npc [0-9]+.s shot hit our V \(our game.s decision\), reported to the host' 20
-expect_peer 'player [0-9]+ reports npc [0-9]+.s shot hit their V' 5
+expect 'shots: npc [0-9]+.s shot hit our V \(our game.s decision\)' 20
+# ...and told to everyone as the hit it was (the puppet reacts to it).
+expect 'hit taken: our V.s first, by npc [0-9]+, told to the others' 5
+expect_peer 'player [0-9]+ took a hit: by npc [0-9]+' 5
 # The landed shot took health off our V (not only a line saying so).
 query after health
 expect_changed "$before" "$after" down

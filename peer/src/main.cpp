@@ -515,6 +515,9 @@ struct Options {
   // never), swings a melee weapon this often, is in a menu N s in, for 5 s
   // (-1: never); host: one of our NPCs plays a hit reaction this often.
   int hurtSeconds{0};
+  // --hurt-hit: each of those hits told as the hit it was (HitTaken), by
+  // whom: world, npc or you (empty: not told, the health's fall alone).
+  std::string hurtHit;
   int meleeSeconds{0};
   int menuAtSeconds{-1};
   int reactNpcsSeconds{0};
@@ -725,6 +728,10 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     for 2.5 s, said as it goes (charging, ready, full), and fires\n"
          "  --hurt N           our V is hit every N seconds: its health falls a quarter (the\n"
          "                     others' puppet of it grunts and flinches), then is full again\n"
+         "  --hurt-hit WHO     --hurt: each hit is also told as the hit it was (a bullet\n"
+         "                     on its left leg, from its left), by WHO: world (nobody the\n"
+         "                     others know) | npc (the first shared NPC: as host, --npc's)\n"
+         "                     | you (the other V)\n"
          "  --melee N          swing a melee weapon every N seconds, and land it (a cue)\n"
          "  --menu-at N        our V is in a menu N seconds after another player is in the\n"
          "                     session, for 5 seconds\n"
@@ -1685,7 +1692,11 @@ Options Parse(int argc, char **argv) {
       options.chargeSeconds = std::max(4, Number<int>(value));
     else if (flag == "--hurt")
       options.hurtSeconds = std::max(1, Number<int>(value));
-    else if (flag == "--melee")
+    else if (flag == "--hurt-hit") {
+      if (value != "world" && value != "npc" && value != "you")
+        Usage(std::format("--hurt-hit: world, npc or you, not {}", value));
+      options.hurtHit = std::string(value);
+    } else if (flag == "--melee")
       options.meleeSeconds = std::max(1, Number<int>(value));
     else if (flag == "--menu-at")
       options.menuAtSeconds = Number<int>(value);
@@ -5021,6 +5032,17 @@ int main(int argc, char **argv) {
                                                                 : "melee hit";
               Log("player {} cue: {} to ({:.1f}, {:.1f}, {:.1f}), flags {:#x}", e.cue.player, kind,
                   e.cue.at.x, e.cue.at.y, e.cue.at.z, e.cue.arg);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteHitTaken>) {
+              const auto &hit = e.hit;
+              Log("player {} took a hit: by {} {}, attack {:#x} (type {}), zone {}, {:.0f} % of "
+                  "its health, flags {:#x}, from ({:.2f}, {:.2f}, {:.2f})",
+                  hit.player,
+                  hit.by == tandem::proto::HitBy::Npc      ? "npc"
+                  : hit.by == tandem::proto::HitBy::Player ? "player"
+                                                           : "nobody known,",
+                  hit.attacker, hit.attack, hit.attackType, hit.zone,
+                  static_cast<float>(hit.share) / 2.55f, hit.flags, hit.direction.x,
+                  hit.direction.y, hit.direction.z);
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcReaction>) {
               // Twitches come by the dozen under fire: the others are said.
               if (e.reaction.type != tandem::proto::kReactionTwitch)
@@ -7909,8 +7931,38 @@ int main(int argc, char **argv) {
       if (options.hurtSeconds && now >= nextHurt) {
         nextHurt = now + std::chrono::seconds(options.hurtSeconds);
         if (presenceSent) {
-          ourHealth = ourHealth > 0.3f ? ourHealth - 0.25f : 1.f;
+          const bool hit = ourHealth > 0.3f;
+          ourHealth = hit ? ourHealth - 0.25f : 1.f;
           changed = true;
+          // --hurt-hit: the hit it was, for the others' puppet of our V: a
+          // bullet (gamedataAttackType.Ranged 10) on its left leg
+          // (EHitReactionZone.LegLeft 8, flesh), going east.
+          if (hit && !options.hurtHit.empty()) {
+            tandem::proto::HitTaken taken{.attackType = 10,
+                                          .zone = 8,
+                                          .shape = 0,
+                                          .share = 64,
+                                          .offset = {-0.15f, 0.f, 0.5f},
+                                          .direction = {1.f, 0.f, 0.f}};
+            if (options.hurtHit == "npc") {
+              const tandem::proto::NpcId npc = options.host
+                                                   ? (options.npcRecord.empty() ? 0 : kOwnNpc)
+                                                   : (liveNpcs.empty() ? 0 : *liveNpcs.begin());
+              if (npc != 0) {
+                taken.by = tandem::proto::HitBy::Npc;
+                taken.attacker = npc;
+              }
+            } else if (options.hurtHit == "you" && !lastOf.empty()) {
+              taken.by = tandem::proto::HitBy::Player;
+              taken.attacker = lastOf.begin()->first;
+            }
+            endpoint->SendLocalHitTaken(taken);
+            Log("our V took a hit on its left leg: by {} {}",
+                taken.by == tandem::proto::HitBy::Npc      ? "npc"
+                : taken.by == tandem::proto::HitBy::Player ? "player"
+                                                           : "nobody known,",
+                taken.attacker);
+          }
         }
       }
       const bool inMenu = options.menuAtSeconds >= 0 && shared >= options.menuAtSeconds &&
