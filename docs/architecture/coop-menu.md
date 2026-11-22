@@ -216,6 +216,13 @@ yet run in game**).
   (opening it asks; they arrive as a notice, shown the next time), and
   every record shown otherwise this session (whose, which, as what). The
   status panel has one line per player whose mods differ.
+- **What the game runs without** (`degradations.md`): the status panel
+  keeps a line per state that holds ("Runs without: …", "(your setting)"
+  for a `tandem.ini` switch), per fallback taken ("Fell back N time(s):
+  …") and per state of another player's game ("NAME's game runs without:
+  …"), solo too (`TandemDegradedSay.StatusLines`). With a core feature off
+  the page opens with the popup of the startup problems, the feature and
+  its reason in the player's language.
   `tools/game.sh cmd coop mods` logs the same, `coop mods names` asks for
   the names.
 

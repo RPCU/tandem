@@ -5,6 +5,13 @@ by an address-library hash, a raw offset or a vtable slot is checked against
 the running game, and what does not match turns **one feature** off with one
 log line. The game always starts. Code: `plugin/src/engine/access.{hpp,cpp}`.
 
+Never silently ([`degradations.md`](degradations.md)): `FeatureOff`
+registers the feature, under its name here, with what the game runs
+without. The player reads it (a notice, the co-op menu's status panel), the
+other players are told, a scenario fails on it, and a **core** feature
+(puppet movement, pose stream, quest nodes, quest freeze) off means no
+session: the Co-op page says which and why.
+
 ## The lookup
 
 `engine::Resolve(hash)` answers the address, or 0 when the game's address
@@ -51,9 +58,11 @@ A warning when one is off: `…, looks OFF (the appearance changer's schedule
   a running game first); exit 1 when a feature is off.
 - Scripts: `TandemNative.EngineOn("puppet movement")`,
   `TandemNative.EngineOff()` (the names that are off, `""` when none),
-  `TandemNative.EngineReport()`. At a session's start a game with a feature
-  off logs `engine: off in this game: …` and shows the notice
-  `Session-EngineOff`.
+  `TandemNative.EngineReport()`. What the player is shown comes from the
+  registry (`degradations.md`), a notice per feature by name.
+- `FeatureSwitchedOff(feature, why)`: not asked for because `tandem.ini`
+  switched a path of the sync off (`pose = off`, `quest_freeze = off`):
+  listed as not asked here, and registered as a chosen state there.
 
 Layouts and hashes below were measured on 2.50.
 
@@ -92,4 +101,6 @@ notes only).
 
 - A normal start on 2.50: the line says `0 off`.
 - A test build with one hash changed to a missing one must start the game
-  with that feature off and the others on (not run in game yet).
+  with that feature off and the others on (not run in game yet); with a
+  core one (the idle `SetAnimation` hash), the Co-op page must show its
+  popup naming puppet movement and offer only the bug report.

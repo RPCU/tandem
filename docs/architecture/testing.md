@@ -19,6 +19,7 @@
 | co-op menu | the settings page's arrays aligned, each row's label and description in English and French, keys the plugin takes, no duplicate or vanilla-looking entry (`tools/menu-check.py`) | `task menu:check` |
 | threads | every script hook that may run on a job thread (per-entity, component and persistent-state wraps, `cb func`s, lifecycle methods, `Entity/*` callbacks) and all it calls: reads, the wrapped method, natives; no write to a system's state (`tools/scripts-threads.py`; `.known`: 82 hooks older than the check, unproven, each with the thread probe's call) | `task threads:check` |
 | references | every `TandemX.Name(…)` call names a declared function, every record of ours the scripts name is in `tweaks/tandem` (`tools/scripts-refs.py`: what scc and the game would say, in CI); every scenario's `--flags` exist in the mock player, its `cmd` words in the scripts, its helpers in `tools/scenario.sh`, its queries in `TestQuery.reds` (`tools/scenarios-check.py`); every log pattern a scenario waits for, can match a line the game or the mock player writes (`tools/scenarios-patterns.py`, below) | `task refs:check`, `task scenarios:check` |
+| degradations | every id the scripts, the plugin and the scenarios name is in the catalogue as what it is said as (a state, a fallback), with its text in English and French and its row in `degradations.md`; none that nothing registers (`tools/degraded.py lint`, in CI) | `task degraded:check` |
 | other mods | every method another mod's redscript or CET Lua wraps, replaces or observes, against the ones tandem wraps: conflicts, order-sensitive, harmless chains (`tools/mods-check.py`, on any game folder or copy) | `task mods:check DIR=…` |
 | scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all`, `task sweep` |
 | in game | deploy the DLL, read its log | `task deploy`, `task logs` |
@@ -210,7 +211,9 @@ output, `NAME.log`. Build first (`tools/build.sh`, or `tools/remote.sh` and
   `timeout` (the sweep's limit), `by-hand`, `dns` (a mock player or
   `coop join` given `:27450`, no address: `getent` answered nothing),
   `peer-args` (the mock player's log: `needs a value`, `usage:`),
-  `referee`, `threads` (a hook beside the script tick), `reset` (not in
+  `referee`, `threads` (a hook beside the script tick), `degraded` (the
+  game ran on a lesser path the scenario did not declare: `degradations.md`),
+  `reset` (not in
   the test state), `launch` (`ensure` failed), `pilot`, `location` (the
   game's log says the spot lacks what the scenario needs:
   `no turret within 60 m`, `interact look: nothing there`), `wording` (an expect timed out, and a line beginning as
@@ -785,7 +788,7 @@ C++ builds (`AGENTS.md`, Git).
   kustomize base and overlays, kubeconform), `docs, natives, strings`
   (`tools/docs-check.py links`, `check-natives.py`, `check-strings.py`,
   `scripts-threads.py`, `scripts-refs.py`, `scenarios-check.py`,
-  `scenarios-patterns.py`),
+  `scenarios-patterns.py`, `degraded.py lint`),
   `core build (Linux)` (`task build:linux` with GCC 16, the devenv's: the
   tests' seeded links are measured with its libstdc++), then `core tests`
   in four jobs side by side on its binaries (`tandem-tests` in three
