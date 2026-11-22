@@ -53,8 +53,6 @@ constexpr Info kCatalogue[] = {
      "an NPC proxy lost its body or never woke up: spawned again"},
     {"npc state polled", Degraded, Fallback,
      "an NPC's change came from the safety poll: its event was missed"},
-    {"grapple held", Degraded, Fallback,
-     "a grappled NPC is held in front of the puppet, the grapple did not take"},
     {"loot not shared", Degraded, Fallback, "items dropped the game's usual way, not shared"},
     {"record substituted", Degraded, Fallback,
      "another game's record is unknown here: a substitute, or nothing"},

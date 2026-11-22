@@ -222,7 +222,6 @@ into the others as `{1}` or `{2}`.
 | `Degraded-Id-street-body-respawned` | a street vehicle that vanished was spawned again | un véhicule de rue disparu a été recréé | Degraded.reds |
 | `Degraded-Id-proxy-respawned` | a shared NPC that vanished was spawned again | un PNJ partagé disparu a été recréé | Degraded.reds |
 | `Degraded-Id-npc-state-polled` | an NPC's change of state was caught late | un changement d'état d'un PNJ a été détecté en retard | Degraded.reds |
-| `Degraded-Id-grapple-held` | a grabbed NPC held in place by hand | un PNJ saisi maintenu en place manuellement | Degraded.reds |
 | `Degraded-Id-loot-not-shared` | dropped items were not shared | des objets lâchés n'ont pas été partagés | Degraded.reds |
 | `Degraded-Id-record-substituted` | something from another player's mods is shown otherwise here | un élément des mods d'un autre joueur est affiché autrement ici | Degraded.reds |
 | `Degraded-Id-look-not-received` | a player sent no look: a stand-in body | un joueur n'a envoyé aucune apparence : corps de substitution | Degraded.reds |

@@ -366,7 +366,6 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-street-body-respawned", "a street vehicle that vanished was spawned again");
     this.Text("Tandem-Degraded-Id-proxy-respawned", "a shared NPC that vanished was spawned again");
     this.Text("Tandem-Degraded-Id-npc-state-polled", "an NPC's change of state was caught late");
-    this.Text("Tandem-Degraded-Id-grapple-held", "a grabbed NPC held in place by hand");
     this.Text("Tandem-Degraded-Id-loot-not-shared", "dropped items were not shared");
     this.Text("Tandem-Degraded-Id-record-substituted", "something from another player's mods is shown otherwise here");
     this.Text("Tandem-Degraded-Id-look-not-received", "a player sent no look: a stand-in body");
@@ -916,7 +915,6 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-street-body-respawned", "un véhicule de rue disparu a été recréé");
     this.Text("Tandem-Degraded-Id-proxy-respawned", "un PNJ partagé disparu a été recréé");
     this.Text("Tandem-Degraded-Id-npc-state-polled", "un changement d'état d'un PNJ a été détecté en retard");
-    this.Text("Tandem-Degraded-Id-grapple-held", "un PNJ saisi maintenu en place manuellement");
     this.Text("Tandem-Degraded-Id-loot-not-shared", "des objets lâchés n'ont pas été partagés");
     this.Text("Tandem-Degraded-Id-record-substituted", "un élément des mods d'un autre joueur est affiché autrement ici");
     this.Text("Tandem-Degraded-Id-look-not-received", "un joueur n'a envoyé aucune apparence : corps de substitution");

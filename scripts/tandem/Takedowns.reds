@@ -537,7 +537,6 @@ public class TandemTakedowns extends ScriptableSystem {
     } else {
       this.Ungrapple(proxy, held);
       TandemNative.Log(s"takedowns: \(held.npc) held by player \(held.player): grapple by the fallback: \(why) (the proxy stays where it was grabbed)");
-      TandemDegraded.Fallback("grapple held", s"npc \(held.npc) held by player \(held.player): \(why) (the proxy stays where it was grabbed)");
     }
   }
 
@@ -623,7 +622,6 @@ public class TandemTakedowns extends ScriptableSystem {
         // Neither took: in its arms by our own placing, each tick.
         held.followed = true;
         TandemNative.Log(s"takedowns: \(held.npc) grappled by player \(held.player): grapple by the fallback: \(why) (held in front of the puppet)");
-        TandemDegraded.Fallback("grapple held", s"npc \(held.npc) grappled by player \(held.player): \(why) (held in front of the puppet)");
       }
     }
     if held.followed && held.how == 1 {

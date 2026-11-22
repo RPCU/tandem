@@ -172,7 +172,6 @@ names of `engine-access.md`.
 | `street body respawned` | degraded | fallback | `Traffic.reds` `Check` | a street vehicle's body was gone, spawned again |
 | `proxy respawned` | degraded | fallback | `Npcs.reds` (`Check`, `Respawn`) | a proxy lost its body or did not wake up |
 | `npc state polled` | degraded | fallback | `NpcAnims.reds` `Sample` | a change the events missed, caught by the 2 s poll |
-| `grapple held` | degraded | fallback | `Takedowns.reds` `HostKeep` | a grappled NPC held in front of the puppet |
 | `loot not shared` | degraded | fallback | `Loot.reds` `Drop` | items dropped the game's usual way |
 | `record substituted` | degraded | fallback | `plugin/src/mods.cpp` (every substitute the resolver decides), `Npcs.reds` (an attack), `Loot.reds`, `Paint.reds`, `StatusVisuals.reds`, `Trade.reds` | another game's record unknown here (`mod-compat.md`) |
 | `look not received` | degraded | fallback | `System.reds` `StandIn` ("no look received") | a stand-in body; the mock player's case (allowed in every scenario) |
@@ -216,7 +215,7 @@ without: ID` for an undeclared id. `test reset` forgets the fallbacks
   (`task degraded:check`). Allowed everywhere: `look not received` (the mock
   player sends no look unless `--look`).
 - Declared today: `prompts-drawn` (`expect_degraded "drawn prompts"`);
-  `prompts-game` (drawn for a while), `takedowns-host` (`grapple held`),
+  `prompts-game` (drawn for a while),
   `regions-meet` (`proxy respawned`), `scene-ride-full` (`carried by
 placement`), `puppet-attitude-fresh` (`attitude relations`),
   `nameplate-projection` (`nameplate projection`, asked for by command),
