@@ -698,6 +698,11 @@ isHoldAction, localizedName, … }] }`, F:232377, F:395204):
   `Prompts.reds` reads it to know its choice shows.
   `InteractionManager.IsInteractionLookAtTarget(activator, hotspot)`
   (F:193622). [2.5-untested]
+- **A lead.** `PlayerPuppet.OnIncapacitated` (F:49362) turns on a layer
+  named `Revive` when V is dead, and `ScriptedPuppet.OnResurrected`
+  (F:22158) turns `Grapple`, `TakedownLayer`, `AerialTakedown` and
+  `NewPerkFinisherLayer` back on: a player template may carry an
+  interaction component of its own with a `Revive` layer. [unverified]
 - **Unknown until run**: whether V's `player_*_tpp_cutscene.ent` has an
   `Interaction` component; whether a donor's, cloned into the template
   being built (`Body.reds`), keeps its layers and is seen by the
