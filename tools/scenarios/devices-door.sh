@@ -11,8 +11,11 @@ expect 'devices: [0-9]+ followed, [1-9][0-9]* in our world' 10
 cmd device goto door
 expect 'devices: at door [0-9a-f]+ [A-Za-z]+: ' 10
 # A known start: closed. Then V opens it: the session hears it, the player sees it.
+# The mock player answers each change of ours 3 s later and takes what it hears
+# for 5 s after as its answer's reply: the door may have changed before (it
+# opened as V arrived, 2026-11-22), so the open waits for that window's end.
 cmd device close door
-pause 2
+pause 9
 mark
 cmd device open door
 expect 'devices: open [0-9a-f]+ [A-Za-z]+ at ' 5
