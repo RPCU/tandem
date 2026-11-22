@@ -141,6 +141,7 @@ public class TandemNpcs {
   private let m_vAt: Vector4;
   private let m_vJumpedAt: Float;
   private let m_clockAt: Float;
+  private let m_checkedAt: Float;
   private let m_known: array<ref<TandemNpcKnown>>;
   private let m_next: Uint32;
   private let m_last: Float;
@@ -1724,6 +1725,12 @@ public class TandemNpcs {
     // spawned again as always, but are no fallback (respawn-point and
     // phone-regroup, 2026-11-22: 4 bodies each; 60 s: a respawn's loading
     // screen and the downed time before it count, respawn-point 8 bodies).
+    // A loading screen (the checks stop for it) streams the world again,
+    // wherever V ends up: respawn-point at a point near where V fell, 2026-11-22.
+    if this.m_checkedAt > 0.0 && now - this.m_checkedAt > 3.0 {
+      this.m_vJumpedAt = now;
+    }
+    this.m_checkedAt = now;
     let v = GetPlayer(this.m_game);
     if IsDefined(v) {
       let here = v.GetWorldPosition();
