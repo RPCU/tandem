@@ -47,6 +47,7 @@ add_library(tandem SHARED
   src/objects_natives.cpp
   src/degradations.cpp
   src/degraded_natives.cpp
+  src/body_natives.cpp
   src/threads.cpp
   src/stall.cpp
   src/engine/access.cpp
@@ -62,6 +63,7 @@ add_library(tandem SHARED
   src/engine/quests.cpp
   src/engine/prefabs.cpp
   src/engine/scenes.cpp
+  src/engine/slots.cpp
   src/engine/physics.cpp
   src/engine/vehiclemove.cpp
   src/engine/casts.cpp

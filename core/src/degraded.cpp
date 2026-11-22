@@ -31,6 +31,8 @@ constexpr Info kCatalogue[] = {
     {"anim trace", Degraded, State, "no animation trace, no mirror"},
     {"vehicle move", Degraded, State,
      "vehicles other games run are teleported every frame, not moved by the engine"},
+    {"body slots", Degraded, State,
+     "a puppet's body gets no grapple slot: a grappled NPC is held in front of it"},
     // ---- states the plugin and the scripts find ----
     {"drawn prompts", Degraded, State,
      "prompts on players and vendors are drawn by tandem, not the game's interactions"},

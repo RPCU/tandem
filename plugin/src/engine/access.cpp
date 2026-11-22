@@ -14,6 +14,7 @@
 #include "posestream.hpp"
 #include "prefabs.hpp"
 #include "quests.hpp"
+#include "slots.hpp"
 #include "vehiclemove.hpp"
 #include "workspots.hpp"
 
@@ -45,7 +46,8 @@ constexpr std::string_view kOrder[] = {
     feature::kLookKeys,           feature::kThirdPerson, feature::kPoseStream,
     feature::kQuestNodes,         feature::kQuestFreeze, feature::kPrefabs,
     feature::kWorkspots,          feature::kPhysics,     feature::kTransformGuard,
-    feature::kDismembermentGuard, feature::kTrace,
+    feature::kDismembermentGuard, feature::kTrace,       feature::kVehicleMove,
+    feature::kBodySlots,
 };
 
 // Under g_lock: the entries in the summary's order.
@@ -220,6 +222,7 @@ void CheckAccess() {
   CheckVehicleMove();
   CheckPhysics();
   CheckDismembermentGuard();
+  CheckBodySlots();
   g_checked = true;
   const auto summary = AccessSummary();
   if (FeaturesOff().empty())

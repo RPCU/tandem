@@ -144,6 +144,60 @@ target, effectName, effectTag, opt statusEffect)` (252966) runs
     the name lookup is built with the template (`entSlotComponent`
     `unk140..0x1A0`). Left: a native that rebuilds it, or the slot in the
     template's resource (ArchiveXL). [2.5-verified]
+  - **How `entSlotComponent` finds a slot** (2.50 exe, decompiled
+    2026-11-22): `+0x150` is a `HashMap<CName, uint32>` (RED4ext's layout,
+    0x30 bytes, hash = the name's high ^ low 32 bits, nodes of 0x18 then
+    4-byte buckets in one allocation, its allocator at +0x28) from slot
+    name to index in `slots`, built once from `slots` after the component
+    is loaded (vtable +0x28, `0x1403F7810`); `+0x140` is a DynArray of one
+    0x28-byte bone binding per slot, sized to `slots` when the component
+    attaches to its skeleton (vtable +0x180, `0x140BEED68` →
+    `0x140405B6C`; flag `+0x88 & 2`), emptied at its detach (`0x14020606C`).
+    Every lookup by name goes through the map (`0x140202734`, ~60 callers:
+    `GetSlotTransform` `0x140CA2200` → `0x140CA22E4`, the mounting
+    facility's), then `0x14032A4D4` reads `slots[i]` and, once attached,
+    binding i (out of bounds for a slot appended after the attach). So a
+    slot added before the attach to both `slots` and the map is found and
+    bound like the others: `TandemBody.AddSlot` (`plugin/src/engine/slots.cpp`,
+    feature `body slots`). [2.5-verified: `GetSlotTransform(n"grapple")`
+    true on the puppet after it, instance b]
+  - **No NPC has a `grapple` slot either** (instance b, 2026-11-22): the
+    donors' (Kerry's and Panam's templates) slot components are
+    `fx_communities_slots`, `Item_Attachment_Slot` (Head, Chest, the
+    weapon and item slots…), `UI_Slots`, `HitRepresentation`,
+    `Breach_Attachment_Slots` and `jaw`, none with it. Vanilla's grapple
+    mount names a slot nobody has: it only records the relation
+    (`IsBeingGrappled`), the takedown's workspot places the NPC. A puppet's
+    `grapple` slot would be tandem's own (tried: on `Root`, 0.6 m ahead,
+    the fallback's place). [2.5-verified]
+  - **A mount on the puppet's slot does not move the NPC** (instance b,
+    takedowns-host): half a second after the mount, a real NPC grabbed from
+    afar was still 2.4 m (plain request, slot in `Item_Attachment_Slot`),
+    24.7 m (with `mountData`: instant, silent, `slotName`, as
+    `TandemVehicles.Seat`) and 25.8 m (plain, slot in an `OccupantSlots`
+    of the puppet's own) from its holder; `IsBeingGrappled` and the
+    facility's record were right each time. The mounting facility branches
+    on `mountData` (`0x14089BFC0`: without it the relation is recorded and
+    told, `0x14089B6F0`); an attach to a parent's slot exists
+    (`0x1408A6628`: the parent's component named `OccupantSlots`, hash
+    0x59A85A5102735D07, slot index by the map, then a request queued on the
+    child, `0x140751DB0`), reached from a vtable near
+    `gamemountingMountingEvent`'s; what makes it run for a child is not
+    known. V's `OccupantSlots` holds `leftShoulder` (the carry), and V's
+    TPP template has none (its slot components: `fx_slots`,
+    `Q203_Cutscene_Lighting`, `fx_communities_slots`,
+    `Item_Attachment_Slot`, `UI_Slots`, `HitRepresentation`,
+    `Breach_Attachment_Slots`). Tried once on instance b: a script `Clone`
+    of the body's `Item_Attachment_Slot` named `OccupantSlots` with a new
+    id (`TandemBody.RenameSlots`), its index built by `AddSlot` (logged
+    `built`), added to the template. The mount then **did** move a proxy,
+    to 7588 m from its holder (the copy's transform not bound to the
+    skeleton), and the game thread was silent 5.1 s after that body came.
+    Not shipped: `Body.reds` gives no slot yet, the grapple keeps the
+    per-tick fallback. Next: an `OccupantSlots` bound as the template's own
+    (its `parentTransform` binding to `root`, before the attach), or the
+    component in the template's resource (ArchiveXL). [2.5-verified: the
+    moves measured; the attach path: read in the exe only]
 - **A thrown body leaves at `ThrowEvents.OnExit`**, not `OnEnter` (the
   kill, `ThrownNPC`, the pose): direction from the camera at the release,
   an aim assist turn, the impulse between `ragdollMaxImpulse` and
