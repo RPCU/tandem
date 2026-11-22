@@ -161,7 +161,7 @@ names of `engine-access.md`.
 | `anim trace` | degraded | state | `engine/trace.cpp` (asked for and off) | no animation trace, no mirror |
 | `vehicle move` | degraded | state | `engine/vehiclemove.cpp` (layout, hash); `System.reds` `MovePath` (5 bodies and none followed); only when asked for (`kinematic_ride = on`; teleports are the default) | the kinematic move asked for, unavailable: vehicles are teleported every frame |
 | `drawn prompts` | degraded | state | `Prompts.reds` (`prompts.tweak` not loaded; the test command `prompts off`); chosen: `native_prompts = off` | prompts on players and vendors drawn by tandem |
-| `attitude relations` | degraded | state | `Attitudes.reds` `Declared` (did NOT take, took in part) | attitudes copied agent by agent (`npcs.md`) |
+| `attitude relations` | degraded | state | `Attitudes.reds` `Declared` (did NOT take; "in part" is the save's run-time changes, carried by the runtime copy) | attitudes copied agent by agent (`npcs.md`) |
 | `scene privacy` | degraded | state | `engine/scenes.cpp` | every scene counts as important |
 | `interaction casts` | degraded | state | `engine/casts.cpp` | every interaction counts as casting its doer |
 | `scene voice` | degraded | state | `story_natives.cpp` | V's voice in a replayed scene is the game's pick |

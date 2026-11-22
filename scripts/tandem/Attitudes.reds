@@ -152,7 +152,15 @@ public class TandemAttitudes {
     } else if telling > 0 {
       verdict = "took in part";
     }
-    if telling > 0 && same == telling { TandemDegraded.Over("attitude relations"); } else if telling > 0 { TandemDegraded.State("attitude relations", s"declared relations \(verdict): \(same) of \(telling) groups"); }
+    // "In part" is the save at work: a quest or the story changed some of
+    // V's relations at run time (q001_scavengers, a gang turned hostile),
+    // which no TweakDB record can know and the runtime copy carries
+    // (measured 2026-11-22: 260 of 270 took, the 10 others quest groups).
+    // Only records that did not reach the engine at all are a degradation.
+    if telling > 0 && same == 0 { TandemDegraded.State("attitude relations", s"declared relations \(verdict): \(same) of \(telling) groups"); } else if telling > 0 { TandemDegraded.Over("attitude relations"); }
+    if telling > 0 && same > 0 && same < telling {
+      verdict = "took (the rest changed at run time by the save, carried by the runtime copy)";
+    }
     let line = s"attitudes: declared relations \(verdict): \(same) of \(telling) groups player is not friendly with read the same for \(NameToString(ours)), of \(ArraySize(groups)) groups (\(tweak))";
     if StrLen(differ) > 0 {
       line += s"; player/\(NameToString(ours)) differ:\(differ)";
