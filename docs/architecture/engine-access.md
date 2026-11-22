@@ -82,6 +82,7 @@ Layouts and hashes below were measured on 2.50.
 | vehicle move (`vehiclemove.cpp`) | 2933986803 (the vehicle's kinematic move) | `vehicleBaseObject` 0xBC0; the body (+0x2D8) and runtime data (+0x5F0) pointers at each call | `MoveVehicle` answers false: vehicle copies are teleported (`vehicles.md`) |
 | physics watch (`physics.cpp`) | 3885377886, 3646232200, 3069123790, 3811643879, 2330137828 | the bytes of four functions that give the queues' offsets | `PhysicsBacklog` answers -1: a long pause is not watched |
 | transform guard (`guards.cpp`, Wine only) | 2451640480 (hooked), 469381152 | the bytes of the update's start and of its caller's call | the engine's own crash on an expired entity is not guarded |
+| dismemberment guard (`guards.cpp`) | 2784304484 (`gameDismembermentComponent`'s slot +0x198, hooked) | the function's first 0x20 bytes, before the hook is installed; `gameDismembermentComponent` 0xB0 bytes, before the hook skips anything | the engine's own crash on an NPC detached in the middle of an action is not guarded (`../research/engine/re.md` §13.142) |
 | anim trace (`trace.cpp`, `trace` or `mirror` on) | 316482401 (`ApplyFeature`, hooked) | — | no trace, no mirror |
 
 Checked at their first use and not in the line: the pose hook (`pose.cpp`,
