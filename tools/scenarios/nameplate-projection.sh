@@ -1,5 +1,7 @@
 # The nameplate is placed by the engine's own screen projection: the path in use, the plate within the screen and near our own projection of the head (the difference is logged), ours again on demand
 # shellcheck shell=bash disable=SC2317,SC2154
+# On purpose: our own projection is asked for by command for a while (below).
+allow_fallback "nameplate projection"
 ensure host
 cmd coop set nameplates near
 expect 'setting: nameplates = near' 10

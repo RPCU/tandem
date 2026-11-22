@@ -215,6 +215,8 @@ into the others as `{1}` or `{2}`.
 | `Degraded-Id-scene-privacy` | private scenes (every scene counts as important) | les scènes privées (toute scène compte comme importante) | Degraded.reds |
 | `Degraded-Id-interaction-casts` | the reading of who an interaction involves | la lecture de qui participe à une interaction | Degraded.reds |
 | `Degraded-Id-scene-voice` | V's own voice in replayed scenes | la voix de V dans les scènes rejouées | Degraded.reds |
+| `Degraded-Id-nameplate-projection` | name plates placed by the game's engine (tandem places them itself) | les plaques de nom placées par le moteur du jeu (tandem les place lui-même) | Degraded.reds |
+| `Degraded-Id-hit-shown-by-twitch` | a hit on a player shown as a plain twitch, not the game's own reaction | un coup reçu par un joueur affiché comme un simple sursaut, pas la réaction du jeu | Degraded.reds |
 | `Degraded-Id-prompt-drawn` | a prompt drawn by tandem instead of the game's own | une invite dessinée par tandem au lieu de celle du jeu | Degraded.reds |
 | `Degraded-Id-vehicle-teleported` | a vehicle teleported instead of moved smoothly | un véhicule téléporté au lieu d'être déplacé en douceur | Degraded.reds |
 | `Degraded-Id-street-body-respawned` | a street vehicle that vanished was spawned again | un véhicule de rue disparu a été recréé | Degraded.reds |

@@ -37,6 +37,8 @@ constexpr Info kCatalogue[] = {
     {"scene privacy", Degraded, State, "every scene counts as important: none is private"},
     {"interaction casts", Degraded, State, "every interaction counts as casting its doer"},
     {"scene voice", Degraded, State, "V's voice in a replayed scene is the game's pick"},
+    {"nameplate projection", Degraded, State,
+     "nameplates are placed by tandem's own projection, not the engine's"},
     // ---- fallbacks: a lesser path taken for one body, once ----
     {"prompt drawn", Degraded, Fallback, "one body's prompt is drawn, not the game's own"},
     {"vehicle teleported", Degraded, Fallback,
@@ -73,6 +75,8 @@ constexpr Info kCatalogue[] = {
      "signals held for a guest's frozen story were dropped"},
     {"no room", Degraded, Fallback, "no slot left for another puppet, pose or rig"},
     {"puppet not driven", Degraded, Fallback, "a puppet has no move component to drive"},
+    {"hit shown by twitch", Degraded, Fallback,
+     "a hit a V took is shown as the body's twitch: the game's pipeline played nothing"},
 };
 
 std::size_t OrderOf(std::string_view id) {

@@ -212,9 +212,10 @@ version 5, the host runs 6`, nothing on the guest's screen (a session
   their game has no Phantom Liberty …"). A host whose own game lacks it
   (only possible with `compat = off`) refuses everyone, with the words the
   other way round. Final, like a version refusal.
-- **`kProtocolVersion` is 18** since every game says what it runs without
-  (`Degraded`, appended; bumped all the same: a game of 17 would stay
-  silent, `degradations.md`) (2026-11-22; 17: the streams of every frame
+- **`kProtocolVersion` is 19** since every game says what it runs without
+  (`Degraded`, appended; bumped all the same: a game of 18 would stay
+  silent, `degradations.md`) (2026-11-22; 18: `HitTaken` appended; 17: the
+  streams of every frame
   and shot got shorter wire forms (`PoseFrame`, `PlayerMotion`,
   `VehicleMotion`, `Cue`: `netcode.md`, "What goes on the wire"); 16: dual
   wielding gave a hand to a `Charge` cue (`at.y`), a smart round

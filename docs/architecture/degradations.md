@@ -83,7 +83,7 @@ still listed, as `unknown id` (and fails every scenario).
   session left (`TandemDegradedSay.Tick`, `CoopLeaveSaying`). The process
   never ends for it. `compat = off` (developers) ignores the block as it
   does the others: the game then hosts or joins, and tells everyone.
-- **The other players**: `proto::Degraded` (appended, protocol 18, Event
+- **The other players**: `proto::Degraded` (appended, protocol 19, Event
   channel, the combat path as `CarPaint`): a player and the states that hold
   in its game, each an id and two flags (`kDegradedChosen`,
   `kDegradedCore`), sorted by id, 32 at most. Each game says its own from
@@ -93,7 +93,7 @@ still listed, as `unknown id` (and fails every scenario).
   (`Endpoint::Degradations`, `SendDomainsTo`); a repeat is applied nowhere;
   an empty list is kept nowhere; forgotten when the player goes. Not kept in
   a session recording (`play::KeepsSession`). The version was bumped though
-  the message is appended: a game of 17 would stay silent about what it
+  the message is appended: a game of 18 would stay silent about what it
   runs without. Tests: "what a game runs without survives encoding…"
   (`protocol_test.cpp`), "…reaches everyone once, late joiners too, and goes
   with it" (`progress_test.cpp`), "referee: what a game runs without is its
@@ -158,12 +158,13 @@ names of `engine-access.md`.
 | `physics watch` | degraded | state | `engine/physics.cpp` | a long physics pause is not watched |
 | `transform guard` | degraded | state | `engine/guards.cpp` (Wine) | the engine's own crash on an expired entity is not guarded |
 | `anim trace` | degraded | state | `engine/trace.cpp` (asked for and off) | no animation trace, no mirror |
-| `vehicle move` | degraded | state | `System.reds` `MovePath` (the layout check failed; 5 bodies and none followed); chosen: `kinematic_ride = off` | vehicles other games run are teleported every frame |
+| `vehicle move` | degraded | state | `engine/vehiclemove.cpp` (layout, hash); `System.reds` `MovePath` (5 bodies and none followed); chosen: `kinematic_ride = off` | vehicles other games run are teleported every frame |
 | `drawn prompts` | degraded | state | `Prompts.reds` (`prompts.tweak` not loaded; the test command `prompts off`); chosen: `native_prompts = off` | prompts on players and vendors drawn by tandem |
 | `attitude relations` | degraded | state | `Attitudes.reds` `Declared` (did NOT take, took in part) | attitudes copied agent by agent (`npcs.md`) |
 | `scene privacy` | degraded | state | `engine/scenes.cpp` | every scene counts as important |
 | `interaction casts` | degraded | state | `engine/casts.cpp` | every interaction counts as casting its doer |
 | `scene voice` | degraded | state | `story_natives.cpp` | V's voice in a replayed scene is the game's pick |
+| `nameplate projection` | degraded | state | `PartyHud.reds` (no carrier on the HUD, no slot; `presence hud projection script`) | nameplates placed by our own projection, not the engine's (`presence.md`) |
 | `prompt drawn` | degraded | fallback | `Prompts.reds` (`Adopt`, `Fallback`), `Body.reds` | one body's prompt is drawn |
 | `vehicle teleported` | degraded | fallback | `System.reds` `MoveBody` (a body that does not follow, a move refused), `Vehicles.reds` | one vehicle teleported, not moved |
 | `street body respawned` | degraded | fallback | `Traffic.reds` `Check` | a street vehicle's body was gone, spawned again |
@@ -187,6 +188,7 @@ names of `engine-access.md`.
 | `quest signals dropped` | degraded | fallback | `engine/quests.cpp` | signals held for a frozen story are lost |
 | `no room` | degraded | fallback | `runtime.cpp`, `engine/posestream.cpp` | no slot for another puppet, pose or rig |
 | `puppet not driven` | degraded | fallback | `engine/hooks.cpp` | a puppet without a move component |
+| `hit shown by twitch` | degraded | fallback | `HitsTaken.reds` (the pipeline played nothing, or chose an AI task) | a hit a V took shown as the body's twitch (a hit by nobody the games know twitches by design: not registered) |
 
 Looked at and left out, each for its reason: a rule that drops a message (a
 hit with friendly fire off, a stale or repeated message, an authority
@@ -215,6 +217,7 @@ defaults of the party HUD (a field of view of 0, a health below 0).
   `prompts-game` (drawn for a while), `takedowns-host` (`grapple held`),
   `regions-meet` (`proxy respawned`), `scene-ride-full` (`carried by
   placement`), `puppet-attitude-fresh` (`attitude relations`),
+  `nameplate-projection` (`nameplate projection`, asked for by command),
   `combat-melee-guest`, `npcs-hurt-guest`, `mods-unknown-held`,
   `mods-unknown-look`, `mods-unknown-vehicle`, `presence-status` (`record
   substituted`).
