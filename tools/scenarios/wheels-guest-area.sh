@@ -7,7 +7,7 @@ peer join "$address":27450 --name far --mode region --region-far 400 --region-wa
 expect 'in the session as player|joined \(player' 30
 expect_peer 'street: running 3 vehicle\(s\) of our own' 20
 # Apart: its street is its own, nothing of it here.
-expect 'regions: linked with nobody' 20
+# ("linked with nobody" is said on a change only: the count below is the check.)
 cmd street count
 expect 'street count: [0-9]+ \([0-9]+ run by us, 0 shown as proxies' 5
 # It walks up: its three cars shown as proxies, run by its game.

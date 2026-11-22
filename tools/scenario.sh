@@ -192,19 +192,21 @@ ensure() {
   if grep -q '^launched' <<<"$output"; then
     mark
     mark_line=0
-    # The start's own test reset teleports V from where the save stands to
-    # the test field, through a loading screen whose "silent" line comes 5 s
-    # after (coop on instance b, 2026-11-22): wait it out, mark after it.
-    # The scenario still reads the whole new log (the session's first
-    # lines are its to read): only the hang check starts after the boot.
+  elif [ -z "$mark_file" ]; then
+    mark
+  fi
+  # The test reset ensure ran (at a start or not) may teleport V to the
+  # test field through a loading screen whose "silent" line comes 5 s after
+  # (coop on instance b, 2026-11-22): wait it out. The scenario still reads
+  # from its mark (the session's first lines are its to read): only the
+  # hang check starts after it (boot_line).
+  if remote "tail -n 80 '$mark_file'" | grep -q 'elsewhere: a teleport'; then
     pause 8
     local waited=$SECONDS
     while (($(watchdog_lines silent) > $(watchdog_lines back))) && ((SECONDS - waited < 90)); do
       sleep 2
     done
     boot_line=$(remote "wc -l < '$mark_file'")
-  elif [ -z "$mark_file" ]; then
-    mark
   fi
 }
 peer() {
