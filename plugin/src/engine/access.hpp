@@ -34,6 +34,7 @@ inline constexpr std::string_view kWorkspots = "workspots";
 inline constexpr std::string_view kPhysics = "physics watch";
 inline constexpr std::string_view kTransformGuard = "transform guard";
 inline constexpr std::string_view kTrace = "anim trace";
+inline constexpr std::string_view kVehicleMove = "vehicle move";
 } // namespace feature
 
 // The address of an address-library hash in this game, 0 when its library

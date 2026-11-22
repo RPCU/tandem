@@ -14,10 +14,10 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "../log.hpp"
+#include "access.hpp"
 #include "vehiclemove.hpp"
 
 #include <RED4ext/RTTISystem.hpp>
-#include <RED4ext/Relocation.hpp>
 #include <RED4ext/Scripting/Natives/Generated/WorldTransform.hpp>
 #include <RED4ext/Scripting/Natives/Generated/ent/Entity.hpp>
 
@@ -50,9 +50,27 @@ RED4ext::CClass *VehicleClass() {
   }();
   return cls;
 }
+// The move's address, null when this game's address library lacks it (the
+// feature is off then, logged once: engine/access.hpp).
+MoveToFn MoveTo() {
+  static const MoveToFn fn =
+      Find<MoveToFn>(feature::kVehicleMove, "the vehicle's kinematic move", kMoveTo);
+  return fn;
+}
 } // namespace
 
-bool CanMoveVehicles() { return VehicleClass() != nullptr; }
+bool CheckVehicleMove() {
+  if (!VehicleClass()) {
+    FeatureOff(feature::kVehicleMove, "vehicleBaseObject is not the size measured on 2.50");
+    return false;
+  }
+  if (!MoveTo())
+    return false;
+  FeatureOn(feature::kVehicleMove);
+  return true;
+}
+
+bool CanMoveVehicles() { return VehicleClass() != nullptr && MoveTo() != nullptr; }
 
 bool MoveVehicle(RED4ext::ent::Entity *entity, float x, float y, float z, float i, float j, float k,
                  float r, float seconds) {
@@ -77,7 +95,9 @@ bool MoveVehicle(RED4ext::ent::Entity *entity, float x, float y, float z, float 
   to.Orientation.j = j / norm;
   to.Orientation.k = k / norm;
   to.Orientation.r = r / norm;
-  static RED4ext::UniversalRelocFunc<MoveToFn> move(kMoveTo);
+  const MoveToFn move = MoveTo();
+  if (!move)
+    return false;
   move(entity, to, seconds);
   return true;
 }

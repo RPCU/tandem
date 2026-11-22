@@ -15,6 +15,9 @@ namespace tandem::plugin::engine {
 // The vehicle class is the one measured (checked once; a mismatch is logged
 // once): MoveVehicle can be used.
 bool CanMoveVehicles();
+// The startup check (engine/access.cpp): the class size and the move's
+// address; the feature "vehicle move" is on or off after it.
+bool CheckVehicleMove();
 bool MoveVehicle(RED4ext::ent::Entity *entity, float x, float y, float z, float i, float j, float k,
                  float r, float seconds);
 } // namespace tandem::plugin::engine
