@@ -4021,7 +4021,9 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.Log(s"vehicles: the vehicles other games run are moved by the engine's kinematic move (a teleport beyond \(TandemSystem.SnapDistance()) m, at a spawn, and for a body that does not follow)");
     } else {
       TandemNative.Log(s"vehicles: the vehicles other games run are teleported every frame (\(off ? "kinematic_ride = off, the default" : "the vehicle layout check failed")); the car our own V rides in every other frame while a body spawns");
-      if off { TandemDegraded.Chosen("vehicle move", "tandem.ini kinematic_ride = off"); } else { TandemDegraded.State("vehicle move", "the vehicle layout check failed: vehicles are teleported every frame"); }
+      // Teleports are the default (vehicles.md "How a copy is moved"): only
+      // a kinematic move asked for and unavailable is a degradation.
+      if !off { TandemDegraded.State("vehicle move", "kinematic_ride = on, but the vehicle layout check failed: vehicles are teleported every frame"); }
     }
   }
 

@@ -25,7 +25,7 @@ sees `scripts/tandem/Degraded.reds`; the tools `tools/degraded.py`.
 - **Core**: co-op cannot be right without it. **Degraded**: it works, not as
   intended. A fallback is never core.
 - **Chosen**: the state is the player's own `tandem.ini` switch (`pose`,
-  `quest_freeze`, `native_prompts`, `kinematic_ride`). No failure, still
+  `quest_freeze`, `native_prompts`). No failure, still
   listed and told, and never hiding a real one: a state that is off for a
   reason nobody chose replaces a chosen one, not the other way round.
 
@@ -34,7 +34,7 @@ log line; a hook on a job thread may call them):
 
 ```swift
 TandemDegraded.State("vehicle move", "the vehicle layout check failed");  // until Over
-TandemDegraded.Chosen("vehicle move", "tandem.ini kinematic_ride = off");
+TandemDegraded.Chosen("quest freeze", "tandem.ini quest_freeze = off");
 TandemDegraded.Over("vehicle move");
 TandemDegraded.Fallback("prompt drawn", s"\(label): no prompt for 3 s"); // one body, once
 ```
@@ -159,7 +159,7 @@ names of `engine-access.md`.
 | `transform guard` | degraded | state | `engine/guards.cpp` (Wine) | the engine's own crash on an expired entity is not guarded |
 | `dismemberment guard` | degraded | state | `engine/guards.cpp` | the engine's own crash on an NPC detached in the middle of an action is not guarded (`../research/engine/re.md` §13.142) |
 | `anim trace` | degraded | state | `engine/trace.cpp` (asked for and off) | no animation trace, no mirror |
-| `vehicle move` | degraded | state | `engine/vehiclemove.cpp` (layout, hash); `System.reds` `MovePath` (5 bodies and none followed); chosen: `kinematic_ride = off` | vehicles other games run are teleported every frame |
+| `vehicle move` | degraded | state | `engine/vehiclemove.cpp` (layout, hash); `System.reds` `MovePath` (5 bodies and none followed); only when asked for (`kinematic_ride = on`; teleports are the default) | the kinematic move asked for, unavailable: vehicles are teleported every frame |
 | `drawn prompts` | degraded | state | `Prompts.reds` (`prompts.tweak` not loaded; the test command `prompts off`); chosen: `native_prompts = off` | prompts on players and vendors drawn by tandem |
 | `attitude relations` | degraded | state | `Attitudes.reds` `Declared` (did NOT take, took in part) | attitudes copied agent by agent (`npcs.md`) |
 | `scene privacy` | degraded | state | `engine/scenes.cpp` | every scene counts as important |
