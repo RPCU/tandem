@@ -1,5 +1,7 @@
 # As a guest, an NPC's melee hit waits for its proxy's swing on our screen, then runs on our V by our rules (block, parry, dodge), never for more than the host computed
 # shellcheck shell=bash disable=SC2317,SC2154
+# On purpose: the mock host's attack record is unknown here (the stand-in below).
+allow_fallback "record substituted"
 ensure join
 # The mock host's hits name no attack record: our game stands in
 # Attacks.ForwardPush (Combat.reds AttackRecord), which once took 392.96 of

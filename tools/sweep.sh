@@ -292,6 +292,7 @@ classify() {
   *'game thread silent'*) echo hang && return ;;
   *'referee: ['*) echo referee && return ;;
   *'script hooks ran'*) echo threads && return ;;
+  'degraded: '*) echo degraded && return ;;
   *'not in its test state'*) echo reset && return ;;
   *'is not running this build'*) echo launch && return ;;
   *"pilot's routine"*) echo pilot && return ;;

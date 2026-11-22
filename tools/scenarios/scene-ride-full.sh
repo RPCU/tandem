@@ -1,5 +1,7 @@
 # As a guest: the host's two-seat quest car (an NPC drives, the host beside it) has no seat for us; asked, we ride along hidden, and get out beside it when the scene ends
 # shellcheck shell=bash disable=SC2317
+# Carried by the engine or by the 5 Hz placement (below): both are read.
+allow_fallback "carried by placement"
 ensure join
 peer host --mode drive --vehicle Vehicle.v_sport2_porsche_911turbo --seat seat_front_right --scene --driver-npc Character.Panam --body male --drive-seconds 40
 expect 'in the session as player' 30

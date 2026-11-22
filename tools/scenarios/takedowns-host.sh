@@ -1,5 +1,7 @@
 # A guest grabs, takes down, carries and throws the host's NPCs: the host validates each request and plays the NPC's side
 # shellcheck shell=bash disable=SC2317
+# The grapple may take as the workspot or as the fallback (below): both are read.
+allow_fallback "grapple held"
 ensure host
 cmd npc spawn 3
 expect 'npc spawn: 3 gangers' 10

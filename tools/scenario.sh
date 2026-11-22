@@ -59,10 +59,21 @@
 #   pause SECS             let time pass (still watching for a stall)
 #   shot NAME              a screenshot kept with the results
 #   note TEXT              a line in the report
+#   expect_degraded ID     the game runs without ID on purpose here (a state
+#                          of docs/architecture/degradations.md: tandem.ini
+#                          switched a path off): it must be in the game's
+#                          registry at the end
+#   allow_fallback ID      ID may be in it (a fallback this scenario takes on
+#                          purpose, or cannot rule out), and the game may
+#                          tell the mock player so
 # Every scenario also rejects the mock player's `referee:` lines: the game
 # broke a protocol or authority rule (docs/architecture/sim.md), and the game
 # log's `threads: hook NAME ran beside the script tick` lines (the thread
 # probe, docs/architecture/testing.md).
+# And no silent fallback (docs/architecture/degradations.md): at its end the
+# game's registry (tools/game.sh degraded) holds no state and no fallback the
+# scenario did not declare, and the game told the mock player of none
+# (`degraded: player N's game runs without: …` in its log).
 # A failed check stops the scenario and keeps the evidence under
 # .cache/scenarios/NAME-TIME/: the game's log since the start, the mock
 # player's log, a screenshot and, when the game thread went silent, every
@@ -469,6 +480,37 @@ on_game_thread() {
   [ -n "$names" ] || return 0
   fail "script hooks ran beside the script tick (queue them, testing.md): $names"
 }
+# No silent fallback (docs/architecture/degradations.md). What a scenario
+# declares (expect_degraded, allow_fallback: ids of core/src/degraded.cpp's
+# catalogue, checked by task degraded:check), and the check at its end: the
+# game's registry, then what the game told the mock player.
+# Allowed everywhere: the mock player sends no look unless --look, so its
+# puppet wears the stand-in body ("look not received").
+degraded_expected=() degraded_allowed=('look not received')
+expect_degraded() {
+  degraded_expected+=("$1")
+  echo "  declared: the game runs without '$1'"
+}
+allow_fallback() { degraded_allowed+=("$1"); }
+no_silent_fallback() {
+  local args=() id output status=0
+  # (A scenario that ends out of the game, in the main menu or with the game
+  # stopped, has no registry to ask.)
+  if ! $game healthy >/dev/null 2>&1; then
+    echo "  the game is not playing: its registry of what it runs without was not read"
+    return 0
+  fi
+  for id in "${degraded_expected[@]}"; do args+=(--expect "$id"); done
+  for id in "${degraded_allowed[@]}"; do args+=(--allow "$id"); done
+  output=$($game degraded "${args[@]}" 2>&1) || status=$?
+  if [ "$status" != 0 ]; then
+    while IFS= read -r line; do echo "  $line"; done <<<"$output"
+    fail "degraded: $(grep -m1 -E '^(unexpected|missing): ' <<<"$output" || echo 'the registry could not be read') (docs/architecture/degradations.md)"
+  fi
+  [ ! -f "$peer_log" ] || output=$(tail -n +$((referee_from + 1)) "$peer_log" | tools/degraded.py told "${args[@]}") || status=$?
+  [ "$status" = 0 ] || fail "degraded: $(head -1 <<<"$output") (docs/architecture/degradations.md)"
+  echo "  ok: nothing degraded that was not declared"
+}
 pause() {
   local start=$SECONDS
   while ((SECONDS - start < $1)); do
@@ -592,11 +634,14 @@ run() {
       reset
     fi
     referee_from=$(wc -l <"$peer_log" 2>/dev/null || echo 0)
+    degraded_expected=() degraded_allowed=('look not received')
     # shellcheck source=/dev/null
     source "$file"
     # What the mock player heard broke no protocol or authority rule.
     reject_peer 'referee: \[' "$referee_from"
     on_game_thread
+    # And the game ran on no lesser path the scenario did not declare.
+    no_silent_fallback
   )
   status=$?
   set -e

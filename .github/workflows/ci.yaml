@@ -321,3 +321,7 @@ jobs:
       # task scenarios:check
       - name: Scenarios wait for log lines the game and the mock player write
         run: python3 tools/scenarios-patterns.py
+
+      # task degraded:check
+      - name: No silent fallback (degradation ids, texts, doc rows)
+        run: python3 tools/degraded.py lint

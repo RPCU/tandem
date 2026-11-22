@@ -1,5 +1,7 @@
 # As a guest of a replayed host whose NPC shoots it every 2 s: each hit runs on our V by our game's rules and lowers its health
 # shellcheck shell=bash disable=SC2317,SC2154
+# On purpose: the mock host's attack record is unknown here (the stand-in below).
+allow_fallback "record substituted"
 ensure join
 # Before the host's first hit (it comes 2 s after the mock player starts);
 # this also starts the watch of the lowest health, which a hit's dip shows

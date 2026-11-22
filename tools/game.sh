@@ -21,6 +21,14 @@
 #                              newest log's "engine: N features on, M off: …"
 #                              line (asked of a running game first, cmd
 #                              engine); fails when a feature is off
+#   tools/game.sh degraded [--expect ID]... [--allow ID]...
+#                              what the game runs without
+#                              (docs/architecture/degradations.md): its
+#                              registry, asked of a running game (cmd
+#                              degraded), every state that holds and every
+#                              fallback taken since the last test reset;
+#                              fails on one that is neither expected nor
+#                              allowed, or on an expected one that is missing
 #   tools/game.sh shot NAME    screenshot to .cache/shots/NAME.png
 #   tools/game.sh key CODE...  press keys (Linux input codes: 57 Space, 28 Enter, 1 Esc)
 #   tools/game.sh hold SECONDS CODE...  hold keys down together, then release
@@ -423,6 +431,18 @@ engine() {
   fi
   echo "$line"
   grep -q ' features on, 0 off' <<<"$line"
+}
+
+# No silent fallback (docs/architecture/degradations.md): the registry of
+# what the game runs without, written to its log by `cmd degraded` and read
+# back by tools/degraded.py: fails on an entry that is neither expected nor
+# allowed (--expect ID: must be there; --allow ID: may be).
+degraded() {
+  if running; then
+    cmd degraded >/dev/null || true
+    sleep 1
+  fi
+  remote "cd '$dir'; grep -ah 'degraded: ' \"\$(ls -t red4ext/logs/tandem-*.log | head -1)\"" | tools/degraded.py registry "$@"
 }
 
 # Without Load Begone: through the title screen and the menu with keys.
@@ -986,6 +1006,10 @@ stop) stop ;;
 launches) launches "${2:-5}" ;;
 threads) threads ;;
 engine) engine ;;
+degraded)
+  shift
+  degraded "$@"
+  ;;
 shot) shot "${2:-}" ;;
 key)
   shift

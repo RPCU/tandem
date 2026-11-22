@@ -1,5 +1,7 @@
 # A partner burns, goes camo and heals: its puppet plays each status effect's own visuals, never their gameplay; Stealth's camo is worn for real; a record unknown here is skipped with a notice; a vanish takes everything
 # shellcheck shell=bash disable=SC2317
+# On purpose: a status record our game lacks is skipped (below).
+allow_fallback "record substituted"
 ensure host
 cmd god on
 # The mock player's V: burning from 4 to 10 s, its camo from 12 to 17, a heal

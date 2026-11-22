@@ -1,5 +1,7 @@
 # As host with native_prompts = off in tandem.ini: no prompt is the game's own interaction, the puppet's body gets no interaction component from its donor, and the Trade prompt on the player beside us is the one we draw, as before
 # shellcheck shell=bash disable=SC2317,SC2154
+# On purpose (no silent fallback, docs/architecture/degradations.md): tandem.ini switches the game's own prompts off.
+expect_degraded "drawn prompts"
 ensure host trade=on native_prompts=off
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode mirror --offset 1.2,0,0 --body female
 expect 'joined \(player [0-9]+' 20
