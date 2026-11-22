@@ -37,6 +37,7 @@ add_library(tandem_core STATIC
   src/lagcomp.cpp
   src/elsewhere.cpp
   src/compat.cpp
+  src/degraded.cpp
   src/mods.cpp
   src/report.cpp
   src/instance.cpp
