@@ -34,6 +34,74 @@
 // nameplates are drawn at the window's scale (Measure), so they are the
 // same share of the screen at 720p as at 2160p, and the list keeps to the
 // left edge at any aspect, as the health bar does.
+//
+// The nameplates are placed by the engine's own screen projection
+// (inkScreenProjection, what the game's nameplate, damage numbers and
+// subtitles over a head use): the engine follows the body's slot and gives
+// the place in the HUD's own units, at its own field of view, aspect and
+// scale, every frame. Only an inkProjectedHUDGameController can register
+// one, and none can be made from script (a game controller comes from a
+// widget library), so the game's damage numbers controller carries ours
+// (presence.md, "The engine's projection": why that one). Our own
+// projection (core: presence::ProjectOf, on the camera system's numbers)
+// stays as the fallback, taken by itself when the carrier is not there,
+// registers nothing, or says something far from ours for 3 s; one log line
+// says which places the plates, `presence hud projection auto|engine|script`
+// picks.
+
+// A point the engine projects for us: a puppet's head, with its nameplate,
+// or its chest (in view or not: nothing to place).
+public class TandemPlateAnchor {
+  public let projection: ref<inkScreenProjection>;
+  // The plate the place goes to, while the engine places it.
+  public let plate: wref<inkWidget>;
+  // As last told, in the carrier's units (the HUD's).
+  public let x: Float;
+  public let y: Float;
+  public let uvX: Float;
+  public let uvY: Float;
+  public let distance: Float;
+  public let inScreen: Bool;
+  public let updates: Int32;
+
+  // The engine's word, each time it projects (inkScreenProjection.
+  // RegisterListener, as the damage numbers listen to theirs).
+  // job thread safe: writes this anchor's own numbers, which the tick only reads (a value one frame old at worst), and its own plate's margin, as every vanilla projection listener does
+  protected cb func OnProjected(projection: ref<inkScreenProjection>) -> Bool {
+    let at = projection.currentPosition;
+    let uv = projection.uvPosition;
+    this.x = at.X;
+    this.y = at.Y;
+    this.uvX = uv.X;
+    this.uvY = uv.Y;
+    this.distance = projection.distanceToCamera;
+    this.inScreen = projection.IsInScreen();
+    this.updates += 1;
+    if IsDefined(this.plate) {
+      this.plate.SetMargin(new inkMargin(at.X, at.Y, 0.0, 0.0));
+    }
+  }
+}
+
+// RegisterScreenProjection, UnregisterScreenProjection and WakeUp are
+// protected natives of the projected controllers: reached through the
+// damage numbers controller, which listens to each projection of its own
+// (SetShouldNotifyProjections(false): no handler of its own is handed
+// ours) and sleeps between hits (EnableSleeping).
+@addMethod(DamageDigitsGameController)
+public func TandemProject(data: inkScreenProjectionData) -> ref<inkScreenProjection> {
+  return this.RegisterScreenProjection(data);
+}
+
+@addMethod(DamageDigitsGameController)
+public func TandemUnproject(projection: ref<inkScreenProjection>) -> Void {
+  this.UnregisterScreenProjection(projection);
+}
+
+@addMethod(DamageDigitsGameController)
+public func TandemWake() -> Void {
+  this.WakeUp();
+}
 
 public class TandemPartyEntry {
   public let player: Uint32;
@@ -59,6 +127,26 @@ public class TandemPartyEntry {
   public let shown: Bool;
   // The nameplate this frame (Markers.reds hides the marker's name under it).
   public let plateNow: Bool;
+  // The engine's projections of the body (none: ours places the plate).
+  public let head: ref<TandemPlateAnchor>;
+  public let chest: ref<TandemPlateAnchor>;
+  public let anchoredTo: wref<GameObject>;
+  public let slot: CName;
+  // No slot on the body: a world point, moved each tick.
+  public let fixed: Bool;
+  // The engine places the plate this frame; as last logged.
+  public let byEngine: Bool;
+  public let loggedEngine: Bool;
+  // Our own projection of the head this frame (0..1 from the top left),
+  // and how far the engine's is from it (the carrier's units; -1: unknown).
+  public let ownX: Float;
+  public let ownY: Float;
+  public let ownSeen: Bool;
+  public let ownFar: Float;
+  public let apart: Float;
+  // Since when the engine's stands far from ours (-1: it does not).
+  public let apartSince: Float;
+  public let woken: Bool;
 }
 
 public class TandemPartyHud {
@@ -103,6 +191,18 @@ public class TandemPartyHud {
   private let m_scale: Float;
   // What the game says of its own UI scale (logged beside ours).
   private let m_inverse: Float;
+  // The engine's projection: the controller that carries ours (Scan), our
+  // canvas under its root, its root's size (its units), the body slot the
+  // head is read from, the path asked (0 auto, 1 engine, 2 ours), why the
+  // engine's was given up ("": it was not), and the path as last logged.
+  private let m_host: wref<DamageDigitsGameController>;
+  private let m_projected: ref<inkCanvas>;
+  private let m_hostWidth: Float;
+  private let m_hostHeight: Float;
+  private let m_slot: CName;
+  private let m_projection: Int32;
+  private let m_tripped: String;
+  private let m_path: String;
 
   public static func BarWidth() -> Float {
     return 420.0;
@@ -129,6 +229,11 @@ public class TandemPartyHud {
     this.m_windowHeight = 2160.0;
     this.m_scale = 1.0;
     this.m_fovVertical = true;
+    this.m_hostWidth = 3840.0;
+    this.m_hostHeight = 2160.0;
+    // Where the marker is (Markers.reds): the plate takes its label's place.
+    this.m_slot = n"roleMappin";
+    this.m_path = "-";
   }
 
   public func Stop() -> Void {
@@ -139,8 +244,13 @@ public class TandemPartyHud {
     if IsDefined(this.m_plates) {
       this.m_plates.Reparent(null);
     }
+    if IsDefined(this.m_projected) {
+      this.m_projected.Reparent(null);
+    }
     this.m_root = null;
     this.m_plates = null;
+    this.m_projected = null;
+    this.m_host = null;
   }
 
   public func Clear() -> Void {
@@ -164,6 +274,8 @@ public class TandemPartyHud {
   }
 
   private func Remove(entry: ref<TandemPartyEntry>) -> Void {
+    // (Its plate back under our own canvas.)
+    this.Unanchor(entry);
     if IsDefined(entry.root) && IsDefined(this.m_root) {
       this.m_root.RemoveChild(entry.root);
     }
@@ -279,6 +391,9 @@ public class TandemPartyHud {
     entry.status = -1;
     entry.health = -1;
     entry.metres = -1;
+    entry.slot = n"None";
+    entry.apart = -1.0;
+    entry.apartSince = -1.0;
 
     let root = new inkVerticalPanel();
     root.SetName(n"tandem_party_entry");
@@ -473,11 +588,14 @@ public class TandemPartyHud {
     if !IsDefined(layer) {
       return;
     }
+    let host: wref<DamageDigitsGameController>;
     for controller in layer.GetGameControllers() {
       let module = controller as inkGameController;
       if IsDefined(module) {
         if IsDefined(module as BossHealthBarGameController) {
           this.m_boss = module.GetRootWidget();
+        } else if IsDefined(module as DamageDigitsGameController) {
+          host = module as DamageDigitsGameController;
         } else if IsDefined(module as healthbarWidgetGameController) || IsDefined(module as MinimapContainerController) || IsDefined(module as QuestTrackerGameController) {
           ArrayPush(this.m_modules, module.GetRootWidget());
         }
@@ -487,6 +605,259 @@ public class TandemPartyHud {
       this.m_modulesLogged = ArraySize(this.m_modules);
       TandemNative.Log(s"hud: the game's HUD modules followed: \(ArraySize(this.m_modules)) (health bar, minimap, quest tracker), boss bar \(IsDefined(this.m_boss) ? "found" : "not found")");
     }
+    // Another carrier (the HUD was built again): ours start over on it.
+    if host != this.m_host {
+      this.Unproject();
+      this.m_host = host;
+    }
+  }
+
+  // ---- the engine's projection (presence.md, "The engine's projection") ----
+
+  // Every projection of ours given back, the plates under our own canvas.
+  private func Unproject() -> Void {
+    for entry in this.m_entries {
+      this.Unanchor(entry);
+    }
+    if IsDefined(this.m_projected) {
+      this.m_projected.Reparent(null);
+    }
+    this.m_projected = null;
+  }
+
+  // The carrier's root and everything above it is shown.
+  private func HostShown() -> Bool {
+    let widget: wref<inkWidget> = this.m_host.GetRootWidget();
+    let depth = 0;
+    while IsDefined(widget) && depth < 16 {
+      if !widget.IsVisible() {
+        return false;
+      }
+      widget = widget.GetParentWidget();
+      depth += 1;
+    }
+    return true;
+  }
+
+  // Whether the engine places the nameplates this frame, said in the log
+  // when it changes; our canvas under the carrier's root, built once.
+  private func Engine() -> Bool {
+    let why = "";
+    if this.m_projection == 2 {
+      why = "asked: presence hud projection script";
+    } else if this.m_projection == 0 && StrLen(this.m_tripped) > 0 {
+      why = this.m_tripped;
+    } else if !IsDefined(this.m_host) {
+      why = "no DamageDigitsGameController on the HUD layer";
+    } else if !this.HostShown() {
+      why = "the game hides its damage numbers' widget";
+    } else if !IsDefined(this.m_projected) {
+      let root = this.m_host.GetRootCompoundWidget();
+      if IsDefined(root) {
+        let canvas = new inkCanvas();
+        canvas.SetName(n"tandem_nameplates_projected");
+        canvas.SetAnchor(inkEAnchor.Fill);
+        canvas.SetInteractive(false);
+        canvas.Reparent(root);
+        this.m_projected = canvas;
+        let size = root.GetSize();
+        this.m_hostWidth = size.X > 0.0 ? size.X : this.m_width;
+        this.m_hostHeight = size.Y > 0.0 ? size.Y : this.m_height;
+      } else {
+        why = "the damage numbers' controller has no root to draw under";
+      }
+    }
+    let path = Equals(why, "") ? s"the engine's screen projection (carried by DamageDigitsGameController, its root \(RoundF(this.m_hostWidth)) x \(RoundF(this.m_hostHeight)), slot '\(NameToString(this.m_slot))')" : s"our own projection (\(why))";
+    if NotEquals(path, this.m_path) {
+      this.m_path = path;
+      TandemNative.Log(s"hud: nameplates placed by \(path)");
+    }
+    if NotEquals(why, "") {
+      this.Unproject();
+    }
+    return Equals(why, "");
+  }
+
+  // One projection of `body`: its slot lifted by `lift`, or the world point
+  // `at` when it has no such slot.
+  private func Project(body: ref<GameObject>, component: CName, slot: CName, lift: Float, at: Vector4) -> ref<TandemPlateAnchor> {
+    let anchor = new TandemPlateAnchor();
+    // (Every field set: the VM does not clear a local.)
+    let data: inkScreenProjectionData;
+    if IsNameValid(slot) {
+      data.entity = body;
+      data.fixedWorldOffset = new Vector4(0.0, 0.0, lift, 0.0);
+    } else {
+      data.entity = null;
+      data.fixedWorldOffset = new Vector4(0.0, 0.0, 0.0, 0.0);
+    }
+    data.slotComponentName = component;
+    data.slotName = slot;
+    data.slotFallbackName = slot;
+    data.staticWorldPosition = at;
+    data.userData = anchor;
+    data.adjustWithDistance = false;
+    data.extraOffsetAtMaxDistance = new Vector3(0.0, 0.0, 0.0);
+    anchor.projection = this.m_host.TandemProject(data);
+    if !IsDefined(anchor.projection) {
+      return null;
+    }
+    anchor.projection.RegisterListener(anchor, n"OnProjected");
+    anchor.projection.SetEnabled(true);
+    return anchor;
+  }
+
+  // The engine follows `body` for this entry: its head (the slot the
+  // marker sits in, else 2 m above its feet) and its chest, 1 m lower.
+  private func Anchor(entry: ref<TandemPartyEntry>, body: ref<GameObject>, feet: Vector4) -> Void {
+    let head = feet;
+    head.Z += 2.0;
+    let chest = feet;
+    chest.Z += 1.0;
+    if IsDefined(entry.head) && entry.anchoredTo == body {
+      if entry.fixed {
+        entry.head.projection.SetStaticWorldPosition(head);
+        if IsDefined(entry.chest) {
+          entry.chest.projection.SetStaticWorldPosition(chest);
+        }
+      }
+      return;
+    }
+    this.Unanchor(entry);
+    let slot = n"None";
+    let component = n"None";
+    let height = 2.0;
+    let transform: WorldTransform; // assigned on every path: read only when GetSlotTransform filled it
+    let slots = body.GetUISlotComponent();
+    if IsNameValid(this.m_slot) && IsDefined(slots) && slots.GetSlotTransform(this.m_slot, transform) {
+      slot = this.m_slot;
+      component = slots.GetName();
+      let there = WorldPosition.ToVector4(WorldTransform.GetWorldPosition(transform));
+      height = there.Z - feet.Z;
+    }
+    entry.head = this.Project(body, component, slot, 0.0, head);
+    if !IsDefined(entry.head) {
+      this.m_tripped = "RegisterScreenProjection gave nothing";
+      return;
+    }
+    entry.chest = this.Project(body, component, slot, -1.0, chest);
+    this.m_host.TandemWake();
+    entry.anchoredTo = body;
+    entry.slot = slot;
+    entry.fixed = !IsNameValid(slot);
+    entry.apart = -1.0;
+    entry.apartSince = -1.0;
+    entry.woken = false;
+    let how = entry.fixed ? s"no slot '\(NameToString(this.m_slot))' on the body: a world point 2 m above its feet, moved each tick" : s"slot '\(NameToString(slot))' of '\(NameToString(component))', \(FloatToStringPrec(height, 2)) m above the feet";
+    TandemNative.Log(s"hud: player \(entry.player)'s nameplate anchored by the engine: \(how)");
+  }
+
+  private func Release(anchor: ref<TandemPlateAnchor>) -> Void {
+    if !IsDefined(anchor) || !IsDefined(anchor.projection) {
+      return;
+    }
+    anchor.plate = null;
+    anchor.projection.UnregisterListener(anchor, n"OnProjected");
+    anchor.projection.SetEnabled(false);
+    if IsDefined(this.m_host) {
+      this.m_host.TandemUnproject(anchor.projection);
+    }
+    anchor.projection = null;
+  }
+
+  private func Unanchor(entry: ref<TandemPartyEntry>) -> Void {
+    this.Place(entry, false);
+    this.Release(entry.head);
+    this.Release(entry.chest);
+    entry.head = null;
+    entry.chest = null;
+    entry.anchoredTo = null;
+    entry.apart = -1.0;
+    entry.apartSince = -1.0;
+  }
+
+  // The plate under the carrier's root, where the engine's listener places
+  // it, or back under our own canvas.
+  private func Place(entry: ref<TandemPartyEntry>, engine: Bool) -> Void {
+    if Equals(entry.byEngine, engine) {
+      return;
+    }
+    entry.byEngine = engine;
+    if !IsDefined(entry.plate) {
+      return;
+    }
+    if engine {
+      entry.plate.Reparent(this.m_projected);
+      entry.plate.SetMargin(new inkMargin(entry.head.x, entry.head.y, 0.0, 0.0));
+      entry.head.plate = entry.plate;
+    } else {
+      if IsDefined(entry.head) {
+        entry.head.plate = null;
+      }
+      entry.plate.SetVisible(false);
+      entry.plate.Reparent(this.m_plates);
+    }
+  }
+
+  // The engine's place for the head against ours, when ours has the head
+  // well inside the frame: never told, off screen, or a quarter of the
+  // screen's height away, its controller is woken after 1 s (it sleeps
+  // between hits) and the engine's projection given up after 3 s.
+  private func Watch(entry: ref<TandemPartyEntry>, now: Float) -> Void {
+    let inside = entry.ownSeen && entry.ownX > 0.15 && entry.ownX < 0.85 && entry.ownY > 0.15 && entry.ownY < 0.85;
+    let wrong = false;
+    entry.apart = -1.0;
+    if entry.head.updates == 0 {
+      wrong = inside;
+    } else {
+      let dx = entry.head.x - entry.ownX * this.m_hostWidth;
+      let dy = entry.head.y - entry.ownY * this.m_hostHeight;
+      entry.apart = SqrtF(dx * dx + dy * dy);
+      wrong = inside && (!entry.head.inScreen || entry.apart > 0.25 * this.m_hostHeight);
+    }
+    if !wrong {
+      entry.apartSince = -1.0;
+      entry.woken = false;
+      return;
+    }
+    if entry.apartSince < 0.0 {
+      entry.apartSince = now;
+      return;
+    }
+    let what = entry.head.updates == 0 ? "never told" : s"at \(RoundF(entry.head.x)) \(RoundF(entry.head.y)) (in screen \(entry.head.inScreen)), ours at \(RoundF(entry.ownX * this.m_hostWidth)) \(RoundF(entry.ownY * this.m_hostHeight))";
+    if now - entry.apartSince >= 1.0 && !entry.woken {
+      entry.woken = true;
+      this.m_host.TandemWake();
+      TandemNative.Log(s"hud: the engine's projection of player \(entry.player) \(what): its controller woken");
+    }
+    if now - entry.apartSince >= 3.0 && this.m_projection == 0 {
+      this.m_tripped = s"the engine's projection of player \(entry.player) \(what) for 3 s";
+    }
+  }
+
+  // (test query nameplate [path|apart] [player N]) Where a player's
+  // nameplate is and what placed it, both projections of the same tick:
+  // path: engine, script; apart: the engine's from ours, percent of the
+  // screen's height (none: ours placed it).
+  public func PlateQuery(player: Uint32, what: String) -> String {
+    for entry in this.m_entries {
+      if player == 0u || entry.player == player {
+        let on = entry.plateNow ? "on" : "off";
+        if Equals(what, "path") {
+          return entry.byEngine ? "engine" : "script";
+        }
+        if Equals(what, "apart") {
+          return entry.byEngine && entry.apart >= 0.0 ? FloatToStringPrec(100.0 * entry.apart / this.m_hostHeight, 2) : "none";
+        }
+        if !entry.byEngine {
+          return s"script \(RoundF(entry.ownX * this.m_windowWidth)) \(RoundF(entry.ownY * this.m_windowHeight)) of \(RoundF(this.m_windowWidth)) x \(RoundF(this.m_windowHeight)) px, in view \(entry.ownSeen), plate \(on)";
+        }
+        let anchor = entry.head;
+        let within = anchor.x >= 0.0 && anchor.x <= this.m_hostWidth && anchor.y >= 0.0 && anchor.y <= this.m_hostHeight;
+        return s"engine \(RoundF(anchor.x)) \(RoundF(anchor.y)) of \(RoundF(this.m_hostWidth)) x \(RoundF(this.m_hostHeight)), within \(within), in screen \(anchor.inScreen), uv \(FloatToStringPrec(anchor.uvX, 2)) \(FloatToStringPrec(anchor.uvY, 2)), distance \(FloatToStringPrec(anchor.distance, 1)) (ours \(FloatToStringPrec(entry.ownFar, 1)) m), slot '\(NameToString(entry.slot))', told \(anchor.updates) times; ours \(RoundF(entry.ownX * this.m_hostWidth)) \(RoundF(entry.ownY * this.m_hostHeight)), in view \(entry.ownSeen); apart \(RoundF(entry.apart)) units (\(RoundF(entry.apart * this.m_scale)) px, \(FloatToStringPrec(100.0 * entry.apart / this.m_hostHeight, 2)) % of the height), plate \(on)";
+      }
+    }
+    return "none";
   }
 
   // The game hides its whole HUD (cinematic camera, the empty context, a
@@ -618,6 +989,9 @@ public class TandemPartyHud {
     let show = this.m_visible && !photo;
     this.m_root.SetVisible(show && this.m_listOn);
     this.m_plates.SetVisible(show);
+    if IsDefined(this.m_projected) {
+      this.m_projected.SetVisible(show);
+    }
   }
 
   // test reset: the layout, the list's state and the game's modules are
@@ -627,6 +1001,12 @@ public class TandemPartyHud {
     this.m_listWhy = "-";
     this.m_modulesLogged = -1;
     this.m_why = "-";
+    // The path chosen again from the start, and said again.
+    this.m_projection = 0;
+    this.m_tripped = "";
+    this.m_path = "-";
+    this.m_slot = n"roleMappin";
+    this.Unproject();
     // The test commands' forced cases back to the game's word (a failed
     // hud-layout left a holocall and a choice hub forced up).
     let i = 0;
@@ -678,6 +1058,7 @@ public class TandemPartyHud {
     let paused = TandemNative.PausedPlayers();
     // The settings page's choice, read as it changes.
     let plates = TandemSettings.NameplateMode();
+    let engine = this.Engine();
     for player in players {
       let body = system.PuppetOf(player);
       let entry = this.Entry(player);
@@ -721,7 +1102,31 @@ public class TandemPartyHud {
       head.Z += 2.0;
       let point = TandemPresence.Project(camera, forward, right, half, this.m_fovVertical, this.m_aspect, head);
       let atChest = TandemPresence.Project(camera, forward, right, half, this.m_fovVertical, this.m_aspect, chest);
+      let headSeen = point.visible;
       let seen = point.visible || atChest.visible;
+      // (The fade stays on our own distance: the engine's distanceToCamera
+      // is only logged until its unit is seen, test query nameplate.)
+      let far = bearing.distance;
+      entry.ownFar = far;
+      entry.ownX = point.x;
+      entry.ownY = point.y;
+      entry.ownSeen = point.visible;
+      // The engine's word for it, once it has told the head's place (ours
+      // until then, and when it is given up).
+      if engine && IsDefined(body) {
+        this.Anchor(entry, body, where);
+      } else {
+        this.Unanchor(entry);
+      }
+      let placed = IsDefined(entry.head) && entry.head.updates > 0;
+      if IsDefined(entry.head) {
+        this.Watch(entry, now);
+      }
+      this.Place(entry, placed);
+      if placed {
+        headSeen = entry.head.inScreen;
+        seen = headSeen || (IsDefined(entry.chest) && entry.chest.updates > 0 ? entry.chest.inScreen : atChest.visible);
+      }
       let off = !seen || hiddenBody;
       entry.where.SetVisible(linked && off && !this.m_compact);
       let metres = TandemPresence.RoundedMetres(bearing.distance);
@@ -736,22 +1141,28 @@ public class TandemPartyHud {
       if mode == 1 && this.m_tier >= 2 {
         mode = 0;
       }
-      let opacity = TandemPresence.NameplateOpacity(bearing.distance, mode);
-      let plateOn = IsDefined(body) && !hiddenBody && point.visible && opacity > 0.0 && status != 3;
+      let opacity = TandemPresence.NameplateOpacity(far, mode);
+      let plateOn = IsDefined(body) && !hiddenBody && headSeen && opacity > 0.0 && status != 3;
       entry.plate.SetVisible(plateOn);
       entry.plateNow = plateOn;
       if plateOn {
-        let scale = TandemPresence.NameplateScale(bearing.distance, mode);
-        entry.plate.SetMargin(new inkMargin(point.x * this.m_windowWidth, point.y * this.m_windowHeight, 0.0, 0.0));
+        let scale = TandemPresence.NameplateScale(far, mode);
+        if placed {
+          // Under the carrier's root: its units, its scale; the place is
+          // the engine's listener's (TandemPlateAnchor.OnProjected).
+          entry.plate.SetScale(new Vector2(scale, scale));
+        } else {
+          entry.plate.SetMargin(new inkMargin(point.x * this.m_windowWidth, point.y * this.m_windowHeight, 0.0, 0.0));
+          entry.plate.SetScale(new Vector2(scale * this.m_scale, scale * this.m_scale));
+        }
         entry.plate.SetOpacity(opacity);
-        entry.plate.SetScale(new Vector2(scale * this.m_scale, scale * this.m_scale));
         entry.plateName.SetText(TandemPartyHud.NameOf(player));
       }
 
       // The log proves the state (scenarios read it): on a change of what
       // is shown, at most twice a second (a link change at once).
       let percent = Cast<Int32>(health * 100.0);
-      let changed = status != entry.status || Equals(off, entry.inView) || NotEquals(plateOn, entry.plateOn) || AbsF(Cast<Float>(percent - entry.health)) >= 10.0 || (off && bearing.side != entry.side) || !entry.shown;
+      let changed = status != entry.status || Equals(off, entry.inView) || NotEquals(plateOn, entry.plateOn) || AbsF(Cast<Float>(percent - entry.health)) >= 10.0 || (off && bearing.side != entry.side) || NotEquals(placed, entry.loggedEngine) || !entry.shown;
       let relinked = NotEquals(linked, entry.linked);
       if relinked || changed && now - entry.loggedAt >= 0.5 {
         entry.loggedAt = now;
@@ -759,6 +1170,7 @@ public class TandemPartyHud {
         entry.status = status;
         entry.inView = !off;
         entry.plateOn = plateOn;
+        entry.loggedEngine = placed;
         entry.linked = linked;
         entry.health = percent;
         entry.side = bearing.side;
@@ -797,7 +1209,7 @@ public class TandemPartyHud {
   private func Log(entry: ref<TandemPartyEntry>, state: String) -> Void {
     let where = entry.inView ? "in view" : s"off screen (arrow side \(entry.side))";
     let plate = entry.plateOn ? "on" : "off";
-    TandemNative.Log(s"hud: player \(entry.player) \"\(TandemPartyHud.NameOf(entry.player))\" health \(entry.health) % status \(TandemPartyHud.StatusName(entry.status))\(StrLen(state) > 0 ? s" [\(state)]" : ""), \(entry.metres) m, \(where), nameplate \(plate), \(entry.linked ? "linked: in the party list" : "not linked: no entry")");
+    TandemNative.Log(s"hud: player \(entry.player) \"\(TandemPartyHud.NameOf(entry.player))\" health \(entry.health) % status \(TandemPartyHud.StatusName(entry.status))\(StrLen(state) > 0 ? s" [\(state)]" : ""), \(entry.metres) m, \(where), nameplate \(plate), \(entry.linked ? "linked: in the party list" : "not linked: no entry"), placed by \(entry.loggedEngine ? "the engine" : "our projection")");
   }
 
   public static func StatusName(status: Int32) -> String {
@@ -834,6 +1246,22 @@ public class TandemPartyHud {
     } else if Equals(command, "fov v") || Equals(command, "fov h") {
       this.m_fovVertical = Equals(command, "fov v");
       TandemNative.Log(s"hud: the camera's field of view read as \(this.m_fovVertical ? "vertical" : "horizontal")");
+    } else if StrBeginsWith(command, "projection ") {
+      // presence hud projection auto|engine|script: what places the
+      // nameplates (engine: never given up for standing apart from ours).
+      let asked = StrAfterFirst(command, "projection ");
+      this.m_projection = Equals(asked, "engine") ? 1 : (Equals(asked, "script") ? 2 : 0);
+      this.m_tripped = "";
+      this.m_path = "-";
+      TandemNative.Log(s"hud: projection asked: \(this.m_projection == 1 ? "engine" : (this.m_projection == 2 ? "script" : "auto"))");
+    } else if StrBeginsWith(command, "slot ") {
+      // presence hud slot NAME|none: the body slot the engine reads the
+      // head from (none: the world point 2 m above the feet).
+      let asked = StrAfterFirst(command, "slot ");
+      this.m_slot = Equals(asked, "none") ? n"None" : StringToName(asked);
+      this.m_path = "-";
+      this.Unproject();
+      TandemNative.Log(s"hud: the engine reads the head from slot '\(NameToString(this.m_slot))'");
     } else if StrBeginsWith(command, "call-at ") {
       // presence hud call-at X Y: where the list goes below a holocall.
       let rest = StrAfterFirst(command, "call-at ");
@@ -885,6 +1313,7 @@ public class TandemPartyHud {
     TandemNative.Log(s"hud: layout \(this.m_layout); list \(this.m_listOn ? "shown" : s"hidden (\(this.m_listWhy))")");
     let modes = ["near", "always", "off"];
     TandemNative.Log(s"hud: party \(this.m_visible ? "shown" : s"hidden (\(this.m_why))"), \(ArraySize(this.m_entries)) entries, widget \(IsDefined(this.m_root) ? "built" : "not built"), at \(this.m_left) \(this.m_top), nameplates \(modes[TandemSettings.NameplateMode()])");
+    TandemNative.Log(s"hud: nameplates placed by \(this.m_path)");
     for entry in this.m_entries {
       this.Log(entry, TandemPartyHud.StateText(entry.status, 0, -1.0, true));
     }

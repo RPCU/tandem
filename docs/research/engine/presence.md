@@ -208,6 +208,57 @@ n"inkHUDLayer").GetVirtualWindow()` (`CW`: `inkSystem`,
   register one. The vanilla nameplate shows one entity, the one aimed at
   (`UI_NPCNextToTheCrosshair.NameplateData`), within a range, never all
   the nearby ones: an always-on nameplate is our own widget.
+- The engine's screen projection, from the 2.50 scripts
+  (`~/.cache/tandem/ref/gamescripts/game/final.reds`, lines of that
+  file) [2.5-untested]:
+  - `inkProjectedHUDGameController` (`:259213`): protected natives
+    `RegisterScreenProjection(inkScreenProjectionData) ->
+ref<inkScreenProjection>`, `UnregisterScreenProjection`,
+    `SetShouldNotifyProjections(Bool)`, `EnableSleeping(Bool)`, `WakeUp()`;
+    public `ApplyProjectionMarginOnWidget(widget, margin)`. An
+    `@addMethod` on a subclass reaches the protected ones.
+  - `inkScreenProjectionData` (`:317811`): `entity`, `slotComponentName`,
+    `slotName`, `slotFallbackName`, `staticWorldPosition`,
+    `fixedWorldOffset`, `userData`, `adjustWithDistance`,
+    `extraOffsetAtMaxDistance`. No distance culling field in 2.50.
+  - `inkScreenProjection` (`:317957`): read-only `distanceToCamera`,
+    `previousPosition`, `currentPosition`, `uvPosition`;
+    `RegisterListener(object, functionName)` (any `IScriptable`; the
+    function takes the projection), `IsInScreen()`, `SetEntity`,
+    `ResetEntity`, `SetSlotName`, `SetStaticWorldPosition`,
+    `SetFixedWorldOffset`, `SetEnabled`.
+  - The engine computes a place, script puts the widget there: every
+    vanilla user sets its widget's margin to `currentPosition` in its
+    handler (`sampleScreenProjectionLogicController`, `:536877`;
+    `NarrativePlateGameController`, `:445931`), the widget a child of the
+    controller's root; `ChattersGameController` reads its root's
+    `GetSize()` as the screen in the same units (`:418355`).
+    `uvPosition` is -1..1 across the screen, +1 right and top, beyond
+    when off it (the photo mode light indicator clamps it, `:360492`).
+  - Two ways to hear: the controller's `cb func OnScreenProjectionUpdate(
+gameuiScreenProjectionsData)` with all of them (`data`), or one
+    listener per projection. `DamageDigitsGameController` (`:341270`) is
+    the only one on the second: `SetShouldNotifyProjections(false)`,
+    `EnableSleeping(true)`, `WakeUp()` at each batch of hits, each digit's
+    logic controller `RegisterListener(this, n"OnScreenProjectionUpdate")`
+    and `SetEnabled(true)` while it shows. `NpcNameplateGameController`
+    (`:414918`) reads `projections.data[0..3]` by index and sleeps too;
+    the chatter and subtitle controllers cast each `GetUserData()` to
+    their own line controller.
+  - Slots: the vanilla nameplate reads `UI_Slots` / `UI_Interaction`
+    (`fixedWorldOffset` Z 1.18 with `adjustWithDistance`, 0.22 up close,
+    `:414842`), devices `Nameplate`; damage digits `roleMappin`; a
+    target without the slot still gets its digits (devices, cars), so a
+    missing slot does not fail the projection. A hit that does not stick
+    to its target is `ResetEntity()` + `SetStaticWorldPosition(point)`.
+  - Ours (`PartyHud.reds`): carried by `DamageDigitsGameController`, one
+    listener per projection. Unknown until run: that this controller is
+    on the HUD layer at all times and its root shown outside a fight;
+    that its root's space is the projection's (3840 x 2160); whether it
+    falls asleep while a projection of ours is enabled; whether a
+    listener is told every frame or on a change; `IsInScreen` behind the
+    camera; that a puppet's body has `roleMappin`. `test query
+nameplate` and the `hud: nameplates placed by …` line answer each.
 - The camera for our own projection: `CameraSystem.
 GetActiveCameraWorldTransform(out Transform)`, `GetActiveCameraForward()`,
   `GetActiveCameraRight()`, `GetActiveCameraFOV()` (`:174219-174229`);
