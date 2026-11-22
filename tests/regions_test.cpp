@@ -294,3 +294,15 @@ TEST_CASE("null areas follow the covers in steps, are renewed, and go with them"
   CHECK(areas.Size() == 0);
   CHECK(areas.Clear().empty());
 }
+
+TEST_CASE(
+    "a vehicle is clear of a V a few metres away, of one not placed, of one not in the session") {
+  regions::Places places;
+  places[1] = {.position = {0.f, 0.f, 0.f}, .known = true};
+  places[2] = {.position = {0.f, 0.f, 0.f}, .known = false};
+  CHECK_FALSE(regions::ClearOf({2.f, 0.f, 0.f}, 1, places));
+  CHECK_FALSE(regions::ClearOf({0.f, 3.f, 1.f}, 1, places));
+  CHECK(regions::ClearOf({4.5f, 0.f, 0.f}, 1, places));
+  CHECK(regions::ClearOf({2.f, 0.f, 0.f}, 2, places));
+  CHECK(regions::ClearOf({2.f, 0.f, 0.f}, 3, places));
+}

@@ -18,4 +18,13 @@ cmd story restrict on GameplayRestriction.BlockAllHubMenu
 cmd story restrict
 expect 'story: restrictions: host moment false' 5
 cmd story restrict off GameplayRestriction.BlockAllHubMenu
+# The phone kept away and nothing else (a save can hold it through hours of
+# free roam): no moment, and not said to the guests.
+cmd story restrict on GameplayRestriction.NoPhone
+pause 2
+cmd story restrict
+expect 'story: restrictions: host moment false' 5
+cmd story restrict off GameplayRestriction.NoPhone
+reject 'story: our restrictions for the guests \(tier 1\): GameplayRestriction.NoPhone'
+reject 'spectate: our V is in a scripted moment \(reasons 2:'
 reject 'watchdog: game thread silent'

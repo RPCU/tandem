@@ -193,7 +193,7 @@ public class TandemProbe {
 
     let body = new TandemProbeBody();
     body.record = record;
-    body.id = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+    body.id = TandemEntities.Create(spec);
     body.spawnedAt = this.Now();
     if !EntityID.IsDefined(body.id) {
       TandemNative.Log(s"probe \(record): could not spawn");
@@ -431,7 +431,7 @@ public class TandemGates {
         spec.alwaysSpawned = true;
         spec.persistState = false;
         spec.persistSpawn = false;
-        ArrayPush(this.m_ids, GameInstance.GetDynamicEntitySystem().CreateEntity(spec));
+        ArrayPush(this.m_ids, TandemEntities.Create(spec));
       }
     }
   }

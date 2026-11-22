@@ -14,11 +14,29 @@ public class TandemDeleting {
   public let since: Float;
 }
 
+// A body asked for, until it exists (TandemSystem.BodiesWaiting).
+public class TandemAsked {
+  public let id: EntityID;
+  public let at: Float;
+}
+
 public abstract class TandemEntities {
   // A body that never appears (a record that does not spawn) has had its
   // stub long before this: deleting it then is the game's usual path.
   public static func WaitLimit() -> Float {
     return 10.0;
+  }
+
+  // Every body of ours is asked for through here: the system knows which
+  // ones have not come yet (TandemSystem.BodiesWaiting: our V's ride is
+  // moved every other frame while any waits, vehicles.md §13.141).
+  public static func Create(spec: ref<DynamicEntitySpec>) -> EntityID {
+    let id = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+    let system = TandemSystem.Of(GetGameInstance());
+    if IsDefined(system) && EntityID.IsDefined(id) {
+      system.Asked(id);
+    }
+    return id;
   }
 
   public static func Delete(id: EntityID) -> Void {

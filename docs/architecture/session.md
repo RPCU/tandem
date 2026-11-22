@@ -120,7 +120,7 @@ idle: …); recorder on|off; transform guard on|off (why)`. `TandemSystem`'s idl
   host's too, `npcs.md`); `link`, `pings` (`comms.md`); `notices`
   (`coop-menu.md`), `markers` (`players.md`), `nameplates`, `party_hud`
   (`presence.md`); `death_ledger`, `death_bodies` (`regions.md` §14), `overlap`,
-  `overlap_despawn` (`regions.md` §6);
+  `overlap_despawn` (`regions.md` §6); `kinematic_ride` (`vehicles.md`);
   `leave`, `checkpoint` (`progression.md`); `vehicle_rewards`, `lend` (`garage.md`);
   `trade` (`trade.md`); `native_prompts` (`prompts.md`); `race_car` (`activities.md`, "Races"); `recorder`, `recorder_max_mb`,
   `recorder_segment_minutes`, `recorder_pose` (`recordings.md`);

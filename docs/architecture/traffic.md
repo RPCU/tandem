@@ -165,8 +165,9 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
 - **Drawing**: each vehicle has its own track (`sync::VehicleTrack`, the
   one player cars use), drawn 200 ms in the past (two samples of a 10 Hz
   stream around it), extrapolated up to 500 ms along its velocity when a
-  far car only gets every third packet, then held. Proxies are teleported
-  only when they moved.
+  far car only gets every third packet, then held. Proxies are moved by
+  the engine's kinematic vehicle move, a teleport only for a jump
+  (`vehicles.md`, "How a copy is moved"); one at rest is left alone.
 - **Occupants** are NPCs of the owner, shared by the existing NPC range
   (60 m): beyond it a car's proxy has nobody at the wheel, which at that
   distance is behind a windscreen. Inside it the driver is an NPC proxy
@@ -202,9 +203,30 @@ Each game simulates the side it owns, and never the other.
 - A traffic car hitting a player's parked car, or a player on foot: the
   owner's car is moved by the owner; the parked car belongs to whoever
   drove it last (its copy elsewhere is not pushed), and a V on foot is
-  hurt on its own game by the proxy that hits it. Known gap: a proxy is
-  teleported, so its "speed" when it touches a V is the game's guess, not
-  the owner's; being run over by traffic on a guest is to check in game.
+  hurt on its own game by the proxy that hits it: the proxy is moved with
+  its owner's velocity (the kinematic move), so the game's own hit runs
+  (a knockdown, thrown aside); teleported, it had no speed and carried a V
+  on its hood. To check in game.
+- **Our traffic stops for a partner's V** (`TandemTraffic.Yield`, ten times
+  a second on the cars we run; written 2026-11-22, not run in game). The
+  native traffic system brakes for our own V by itself and drove through a
+  partner's puppet (a host's V run over by a guest's car, 2026-11-22); its
+  test for what is in a lane has no script surface (a native of
+  `worldRuntimeSystemTraffic`, not decompiled), so the owner's script
+  does it: a driven crowd car of ours (not in a panic, not the police,
+  not a wreck) with a partner's V on foot in the lane ahead (1.8 m to each
+  side, from its nose to 1.5 s of its speed ahead, 5 to 25 m) gets the
+  crowd's own `stop` pattern (what `OnStuckEvent` sets) and its horn, and
+  `normal` again a second after the lane is clear. A puppet in a seat or
+  hidden is not on foot. `tools/game.sh cmd street lanes` lists our driven
+  cars and the stops so far; `street count` ends with the stops.
+- **No hand-over onto a V** (`regions::ClearOf`, `ArbitrateTraffic`): a
+  vehicle within 4 m (`kHandoverClear`, from its origin: half a car and a
+  couple of metres) of the V that would take it stays its owner's, asked
+  again on a later pass. Handed over, it woke up as a real car of the
+  receiver's traffic and drove on with that V on its hood (750 m,
+  2026-11-22). Tested (`tests/traffic_regions_test.cpp`,
+  `tests/regions_test.cpp`).
 
 ## A car a player takes
 
@@ -290,6 +312,7 @@ from that moment: `NpcSeat` out, then its states as for any NPC.
 | a hit or a claim aimed at the owner's old world           | a wrong car damaged or taken                         | behind the epoch fence, like `NpcHit`                                                                                                                      |
 | hits queued behind a loading screen                       | a car wrecked the moment the world is back           | dropped after 3 s                                                                                                                                          |
 | a proxy's body streamed out or lost in our fast travel    | an invisible car                                     | the script's check against the session's record, once a second: spawned again after 3 s                                                                    |
+| our V rides in a car another game moves (its copy here, teleported every frame) | no proxy of anyone's traffic, nor of their NPCs: an empty street from the seat | every vehicle another game runs is moved by the engine's kinematic move, no teleport (`vehicles.md`, "How a copy is moved"; engine-knowledge §13.141) |
 | the owner vanishes                                        | frozen cars                                          | the session ends on the 5 s timeout; proxies go with it, our crowd and traffic come back                                                                   |
 | a guest vanishes in a car it took                         | —                                                    | it was its car: it stays parked with its puppet's car copy, as any car of a player that left                                                               |
 | a guest vanishes mid-claim                                | a car nobody drives                                  | the claim was granted or not; if granted the body is its (parked) car, if not nothing changed                                                              |
@@ -311,8 +334,10 @@ Built in this change:
    joiner, claim race, hits, fence, heal by digest, duplicates, a vanish),
    `tests/protocol_test.cpp`, `tests/consistency_test.cpp`.
 2. **Mock player**: `tandem-peer host --traffic N [--npc REC]
-[--wreck-at S]` drives N cars round the guest and parks one; `join
---ram-traffic S`, `--steal-at S` (`--steal-driven`: a car with a driver).
+[--wreck-at S] [--traffic-at S]` drives N cars round the guest and parks
+   one (announced S seconds after the guest is there: during its ride,
+   with `--mode drive`); `join --ram-traffic S`, `--steal-at S`
+   (`--steal-driven`: a car with a driver).
 3. **Plugin**: `street_natives.cpp` (`TandemStreet`), the runtime's queues
    and per-vehicle tracks, the packet budget on the game thread.
 4. **Scripts**: `Traffic.reds` (the owner's share loop, proxies, status,
@@ -344,7 +369,7 @@ Not built, in the order I would do them:
 
 ## Scenarios to run in game
 
-`tools/scenario.sh traffic-guest traffic-host wheels-guest-area` (with
+`tools/scenario.sh traffic-guest traffic-host wheels-guest-area` and `ride-traffic traffic-yield` (with
 `police-guest police-host`, see `police.md`).
 
 - **traffic-guest**: the game joins a mock host that drives four cars
@@ -361,6 +386,18 @@ Not built, in the order I would do them:
 puppet`) with no second copy. Look for: the rammed driver's
   reaction, the evicted driver beside the door, the puppet at the wheel
   of the same car.
+- **ride-traffic** (written 2026-11-22, not yet run): the game joins a
+  mock host that drives, our V rides in its car copy, and the host's four
+  cars and a parked one are announced 30 s in (`--traffic-at`), during the
+  ride. Checks that every proxy gets its body from the seat, that a
+  vehicle of our own spawns too, and that no body is asked for again
+  (`street: check: … body was gone`). Look for: the cars round us while
+  we ride, the copy's motion while they appear (held every other frame).
+- **traffic-yield** (written 2026-11-22, not yet run): the game hosts on a
+  street with traffic, a mock guest stands in a lane (`YIELD_AT`,
+  `YIELD_OFFSET`: the default spot is a guess, `cmd street lanes` helps to
+  pick one). Checks that a car of ours stops for it. Look for: the car
+  stopping short and honking, the queue behind it, the puppet never pushed.
 - **wheels-guest-area**: the game hosts; a mock guest 400 m away owns its
   area and runs three cars of its own (the first driven by its NPC, chasing
   us once we meet). It walks up (its cars appear as proxies, its chase

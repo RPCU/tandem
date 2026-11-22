@@ -638,7 +638,7 @@ public class TandemScenes {
     let placed = new TandemScenePlaced();
     placed.prop = prop;
     placed.entity = place.entity;
-    placed.id = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+    placed.id = TandemEntities.Create(spec);
     placed.at = spec.position;
     placed.turn = spec.orientation;
     ArrayPush(this.m_placed, placed);
@@ -1120,7 +1120,7 @@ public class TandemScenes {
       spec.spawnInView = true;
       spec.active = true;
       ArrayPush(spec.tags, n"Tandem.Camera");
-      this.m_camera = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+      this.m_camera = TandemEntities.Create(spec);
       this.m_cameraAsked = true;
       this.m_cameraLogged = false;
       TandemNative.Log("scene: a camera for the host's cutscene asked for");

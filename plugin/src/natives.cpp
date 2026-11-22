@@ -572,7 +572,13 @@ struct TandemNative : Red::IScriptable {
       log::Info("puppet for player {} is entity {:x}", player, id.hash);
   }
 
-  static void UnregisterPuppet(std::uint32_t player) { Runtime::Get().UnregisterPuppet(player); }
+  // An NPC proxy's hold (a seat, a bench) goes with it: its id may be a
+  // real NPC of ours next (a hand-over), or never used again.
+  static void UnregisterPuppet(std::uint32_t player) {
+    Runtime::Get().UnregisterPuppet(player);
+    if (player >= kNpcPuppetBase)
+      Runtime::Get().HoldPuppet(player, false);
+  }
 
   // The engine offered this puppet a movement controller since the last ask.
   static bool WantsController(std::uint32_t player) {

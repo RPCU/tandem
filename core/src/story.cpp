@@ -373,6 +373,8 @@ Spectator::Change Spectator::Update(const SpectateInput &in) {
       why = Why::Taken; // carried in its copy: until its ride ends
     else if (taken && !in.hostKnown)
       why = Why::Taken; // its puppet streaming in
+    else if (in.hostFree && !taken)
+      why = Why::None; // free roam under a restriction: its own way to go
     else if (in.hostKnown && in.hostRiding && distance > kSpectateLeftBehind)
       why = Why::Taken; // the moment's ride left without us
     else if (in.hostKnown && distance > (taken ? kSpectateReachBack : kSpectateReach))

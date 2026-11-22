@@ -7,11 +7,14 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "engine/vehiclemove.hpp"
 #include "runtime.hpp"
 
 #include "tandem/vehicle_combat.hpp"
 
+#include <RED4ext/Scripting/Natives/Generated/Quaternion.hpp>
 #include <RED4ext/Scripting/Natives/Generated/Vector4.hpp>
+#include <RED4ext/Scripting/Natives/Generated/ent/Entity.hpp>
 #include <RedLib.hpp>
 
 #include <algorithm>
@@ -66,6 +69,18 @@ struct TandemWheelsPush {
 static_assert(alignof(TandemWheelsPush) <= 8, "the script VM aligns struct locals to 8");
 
 struct TandemWheels : Red::IScriptable {
+  // A vehicle another game drives, moved to where its driver's game says in
+  // `seconds`: the engine's own kinematic move (engine/vehiclemove.hpp), with
+  // the velocity that takes it there. False: not moved (the caller teleports).
+  // The kinematic move can be used in this game (the vehicle class is the one
+  // measured): checked once, a mismatch logged once.
+  static bool CanMove() { return engine::CanMoveVehicles(); }
+  static bool Move(Red::Handle<Red::ent::Entity> vehicle, Red::Vector4 position,
+                   Red::Quaternion orientation, float seconds) {
+    return engine::MoveVehicle(vehicle.instance, position.X, position.Y, position.Z, orientation.i,
+                               orientation.j, orientation.k, orientation.r, seconds);
+  }
+
   // A vehicle named across games: a player's car, a shared world vehicle.
   static std::uint32_t CarOf(std::uint32_t player) { return proto::PlayerCar(player); }
   static std::uint32_t StreetOf(std::uint32_t id) { return proto::StreetCar(id); }
@@ -346,6 +361,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemWheelsPush, "TandemWheelsPush", {
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemWheels, "TandemWheels", {
+  RTTI_METHOD(CanMove);
+  RTTI_METHOD(Move);
   RTTI_METHOD(CarOf);
   RTTI_METHOD(StreetOf);
   RTTI_METHOD(IsStreet);

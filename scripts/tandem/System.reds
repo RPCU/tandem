@@ -119,6 +119,32 @@ public class TandemSystem extends ScriptableSystem {
   private let m_rebuild: array<Uint32>;
   private let m_gates: ref<TandemGates>;
   private let m_vehicleProbe: ref<TandemVehicleProbe>;
+  // Bodies asked for that are not here yet (TandemEntities.Create).
+  private let m_asked: array<ref<TandemAsked>>;
+  // The car our V rides in that another game drives (Vehicles.reds Follow):
+  // when it was last moved, the frames so far, the frames it was held.
+  private let m_rideFrames: Int32;
+  private let m_rideHeld: Int32;
+  private let m_rideSaidAt: Float;
+  private let m_rideParent: EntityID;
+  private let m_rideParentAt: Float;
+  // How the vehicles other games run are moved here (MoveBody): the path
+  // of this run, the players' cars by body, and the counters of the report.
+  private let m_moveRead: Bool;
+  private let m_moveKinematic: Bool;
+  private let m_movers: array<ref<TandemMoved>>;
+  private let m_movedKinematic: Int32;
+  private let m_movedTeleport: Int32;
+  private let m_snapFirst: Int32;
+  private let m_snapJump: Int32;
+  private let m_snapStalled: Int32;
+  private let m_snapOff: Int32;
+  private let m_moveRefused: Int32;
+  private let m_moveFollowed: Int32;
+  private let m_moveStalledBodies: Int32;
+  private let m_moveError: Float;
+  private let m_moveErrorBefore: Float;
+  private let m_moveErrorAt: Float;
   private let m_leaving: array<ref<TandemLeaving>>;
   // Bodies to delete once they exist (Entities.reds).
   private let m_deleting: array<ref<TandemDeleting>>;
@@ -1562,7 +1588,22 @@ public class TandemSystem extends ScriptableSystem {
       }
     } else if Equals(command, "street count") {
       // (test) the world vehicles shared in the session, as we have them.
-      TandemNative.Log(s"street \(IsDefined(this.m_traffic) ? this.m_traffic.Report() : "count: no vehicles")");
+      TandemNative.Log(s"street \(IsDefined(this.m_traffic) ? this.m_traffic.Report() : "count: no vehicles"); \(this.MoveReport())");
+    } else if Equals(command, "vehicle moves") {
+      // (test) how the vehicles other games run were moved here.
+      TandemNative.Log(s"vehicle \(this.MoveReport())");
+    } else if Equals(command, "street lanes") {
+      // (test) our driven traffic round our V, and what stopped for whom.
+      if IsDefined(this.m_traffic) {
+        this.m_traffic.LanesReport();
+      }
+    } else if Equals(command, "npc parity") || StrBeginsWith(command, "npc sense ") {
+      // (test) "npc parity": how far each NPC we run is in detecting each V
+      // (ours against the puppets'); "npc sense player|npc": the puppets'
+      // visible object as a player's, or as the NPC body's (the default).
+      if IsDefined(this.m_npcs) {
+        this.m_npcs.SenseCommand(command, this);
+      }
     } else if StrBeginsWith(command, "police") {
       // (test) "police report", "police heat N" (our V wanted at N stars,
       // the quests' own way), "police calm".
@@ -1612,7 +1653,7 @@ public class TandemSystem extends ScriptableSystem {
       spec.active = true;
       ArrayPush(spec.tags, n"Tandem.Proxy");
       let test = new TandemProxyTest();
-      test.id = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+      test.id = TandemEntities.Create(spec);
       test.since = this.Now();
       ArrayPush(this.m_proxyTests, test);
       TandemNative.Log(s"proxy test: \(record) spawning (\(EntityID.IsDefined(test.id)))");
@@ -1673,7 +1714,7 @@ public class TandemSystem extends ScriptableSystem {
         spec.spawnInView = true;
         spec.active = true;
         ArrayPush(spec.tags, n"Tandem.Test");
-        GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+        TandemEntities.Create(spec);
         n += 1;
       }
       TandemNative.Log(s"npc spawn: \(count) gangers ahead");
@@ -1884,7 +1925,7 @@ public class TandemSystem extends ScriptableSystem {
       spec.persistSpawn = false;
       spec.spawnInView = true;
       spec.active = true;
-      this.m_rideNpc = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+      this.m_rideNpc = TandemEntities.Create(spec);
       this.m_rideNpcSeated = false;
       TandemNative.Log(s"ride npc: \(record) spawning");
     } else if Equals(command, "ride along") || Equals(command, "ride follow") {
@@ -2259,7 +2300,7 @@ public class TandemSystem extends ScriptableSystem {
     spec.spawnInView = true;
     spec.active = true;
     ArrayPush(spec.tags, n"Tandem.Test");
-    let id = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+    let id = TandemEntities.Create(spec);
     ArrayPush(this.m_testNpcs, id);
     return id;
   }
@@ -3069,7 +3110,7 @@ public class TandemSystem extends ScriptableSystem {
     spec.active = true;
     ArrayPush(spec.tags, n"Tandem.Puppet");
 
-    let id = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+    let id = TandemEntities.Create(spec);
     if !EntityID.IsDefined(id) {
       TandemNative.Log(s"could not spawn a puppet for player \(player) (\(TandemNative.PuppetRecord(body)))");
       return;
@@ -3867,6 +3908,261 @@ public class TandemSystem extends ScriptableSystem {
     } else {
       TandemNative.LogDebug(s"entities: body \(EntityID.ToDebugString(id)) deleted before it exists: deleted when it does");
     }
+  }
+
+  // A body of ours was asked for (TandemEntities.Create).
+  public func Asked(id: EntityID) -> Void {
+    if ArraySize(this.m_asked) >= 128 {
+      ArrayErase(this.m_asked, 0);
+    }
+    let asked = new TandemAsked();
+    asked.id = id;
+    asked.at = this.Now();
+    ArrayPush(this.m_asked, asked);
+  }
+
+  // How many bodies of ours were asked for in the last seconds and do not
+  // exist yet (one whose record never spawns stops counting after
+  // TandemEntities.WaitLimit).
+  public func BodiesWaiting() -> Int32 {
+    if ArraySize(this.m_asked) == 0 {
+      return 0;
+    }
+    let entities = GameInstance.GetDynamicEntitySystem();
+    let now = this.Now();
+    let kept: array<ref<TandemAsked>>;
+    for asked in this.m_asked {
+      if entities.IsManaged(asked.id) && !entities.IsSpawned(asked.id) && now - asked.at < TandemEntities.WaitLimit() {
+        ArrayPush(kept, asked);
+      }
+    }
+    this.m_asked = kept;
+    return ArraySize(kept);
+  }
+
+  // ---- vehicles other games run: how their bodies are moved here ----
+  // (docs/architecture/vehicles.md, "How a copy is moved")
+
+  // Farther than this from where its owner says it is, a body is put there
+  // by a teleport (a spawn, a resync after a loading screen or a pause, a
+  // jump of its owner's); nearer, it is moved.
+  public static func SnapDistance() -> Float {
+    return 8.0;
+  }
+
+  // The path of this run, read once and said once: the engine's kinematic
+  // vehicle move (engine/vehicles.md §13.141), unless `kinematic_ride = off`
+  // or the vehicle class is not the one measured (the plugin says which).
+  private func MovePath() -> Void {
+    if this.m_moveRead {
+      return;
+    }
+    this.m_moveRead = true;
+    let off = Equals(TandemNative.Setting("kinematic_ride"), "off");
+    let can = TandemWheels.CanMove();
+    this.m_moveKinematic = !off && can;
+    if this.m_moveKinematic {
+      TandemNative.Log(s"vehicles: the vehicles other games run are moved by the engine's kinematic move (a teleport beyond \(TandemSystem.SnapDistance()) m, at a spawn, and for a body that does not follow)");
+    } else {
+      TandemNative.Log(s"vehicles: the vehicles other games run are teleported every frame (\(off ? "kinematic_ride = off" : "the vehicle layout check failed")); the car our own V rides in every other frame while a body spawns");
+    }
+  }
+
+  // A player's car copy, by its body.
+  public func MoverOf(body: EntityID) -> ref<TandemMoved> {
+    for moved in this.m_movers {
+      if moved.body == body {
+        return moved;
+      }
+    }
+    if ArraySize(this.m_movers) >= 16 {
+      ArrayErase(this.m_movers, 0);
+    }
+    let moved = new TandemMoved();
+    moved.body = body;
+    ArrayPush(this.m_movers, moved);
+    return moved;
+  }
+
+  // What our own V is mounted to (a seat, a slot it is carried in), read
+  // once a frame.
+  private func RideParent(now: Float) -> EntityID {
+    if now != this.m_rideParentAt || now == 0.0 {
+      this.m_rideParentAt = now;
+      this.m_rideParent = EntityID.FromHash(0ul);
+      let player = GetPlayer(this.GetGameInstance());
+      if IsDefined(player) {
+        let ride = GameInstance.GetMountingFacility(this.GetGameInstance()).GetMountingInfoSingleWithObjects(player);
+        this.m_rideParent = ride.parentId;
+      }
+    }
+    return this.m_rideParent;
+  }
+
+  // May the car our own V is mounted to be teleported this frame? A
+  // teleport of our V's mount is a teleport of the player, and one every
+  // frame keeps the population system from spawning anything: no proxy of
+  // the other players' traffic or NPCs ever appeared on a riding guest
+  // (engine/vehicles.md §13.141, 2026-11-22). So while a body of ours waits
+  // to spawn, only every other frame (measured: bodies then come within
+  // 0.1 s).
+  private func RideTeleportAllowed() -> Bool {
+    this.m_rideFrames += 1;
+    let waiting = this.BodiesWaiting();
+    if waiting == 0 || this.m_rideFrames % 2 != 0 {
+      return true;
+    }
+    this.m_rideHeld += 1;
+    let now = this.Now();
+    if now - this.m_rideSaidAt > 10.0 {
+      this.m_rideSaidAt = now;
+      TandemNative.Log(s"vehicles: our seat's car is not teleported every other frame while \(waiting) body(ies) spawn (\(this.m_rideHeld) frame(s) so far)");
+    }
+    return false;
+  }
+
+  // A vehicle another game runs (a player's car copy, a proxy of its
+  // traffic) goes to where its owner says, every frame: by the engine's
+  // kinematic vehicle move, which gives the body the velocity that takes it
+  // there and is no teleport; by a teleport when it is new here, farther
+  // than SnapDistance, or does not follow the move (asked 15 frames in a
+  // row for 5 cm or more and not a fifth of the way there: woken up at the
+  // third, teleported from then on); by teleports alone when the path is off. A
+  // body at rest where its owner says (the same transform twice, within
+  // 3 mm) is left alone until either changes by 5 cm. No world time passed
+  // (a pause): nothing is moved.
+  public func MoveBody(moved: ref<TandemMoved>, car: ref<GameObject>, position: Vector4, orientation: Quaternion) -> Void {
+    this.MovePath();
+    let now = this.WorldNow();
+    let id = car.GetEntityID();
+    let first = moved.body != id || !moved.placed;
+    if first {
+      moved.body = id;
+      moved.placed = false;
+      moved.kinematic = false;
+      moved.rested = false;
+      moved.stalls = 0;
+      moved.woken = false;
+      moved.teleportOnly = false;
+    }
+    let step = now - moved.at;
+    if !first && step <= 0.0 {
+      return;
+    }
+    let is = car.GetWorldPosition();
+    let to = new Vector4(position.X, position.Y, position.Z, 1.0);
+    let gap = Vector4.Distance(is, to);
+    let last = new Vector4(moved.x, moved.y, moved.z, 1.0);
+    if !first && moved.kinematic {
+      // How far the body is from where the last move sent it, and whether
+      // it moved at all.
+      let error = Vector4.Distance(is, last);
+      if error > this.m_moveError {
+        this.m_moveError = error;
+      }
+      let before = new Vector4(moved.px, moved.py, moved.pz, 1.0);
+      let asked = Vector4.Distance(before, last);
+      if asked > 0.05 {
+        if Vector4.Distance(is, before) < 0.2 * asked {
+          moved.stalls += 1;
+          if moved.stalls == 3 && !moved.woken {
+            moved.woken = true;
+            let vehicle = car as VehicleObject;
+            if IsDefined(vehicle) {
+              vehicle.PhysicsWakeUp();
+            }
+          }
+          if moved.stalls >= 15 {
+            moved.teleportOnly = true;
+            this.m_moveStalledBodies += 1;
+            if this.m_moveStalledBodies <= 5 {
+              TandemNative.Log(s"vehicles: body \(EntityID.ToDebugStringDecimal(id)) does not follow the kinematic move (15 frames, \(gap) m from its place): teleported from now on");
+            }
+            if this.m_moveStalledBodies >= 5 && this.m_moveFollowed == 0 {
+              this.m_moveKinematic = false;
+              TandemNative.Log("vehicles: the kinematic move moves nothing here (5 bodies, none followed): every vehicle is teleported from now on");
+            }
+          }
+        } else {
+          moved.stalls = 0;
+          this.m_moveFollowed += 1;
+        }
+      }
+    }
+    if now - this.m_moveErrorAt >= 10.0 {
+      this.m_moveErrorAt = now;
+      this.m_moveErrorBefore = this.m_moveError;
+      this.m_moveError = 0.0;
+    }
+    let same = !first && AbsF(to.X - moved.x) < 0.002 && AbsF(to.Y - moved.y) < 0.002 && AbsF(to.Z - moved.z) < 0.002
+      && AbsF(orientation.i * moved.i + orientation.j * moved.j + orientation.k * moved.k + orientation.r * moved.r) > 0.999999;
+    if same && moved.rested && gap < 0.05 {
+      moved.at = now;
+      return;
+    }
+    if this.m_moveKinematic && !moved.teleportOnly && !first && gap <= TandemSystem.SnapDistance() {
+      if TandemWheels.Move(car, to, orientation, ClampF(step, 0.005, 0.2)) {
+        this.m_movedKinematic += 1;
+        moved.px = is.X;
+        moved.py = is.Y;
+        moved.pz = is.Z;
+        moved.kinematic = true;
+        moved.rested = same && gap < 0.003;
+        this.Moved(moved, to, orientation, now);
+        return;
+      }
+      // No body to move (or not a vehicle): this one is teleported.
+      moved.teleportOnly = true;
+      this.m_moveRefused += 1;
+    }
+    if id == this.RideParent(now) && !this.RideTeleportAllowed() {
+      return;
+    }
+    if first {
+      this.m_snapFirst += 1;
+    } else if !this.m_moveKinematic {
+      this.m_snapOff += 1;
+    } else if moved.teleportOnly {
+      this.m_snapStalled += 1;
+    } else {
+      this.m_snapJump += 1;
+      TandemNative.LogDebug(s"vehicles: body \(EntityID.ToDebugStringDecimal(id)) \(gap) m from its place: teleported");
+    }
+    this.m_movedTeleport += 1;
+    GameInstance.GetTeleportationFacility(this.GetGameInstance()).Teleport(car, to, Quaternion.ToEulerAngles(orientation));
+    moved.kinematic = false;
+    moved.rested = same;
+    this.Moved(moved, to, orientation, now);
+  }
+
+  // Nothing is said of where it is now (its owner's stream stopped, a
+  // state not yet heard): it comes to rest where it was last sent, rather
+  // than roll on with the velocity of its last move.
+  public func SettleBody(moved: ref<TandemMoved>, car: ref<GameObject>) -> Void {
+    if !IsDefined(moved) || !moved.placed || moved.rested || moved.body != car.GetEntityID() {
+      return;
+    }
+    this.MoveBody(moved, car, new Vector4(moved.x, moved.y, moved.z, 1.0), new Quaternion(moved.i, moved.j, moved.k, moved.r));
+  }
+
+  private func Moved(moved: ref<TandemMoved>, to: Vector4, orientation: Quaternion, now: Float) -> Void {
+    moved.placed = true;
+    moved.x = to.X;
+    moved.y = to.Y;
+    moved.z = to.Z;
+    moved.i = orientation.i;
+    moved.j = orientation.j;
+    moved.k = orientation.k;
+    moved.r = orientation.r;
+    moved.at = now;
+  }
+
+  // (test: `street count`, `vehicle moves`) how the others' vehicles were
+  // moved in this run.
+  public func MoveReport() -> String {
+    this.MovePath();
+    let error = MaxF(this.m_moveError, this.m_moveErrorBefore);
+    return s"moves: path \(this.m_moveKinematic ? "kinematic" : "teleport"), \(this.m_movedKinematic) kinematic, \(this.m_movedTeleport) teleports (\(this.m_snapFirst) first placements, \(this.m_snapJump) over \(TandemSystem.SnapDistance()) m, \(this.m_snapStalled) of bodies that do not follow, \(this.m_snapOff) with the path off), \(this.m_moveStalledBodies) body(ies) that do not follow, \(this.m_moveRefused) refused, \(this.m_rideHeld) frame(s) our seat's car was not teleported, largest error \(error) m in the last 10 to 20 s";
   }
 
   private func TickDeleting() -> Void {

@@ -141,6 +141,7 @@ found through this table, each number once.
 | 13.133 | Tracers, ricochets, a charge's glow, an NPC's guided round | `presence.md` |
 | 13.134 | Which workspot an actor plays: the game's instance map | `npcs.md` |
 | 13.140 | A dynamic entity deleted before its stub exists: freed under the population system | `vehicles.md` |
+| 13.141 | A teleport of the player's mount every frame stops every spawn; the vehicle's kinematic move | `vehicles.md` |
 | 13.150 | CrystalCoat / TwinTone: a vehicle's custom paint | `vehicles.md` |
 | 13.151 | Dual wielding (akimbo): two weapons, two state machines, what tells them apart | `combat.md` |
 | 13.153 | A choice of our own on a puppet's interaction component | `story.md` |

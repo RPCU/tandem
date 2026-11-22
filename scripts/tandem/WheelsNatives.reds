@@ -65,6 +65,12 @@ public native class TandemWheels extends IScriptable {
   public static native func TrafficIdOf(vehicle: Uint32) -> Uint32
   public static native func OwnerOf(vehicle: Uint32) -> Uint32
 
+  // A vehicle another game drives, moved to where its driver's game says in
+  // `seconds` (the engine's kinematic move; false: not moved, teleport it).
+  // ... and whether it can be used in this game (the layout check).
+  public static native func CanMove() -> Bool
+  public static native func Move(vehicle: ref<Entity>, position: Vector4, orientation: Quaternion, seconds: Float) -> Bool
+
   // Our own vehicles: the destruction grid and parts as the game reports
   // them, then how it stands (sent when it changed).
   public static native func NoteGrid(vehicle: Uint32, cells: array<Float>)

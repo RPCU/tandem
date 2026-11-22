@@ -535,6 +535,86 @@ that was text (`rcx` `0x6544203043394605`, "4E9C0 De" as the pointer).
   logged at `info` (`entities: body … deleted before it exists`).
   `tools/game.sh bt` names this crash site. [2.5-untested]
 
+### 13.141 A teleport of the player's mount every frame stops every spawn; the vehicle's kinematic move (2026-11-22, game 2.50, two instances and exe read)
+
+A guest riding in the host's car copy saw none of the host's traffic nor
+its pedestrians: 89 street proxies asked again in 25 s, and 0 NPC proxy
+bodies in 3 minutes of ride (5, 7, 4 a minute on foot before it), every
+body `IsManaged`, neither `IsSpawning` nor `IsSpawned`.
+
+- **The cause**: `TeleportationFacility.Teleport` on an entity the player
+  is mounted to (a seat or a slot: the mounting facility's parent of V) is
+  a teleport of the player, and in a frame with one the population system
+  spawns nothing of what is registered with it (Codeware's
+  `DynamicEntitySystem.CreateEntity`: vehicles and NPCs alike). tandem
+  teleported the car copy every frame (`TandemVehicles.Follow`), moving or
+  not. [2.5-verified]
+- **How it was measured** (instance b, 30 frames/s; a vehicle asked 14 m
+  from V and an NPC 8 m from it, the time until `GetEntity` returns each):
+
+  | V is                                                        | vehicle           | NPC          |
+  | ----------------------------------------------------------- | ----------------- | ------------ |
+  | on foot                                                     | 0.07 s            | 0.20 s       |
+  | at the wheel of its own real car (the host)                 | within the frame  | not measured |
+  | in a seat of a dynamic car nobody moves                     | 0.07 s            | 0.06 s       |
+  | in that seat, the car teleported to where it is every frame | never (10.7 s)    | never (9.3 s) |
+  | … the teleports stopped                                     | 0.065 s later     | 0.39 s later |
+  | in that seat, the car teleported every 2nd frame            | 0.10 s            | not measured |
+  | in that seat, the car teleported every 4th frame            | 0.09 s            | not measured |
+  | in the host's car copy, followed every frame                | never (8.9 s)     | never (7.5 s) |
+  | … the follow stopped                                        | 0.10 s later      | 0.39 s later |
+  | … the follow back on, another asked                         | never (6.5 s)     | not measured |
+  | … out of the seat                                           | 0.075 s later     | not measured |
+
+  A car teleported every frame with nobody of ours in it stops nothing
+  (the street's proxies, `vehicle probe`). It is not the seat, its
+  workspot, the car being a dynamic entity, nor speed: the car stood
+  still. Whether one frame without a teleport among many is enough was not
+  measured (every 2nd and every 4th were). [2.5-verified]
+- **`Entity.SetWorldTransform`** (Codeware: the placed component's
+  transform) does not move a vehicle: asked every frame for a point up to
+  20 m away, the car stayed within 0.003 m of where it was, V in it.
+  [2.5-verified]
+- **The vehicle's own kinematic move** (address-library hash 2933986803,
+  `0x1402E3270` on 2.50, five callers in the exe;
+  `(vehicleBaseObject *, WorldTransform const &, float seconds)`): writes
+  the transform to the runtime data (`+0x5F0`: position `+0x10`,
+  orientation `+0x20`), and in its physics half (`0x1402E33FC`, on the
+  object at `+0x2D0`) gives the rigid body (`+0x2D8`: linear velocity
+  `+0x18`, angular `+0x24`) the velocity that reaches the transform in
+  `seconds`, or puts the body there at rest when that is 100 m/s or more
+  (the float at `0x1437BA1F4`), then moves the physics proxy; it ends by
+  copying the body's velocities to the runtime data. `+0x2D8` and `+0x5F0`
+  are read without a check. Nothing in it goes through the teleportation
+  facility. [2.5-static]
+- **What the decompile says the move does on its own**: the transform is
+  written to the rigid body in both branches (`0x1406E101C`), so the body
+  is where it was told whatever the velocity; under 100 m/s the physics
+  proxy (the weak handle at `+0x2F0`, its id at `+0x160`) gets a kinematic
+  target, or, when a query on the proxy says so (`0x140BA9FF8`, mode
+  `0x15`) or it is farther than the step allows, its transform and both
+  velocities set outright. With no physics object at `+0x2D0` only the
+  proxy's transform is set. Not read: what `+0xB0` and `0x14061DDC8` do
+  first, which update phase the engine's five callers run in (tandem calls
+  it from the script tick), and whether a body whose physics sleep is
+  moved. [2.5-static]
+- **tandem** (`TandemSystem.MoveBody`, `scripts/tandem/System.reds`;
+  `docs/architecture/vehicles.md`, "How a copy is moved"): the kinematic
+  move for every vehicle another game runs (`TandemWheels.Move`,
+  `plugin/src/engine/vehiclemove.cpp`, behind the class size `0xBC0`,
+  `kinematic_ride = off` to turn it off), a teleport for a first
+  placement, over 8 m and for a body that does not follow; the car our V
+  is mounted to never teleported two frames running while a body of ours
+  waits to spawn (`TandemEntities.Create` keeps the list). Built by CI,
+  **never called in game** (the game machine went off before its first
+  call): that the body and what is mounted to it follow, that the spawns
+  come, the wheels, the sound, a contact with our V, and that nothing
+  crashes are all to test. [2.5-untested]
+- **A hot reload of the scripts in a session** crashed the guest 5 s later
+  (`0xC0000005` at `+0x2AE4A10`, a job thread, once; `tools/game.sh reload`
+  on instance b, 2026-11-22): restart the game instead while it is in a
+  session. [2.5-verified]
+
 ### 13.150 CrystalCoat / TwinTone: a vehicle's custom paint (2026-11-22, 2.50 scripts read, not run in game)
 
 All from the decompiled 2.50 scripts (`final.reds`), nothing run:

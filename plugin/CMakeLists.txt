@@ -61,6 +61,7 @@ add_library(tandem SHARED
   src/engine/prefabs.cpp
   src/engine/scenes.cpp
   src/engine/physics.cpp
+  src/engine/vehiclemove.cpp
   src/engine/casts.cpp
   src/engine/workspots.cpp)
 target_link_libraries(tandem PRIVATE tandem_core RED4ext::SDK iphlpapi version)

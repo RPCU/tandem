@@ -38,7 +38,7 @@ public class TandemVehicleProbe {
     spec.spawnInView = true;
     spec.active = true;
     ArrayPush(spec.tags, n"Tandem.Probe");
-    this.m_id = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+    this.m_id = TandemEntities.Create(spec);
     this.m_start = this.Now();
     this.m_lastLog = this.m_start;
     TandemNative.Log(s"vehicle probe: \(record) spawning (\(EntityID.IsDefined(this.m_id)))");
