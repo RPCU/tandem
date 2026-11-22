@@ -31,7 +31,10 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // CueKind::Ricochet and CueKind::Charge (a game of 12 refuses them).
 // 14: TrafficHack appended (a game of 13 cannot read it).
 // 15: CarPaint appended (a game of 14 cannot read it).
-inline constexpr std::uint16_t kProtocolVersion = 15;
+// 16: dual wielding, the hand of what so far was the right hand's: a
+// Charge cue's `at.y`, kThrowLeftHand (a smart round), kStrikeLeftHand (a
+// game of 15 would draw and count each on the right hand's weapon).
+inline constexpr std::uint16_t kProtocolVersion = 16;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -205,7 +208,9 @@ struct Appearance {
 // What a player holds (Event channel, on change; the host keeps the latest
 // for late joiners): TweakDB ids of the items in the right and left hand
 // slots, 0 when empty. The puppet gets the same items in the same slots;
-// the pose stream moves the hands.
+// the pose stream moves the hands. Two ranged weapons the game lets a V
+// pair (both tagged DualWield) are dual wielding: no flag says it, every
+// game reads it from the two items (docs/architecture/players.md).
 struct Held {
   PlayerId player{};
   std::uint32_t revision{};
@@ -984,7 +989,9 @@ inline constexpr std::uint16_t kStrikeWeakSpot = 1, kStrikeCritical = 2, kStrike
     kStrikeLeaveOneHp = 32,                            // finisher grace, bleeding perk
     kStrikeKillingBlow = 64,                           // hitFlag.WasKillingBlow on the proxy
     kStrikeHeadshot = 128,                             // hitFlag.Headshot
-    kStrikeForceDismember = 256;                       // hitFlag.ForceDismember
+    kStrikeForceDismember = 256,                       // hitFlag.ForceDismember
+    kStrikeLeftHand = 512;                          // made with the weapon in the left hand (v16)
+inline constexpr std::uint16_t kStrikeFlags = 1023; // every kStrike*
 inline constexpr std::uint8_t kNoZone = 255;
 struct NpcStrike {   // Event channel
   PlayerId player{}; // who hit: set by the host from the connection
@@ -1704,10 +1711,11 @@ enum class CueKind : std::uint8_t {
   // bullet made: the shooter's game reports no bounce that hit nothing);
   // drawn from that Trace's end. arg: kTrace*. (v13)
   Ricochet = 3,
-  // The weapon in the right hand charges (a tech weapon): arg kCharge*,
-  // `at.x` how charged it is (0..1: its glow), sent on each change and every
-  // 0.25 s while not idle; a receiver ends a charge that stopped being said
-  // (a lost Idle). (v13)
+  // A hand's weapon charges (a tech weapon): arg kCharge*, `at.x` how
+  // charged it is (0..1: its glow), `at.y` the hand (kChargeRightHand,
+  // kChargeLeftHand: v16, a dual wielding V charges each on its own), sent
+  // on each change and every 0.25 s while not idle; a receiver ends a
+  // charge that stopped being said (a lost Idle). (v13)
   Charge = 4,
 };
 inline constexpr std::uint8_t kTraceLeftHand = 1;  // from the left hand's weapon
@@ -1720,6 +1728,7 @@ inline constexpr std::uint8_t kChargeCharging = 1;    // charging, not ready
 inline constexpr std::uint8_t kChargeReady = 2;       // ready to fire (ChargeReadyPercentage)
 inline constexpr std::uint8_t kChargeFull = 3;        // fully charged (the max)
 inline constexpr std::uint8_t kChargeDischarging = 4; // let go before it was ready: it drains
+inline constexpr float kChargeRightHand = 0.f, kChargeLeftHand = 1.f; // Charge's `at.y`
 inline constexpr std::uint8_t kChargeMax = kChargeDischarging;
 struct Cue {
   PlayerId player{};
@@ -1791,6 +1800,8 @@ struct Install {           // Event channel
 enum class ThrowKind : std::uint8_t { Grenade = 0, Knife = 1, Launcher = 2, Smart = 3 };
 inline constexpr std::uint8_t kThrowSticky = 1, kThrowHoming = 2, kThrowCharged = 4,
                               kThrowQuick = 8;
+// Smart: the round left the weapon in the thrower's left hand (v16).
+inline constexpr std::uint8_t kThrowLeftHand = 32;
 struct Throw {
   PlayerId player{};    // the thrower: set by the host from the connection
   std::uint32_t id{};   // the thrower's number for this object (ThrowEnd names it)

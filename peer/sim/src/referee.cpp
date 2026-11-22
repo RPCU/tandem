@@ -754,10 +754,13 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
                     (m.flags & ~p::kShotAtFlags) == 0;
         } else if constexpr (std::is_same_v<M, p::Cue>) {
           // A shot's end, a bounce, a swing's landing: a real place; a
-          // charge: one of its steps, how charged (0..1).
+          // charge: one of its steps, how charged (0..1), a hand (v16).
           finite = Finite(m.at);
           inRange = m.kind == p::CueKind::Charge
-                        ? m.arg <= p::kChargeMax && (!finite || (m.at.x >= 0.f && m.at.x <= 1.001f))
+                        ? m.arg <= p::kChargeMax &&
+                              (!finite ||
+                               (m.at.x >= 0.f && m.at.x <= 1.001f &&
+                                (m.at.y == p::kChargeRightHand || m.at.y == p::kChargeLeftHand)))
                         : (m.arg & ~p::kTraceFlags) == 0;
         } else if constexpr (std::is_same_v<M, p::NpcHit>) {
           finite = std::isfinite(m.damage) && Finite(m.position) && Finite(m.direction);
@@ -765,7 +768,10 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::NpcStrike>) {
           finite = std::isfinite(m.damage) && std::isfinite(m.poise) &&
                    std::isfinite(m.minHealth) && Finite(m.position) && Finite(m.direction);
-          inRange = !finite || (m.damage >= 0.f && m.poise >= 0.f);
+          // Known flags only (kStrikeLeftHand, v16: the off hand's hit is a
+          // strike like the right's, never another message).
+          inRange =
+              (!finite || (m.damage >= 0.f && m.poise >= 0.f)) && (m.flags & ~p::kStrikeFlags) == 0;
         } else if constexpr (std::is_same_v<M, p::PlayerHit> || std::is_same_v<M, p::AreaHit>) {
           finite = std::isfinite(m.physical) && std::isfinite(m.thermal) &&
                    std::isfinite(m.electric) && std::isfinite(m.chemical) && Finite(m.position) &&

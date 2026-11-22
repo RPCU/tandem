@@ -1368,6 +1368,12 @@ TEST_CASE("presence, cues and NPC reactions round-trip, on the right channels, a
                  .arg = kTraceCharacter,
                  .at = {2.f, -2.f, 31.f}});
   RoundTrips(Cue{.player = 3, .seq = 79, .kind = CueKind::Charge, .arg = kChargeFull});
+  // The left hand's charge (v16): the hand in `at.y`.
+  RoundTrips(Cue{.player = 3,
+                 .seq = 80,
+                 .kind = CueKind::Charge,
+                 .arg = kChargeCharging,
+                 .at = {0.4f, kChargeLeftHand, 0.f}});
   const NpcReaction stagger{.npc = 12,
                             .by = 2,
                             .type = 3,
@@ -1424,6 +1430,12 @@ TEST_CASE("throws, their ends, the session's rules and a defence survive encodin
                    .velocity = {4, 5, 6},
                    .npc = 7});
   RoundTrips(Throw{.player = 3, .id = 1, .kind = ThrowKind::Smart, .at = 1});
+  // A smart round of the left hand's weapon (v16).
+  RoundTrips(Throw{.player = 3,
+                   .id = 2,
+                   .kind = ThrowKind::Smart,
+                   .flags = kThrowHoming | kThrowLeftHand,
+                   .npc = 7});
   RoundTrips(ThrowEnd{.player = 2, .id = 9, .how = ThrowEndKind::Stuck, .position = {1, 2, 3}});
   RoundTrips(Rules{.flags = kRuleFriendlyFire});
   RoundTrips(Rules{.flags = kRuleFriendlyFire | kRuleEnemyScaling, .enemyHealth = 85});
