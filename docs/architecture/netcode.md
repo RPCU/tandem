@@ -124,7 +124,8 @@ events, taps and recordings above it see `PlayerState`, `PoseState`,
 - **`HitTaken`** (a hit a V took, for its puppet: `presence.md`; at most
   10 a second, 2 in the fight's row): the player in a byte, where it
   landed and the way it went a signed byte an axis (`proto::Snapped`):
-  26 bytes, 47 as plain fields (protocol 18).
+  26 bytes, 47 as plain fields (protocol 18); 0.4 kbit/s each way in the
+  fight's row, which it takes to 59.9 up and 84.0 down (CI, 2026-11-22).
 - **A scene's streams** (scene replay: each actor's body as `ActorFrame`,
   the camera as `SceneCamera`): one budget for all of them on the host,
   22 kbit/s by default, split by `scene::Pacer`
