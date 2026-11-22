@@ -1309,6 +1309,49 @@ TEST_CASE("a car's paint survives encoding: reliable, small, appended, one form 
   CHECK(refused({.flags = kPaintPrimary}));
 }
 
+TEST_CASE("a hit a V took survives encoding: of the moment, small, appended, checked") {
+  const HitTaken said{.player = 2,
+                      .by = HitBy::Npc,
+                      .attacker = 7,
+                      .attack = 0x1122334455667788ULL,
+                      .attackType = 10,
+                      .flags = kHitTakenStaggered | kHitTakenCritical,
+                      .zone = 8,
+                      .shape = 0,
+                      .share = 64,
+                      .offset = {-0.2f, 0.1f, 0.5f},
+                      .direction = {0.6f, -0.8f, 0.f}};
+  // The wire's form: its place within 2 cm an axis, its way within a degree.
+  const auto wire = Snapped(said);
+  RoundTrips(wire);
+  CHECK(Snapped(wire) == wire);
+  CHECK(wire.offset.x == doctest::Approx(-0.2f).epsilon(0.1));
+  CHECK(wire.offset.z == doctest::Approx(0.5f).epsilon(0.05));
+  CHECK(wire.direction.y == doctest::Approx(-0.8f).epsilon(0.01));
+  CHECK(wire.attack == said.attack);
+  // Off the body: clamped to its reach; not a number: none.
+  const auto far = Snapped(HitTaken{
+      .offset = {9.f, 0.f, 0.f}, .direction = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}});
+  CHECK(far.offset.x == kHitTakenReach);
+  CHECK(far.direction.x == 0.f);
+  RoundTrips(HitTaken{.by = HitBy::Player, .attacker = 3, .flags = kHitTakenMelee});
+  RoundTrips(HitTaken{}); // nobody the others know, no hit shape
+  CHECK(Message(HitTaken{}).index() == Message(CarPaint{}).index() + 1); // appended
+  CHECK(std::string(NameOf(HitTaken{})) == "HitTaken");
+  CHECK(ChannelOf(HitTaken{}) == Channel::State);
+  CHECK_FALSE(IsReliable(HitTaken{}));
+  CHECK_FALSE(IsCombat(HitTaken{}));
+  CHECK_FALSE(IsStory(HitTaken{}));
+  CHECK(Encode(HitTaken{}).size() == 26);
+  // An attacker of no known kind, one named for nobody or not named, a flag
+  // this version does not know.
+  const auto refused = [](const HitTaken &hit) { return !Decode(Encode(hit)).has_value(); };
+  CHECK(refused({.by = static_cast<HitBy>(3), .attacker = 1}));
+  CHECK(refused({.by = HitBy::World, .attacker = 7}));
+  CHECK(refused({.by = HitBy::Npc}));
+  CHECK(refused({.flags = 16}));
+}
+
 TEST_CASE("vehicles changing hands: survive encoding, reliable, small") {
   RoundTrips(TrafficOwnership{.id = MakeTrafficId(2, 9), .owner = 3});
   RoundTrips(TrafficHandover{.id = MakeTrafficId(2, 9), .to = 3});

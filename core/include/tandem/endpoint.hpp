@@ -250,6 +250,10 @@ struct RemotePresence {
 struct RemoteCue {
   proto::Cue cue;
 };
+// A hit another player's V took, as its game ran it: shown on its puppet.
+struct RemoteHitTaken {
+  proto::HitTaken hit;
+};
 // Another player's V shows other status effects now (the whole set): its
 // puppet plays their visuals.
 struct RemoteStatusVisuals {
@@ -643,7 +647,7 @@ using SessionEventVariant = std::variant<
     events::RemoteStatusVisuals, events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom,
     events::TrafficGive, events::TrafficTake, events::TrafficOwnerChanged, events::Fractured,
     events::DeviceFired, events::TurretHeld, events::LinkDeclined, events::TurretRefused,
-    events::TrafficHacked>;
+    events::TrafficHacked, events::RemoteHitTaken>;
 // Its copies, moves and conversions compiled in session_event.cpp only, as
 // proto::Message's (tandem/closed_variant.hpp).
 using SessionEvent = ClosedVariant<SessionEventVariant>;
@@ -677,6 +681,8 @@ public:
   // joiners), and one-off cues of what it does (presence.hpp).
   void SetLocalPresence(proto::Presence presence);
   void SendLocalCue(proto::Cue cue);
+  // A hit our V took, for the others' puppets of it (never kept).
+  void SendLocalHitTaken(proto::HitTaken hit);
   const std::map<proto::PlayerId, proto::Presence> &Presences() const { return m_presences; }
   // The status effects that show on our V (presence::StatusSet makes the
   // set; a repeat of the last is not sent). Kept and handed to late joiners;

@@ -38,7 +38,8 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // keys, no codes on a key, no length) and its two-byte turn (kBoneNudge);
 // the player in a byte in PoseFrame, PlayerMotion, VehicleMotion and Cue;
 // a charge Cue's level and hand in a byte each.
-inline constexpr std::uint16_t kProtocolVersion = 17;
+// 18: HitTaken appended (a game of 17 cannot read it).
+inline constexpr std::uint16_t kProtocolVersion = 18;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3245,6 +3246,50 @@ struct CarPaint {
 // degrees; a paint only on a named car.
 bool Fits(const CarPaint &paint);
 
+// A hit a V took, as its own game ran it (v18), for the others to show on
+// its puppet through the game's own hit pipeline: the reaction for where it
+// landed and the way it went, with the attack's sounds. Presentation only:
+// the damage was that V's game's, and its health travels as Presence. That
+// V's game to everyone (the host stamps the player and relays it), once per
+// hit that took health; damage over time and falls are not told (the fall
+// of its health says them: presence.hpp Observer). State channel: a late
+// one is worth nothing, a lost one leaves the health's fall to say it.
+enum class HitBy : std::uint8_t {
+  World = 0,  // nobody the others know (a device, the scenery, an NPC not shared)
+  Npc = 1,    // `attacker` is an NpcId
+  Player = 2, // `attacker` is a PlayerId
+};
+inline constexpr std::uint8_t kHitTakenMelee = 1;       // a melee attack
+inline constexpr std::uint8_t kHitTakenStaggered = 2;   // it staggered the V
+inline constexpr std::uint8_t kHitTakenKnockedDown = 4; // it knocked the V down
+inline constexpr std::uint8_t kHitTakenCritical = 8;    // a critical hit or a headshot
+inline constexpr std::uint8_t kHitTakenFlags = 15;
+// As far from the V's feet as a hit on its body lands (a tall V's raised
+// arm, a blast's edge), with room.
+inline constexpr float kHitTakenReach = 4.f;
+struct HitTaken {
+  PlayerId player{};          // the V hit: set by the host from the connection
+  HitBy by{};                 // who hit it
+  std::uint32_t attacker{};   // an NpcId or a PlayerId, by `by` (World: 0)
+  std::uint64_t attack{};     // TweakDB id of the attack record (0: unknown)
+  std::uint8_t attackType{};  // gamedataAttackType
+  std::uint8_t flags{};       // kHitTaken*
+  std::uint8_t zone{kNoZone}; // EHitReactionZone of the hit shape (kNoZone: none)
+  std::int8_t shape{-1};      // EHitShapeType (-1 none)
+  std::uint8_t share{};       // the health it took, of the V's whole (255: all of it)
+  Vec3 offset;                // where it landed, from the V's position
+  Vec3 direction;             // the way it went
+  friend bool operator==(const HitTaken &, const HitTaken &) = default;
+};
+// What a HitTaken may say: a known attacker kind, named when it is one and
+// only then; flags this version knows.
+bool Fits(const HitTaken &hit);
+// A HitTaken as the wire carries it: the player in a byte, where it landed
+// and the way it went a signed byte an axis (kHitTakenReach and 1 in 127
+// steps; out of range: clamped, not a number: 0). 26 bytes with its id.
+// Endpoint::SendLocalHitTaken makes it so.
+HitTaken Snapped(HitTaken hit);
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -3267,7 +3312,7 @@ using MessageVariant = std::variant<
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
-    TrafficHack, CarPaint>;
+    TrafficHack, CarPaint, HitTaken>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,

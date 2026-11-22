@@ -676,6 +676,13 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               Broadcast(relayed, event.peer);
               out.push_back(events::RemoteCue{relayed});
             },
+            [&](const proto::HitTaken &hit) {
+              // A guest only tells the hits its own V took.
+              auto relayed = hit;
+              relayed.player = player;
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteHitTaken{relayed});
+            },
             [&](const proto::StatusVisuals &visuals) {
               // A guest only speaks for its own V.
               auto relayed = visuals;
@@ -1877,6 +1884,10 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             if (cue.player != m_you)
               out.push_back(events::RemoteCue{cue});
           },
+          [&](const proto::HitTaken &hit) {
+            if (hit.player != m_you)
+              out.push_back(events::RemoteHitTaken{hit});
+          },
           [&](const proto::StatusVisuals &visuals) {
             if (visuals.player != m_you && Keep(m_statusVisuals, visuals))
               out.push_back(events::RemoteStatusVisuals{visuals});
@@ -2946,6 +2957,20 @@ void Endpoint::SendLocalCue(proto::Cue cue) {
     Broadcast(cue);
   else
     Send(m_hostPeer, cue);
+}
+
+void Endpoint::SendLocalHitTaken(proto::HitTaken hit) {
+  // Its place and its way as the wire carries them.
+  hit = proto::Snapped(hit);
+  if (m_tap)
+    m_tap(hit);
+  if (!IsJoined() || m_ended)
+    return;
+  hit.player = m_you;
+  if (IsHost())
+    Broadcast(hit);
+  else
+    Send(m_hostPeer, hit);
 }
 
 void Endpoint::SetLocalStealth(proto::Stealth stealth) {

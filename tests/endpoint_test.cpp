@@ -2344,11 +2344,18 @@ TEST_CASE("presence reaches everyone, stamped, and late joiners; cues are relaye
   host->SetLocalPresence({.health = 255, .flags = proto::kPresenceMenu});
   std::optional<proto::Presence> atHost, atGuest;
   std::optional<proto::Cue> cueAtHost;
+  std::optional<proto::HitTaken> hitAtHost;
   bool cued = false;
   REQUIRE(Pump({host.get(), guest.get()}, [&](std::size_t i, const auto &events) {
     if (i == 1 && guest->IsJoined() && !cued) {
       guest->SendLocalCue(
           {.player = 99, .kind = proto::CueKind::Trace, .arg = 2, .at = {1.f, 2.f, 3.f}});
+      // A hit its V took, in another's name: stamped as its own.
+      guest->SendLocalHitTaken({.player = 99,
+                                .by = proto::HitBy::Player,
+                                .attacker = 1,
+                                .zone = 8,
+                                .direction = {1.f, 0.f, 0.f}});
       cued = true;
     }
     for (const auto &event : events) {
@@ -2356,8 +2363,10 @@ TEST_CASE("presence reaches everyone, stamped, and late joiners; cues are relaye
         (i == 0 ? atHost : atGuest) = p->presence;
       if (const auto *c = std::get_if<events::RemoteCue>(&event); c && i == 0)
         cueAtHost = c->cue;
+      if (const auto *h = std::get_if<events::RemoteHitTaken>(&event); h && i == 0)
+        hitAtHost = h->hit;
     }
-    return atHost && atGuest && cueAtHost;
+    return atHost && atGuest && cueAtHost && hitAtHost;
   }));
   CHECK(atHost->player == guest->You()); // a guest only speaks for its own V
   CHECK(atHost->health == 200);
@@ -2366,6 +2375,9 @@ TEST_CASE("presence reaches everyone, stamped, and late joiners; cues are relaye
   CHECK(cueAtHost->player == guest->You());
   CHECK(cueAtHost->kind == proto::CueKind::Trace);
   CHECK(cueAtHost->at == proto::Vec3{1.f, 2.f, 3.f});
+  CHECK(hitAtHost->player == guest->You());
+  CHECK(hitAtHost->by == proto::HitBy::Player);
+  CHECK(hitAtHost->zone == 8);
   CHECK(host->Presences().at(guest->You()).health == 200);
   CHECK(guest->Presences().at(host->You()).flags == proto::kPresenceMenu);
 
@@ -2388,10 +2400,12 @@ TEST_CASE("presence reaches everyone, stamped, and late joiners; cues are relaye
   REQUIRE_MESSAGE(late, error);
   std::map<proto::PlayerId, proto::Presence> atLate;
   std::vector<proto::Cue> lateCues;
+  std::vector<proto::HitTaken> lateHits;
   bool second = false;
   REQUIRE(Pump({host.get(), guest.get(), late.get()}, [&](std::size_t i, const auto &events) {
     if (late->IsJoined() && atLate.size() == 2 && !second) {
       guest->SendLocalCue({.kind = proto::CueKind::MeleeHit, .at = {7.f, 8.f, 9.f}});
+      guest->SendLocalHitTaken({.flags = proto::kHitTakenMelee});
       second = true;
     }
     for (const auto &event : events)
@@ -2400,14 +2414,20 @@ TEST_CASE("presence reaches everyone, stamped, and late joiners; cues are relaye
           atLate[p->presence.player] = p->presence;
         if (const auto *c = std::get_if<events::RemoteCue>(&event))
           lateCues.push_back(c->cue);
+        if (const auto *h = std::get_if<events::RemoteHitTaken>(&event))
+          lateHits.push_back(h->hit);
       }
-    return atLate.size() == 2 && !lateCues.empty();
+    return atLate.size() == 2 && !lateCues.empty() && !lateHits.empty();
   }));
   CHECK(atLate.at(guest->You()).health == 90);
   CHECK(atLate.at(host->You()).flags == proto::kPresenceMenu);
   REQUIRE(lateCues.size() == 1);
   CHECK(lateCues[0].kind == proto::CueKind::MeleeHit);
   CHECK(lateCues[0].player == guest->You());
+  // ...and its hits the same: relayed as they happen, never kept.
+  REQUIRE(lateHits.size() == 1);
+  CHECK(lateHits[0].player == guest->You());
+  CHECK(lateHits[0].flags == proto::kHitTakenMelee);
 
   // The guest leaves: its presence goes with it.
   const auto gone = guest->You();

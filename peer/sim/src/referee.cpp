@@ -155,6 +155,7 @@ TANDEM_SAID_BY(Either, Heat)
 TANDEM_SAID_BY(Either, Crime)
 TANDEM_SAID_BY(Either, Presence)
 TANDEM_SAID_BY(Either, Cue)
+TANDEM_SAID_BY(Either, HitTaken)
 TANDEM_SAID_BY(Either, NpcReaction)
 TANDEM_SAID_BY(Either, Install)
 TANDEM_SAID_BY(Either, Throw)
@@ -334,7 +335,7 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::RegionHold> || std::is_same_v<M, p::DeviceUse> ||
                            std::is_same_v<M, p::Heat> || std::is_same_v<M, p::Presence> ||
                            std::is_same_v<M, p::Cue> || std::is_same_v<M, p::TrafficHit> ||
-                           std::is_same_v<M, p::TrafficHack> ||
+                           std::is_same_v<M, p::HitTaken> || std::is_same_v<M, p::TrafficHack> ||
                            std::is_same_v<M, p::TrafficClaim> || std::is_same_v<M, p::PoseFrame> ||
                            std::is_same_v<M, p::PlayerMotion> ||
                            std::is_same_v<M, p::VehicleMotion> || std::is_same_v<M, p::Throw> ||
@@ -762,6 +763,14 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
                                (m.at.x >= 0.f && m.at.x <= 1.001f &&
                                 (m.at.y == p::kChargeRightHand || m.at.y == p::kChargeLeftHand)))
                         : (m.arg & ~p::kTraceFlags) == 0;
+        } else if constexpr (std::is_same_v<M, p::HitTaken>) {
+          // A hit a V took: on its body (within reach of its position),
+          // a real way; a known kind of attacker, named when there is
+          // one; known flags.
+          finite = Finite(m.offset) && Finite(m.direction);
+          inRange = p::Fits(m) && (!finite || (std::abs(m.offset.x) <= p::kHitTakenReach &&
+                                               std::abs(m.offset.y) <= p::kHitTakenReach &&
+                                               std::abs(m.offset.z) <= p::kHitTakenReach));
         } else if constexpr (std::is_same_v<M, p::NpcHit>) {
           finite = std::isfinite(m.damage) && Finite(m.position) && Finite(m.direction);
           inRange = !finite || m.damage >= 0.f;
@@ -1249,6 +1258,12 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
         } else if constexpr (std::is_same_v<M, p::TurretHands>) {
           // A turret in another player's hands; never our own back.
           notOurs(m.player);
+        } else if constexpr (std::is_same_v<M, p::HitTaken>) {
+          // A hit another player's V took; never our own back. (Its NPC
+          // may overtake its spawn on the State channel: not checked.)
+          notOurs(m.player);
+          if (m.by == p::HitBy::Player && m.attacker != m_self)
+            NeedPlayer(m.attacker, name);
         } else if constexpr (std::is_same_v<M, p::TurretBusy>) {
           // Our claim refused: another player holds a turret we claimed.
           notOurs(m.holder);

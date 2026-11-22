@@ -39,6 +39,11 @@ bool Fits(const CarPaint &paint) {
   return paint.flags == 0 || paint.vehicle != 0;
 }
 
+bool Fits(const HitTaken &hit) {
+  return hit.by <= HitBy::Player && (hit.by == HitBy::World) == (hit.attacker == 0) &&
+         (hit.flags & ~kHitTakenFlags) == 0;
+}
+
 namespace {
 // What a bone takes in a pose frame's rotations, by its code.
 constexpr std::size_t PoseCodeBytes(std::uint8_t code) {
@@ -51,7 +56,46 @@ constexpr std::size_t PoseCodeBytes(std::uint8_t code) {
 constexpr std::uint8_t kWholeCodes =
     kBoneWhole | kBoneWhole << 2 | kBoneWhole << 4 | kBoneWhole << 6;
 static_assert(kPoseBones % 4 == 0, "a key's codes fill their bytes");
+// A hit taken's places and ways: a signed byte for -range..range.
+std::int8_t GridCode(float value, float range) {
+  const float within = std::isfinite(value) ? std::clamp(value / range, -1.f, 1.f) : 0.f;
+  return static_cast<std::int8_t>(std::lround(within * 127.f));
+}
+float GridValue(std::int8_t code, float range) { return static_cast<float>(code) * range / 127.f; }
 } // namespace
+
+HitTaken Snapped(HitTaken hit) {
+  const auto snap = [](float value, float range) {
+    return GridValue(GridCode(value, range), range);
+  };
+  hit.offset = {snap(hit.offset.x, kHitTakenReach), snap(hit.offset.y, kHitTakenReach),
+                snap(hit.offset.z, kHitTakenReach)};
+  hit.direction = {snap(hit.direction.x, 1.f), snap(hit.direction.y, 1.f),
+                   snap(hit.direction.z, 1.f)};
+  return hit;
+}
+
+// A hit taken (v18): the player in a byte, its place and its way a signed
+// byte an axis (Snapped).
+template <class Archive> zpp::bits::errc serialize(Archive &out, const HitTaken &hit) {
+  return out(static_cast<std::uint8_t>(hit.player), hit.by, hit.attacker, hit.attack,
+             hit.attackType, hit.flags, hit.zone, hit.shape, hit.share,
+             GridCode(hit.offset.x, kHitTakenReach), GridCode(hit.offset.y, kHitTakenReach),
+             GridCode(hit.offset.z, kHitTakenReach), GridCode(hit.direction.x, 1.f),
+             GridCode(hit.direction.y, 1.f), GridCode(hit.direction.z, 1.f));
+}
+
+template <class Archive> zpp::bits::errc serialize(Archive &in, HitTaken &hit) {
+  std::uint8_t player = 0;
+  std::int8_t x = 0, y = 0, z = 0, dx = 0, dy = 0, dz = 0;
+  const auto result = in(player, hit.by, hit.attacker, hit.attack, hit.attackType, hit.flags,
+                         hit.zone, hit.shape, hit.share, x, y, z, dx, dy, dz);
+  hit.player = player;
+  hit.offset = {GridValue(x, kHitTakenReach), GridValue(y, kHitTakenReach),
+                GridValue(z, kHitTakenReach)};
+  hit.direction = {GridValue(dx, 1.f), GridValue(dy, 1.f), GridValue(dz, 1.f)};
+  return result;
+}
 
 // A pose frame's own wire form (v17, the largest stream: netcode.md), which
 // zpp_bits finds by the frame's namespace: the player in a byte (there are
@@ -470,6 +514,8 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *paint = std::get_if<CarPaint>(&message); paint && !Fits(*paint))
     return std::nullopt;
+  if (const auto *taken = std::get_if<HitTaken>(&message); taken && !Fits(*taken))
+    return std::nullopt;
   // A live vendor names its NPC; a dead one only its entity.
   if (const auto *vendor = std::get_if<NpcVendor>(&message);
       vendor && (vendor->entity == 0 || (vendor->flags & ~kVendorDead) != 0 ||
@@ -588,6 +634,7 @@ Channel ChannelOf(const Message &message) {
                ? Channel::State
                : Channel::Event;
   return std::holds_alternative<PlayerState>(message) || std::holds_alternative<Cue>(message) ||
+                 std::holds_alternative<HitTaken>(message) ||
                  std::holds_alternative<PoseState>(message) ||
                  std::holds_alternative<Shot>(message) ||
                  std::holds_alternative<VehicleState>(message) ||
@@ -823,7 +870,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "HackTraced",
                                    "TurretBusy",
                                    "TrafficHack",
-                                   "CarPaint"};
+                                   "CarPaint",
+                                   "HitTaken"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }
