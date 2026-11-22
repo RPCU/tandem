@@ -741,6 +741,47 @@ TEST_CASE("referee: rates, sizes and values") {
   CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
 }
 
+TEST_CASE("referee: a hit a V took is that V's game's word, on its body, by someone known") {
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  // Guest: another player's V was hit by a shared NPC, by us, by nobody known.
+  auto guest = Guest();
+  guest.Received(1,
+                 proto::HitTaken{.player = 3,
+                                 .by = proto::HitBy::Npc,
+                                 .attacker = 7,
+                                 .attackType = 10,
+                                 .zone = 8,
+                                 .offset = {0.f, 0.f, 0.5f},
+                                 .direction = {1.f, 0.f, 0.f}},
+                 kSecond);
+  guest.Received(1, proto::HitTaken{.player = 3, .by = proto::HitBy::Player, .attacker = 2},
+                 kSecond);
+  guest.Received(1, proto::HitTaken{.player = 1}, kSecond);
+  CHECK(Rules(guest).empty());
+  // Never our own back; a player never in the session; off the body; no real way.
+  guest.Received(1, proto::HitTaken{.player = 2}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
+  guest.Received(1, proto::HitTaken{.player = 3, .by = proto::HitBy::Player, .attacker = 6},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"ids.unknown-player"});
+  guest.Received(1, proto::HitTaken{.player = 3, .offset = {0.f, 9.f, 0.f}}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1, proto::HitTaken{.player = 3, .direction = {nan, 0.f, 0.f}}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.not-finite"});
+  // An attacker named for nobody, a flag this version does not know.
+  guest.Received(1, proto::HitTaken{.player = 3, .attacker = 7}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1, proto::HitTaken{.player = 3, .flags = 16}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+
+  // Host: a guest tells its own V's hits, in its own name only.
+  auto host = Host();
+  host.Received(2, proto::HitTaken{.by = proto::HitBy::Player, .attacker = 3}, kSecond);
+  CHECK(Rules(host).empty());
+  host.Received(2, proto::HitTaken{.player = 3}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.not-yours"});
+}
+
 TEST_CASE("referee: resync requests are budgeted at the pace of the endpoint's digests") {
   // A test's timings, a digest every 100 ms: a guest may ask after each one
   // (7 in 10 s with a third of everything lost was called over budget, the

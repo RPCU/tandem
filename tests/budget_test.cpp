@@ -195,6 +195,11 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
         joined.front()->SendLocalCue({.kind = proto::CueKind::Trace, .at = {1.f, 2.f, 3.f}});
         host->SendLocalCue({.kind = proto::CueKind::Trace, .at = {1.f, 2.f, 3.f}});
       }
+      // Each V takes a hit (HitTaken, for the others' puppet of it).
+      joined.front()->SendLocalHitTaken(
+          {.by = proto::HitBy::Npc, .attacker = npc, .attackType = 10, .zone = 7});
+      host->SendLocalHitTaken(
+          {.by = proto::HitBy::Npc, .attacker = npc, .attackType = 10, .zone = 7});
       // A bounce of one of them, and a tech weapon's charge said again
       // (every 0.25 s while it charges: twice here, both ways).
       joined.front()->SendLocalCue({.kind = proto::CueKind::Ricochet, .at = {4.f, 2.f, 3.f}});

@@ -242,6 +242,8 @@ TEST_CASE("faults never touch the handshake and never send a one-shot twice") {
   CHECK(consistency::IsOneShot(proto::HackTraced{}));
   // A turret's refusal: its game lets go and says so once.
   CHECK(consistency::IsOneShot(proto::TurretBusy{}));
+  // A hit a V took: shown once on its puppet.
+  CHECK(consistency::IsOneShot(proto::HitTaken{}));
   CHECK(consistency::IsOneShot(proto::TrafficHack{}));
   CHECK_FALSE(consistency::IsOneShot(proto::Rules{}));
   CHECK(link.Decide(proto::Throw{}) == consistency::FaultyLink::Action::Send);

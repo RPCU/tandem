@@ -323,7 +323,9 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<TrafficClaim>(message) || std::holds_alternative<Crime>(message) ||
          // Presence: a cue is of the moment, a reaction is played once.
          std::holds_alternative<Cue>(message) || std::holds_alternative<NpcReaction>(message) ||
-         std::holds_alternative<Throw>(message) || std::holds_alternative<ThrowEnd>(message) ||
+         // A hit a V took: shown once on its puppet (presence.md).
+         std::holds_alternative<HitTaken>(message) || std::holds_alternative<Throw>(message) ||
+         std::holds_alternative<ThrowEnd>(message) ||
          // A race's join, seat, reward: each acted on once (activities.md, "Races").
          std::holds_alternative<Race>(message) || std::holds_alternative<Defended>(message) ||
          // A weak spot's share of a hit, a trace's end: acted on once (npcs.md).

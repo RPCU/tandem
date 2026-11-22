@@ -121,6 +121,10 @@ events, taps and recordings above it see `PlayerState`, `PoseState`,
   from a V that fires): the player in a byte; a charge's level (255
   steps, `proto::ChargeLevel`) and hand in a byte each, not three floats:
   20 bytes for a place, 10 for a charge, 23 before (protocol 17).
+- **`HitTaken`** (a hit a V took, for its puppet: `presence.md`; at most
+  10 a second, 2 in the fight's row): the player in a byte, where it
+  landed and the way it went a signed byte an axis (`proto::Snapped`):
+  26 bytes, 47 as plain fields (protocol 18).
 - **A scene's streams** (scene replay: each actor's body as `ActorFrame`,
   the camera as `SceneCamera`): one budget for all of them on the host,
   22 kbit/s by default, split by `scene::Pacer`

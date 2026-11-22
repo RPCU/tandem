@@ -123,7 +123,7 @@ shown as Items.Preset_Lexington_Default`); the player gets **one notice
   V, the NPCs it owns). Nothing to substitute: a warning at the join says
   they differ.
 - **Attack records** in hits (`NpcStrike`, `ShotHit`, `PlayerHit`,
-  `AreaHit`): a hit's damage and outcome travel with it; the record only
+  `AreaHit`, `HitTaken`): a hit's damage and outcome travel with it; the record only
   names it, so it is not resolved, and a hit is never dropped for it. One
   our game lacks is stood in by a shove or a plain bullet, logged once a
   session per record; the damage stays at most the sender's (combat.md,
