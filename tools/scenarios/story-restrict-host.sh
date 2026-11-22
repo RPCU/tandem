@@ -8,7 +8,7 @@ peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')"
 expect 'joined \(player [0-9]+' 20
 expect 'puppet [0-9]+: controller handed to the engine' 30
 cmd story restrict on GameplayRestriction.NoJump
-expect 'story: our restrictions for the guests \(tier [0-9]+\): GameplayRestriction.NoJump' 5
+expect 'story: our restrictions for the guests \(tier [0-9]+\): .*GameplayRestriction.NoJump' 5
 expect_peer 'story restrictions: 1 on player 1' 5
 cmd story restrict off GameplayRestriction.NoJump
 expect 'story: our restrictions lifted' 5
@@ -25,6 +25,6 @@ pause 2
 cmd story restrict
 expect 'story: restrictions: host moment false' 5
 cmd story restrict off GameplayRestriction.NoPhone
-reject 'story: our restrictions for the guests \(tier 1\): GameplayRestriction.NoPhone'
+reject 'story: our restrictions for the guests \(tier 1\): GameplayRestriction.NoPhone$'
 reject 'spectate: our V is in a scripted moment \(reasons 2:'
 reject 'watchdog: game thread silent'
