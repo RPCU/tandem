@@ -272,6 +272,11 @@ public class TandemOutcomes {
     if data.HasFlag(hitFlag.ForceDismember) {
       flags += 256;
     }
+    // proto::kStrikeLeftHand: with the weapon in our V's left hand (dual
+    // wielding): the NPC's owner makes it a hit of our puppet's left weapon.
+    if TandemWeapons.ByLeftHand(data.GetInstigator(), hitEvent) {
+      flags += 512;
+    }
     return flags;
   }
 
@@ -400,15 +405,41 @@ public class TandemOutcomes {
     TandemReactions.OnGuestHit(body, strike.instigator);
   }
 
+  // The weapon a strike was made with, on the striker's puppet: the one in
+  // its left hand for a dual wielding V's off hand (proto::kStrikeLeftHand),
+  // if the puppet holds one there; else the active one.
+  public static func StrikeWeapon(instigator: wref<GameObject>, flags: Int32) -> wref<WeaponObject> {
+    if !IsDefined(instigator) {
+      return null;
+    }
+    let weapon: wref<WeaponObject>;
+    if (flags & 512) != 0 {
+      weapon = ScriptedPuppet.GetWeaponLeft(instigator);
+    }
+    if !IsDefined(weapon) {
+      weapon = GameObject.GetActiveWeapon(instigator);
+    }
+    return weapon;
+  }
+
   // The guest's hit as one of its puppet's on our NPC: its attack, weapon
-  // (the puppet holds the guest's), type, flags, the hit shape it landed on,
-  // and its damage (for how strongly the NPC reacts).
+  // (the puppet holds the guest's, in the hand that made it), type, flags,
+  // the hit shape it landed on, and its damage (for how strongly the NPC
+  // reacts).
   private func StrikeHit(body: ref<ScriptedPuppet>, strike: ref<TandemStrike>) -> ref<gameHitEvent> {
     let instigator = strike.instigator;
     // (A stand-in for a record we lack only names the hit: Process applies
     // the guest's numbers, StrikeLoss.)
     let record = TandemCombat.AttackRecord(this.m_game, strike.attack, (strike.flags & 4) != 0);
-    let weapon = GameObject.GetActiveWeapon(instigator);
+    let weapon = TandemOutcomes.StrikeWeapon(instigator, strike.flags);
+    if (strike.flags & 512) != 0 {
+      let held = TandemPresenceSync.WeaponOf(instigator, true);
+      if IsDefined(held) {
+        TandemNative.LogDebug(s"outcomes: \(strike.npc) struck by player \(strike.player) with its puppet's left weapon (\(TDBID.ToStringDEBUG(ItemID.GetTDBID(held.GetItemID()))))");
+      } else {
+        TandemNative.LogDebug(s"outcomes: \(strike.npc) struck by player \(strike.player) with its left hand's weapon, which its puppet does not hold: the hit is its active weapon's");
+      }
+    }
     let context: AttackInitContext;
     context.record = record;
     context.instigator = instigator;
@@ -545,7 +576,7 @@ public class TandemOutcomes {
     let melee = (strike.flags & 4) != 0;
     let explosion = AttackData.IsDismembermentCause(attackType);
     let clean = false;
-    let weapon = IsDefined(instigator) ? ScriptedPuppet.GetWeaponRight(instigator) : null;
+    let weapon = TandemOutcomes.StrikeWeapon(instigator, strike.flags);
     if IsDefined(weapon) && IsDefined(weapon.GetWeaponRecord()) {
       let kind = weapon.GetWeaponRecord().ItemType().Type();
       clean = Equals(kind, gamedataItemType.Cyb_NanoWires) || Equals(kind, gamedataItemType.Cyb_MantisBlades) || Equals(kind, gamedataItemType.Wea_Katana) || Equals(kind, gamedataItemType.Wea_ShortBlade) || Equals(kind, gamedataItemType.Wea_LongBlade) || Equals(kind, gamedataItemType.Wea_Axe) || Equals(kind, gamedataItemType.Wea_Chainsword) || Equals(kind, gamedataItemType.Wea_Machete) || Equals(kind, gamedataItemType.Wea_Sword);

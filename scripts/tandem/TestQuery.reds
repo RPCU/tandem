@@ -19,6 +19,12 @@
 //   mounted [player N | puppet]  the vehicle and seat our V (or player N's
 //                         puppet, or the first remote player's) is mounted
 //                         in: RECORD SLOT ENTITYHASH
+//   held [player N | puppet]  what our V (or player N's puppet, or the
+//                         first remote player's) holds: RIGHT LEFT HOW, the
+//                         records in its right and left hand slots (none:
+//                         empty) and dual (the game dual wields them: our
+//                         V's state machine's word, a puppet's two paired
+//                         weapons in hand) or single
 //   npc ID health         a shared NPC's health, percent: our own NPC or
 //                         our proxy of it
 //   threat puppet         the largest threat value an NPC we run near our V
@@ -101,6 +107,23 @@ public class TandemTestQuery {
       if IsDefined(who) {
         value = TandemTestQuery.Mounted(game, who);
       }
+    } else if Equals(what, "held") {
+      let holder: ref<GameObject> = player;
+      if Equals(arg, "puppet") {
+        let others = system.PuppetPlayers();
+        holder = null;
+        if ArraySize(others) > 0 {
+          holder = system.PuppetOf(others[0]);
+        }
+      } else if Equals(arg, "player") && count > 4 {
+        holder = system.PuppetOf(Cast<Uint32>(StringToInt(words[4], 0)));
+      } else if count > 3 {
+        holder = null;
+        value = "unknown";
+      }
+      if IsDefined(holder) {
+        value = TandemTestQuery.Held(holder);
+      }
     } else if Equals(what, "npc") && count > 4 && Equals(words[4], "health") {
       let npcs = system.Npcs();
       if IsDefined(npcs) {
@@ -143,10 +166,32 @@ public class TandemTestQuery {
       value = "unknown";
     }
     if Equals(value, "unknown") {
-      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks, paint [puppet], wanted, upload)");
+      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], held [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks, paint [puppet], wanted, upload)");
       return;
     }
     TandemNative.Log(s"test query: \(asked) = \(value)");
+  }
+
+  // What `holder` has in its hands, from the transaction system's slots,
+  // and whether the game dual wields them: our V's weapon state machine
+  // says so itself (the blackboard's IsDualWielding, set by its left hand's
+  // equip state); a puppet has no such state, so the game's test of two
+  // weapons in hand (GameObject.GetDualWieldWeaponNames: both there, both
+  // tagged DualWield).
+  private static func Held(holder: ref<GameObject>) -> String {
+    let right = TandemWeapons.Held(holder, t"AttachmentSlots.WeaponRight");
+    let left = TandemWeapons.Held(holder, t"AttachmentSlots.WeaponLeft");
+    let dual = false;
+    if holder.IsPlayer() {
+      dual = GameObject.IsDualWielding(holder);
+    } else {
+      let first = TandemPresenceSync.WeaponOf(holder, false);
+      let second = TandemPresenceSync.WeaponOf(holder, true);
+      dual = IsDefined(first) && IsDefined(second) && first.WeaponHasTag(n"DualWield") && second.WeaponHasTag(n"DualWield");
+    }
+    let rightName = TDBID.IsValid(right) ? TDBID.ToStringDEBUG(right) : "none";
+    let leftName = TDBID.IsValid(left) ? TDBID.ToStringDEBUG(left) : "none";
+    return s"\(rightName) \(leftName) \(dual ? "dual" : "single")";
   }
 
   private static func Health(game: GameInstance, object: ref<GameObject>) -> String {

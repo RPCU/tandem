@@ -50,6 +50,7 @@ Counts at the end. Evidence names a scenario, a code path or a dated check.
 | Power weapons (pistols, revolvers, rifles, SMGs, shotguns, LMG/HMG, precision, snipers; ricochets) | W vanilla | W off / U on (`AreaHit`) | W vanilla (ricochets) | W gun hits and deaths (`npcs-hit`, 2026-11-18); U the whole outcome (`outcomes-*`) | W off / U on | W vanilla | W muzzle flash, shells, report, reload (28 shots, 2026-11-18); U the tracer: the weapon's hitscan trail from the puppet's muzzle to where the shot ended, beside the drawn bullet (impact, decal), and a ricochet's leg on to what it hit (`Cue` Trace and Ricochet, `presence-ricochet`; not yet run in game; **was D**: no tracer or bullet) |
 | Tech weapons (charge, piercing walls and cover) | W vanilla | W off / U on | – | U the charged shot pierces on the guest's own copy of the static geometry and strikes the proxy behind it (`WeaponFullyCharged` set in its pipeline); D a door open on one game and shut on the other (devices) | W off / U on | – | U the shot, and the charge on the puppet's copy of the weapon: its glow at the shooter's charge, the NPC charge effects and sound, released or discharged (`Cue` Charge, `presence-charge`; not yet run in game; **was D**: the shot, not the charge glow) |
 | Smart weapons (lock-on, guided rounds) | W vanilla | W off / U on | – | U locks on proxies (the host's record, its targeting components, the host's attitudes copied), the rounds home on the guest's game | W off / U on | – | U the round homes on its lock from the puppet (`Throw` Smart, scenario `combat-throw-guest`); U with no lock the others know, a plain round to where it was aimed (`Cue` Trace) |
+| Dual wielding (akimbo: a pistol or revolver in each hand, patch 2.4) | W vanilla | W off / U on | – | U each hand's hit is a strike like any other, the off hand's with `kStrikeLeftHand` (the host's hit is the puppet's left weapon's; `outcomes-offhand`) | W off / U on | – | U both weapons in the puppet's hands, each hand's flash, shells, bullet, ricochet, charge, smart round and reload from its own weapon (`players.md`, "Dual wielding"; `presence-akimbo`) |
 | Melee weapons: blades, blunt, fists | W vanilla | W off / U on | – | W punch (`npcs-punch`, 2026-11-18); U blade wounds and the limb cut by the host's hit reaction (`outcomes-blade`), U non-lethal knock-out (`outcomes-knockout`), U poise and the finisher it opens (`outcomes-poise`) | W off / U on | – | U swing sound (`AI_PlayMeleeAttackSound`), the swing in the pose stream |
 | Arm cyberware: mantis blades, gorilla arms, monowire | W vanilla | W off / U on | – | U as melee; D gorilla arms' one-punch slow motion goes to the host's V (`NPCPuppet.OnStatusEffectApplied` → `GetPlayer`, coop-perks §5.3); U monowire's upload through the quickhack path | W off / U on | – | U arms look (appearance sync) |
 | Thrown knives and axes | W vanilla | W off / U on | – | U the projectile's hit is a strike | W off / U on | – | U a copy flies from the puppet, sticks where the real one stuck and goes when its owner picks the real one up (`Throw` Knife); the copy refuses every pickup |
@@ -123,16 +124,16 @@ proxies of them.
 
 Each cell counted once, by the worst state it names (B, then D, then U,
 then W; "W off / U on" counts as the default, W; "was B" is history),
-2026-11-21:
+2026-11-22:
 
 <!-- prettier-ignore -->
 | Table | Cells | W | D | B | U | – |
 | --- | --- | --- | --- | --- | --- | --- |
-| The Vs attacking (28 rows × 7) | 196 | 69 | 15 | 1 | 36 | 75 |
+| The Vs attacking (29 rows × 7) | 203 | 72 | 15 | 1 | 38 | 77 |
 | The host's NPCs attacking (11 × 3) | 33 | 11 | 1 | 0 | 21 | 0 |
 | Companions and allies | 5 | 1 | 1 | 0 | 2 | 1 |
 | Healing and consumables | 5 | 1 | 1 | 0 | 2 | 1 |
-| All | 239 | 82 | 18 | 1 | 61 | 77 |
+| All | 246 | 85 | 18 | 1 | 63 | 79 |
 
 Before this change three of today's U were B (NPC gunfire on a guest, NPC
 grenades and every V's thrown object unseen on the other game) and the

@@ -121,6 +121,11 @@ public class TandemThrows {
     return 16;
   }
 
+  // A smart round of the weapon in the left hand (a dual wielding V).
+  public static func LeftHandFlag() -> Int32 {
+    return 32;
+  }
+
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
     this.m_next = 1u;
@@ -352,7 +357,8 @@ public class TandemThrows {
   // others' games too (the shot's flash and sound go as a Shot). False: no
   // lock the others know (nothing locked, or an NPC they do not share): the
   // round is drawn as a plain one, to where it was aimed (Presence.reds).
-  public func OnOurSmartShot(weapon: ref<WeaponObject>) -> Bool {
+  // `left`: the weapon is the one in our V's left hand (dual wielding).
+  public func OnOurSmartShot(weapon: ref<WeaponObject>, left: Bool) -> Bool {
     let player = GetPlayer(this.m_game);
     if !IsDefined(player) || !IsDefined(weapon) {
       return false;
@@ -381,9 +387,13 @@ public class TandemThrows {
       return false; // nothing locked that the others know
     }
     let forward = GameInstance.GetCameraSystem(this.m_game).GetActiveCameraForward();
-    TandemFight.SendThrow(this.m_next, TandemThrows.SmartKind(), TandemThrows.HomingFlag(), ItemID.GetTDBID(weapon.GetItemID()), weapon.GetWorldPosition(), forward, npc, at);
+    let flags = TandemThrows.HomingFlag() + (left ? TandemThrows.LeftHandFlag() : 0);
+    TandemFight.SendThrow(this.m_next, TandemThrows.SmartKind(), flags, ItemID.GetTDBID(weapon.GetItemID()), weapon.GetWorldPosition(), forward, npc, at);
     this.m_next += 1u;
     this.Once(n"smart", s"throws: our smart round at npc \(npc) / player \(at) sent");
+    if left {
+      this.Once(n"smartLeft", s"throws: our left hand's smart round at npc \(npc) / player \(at) sent");
+    }
     return true;
   }
 
@@ -669,10 +679,15 @@ public class TandemThrows {
       this.Once(n"smartNoTarget", s"throws: player \(copy.player)'s smart round not fired: \(IsDefined(puppet) ? "its target is not here" : "no puppet")");
       return;
     }
-    let weapon = GameInstance.GetTransactionSystem(this.m_game).GetItemInSlot(puppet, t"AttachmentSlots.WeaponRight") as WeaponObject;
+    // From the hand that fired it (a dual wielding V's left: its flag).
+    let left = (copy.flags & TandemThrows.LeftHandFlag()) != 0;
+    let weapon = GameInstance.GetTransactionSystem(this.m_game).GetItemInSlot(puppet, left ? t"AttachmentSlots.WeaponLeft" : t"AttachmentSlots.WeaponRight") as WeaponObject;
     if !IsDefined(weapon) {
-      this.Once(n"smartNoWeapon", s"throws: player \(copy.player)'s smart round not fired: its puppet holds no weapon");
+      this.Once(n"smartNoWeapon", s"throws: player \(copy.player)'s smart round not fired: its puppet holds no weapon\(left ? " in its left hand" : "")");
       return;
+    }
+    if left {
+      this.Once(n"smartFromLeft", s"throws: player \(copy.player)'s smart round fired from its puppet's left weapon");
     }
     let component = GameInstance.GetTargetingSystem(this.m_game).GetBestComponentOnTargetObject(weapon.GetWorldPosition(), weapon.GetWorldForward(), target, TargetComponentFilterType.Shooting);
     if !IsDefined(component) {

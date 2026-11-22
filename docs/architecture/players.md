@@ -22,6 +22,46 @@
   (28 in one session), reloads (start and end), quick melee; melee-weapon
   swings and every sound still to check. What else a puppet is heard and
   seen doing (steps, voice, bullets, flinches, the party HUD): `presence.md`.
+- **Dual wielding** (akimbo, patch 2.4; `Weapons.reds`; engine-knowledge
+  §13.151; scripts compiled against 2.50, not run in game). No message
+  says it: a dual wielding V is one whose `Held` names two weapons the game
+  pairs (both records tagged `DualWield`, `TandemWeapons.IsPair`: the
+  game's own test of two weapons in hand). Equip, holster, a switch, a late
+  joiner and a puppet built again all follow from that one cached,
+  idempotent `Held`.
+  - _The puppet's hands:_ each item in its own slot (`WeaponRight`,
+    `WeaponLeft`), then what the game's equip states set on V besides the
+    items (`TandemWeapons.DualWield`): the body's `dual_wield` animation
+    wrapper and each weapon's `RightHand` / `LeftHand` / `dualWield`
+    wrappers (the game refreshes those itself when an item lands in a
+    `ScriptedPuppet`'s slot; asked again 3 s after the items, log
+    `dual wielding, a weapon in each hand`). The arms are the pose
+    stream's: each hand holds its own grip, so no two-handed grip to
+    correct.
+  - _Each hand's own:_ the game runs one weapon state machine per held
+    weapon (`WeaponRight`, `WeaponLeft`), so the wraps above run once per
+    hand and say which (`IsLeftWeaponLogic`): `Shot.hand` (flash, shells,
+    report, the weapon's `Shoot` event, the fire loop's end, the reload),
+    the bullet's `kTraceLeftHand` (from the left muzzle), a ricochet's leg
+    on from that hand's last shot, a charge per hand (`Cue` Charge, the
+    hand in `at.y`), a smart round from the left weapon
+    (`kThrowLeftHand`). Before, every left-hand shot was drawn as one more
+    of the right hand's.
+  - _Hits:_ no second path. The off hand's hit is the game's own damage
+    pipeline with the left weapon as the attack's weapon, sent as the same
+    `NpcStrike` (the NPC's owner decides, the same friendly fire rule, the
+    same referee checks); `kStrikeLeftHand` only tells the owner which of
+    the puppet's weapons made it (`TandemOutcomes.StrikeWeapon`: hit
+    reaction, the wound's kind), the active one when the puppet holds none
+    there yet.
+  - _Limits:_ `Held` names records: a weapon's attachments and skin are
+    its record's defaults, as for the right hand. The left weapon put away
+    alone plays no holster sound (the observer hears the right hand;
+    draws are the engine's own). The mock player sends no pose: its
+    puppet's arms are the NPC stance's.
+  - Protocol 16. Scenarios `presence-akimbo`, `outcomes-offhand`; `cmd test
+    query held [puppet | player N]`; the mock player's `--hold-left`,
+    `--strike offhand`.
 - **Looks** (`engine/look.cpp`, `scripts/tandem/Outfit.reds`): a V's face
   and body travel as the appearance keys the game's appearance changer takes
   (a resource path hash and a name hash each: the same in every copy of the
