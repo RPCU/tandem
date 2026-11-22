@@ -206,7 +206,9 @@ version 5, the host runs 6`, nothing on the guest's screen (a session
   their game has no Phantom Liberty …"). A host whose own game lacks it
   (only possible with `compat = off`) refuses everyone, with the words the
   other way round. Final, like a version refusal.
-- **`kProtocolVersion` is 15** since `CarPaint` was appended (2026-11-22;
+- **`kProtocolVersion` is 16** since dual wielding gave a hand to a
+  `Charge` cue (`at.y`), a smart round (`kThrowLeftHand`) and a strike
+  (`kStrikeLeftHand`) (2026-11-22; 15: `CarPaint` appended, the same day;
   each version's change is listed above it in `protocol.hpp`; 14:
   `TrafficHack` appended; 13: `NpcShotAt`'s `flags` and the cues `Ricochet`
   and `Charge`; 12: `StoryState`'s `kStoryNoFastTravel`; 9: `NpcHealth` got its `flags`; 8: `NpcShotAt`'s time between hits; 7:

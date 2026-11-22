@@ -667,6 +667,12 @@ TEST_CASE("referee: rates, sizes and values") {
   referee.Received(3, proto::NpcStrike{.npc = 1, .damage = -5.f}, now);
   CHECK(Rules(referee) ==
         std::vector<std::string>{"value.not-finite", "value.range", "ids.unknown-npc"});
+  // A strike says known flags only (kStrikeLeftHand, v16: the off hand).
+  referee.Received(3, proto::NpcStrike{.npc = 1, .damage = 5.f, .flags = proto::kStrikeLeftHand},
+                   now);
+  CHECK_FALSE(Broke(referee, "value.range"));
+  referee.Received(3, proto::NpcStrike{.npc = 1, .damage = 5.f, .flags = 1024}, now);
+  CHECK(Broke(referee, "value.range"));
   // A state made on another clock.
   referee.Received(3, proto::PlayerState{.seq = 2, .timeUs = now - 9 * kSecond}, now, now);
   CHECK(Broke(referee, "value.clock"));
@@ -708,6 +714,31 @@ TEST_CASE("referee: rates, sizes and values") {
       1, proto::Cue{.player = 3, .seq = 4, .kind = proto::CueKind::Ricochet, .at = {nan, 0.f, 0.f}},
       kSecond);
   CHECK(Rules(guest) == std::vector<std::string>{"value.range", "value.not-finite"});
+  // Dual wielding (v16): a charge names its hand, the right or the left; the
+  // left hand's hit is a strike with its flag, and no flag is unknown.
+  guest.Received(1,
+                 proto::Cue{.player = 3,
+                            .seq = 5,
+                            .kind = proto::CueKind::Charge,
+                            .arg = proto::kChargeCharging,
+                            .at = {0.5f, proto::kChargeLeftHand, 0.f}},
+                 kSecond);
+  guest.Received(1,
+                 proto::Cue{.player = 3,
+                            .seq = 6,
+                            .kind = proto::CueKind::Trace,
+                            .arg = proto::kTraceLeftHand,
+                            .at = {1.f, 2.f, 3.f}},
+                 kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1,
+                 proto::Cue{.player = 3,
+                            .seq = 7,
+                            .kind = proto::CueKind::Charge,
+                            .arg = proto::kChargeCharging,
+                            .at = {0.5f, 2.f, 0.f}},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
 }
 
 TEST_CASE("referee: resync requests are budgeted at the pace of the endpoint's digests") {
