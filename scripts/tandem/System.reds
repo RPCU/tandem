@@ -247,6 +247,9 @@ public class TandemSystem extends ScriptableSystem {
   private let m_phoneContacts: ref<TandemPhoneContacts>;
   // Shops: our own vendor behind a partner's (Vendors.reds).
   private let m_vendors: ref<TandemVendors>;
+  // The prompts on a player's body and on a partner's vendor, as the game's
+  // own interactions (Prompts.reds).
+  private let m_prompts: ref<TandemPrompts>;
   // Host: the join code last said on screen, and the relay's last problem
   // said (ShowCode).
   private let m_codeShown: String;
@@ -399,6 +402,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_attitudes.Start(this.GetGameInstance());
     this.m_stealth = new TandemStealth();
     this.m_stealth.Start(this.GetGameInstance());
+    this.m_prompts = new TandemPrompts();
+    this.m_prompts.Start(this.GetGameInstance(), this);
     this.m_revive = new TandemRevive();
     this.m_revive.Start(this.GetGameInstance(), this);
     this.m_presence = new TandemPresenceSync();
@@ -517,6 +522,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_vendors.End();
     }
     this.m_vendors = null;
+    if IsDefined(this.m_prompts) {
+      this.m_prompts.Stop();
+    }
+    this.m_prompts = null;
     ArrayClear(this.m_joins);
     if IsDefined(this.m_pause) {
       this.m_pause.Stop();
@@ -989,6 +998,10 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_vendors;
   }
 
+  public func Prompts() -> ref<TandemPrompts> {
+    return this.m_prompts;
+  }
+
   // Pings, the link, shared tags, waypoints (Comms.reds).
   public func Comms() -> ref<TandemComms> {
     return this.m_comms;
@@ -1245,6 +1258,11 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_vendors) && this.m_playing {
       this.m_vendors.Tick(this.Now(), this.m_you);
     }
+    // What revive, trade and the shops offered this tick, on the game's own
+    // interactions (after the three).
+    if IsDefined(this.m_prompts) && this.m_playing {
+      this.m_prompts.Tick(this.Now());
+    }
     TandemNative.PerfMark(17);
     this.TickAttitudes();
     TandemNative.PerfMark(18);
@@ -1320,6 +1338,14 @@ public class TandemSystem extends ScriptableSystem {
     if StrBeginsWith(command, "paint") {
       if IsDefined(this.m_paint) {
         this.m_paint.Command(command, this);
+      }
+      return;
+    }
+    if Equals(command, "prompts") || StrBeginsWith(command, "prompts ") {
+      if IsDefined(this.m_prompts) {
+        this.m_prompts.Command(command);
+      } else {
+        TandemNative.Log("prompts: no world");
       }
       return;
     }

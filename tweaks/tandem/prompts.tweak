@@ -1,0 +1,22 @@
+// The choices tandem puts on another player's body and on a partner's
+// vendor through the game's own interaction component
+// (scripts/tandem/Prompts.reds): one record each, so the choice event that
+// comes back names ours (InteractionChoiceMetaData.tweakDBName) and the key
+// is the game's interaction key as the player bound it.
+//
+// Each is the door's "Open" (the record vanilla's own scripts name, a press
+// of Choice1) under our name; the text shown is the choice's own caption,
+// from scripts/tandem/Text.reds. Without these records the scripts draw the
+// prompts themselves, as before ("prompts: no record ...").
+
+Interactions.TandemRevive : Interactions.Open {
+  name = "TandemRevive";
+}
+
+Interactions.TandemTrade : Interactions.Open {
+  name = "TandemTrade";
+}
+
+Interactions.TandemVendor : Interactions.Open {
+  name = "TandemVendor";
+}
