@@ -1011,10 +1011,10 @@ load() {
     for try in 1 2 3 4 5; do
       note "$name: on the menu, Continue ($try)"
       xdo mousemove $((width / 8)) $((height * 2 / 5)) sleep 0.5 mousemove $((width / 8 + 1)) $((height * 2 / 5)) sleep 0.5 click 1 >/dev/null
-      ! wait_log 'system attached|in game' 20 2 || break
+      ! wait_log 'system attached|in game|playing \(solo\)' 20 2 || break
     done
   fi
-  wait_log 'in game' 300 || die "$name: the save did not load in 5 minutes"
+  wait_log 'in game|playing \(solo\)' 300 || die "$name: the save did not load in 5 minutes"
   local tries=0
   until wait_log 'script. playing' 8; do
     xdo key space >/dev/null
