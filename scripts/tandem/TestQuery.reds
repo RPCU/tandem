@@ -68,12 +68,24 @@
 //                         layer (the component's own list); shown: the
 //                         game's prompt on screen holds our choice. none:
 //                         no prompt was ever asked on that body
+//   nameplate [path|apart] [player N]  the first remote player's nameplate
+//                         (player N's), as PartyHud.reds placed it on its
+//                         last tick: "engine X Y of W x H, within B, in
+//                         screen B, uv U V, distance D (ours M m), slot
+//                         'S', told N times; ours X Y, in view B; apart A
+//                         units (P px, Q % of
+//                         the height), plate on|off" (the engine's screen
+//                         projection, in the HUD's units, beside our own
+//                         projection of the same tick), or "script X Y of
+//                         W x H px, in view B, plate on|off". path: engine
+//                         or script alone; apart: Q alone (none: ours
+//                         placed it). none: no such player
 public class TandemTestQuery {
   public static func Run(game: GameInstance, system: ref<TandemSystem>, command: String) -> Void {
     let words = StrSplit(command, " ");
     let count = ArraySize(words);
     // (Padded: every word read below exists.)
-    while ArraySize(words) < 5 {
+    while ArraySize(words) < 6 {
       ArrayPush(words, "");
     }
     let what = words[2];
@@ -197,6 +209,14 @@ public class TandemTestQuery {
       if IsDefined(prompts) {
         value = prompts.StatusLine(body);
       }
+    } else if Equals(what, "nameplate") {
+      let presence = TandemPresenceSync.Of(game);
+      let hud = IsDefined(presence) ? presence.Hud() : null;
+      let part = Equals(arg, "player") ? "" : arg;
+      let whose = Equals(arg, "player") ? words[4] : (Equals(words[4], "player") ? words[5] : "0");
+      if IsDefined(hud) {
+        value = hud.PlateQuery(Cast<Uint32>(StringToInt(whose, 0)), part);
+      }
     } else if Equals(what, "upload") {
       let pools = GameInstance.GetStatPoolsSystem(game);
       if IsDefined(player) && pools.IsStatPoolAdded(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.QuickHackUpload) {
@@ -206,7 +226,7 @@ public class TandemTestQuery {
       value = "unknown";
     }
     if Equals(value, "unknown") {
-      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], held [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks, paint [puppet], attitude group NAME | npc ID|fresh|nearest | fresh, wanted, upload)");
+      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], held [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks, paint [puppet], attitude group NAME | npc ID|fresh|nearest | fresh, wanted, upload, prompt [player N | npc N], nameplate [path|apart] [player N])");
       return;
     }
     TandemNative.Log(s"test query: \(asked) = \(value)");
