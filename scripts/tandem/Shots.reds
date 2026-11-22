@@ -544,7 +544,7 @@ public class TandemShots {
     let system = this.System();
     let npc = IsDefined(from) && IsDefined(system) ? system.NpcOfProxy(from.GetEntityID()) : 0u;
     if npc != 0u {
-      this.Once(n"hit", s"shots: npc \(npc)'s shot hit our V (our game's decision)");
+      TandemNative.LogDebug(s"shots: npc \(npc)'s shot hit our V (our game's decision)");
     }
   }
 
