@@ -253,6 +253,7 @@ public class TandemBodies {
   private func MakeVisible(body: String, donor: ref<TandemDonor>, builder: ref<EntityBuilderWrapper>) -> Void {
     if !donor.ready || !IsDefined(donor.visible) {
       TandemNative.Log(s"body: no visible object for the \(body) body: NPCs will not see it");
+      TandemDegraded.Fallback("body incomplete", s"no visible object for the \(body) body: NPCs will not see it");
       return;
     }
     builder.GetTemplate().AddComponent(donor.visible.Clone() as IComponent);
@@ -283,6 +284,7 @@ public class TandemBodies {
     }
     if !donor.ready || !IsDefined(donor.interaction) {
       TandemNative.Log(s"body: no Interaction component for the \(body) body (donor ready \(donor.ready)): its prompts are drawn");
+      TandemDegraded.Fallback("prompt drawn", s"no Interaction component for the \(body) body (donor ready \(donor.ready))");
       return;
     }
     builder.GetTemplate().AddComponent(donor.interaction.Clone() as IComponent);
@@ -292,6 +294,7 @@ public class TandemBodies {
   private func Graft(body: String, donor: ref<TandemDonor>, components: array<ref<IComponent>>) -> Void {
     if !donor.ready {
       TandemNative.Log(s"body: no donor for the \(body) body yet, it will glide");
+      TandemDegraded.Fallback("body incomplete", s"no donor for the \(body) body yet: it will glide");
       return;
     }
     let root = TandemBodies.RootOf(components);
@@ -326,6 +329,7 @@ public class TandemBodies {
       }
     }
     TandemNative.Log(s"body: the \(body) body has no Character extension, locomotion sets missing");
+    TandemDegraded.Fallback("body incomplete", s"the \(body) body has no Character extension: locomotion sets missing");
   }
 
   public static func StateFeatureFields() -> array<CName> {

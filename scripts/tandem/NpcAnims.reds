@@ -252,6 +252,7 @@ public class TandemSpot {
             TandemNative.HoldPuppet(hold, false);
           }
           TandemNative.Log(s"\(label) could not enter workspot \(want)");
+          TandemDegraded.Fallback("workspot not entered", s"\(label) could not enter workspot \(want): left standing");
         }
         break;
       case 2:
@@ -509,6 +510,7 @@ public class TandemNpcAnims {
       let missed = changed & (settling ? 15 : 31);
       if missed != 0 {
         this.m_missed += 1;
+        TandemDegraded.Fallback("npc state polled", s"npc \(id)\(TandemNpcAnims.Diff(sent.anim, anim, missed))");
         if (missed & 7) != 0 {
           this.m_missedStates += 1;
         }

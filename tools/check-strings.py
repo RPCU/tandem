@@ -135,6 +135,10 @@ def main():
                 if re.search(r"[A-Za-z]{2,}", words):
                     errors.append(f'{path.name}:{number}: player-facing literal {prefix}"{value}": use a key (Text.reds)')
     for key in sorted(known - used):
+        # One text per degradation id, named by its id (Degraded.reds;
+        # tools/degraded-check.py checks each against the catalogue).
+        if key.startswith("Degraded-Id-"):
+            continue
         warnings.append(f"{TEXT.name}: Tandem-{key} is not used by name (built at run time?)")
 
     for w in warnings:

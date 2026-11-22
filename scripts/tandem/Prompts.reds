@@ -193,8 +193,10 @@ public class TandemPrompts {
     }
     if this.m_off {
       TandemNative.Log(s"prompts: drawn by us, none is the game's own interaction (\(this.m_offWhy))");
+      if this.m_untouched { TandemDegraded.Chosen("drawn prompts", this.m_offWhy); } else { TandemDegraded.State("drawn prompts", this.m_offWhy); }
     } else {
       TandemNative.Log(s"prompts: the game's own interactions, layer \(NameToString(this.m_layer)), choices\(actions); a body they do not prove to work on goes back to drawn prompts");
+      TandemDegraded.Over("drawn prompts");
     }
   }
 
@@ -444,6 +446,7 @@ public class TandemPrompts {
     } else if !IsDefined(body.TandemInteraction()) {
       b.drawn = true;
       b.why = "its body has no Interaction component";
+      TandemDegraded.Fallback("prompt drawn", s"\(label): its body has no Interaction component");
     }
     let who = s"\(label) (\(partner ? "a player's puppet" : "an NPC's proxy"), entity \(TandemNative.EntityHex(b.entity)))";
     if b.drawn {
@@ -607,6 +610,7 @@ public class TandemPrompts {
     b.drawn = true;
     b.why = why;
     TandemNative.Log(s"prompts: \(b.label) (entity \(TandemNative.EntityHex(b.entity))): back to drawn prompts: \(why)");
+    TandemDegraded.Fallback("prompt drawn", s"\(b.label): \(why)");
   }
 
   // Our V is an activator of the body's layer, by the component's own lists.
@@ -747,6 +751,7 @@ public class TandemPrompts {
       if Equals(verb, "off") {
         this.m_off = true;
         this.m_offWhy = "prompts off";
+        TandemDegraded.State("drawn prompts", "prompts off (the test command)");
       } else {
         this.Start(this.m_game, this.m_system);
       }

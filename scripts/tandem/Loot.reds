@@ -277,6 +277,7 @@ public class TandemLoot extends ScriptableSystem {
     let at = player.GetWorldPosition();
     if !GameInstance.GetLootManager(game).SpawnItemDropOfManyItems(player, instructions, n"playerDropBag", at) {
       TandemNative.Log("loot: the game would not drop our items: dropped the usual way, not shared");
+      TandemDegraded.Fallback("loot not shared", "the game would not drop our items as a bag: dropped the usual way");
       return false;
     }
     this.m_nextToken += 1u;
@@ -740,6 +741,7 @@ public class TandemLoot extends ScriptableSystem {
     // From a mod our game lacks (said on screen): theirs alone.
     if !TDBID.IsValid(event.record) {
       TandemNative.Log(s"loot: \(name) looted an item our game does not have: not given");
+      TandemDegraded.Fallback("record substituted", s"\(name) looted an item our game does not have: not given");
       return;
     }
     if this.CountIn(player, owned) > 0 {

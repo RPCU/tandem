@@ -183,6 +183,7 @@ public class TandemRadio {
       } else if this.m_retries == 0 {
         this.m_retries = -1;
         TandemNative.Log(s"radio: player \(driver)'s car stays \(playing) instead of \(wanted): left so");
+        TandemDegraded.Fallback("radio not matched", s"player \(driver)'s car stays \(playing) instead of \(wanted)");
       }
     }
     if wantOn && matches {

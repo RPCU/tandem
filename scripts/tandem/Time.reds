@@ -664,6 +664,7 @@ public class TandemTime {
           times.UnsetTimeDilationOnLocalPlayerZero(n"tandemBubble", n"None");
           this.m_selfEntity = true;
           TandemNative.Log("time: the player's own factor counts as an active dilation: our V is slowed as an entity instead");
+          TandemDegraded.Fallback("v slowed as entity", "the player's own factor counts as an active dilation: our V is slowed as an entity");
         }
       }
     }

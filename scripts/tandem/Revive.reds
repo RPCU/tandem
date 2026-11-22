@@ -1492,6 +1492,7 @@ public class TandemRevive {
       return;
     }
     TandemNative.Log(s"revive: up, but the state machine still says vitals \(vitals): its death effects ended by hand");
+    TandemDegraded.Fallback("revive ended by hand", s"up, but the state machine still says vitals \(vitals): its death effects ended by hand");
     psm.SetInt(GetAllBlackboardDefs().PlayerStateMachine.Vitals, 0);
     GameObjectEffectHelper.BreakEffectLoopEvent(player, n"dying");
     GameInstance.GetAudioSystem(this.m_game).Play(n"global_death_exit");

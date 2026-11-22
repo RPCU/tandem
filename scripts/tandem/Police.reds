@@ -834,6 +834,7 @@ public class TandemPolice {
     let what = kind == 1 ? "a car" : kind == 2 ? "an AV" : "a unit";
     if !result.success {
       TandemNative.Log(s"police: \(what) for player \(player) could not spawn");
+      TandemDegraded.Fallback("police not spawned", s"\(what) for player \(player) could not spawn");
       if kind == 1 {
         // Units on foot fill in meanwhile (Dispatch counts the crews).
         this.m_nextCar = this.m_now + 15.0;

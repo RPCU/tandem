@@ -644,6 +644,7 @@ public class TandemTransit {
         this.m_carryMounted = false;
         this.m_carryFallback = true;
         TandemNative.Log("ride: the copy has no trunk body slot to carry us: placed in it 5 times a second");
+        TandemDegraded.Fallback("carried by placement", "a ride's copy has no trunk body slot: our V is placed in it 5 times a second");
       }
     }
     if this.m_carryFallback && this.m_now - this.m_carryPlacedAt >= 0.2 {

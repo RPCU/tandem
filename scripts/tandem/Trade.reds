@@ -685,6 +685,7 @@ public class TandemTradeTable {
     if !TandemTrade.TradeWeConfirmed() && this.m_unknownTheirs > 0 {
       this.Notice("Trade-Unknown", 5.0, TandemCoop.NameOf(TandemTrade.TradeWith()));
       TandemNative.Log(s"trade: their side has \(this.m_unknownTheirs) item(s) our game lacks: not agreed");
+      TandemDegraded.Fallback("record substituted", s"a trade's other side has \(this.m_unknownTheirs) item(s) our game lacks: not agreed");
       return;
     }
     if TandemTrade.TradeWeConfirmed() {

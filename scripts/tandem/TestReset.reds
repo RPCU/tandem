@@ -207,6 +207,9 @@ public class TandemTestReset {
       leftover += ", " + item;
     }
     if placed && onFoot {
+      // A scenario answers for the fallbacks taken from here on
+      // (tools/scenario.sh: none it did not declare).
+      TandemDegraded.ResetFallbacks();
       TandemNative.Log(s"test reset: ready (on foot, at the test field\(leftover))");
     } else {
       let foot = onFoot ? "on foot" : "not on foot";

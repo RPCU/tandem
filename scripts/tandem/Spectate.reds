@@ -451,6 +451,7 @@ public class TandemSpectate {
         this.m_carryMounted = false;
         this.m_carryFallback = true;
         TandemNative.Log("spectate: the host's vehicle copy has no trunk body slot: our V placed in it four times a second");
+        TandemDegraded.Fallback("carried by placement", "the host's vehicle copy has no trunk body slot: our V is placed in it four times a second");
       }
     }
     if this.m_carryFallback {
@@ -672,6 +673,7 @@ public class TandemSpectate {
       if !this.m_cameraLogged {
         this.m_cameraLogged = true;
         TandemNative.Log("spectate: the camera body has no camera component: our own eyes stay");
+        TandemDegraded.Fallback("scene camera missing", "the spectator's camera body has no camera component: our own eyes stay");
       }
       return;
     }
