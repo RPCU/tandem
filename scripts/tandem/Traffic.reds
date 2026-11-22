@@ -1110,6 +1110,32 @@ public class TandemTraffic {
     }
   }
 
+  // (test: `street list`) every shared vehicle as we have it: who runs it,
+  // where its body is, and for a proxy how far that is from where its
+  // owner says. One line each: two games' lists are compared by id.
+  public func ListReport() -> Void {
+    let bodies = 0;
+    for car in this.m_cars {
+      let body = TandemTraffic.Body(this.m_game, car.body);
+      if IsDefined(body) {
+        bodies += 1;
+        let at = body.GetWorldPosition();
+        let off = -1.0;
+        if !car.mine {
+          let to = TandemStreet.Position(car.id);
+          if to.W != 0.0 {
+            to.W = 1.0;
+            off = Vector4.Distance(at, to);
+          }
+        }
+        TandemNative.Log(s"street list: \(car.id) \(car.mine ? "ours" : "proxy") \(TDBID.ToStringDEBUG(car.record)) \(NameToString(body.GetCurrentAppearanceName())) at \(at.X) \(at.Y) \(at.Z) yaw \(body.GetWorldYaw()) flags \(car.flags) off \(off)");
+      } else {
+        TandemNative.Log(s"street list: \(car.id) \(car.mine ? "ours" : "proxy") \(TDBID.ToStringDEBUG(car.record)) no body");
+      }
+    }
+    TandemNative.Log(s"street list: \(ArraySize(this.m_cars)) vehicle(s), \(bodies) with a body");
+  }
+
   // (test: `street lanes`) the cars we run that someone drives, nearest
   // first five, and how often one stopped for a partner on foot.
   public func LanesReport() -> Void {
