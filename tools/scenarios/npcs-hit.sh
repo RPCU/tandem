@@ -1,6 +1,8 @@
 # A guest hits and burns the host's NPCs: the host applies the damage and the effect; health, death and kill credit come back
 # shellcheck shell=bash disable=SC2317,SC2154
 ensure host
+# The mock player's hits name no attack record: the game stands one in.
+allow_fallback "record substituted"
 # Earlier scenarios may have killed everyone around V: three gangers to share.
 cmd npc spawn 3
 # A real V's fight (recordings/play/fight.tplay, recorded as a guest: its
