@@ -386,6 +386,13 @@ public class TandemSystem extends ScriptableSystem {
     TandemNative.Log(s"in game, body \(body)");
     TandemNative.Start(body);
     this.m_inGame = true;
+    // What this game version turned off (an address or a layout that is not
+    // 2.50's): said once per session, by name. Nothing on 2.50.
+    let off = TandemNative.EngineOff();
+    if StrLen(off) > 0 {
+      TandemNative.Log(s"engine: off in this game: \(off)");
+      TandemText.NoticeAs(this.GetGameInstance(), SimpleMessageType.Negative, 12.0, "Session-EngineOff", off);
+    }
     this.m_haveLast = false;
     this.m_playing = false;
     this.m_sentAppearance = false;
@@ -1419,6 +1426,12 @@ public class TandemSystem extends ScriptableSystem {
     // beside the script tick, inside it, between ticks (testing.md), solo too.
     if Equals(command, "threads") {
       TandemNative.ThreadsReport();
+      return;
+    }
+    // Engine access (tools/game.sh cmd engine): each feature that goes by an
+    // address or a measured layout, on or off in this game, solo too.
+    if Equals(command, "engine") {
+      TandemNative.Log(TandemNative.EngineReport());
       return;
     }
     if StrBeginsWith(command, "time ") {
