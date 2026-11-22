@@ -261,8 +261,12 @@ public class TandemTravel {
       }
     }
     if IsDefined(this.m_offer) && now - this.m_offer.shownAt > TandemTravel.OfferSeconds() {
+      // No answer to a lapsed offer: its maker lets it lapse on its side too,
+      // and a maker that left and joined again in between made no such offer
+      // in its new session (soak-host: "answers our regroup offer 7, and we
+      // made 0", 2026-11-22).
       TandemNative.Log(s"travel: offer \(this.m_offer.offer) of \(this.NameOf(this.m_offer.player)) lapsed");
-      this.Decline();
+      this.Hide();
     }
     this.TryArrival();
     this.NoteBeside();
