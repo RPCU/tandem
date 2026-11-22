@@ -320,6 +320,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Session-Hosting", "Hosting co-op. {1}");
     this.Text("Tandem-Session-Code", "Co-op join code: {1}");
     this.Text("Tandem-Session-NoCode", "No join code yet: {1}");
+    this.Text("Tandem-Session-EngineOff", "This game version turns parts of co-op off: {1}");
     this.Text("Tandem-Session-JoinedOf", "Joined {1}'s session");
     this.Text("Tandem-Session-Joined", "Joined the co-op session");
     this.Text("Tandem-Session-YouLeft", "You left the co-op session");
@@ -812,6 +813,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Session-Hosting", "Partie coop hébergée. {1}");
     this.Text("Tandem-Session-Code", "Code d'invitation coop : {1}");
     this.Text("Tandem-Session-NoCode", "Pas encore de code d'invitation : {1}");
+    this.Text("Tandem-Session-EngineOff", "Cette version du jeu désactive des parties du coop : {1}");
     this.Text("Tandem-Session-JoinedOf", "Vous avez rejoint la session de {1}");
     this.Text("Tandem-Session-Joined", "Vous avez rejoint la session coop");
     this.Text("Tandem-Session-YouLeft", "Vous avez quitté la session coop");

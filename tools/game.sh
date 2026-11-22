@@ -17,6 +17,10 @@
 #                              running game first, cmd threads); fails when a
 #                              script hook ran beside the script tick (on
 #                              another thread while it ran)
+#   tools/game.sh engine       engine access (plugin/src/engine/access.hpp): the
+#                              newest log's "engine: N features on, M off: …"
+#                              line (asked of a running game first, cmd
+#                              engine); fails when a feature is off
 #   tools/game.sh shot NAME    screenshot to .cache/shots/NAME.png
 #   tools/game.sh key CODE...  press keys (Linux input codes: 57 Space, 28 Enter, 1 Esc)
 #   tools/game.sh hold SECONDS CODE...  hold keys down together, then release
@@ -401,6 +405,24 @@ threads() {
   fi
   echo "$lines"
   ! grep -qE 'ran beside the script tick|[1-9][0-9]* hooks beside the script tick' <<<"$lines"
+}
+
+# Engine access (plugin/src/engine/access.hpp): which of the features that go
+# by an address or a measured layout this game turned off, a running game
+# asked first. The line is written at the first frame of every launch.
+engine() {
+  if running; then
+    cmd engine >/dev/null || true
+    sleep 1
+  fi
+  local line
+  line=$(remote "cd '$dir'; grep -h 'engine: [0-9]* features on' \"\$(ls -t red4ext/logs/tandem-*.log | head -1)\"" | tail -1 | sed 's/^.*engine: /engine: /' || true)
+  if [ -z "$line" ]; then
+    echo "no engine: line in the newest log (the game has not reached its first frame, or co-op is blocked)" >&2
+    return 1
+  fi
+  echo "$line"
+  grep -q ' features on, 0 off' <<<"$line"
 }
 
 # Without Load Begone: through the title screen and the menu with keys.
@@ -963,6 +985,7 @@ start) start ;;
 stop) stop ;;
 launches) launches "${2:-5}" ;;
 threads) threads ;;
+engine) engine ;;
 shot) shot "${2:-}" ;;
 key)
   shift
