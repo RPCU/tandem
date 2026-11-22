@@ -195,12 +195,14 @@ ensure() {
     # The start's own test reset teleports V from where the save stands to
     # the test field, through a loading screen whose "silent" line comes 5 s
     # after (coop on instance b, 2026-11-22): wait it out, mark after it.
+    # The scenario still reads the whole new log (the session's first
+    # lines are its to read): only the hang check starts after the boot.
     pause 8
     local waited=$SECONDS
     while (($(watchdog_lines silent) > $(watchdog_lines back))) && ((SECONDS - waited < 90)); do
       sleep 2
     done
-    mark
+    boot_line=$(remote "wc -l < '$mark_file'")
   elif [ -z "$mark_file" ]; then
     mark
   fi
@@ -426,10 +428,16 @@ expect_peer() {
   fail "no '$pattern' in $log within $timeout s"
 }
 expect_peer2() { expect_peer "$1" "${2:-30}" "$cache/peer2.log" 0; }
+boot_line=0
 reject() {
-  local pattern=${1//27450/$game_port}
-  if since | grep -qE "$pattern"; then
-    fail "unexpected: $(since | grep -E "$pattern" | head -1 | cut -c1-160)"
+  local pattern=${1//27450/$game_port} lines
+  lines=$(since)
+  # The boot's own loading screens are not a hang (ensure: boot_line).
+  if [[ $pattern == *'watchdog: game thread silent'* ]] && ((boot_line > mark_line)); then
+    lines=$(tail -n +$((boot_line - mark_line + 1)) <<<"$lines")
+  fi
+  if grep -qE "$pattern" <<<"$lines"; then
+    fail "unexpected: $(grep -E "$pattern" <<<"$lines" | head -1 | cut -c1-160)"
   else
     echo "  ok, none: $1"
   fi
