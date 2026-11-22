@@ -270,6 +270,7 @@ public class TandemNpcs {
   public func RecordTick(now: Float) -> Void {
     this.m_you = 0u;
     this.m_now = now;
+    this.m_anims.Events(now, 0u);
     if now - this.m_last >= 0.1 {
       this.m_last = now;
       this.Share();
@@ -285,6 +286,8 @@ public class TandemNpcs {
     this.TakeRegionEvents(now);
     // The owner's side: the NPCs our game runs.
     this.TakeHits();
+    // What the game changed on our NPCs' animation since the last frame.
+    this.m_anims.Events(now, you);
     if now - this.m_last >= 0.1 {
       this.m_last = now;
       this.UpdateQuiet();
