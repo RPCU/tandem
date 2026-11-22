@@ -133,7 +133,10 @@ public abstract class TandemVehicles {
     let driver = n"None";
     for seat in seats {
       let name = seat.SeatName();
-      if TandemVehicles.FreeFor(game, vehicle, name, child) {
+      // (a record's seat the body has no slot for, the back seats of a
+      // two-seater: a V mounted there sat at the car's origin, 2026-11-22)
+      let slot = TandemVehicles.SeatInCar(vehicle, name);
+      if slot.W > 0.0 && TandemVehicles.FreeFor(game, vehicle, name, child) {
         if !VehicleComponent.IsDriverSlot(name) {
           return name;
         }
