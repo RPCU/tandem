@@ -1206,6 +1206,7 @@ public class TandemRaces {
     }
     if this.m_now - this.m_placingAt > 20.0 {
       TandemNative.Log("races: could not get into the race car in time: we watch");
+      TandemDegraded.Fallback("race watched", "could not get into the race car in time: we watch");
       this.Notice("Race-NoCar", this.m_starter);
       this.Leave();
       return;

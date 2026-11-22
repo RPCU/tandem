@@ -885,6 +885,7 @@ public class TandemTraffic {
           car.seated = false;
           car.goneSince = 0.0;
           TandemNative.Log(s"street: check: vehicle \(car.id)'s body was gone for \(wait) s: spawned again (\(car.goneTries) in a row)");
+          TandemDegraded.Fallback("street body respawned", s"vehicle \(car.id)'s body was gone for \(wait) s (\(car.goneTries) in a row)");
         }
       }
     }

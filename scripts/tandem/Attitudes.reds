@@ -152,6 +152,7 @@ public class TandemAttitudes {
     } else if telling > 0 {
       verdict = "took in part";
     }
+    if telling > 0 && same == telling { TandemDegraded.Over("attitude relations"); } else if telling > 0 { TandemDegraded.State("attitude relations", s"declared relations \(verdict): \(same) of \(telling) groups"); }
     let line = s"attitudes: declared relations \(verdict): \(same) of \(telling) groups player is not friendly with read the same for \(NameToString(ours)), of \(ArraySize(groups)) groups (\(tweak))";
     if StrLen(differ) > 0 {
       line += s"; player/\(NameToString(ours)) differ:\(differ)";

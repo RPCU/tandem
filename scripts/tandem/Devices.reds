@@ -702,6 +702,7 @@ public class TandemDevices extends ScriptableSystem {
         device.nextTry = now + 2.0;
         if device.tries == 3 {
           TandemNative.Log(s"devices: \(TandemDevices.Name(device)) will not become what the host has (\(TandemDevices.Describe(device.wantStatus, device.wantFlags, device.wantValue))): ours stays \(TandemDevices.Describe(status, flags, value))");
+          TandemDegraded.Fallback("device not matched", s"\(TandemDevices.Name(device)) will not become what the host has: ours stays as it is");
         }
         this.Follow(device, ps, now, true);
       }

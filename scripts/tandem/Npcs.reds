@@ -428,6 +428,7 @@ public class TandemNpcs {
     }
     ArrayPush(this.m_standIns, attack);
     TandemNative.Log(s"combat: attack \(TDBID.ToStringDEBUG(attack)) unknown here, stood in by \(TDBID.ToStringDEBUG(standIn)) (its damage: at most the sender's)");
+    TandemDegraded.Fallback("record substituted", s"attack \(TDBID.ToStringDEBUG(attack)) unknown here: stood in by \(TDBID.ToStringDEBUG(standIn))");
   }
 
   public func ForwardedPierce(hit: ref<gameHitEvent>, out pierce: Float) -> Bool {
@@ -1615,6 +1616,7 @@ public class TandemNpcs {
           proxy.goneSince = now;
         } else if now - proxy.goneSince >= 3.0 {
           TandemNative.Log(s"consistency: proxy \(proxy.npc) lost its body\(proxy.dead ? ", corpse dropped" : ", spawned again")");
+          TandemDegraded.Fallback("proxy respawned", s"proxy \(proxy.npc) lost its body\(proxy.dead ? ": its corpse is dropped" : "")");
           keep = false;
           // (A body of the game's own that streamed out comes back as one
           // of ours.)
@@ -1644,6 +1646,7 @@ public class TandemNpcs {
           this.SpawnProxy(npc.npc, npc.record, npc.appearance, new Vector4(npc.x, npc.y, npc.z, 1.0), new Quaternion(0.0, 0.0, SinF(half), CosF(half)));
           if !ArrayContains(lost, npc.npc) {
             TandemNative.Log(s"consistency: proxy \(npc.npc) was missing, spawned from the session's record");
+            TandemDegraded.Fallback("proxy respawned", s"proxy \(npc.npc) was missing: spawned from the session's record");
           }
         } else {
           ArrayPush(missing, npc.npc);
@@ -2367,6 +2370,7 @@ public class TandemNpcs {
   private func Respawn(known: ref<TandemNpcKnown>, old: ref<ScriptedPuppet>) -> Void {
     if !known.managed || !TDBID.IsValid(known.record) {
       TandemNative.Log(s"regions: npc \(known.npc) did not wake up (its own body: left as it is)");
+      TandemDegraded.Fallback("proxy respawned", s"npc \(known.npc) did not wake up (its own body: left as it is)");
       return;
     }
     let entities = GameInstance.GetDynamicEntitySystem();
@@ -2388,6 +2392,7 @@ public class TandemNpcs {
     known.pendingUntil = this.m_now + 3.0;
     known.health = health / 100.0;
     TandemNative.Log(s"regions: npc \(known.npc) did not wake up: spawned again in place");
+    TandemDegraded.Fallback("proxy respawned", s"npc \(known.npc) did not wake up: spawned again in place");
   }
 
   // An NPC we ran is no longer ours without our giving it (our world was

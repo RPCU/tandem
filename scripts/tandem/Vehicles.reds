@@ -184,6 +184,7 @@ public abstract class TandemVehicles {
     if IsDefined(system) {
       system.MoveBody(system.MoverOf(car.GetEntityID()), car, position, orientation);
     } else {
+      TandemDegraded.Fallback("vehicle teleported", "no TandemSystem to move a remote V's car");
       GameInstance.GetTeleportationFacility(game).Teleport(car, position, Quaternion.ToEulerAngles(orientation));
     }
   }

@@ -163,10 +163,17 @@ public class TandemCoop {
   public static func ProblemsText() -> String {
     let text = "";
     for problem in TandemNative.CompatProblems() {
-      if StrLen(text) > 0 {
-        text += "\n\n";
+      // (A core feature that is off: in the player's language, below.)
+      if !StrBeginsWith(problem, "This game cannot run co-op: ") {
+        if StrLen(text) > 0 {
+          text += "\n\n";
+        }
+        text += problem;
       }
-      text += problem;
+    }
+    let core = TandemDegradedSay.CoreText();
+    if StrLen(core) > 0 {
+      text += StrLen(text) > 0 ? "\n\n" + core : core;
     }
     return text;
   }
@@ -186,6 +193,9 @@ public class TandemCoop {
     let problems = TandemNative.CompatProblems();
     if ArraySize(problems) > 0 {
       ArrayPush(lines, "Co-op is off: a startup check failed");
+      for line in TandemDegradedSay.StatusLines(english) {
+        ArrayPush(lines, line);
+      }
       return lines;
     }
     let status = TandemNative.SessionStatus();
@@ -256,6 +266,11 @@ public class TandemCoop {
     let differences = ArraySize(warnings);
     if differences > 0 {
       ArrayPush(lines, s"\(differences) difference(s) between your games: see tandem's log");
+    }
+    // What this game runs without, the fallbacks it took, and what the other
+    // players' games said (Degraded.reds): kept here after their notices.
+    for line in TandemDegradedSay.StatusLines(english) {
+      ArrayPush(lines, line);
     }
     if TandemNative.RecorderOn() {
       ArrayPush(lines, TandemText.FE(english, "Status-Recorder", TandemNative.RecorderStatus()));

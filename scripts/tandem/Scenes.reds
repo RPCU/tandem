@@ -1135,6 +1135,7 @@ public class TandemScenes {
       if !this.m_cameraLogged {
         this.m_cameraLogged = true;
         TandemNative.Log("scene: the camera body has no camera component: our own eyes stay");
+        TandemDegraded.Fallback("scene camera missing", "a scene's camera body has no camera component: our own eyes stay");
       }
       return;
     }

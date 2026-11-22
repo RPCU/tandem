@@ -349,6 +349,8 @@ public class TandemSystem extends ScriptableSystem {
     if wanted && !TandemNative.IsConfigured() {
       TandemCoop.Notice(this.GetGameInstance(), "Session-NeedsExpansion");
     }
+    // The same for a core feature this game version turned off (Degraded.reds).
+    TandemDegradedSay.SayRefused(this.GetGameInstance());
     this.m_saves = new TandemSaves();
     this.m_saves.Start(this.GetGameInstance(), this);
     // The recorder (its own key, solo or not) learns a game is loaded: it
@@ -386,13 +388,8 @@ public class TandemSystem extends ScriptableSystem {
     TandemNative.Log(s"in game, body \(body)");
     TandemNative.Start(body);
     this.m_inGame = true;
-    // What this game version turned off (an address or a layout that is not
-    // 2.50's): said once per session, by name. Nothing on 2.50.
-    let off = TandemNative.EngineOff();
-    if StrLen(off) > 0 {
-      TandemNative.Log(s"engine: off in this game: \(off)");
-      TandemText.NoticeAs(this.GetGameInstance(), SimpleMessageType.Negative, 12.0, "Session-EngineOff", off);
-    }
+    // (What this game runs without is said by TandemDegradedSay.Tick, each
+    // by name, from the session's start: Degraded.reds.)
     this.m_haveLast = false;
     this.m_playing = false;
     this.m_sentAppearance = false;
@@ -1306,6 +1303,12 @@ public class TandemSystem extends ScriptableSystem {
     this.TickProxyTests();
     this.TickHostileTests();
     TandemNative.PerfMark(21);
+    // What started to run on a lesser path since the last tick, ours and the
+    // others': on screen (Degraded.reds; it may leave the session, as a
+    // command below may).
+    if this.m_playing {
+      TandemDegradedSay.Tick(this.GetGameInstance(), this);
+    }
     this.HandleCommand();
     if this.PilotOn() {
       this.m_pilot.Tick();
@@ -1432,6 +1435,18 @@ public class TandemSystem extends ScriptableSystem {
     // address or a measured layout, on or off in this game, solo too.
     if Equals(command, "engine") {
       TandemNative.Log(TandemNative.EngineReport());
+      return;
+    }
+    // What the game runs without (tools/game.sh degraded): every state that
+    // holds and every fallback taken, solo too; "degraded reset" forgets the
+    // fallbacks counted so far (test reset does).
+    if Equals(command, "degraded") {
+      TandemDegraded.LogRegistry();
+      return;
+    }
+    if Equals(command, "degraded reset") {
+      TandemDegraded.ResetFallbacks();
+      TandemNative.Log("degraded: fallbacks forgotten");
       return;
     }
     if StrBeginsWith(command, "time ") {
@@ -3439,6 +3454,7 @@ public class TandemSystem extends ScriptableSystem {
     if puppet.bodyOn {
       return 0;
     }
+    let lesser = Equals(why, "no look received") ? "look not received" : "stand-in look";
     let keys = TandemNative.ApplyStandInLook(entity, puppet.body);
     let from = "the last look of that body seen";
     if keys < 0 {
@@ -3459,8 +3475,10 @@ public class TandemSystem extends ScriptableSystem {
           ArrayPush(this.m_rebuild, puppet.player);
         }
         TandemNative.Log(s"player \(puppet.player): \(why), and no V body to stand in: the donor's body instead");
+        TandemDegraded.Fallback(lesser, s"player \(puppet.player): \(why), and no V body to stand in: the donor's body instead");
       } else if !TandemVisibility.IsHidden(game, puppet.player) {
         TandemNative.Log(s"player \(puppet.player): \(why), and no stand-in body at all: hidden until a look comes");
+        TandemDegraded.Fallback(lesser, s"player \(puppet.player): \(why), and no stand-in body at all: hidden until a look comes");
       }
       TandemVisibility.Hide(game, puppet.player, n"nolook", 0.0);
       return -1;
@@ -3468,6 +3486,7 @@ public class TandemSystem extends ScriptableSystem {
     puppet.bodyOn = true;
     TandemVisibility.Show(game, puppet.player, n"nolook", 0.3);
     TandemNative.Log(s"player \(puppet.player): \(why): a stand-in body (\(from), \(keys) keys)");
+    TandemDegraded.Fallback(lesser, s"player \(puppet.player): \(why): a stand-in body (\(from))");
     return keys;
   }
 
@@ -3978,6 +3997,7 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.Log(s"vehicles: the vehicles other games run are moved by the engine's kinematic move (a teleport beyond \(TandemSystem.SnapDistance()) m, at a spawn, and for a body that does not follow)");
     } else {
       TandemNative.Log(s"vehicles: the vehicles other games run are teleported every frame (\(off ? "kinematic_ride = off" : "the vehicle layout check failed")); the car our own V rides in every other frame while a body spawns");
+      if off { TandemDegraded.Chosen("vehicle move", "tandem.ini kinematic_ride = off"); } else { TandemDegraded.State("vehicle move", "the vehicle layout check failed: vehicles are teleported every frame"); }
     }
   }
 
@@ -4089,11 +4109,13 @@ public class TandemSystem extends ScriptableSystem {
             moved.teleportOnly = true;
             this.m_moveStalledBodies += 1;
             if this.m_moveStalledBodies <= 5 {
+              TandemDegraded.Fallback("vehicle teleported", s"body \(EntityID.ToDebugStringDecimal(id)) does not follow the kinematic move (15 frames, \(gap) m from its place)");
               TandemNative.Log(s"vehicles: body \(EntityID.ToDebugStringDecimal(id)) does not follow the kinematic move (15 frames, \(gap) m from its place): teleported from now on");
             }
             if this.m_moveStalledBodies >= 5 && this.m_moveFollowed == 0 {
               this.m_moveKinematic = false;
               TandemNative.Log("vehicles: the kinematic move moves nothing here (5 bodies, none followed): every vehicle is teleported from now on");
+              TandemDegraded.State("vehicle move", "the kinematic move moves nothing here (5 bodies, none followed): every vehicle is teleported");
             }
           }
         } else {
@@ -4127,6 +4149,7 @@ public class TandemSystem extends ScriptableSystem {
       // No body to move (or not a vehicle): this one is teleported.
       moved.teleportOnly = true;
       this.m_moveRefused += 1;
+      TandemDegraded.Fallback("vehicle teleported", s"no body the engine can move for \(EntityID.ToDebugStringDecimal(id))");
     }
     if id == this.RideParent(now) && !this.RideTeleportAllowed() {
       return;

@@ -384,6 +384,7 @@ public class TandemPaint {
     let on = paint.flags != 0 && known;
     if !known {
       TandemNative.Log(s"paint: player \(copy.player)'s car copy: no template \(TDBID.ToStringDEBUG(paint.unique)) in this game (a mod's), stock paint kept");
+      TandemDegraded.Fallback("record substituted", s"player \(copy.player)'s car paint: no template \(TDBID.ToStringDEBUG(paint.unique)) in this game: stock paint kept");
     }
     ps.SetVehicleVisualCustomizationTemplate(template);
     ps.SetVehicleVisualCustomizationActive(on);

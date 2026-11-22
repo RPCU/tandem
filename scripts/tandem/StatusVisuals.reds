@@ -301,6 +301,7 @@ public class TandemStatusVisuals {
     let what = TDBID.ToStringDEBUG(record);
     if !look.known {
       TandemNative.Log(s"status: player \(shown.player) shows \(what), a record this game does not have (a mod's?): skipped");
+      TandemDegraded.Fallback("record substituted", s"player \(shown.player) shows \(what), a status this game does not have: skipped");
       if !ArrayContains(this.m_unknown, record) {
         ArrayPush(this.m_unknown, record);
         TandemText.Notice(this.m_game, "Status-Unknown", TandemPartyHud.NameOf(shown.player));
