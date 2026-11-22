@@ -350,6 +350,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-workspots", "NPCs shown at their work spots");
     this.Text("Tandem-Degraded-Id-physics-watch", "the watch on long physics pauses");
     this.Text("Tandem-Degraded-Id-transform-guard", "the guard against an engine crash");
+    this.Text("Tandem-Degraded-Id-dismemberment-guard", "the guard against an engine crash when an NPC is removed");
     this.Text("Tandem-Degraded-Id-anim-trace", "the animation trace");
     this.Text("Tandem-Degraded-Id-vehicle-move", "smooth movement of other players' vehicles (they are teleported)");
     this.Text("Tandem-Degraded-Id-drawn-prompts", "the game's own prompts on players and vendors (tandem draws them)");
@@ -898,6 +899,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-workspots", "les PNJ affichés à leur poste d'activité");
     this.Text("Tandem-Degraded-Id-physics-watch", "la surveillance des longues pauses de la physique");
     this.Text("Tandem-Degraded-Id-transform-guard", "la protection contre un plantage du moteur");
+    this.Text("Tandem-Degraded-Id-dismemberment-guard", "la protection contre un plantage du moteur quand un PNJ est retiré");
     this.Text("Tandem-Degraded-Id-anim-trace", "la trace des animations");
     this.Text("Tandem-Degraded-Id-vehicle-move", "le déplacement fluide des véhicules des autres joueurs (ils sont téléportés)");
     this.Text("Tandem-Degraded-Id-drawn-prompts", "les invites natives du jeu sur les joueurs et les marchands (tandem les dessine)");

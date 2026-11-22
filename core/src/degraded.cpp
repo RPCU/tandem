@@ -26,6 +26,8 @@ constexpr Info kCatalogue[] = {
     {"workspots", Degraded, State, "an NPC's workspot is not read: it is not shown working"},
     {"physics watch", Degraded, State, "a long physics pause is not watched"},
     {"transform guard", Degraded, State, "the engine's crash on an expired entity is not guarded"},
+    {"dismemberment guard", Degraded, State,
+     "the engine's crash on an NPC detached in the middle of an action is not guarded"},
     {"anim trace", Degraded, State, "no animation trace, no mirror"},
     {"vehicle move", Degraded, State,
      "vehicles other games run are teleported every frame, not moved by the engine"},
