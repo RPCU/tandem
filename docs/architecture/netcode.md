@@ -31,26 +31,39 @@ compact, W whole`, then the `perf:` line (Frame cost); the whole table at
 **64 kbit/s each way** on a two-player link, headers included (a slow
 uplink, a phone's hotspot); NPCs in a fight may take the host's side to 96. `tests/budget_test.cpp` plays each session for 4 s over loopback UDP
 with real endpoints (30 Hz states and walk-cycle poses, 24 NPCs at 10 Hz,
-strikes, shots, health and animation twice a second) and checks it, legacy
-wire alongside:
+strikes, shots and their cues, health and animation twice a second) and
+checks it, legacy wire alongside:
 
 <!-- prettier-ignore -->
 | Session (2 players unless said) | before up | before down | after up | after down | largest after (kbit/s) |
 | --- | --- | --- | --- | --- | --- |
-| on foot together, 3 m apart | 131.5 | 131.7 | 59.3 | 57.7 | PoseFrame 36, PlayerMotion 9.6 |
-| standing together | 131.5 | 131.7 | 38.1 | 38.1 | PoseFrame 24.6, PlayerMotion 1.4 |
-| fight, 24 NPCs (half walking) | 134.7 | 185.0 | 62.5 | 88.0 | down: PoseFrame 34, NpcMotion 18.4, PlayerMotion 9.6, NpcAwareness 4.2 |
-| driving, the host a passenger | 147.1 | 131.7 | 59.4 | 47.9 | up: PoseFrame 24.6, PlayerMotion 9.6, VehicleMotion 9.6 |
-| apart (500 m) | 131.5 | 131.7 | 8.9 | 9.1 | PoseFrame 3.1, PlayerMotion 1.6 |
-| 4 players on foot, a guest's link | 131.0 | 382.0 | 59.1 | 160.6 | down: three Vs' PoseFrame 103, PlayerMotion 29 |
-| a scene watched: 3 actors' bodies, a cutscene's camera | — | — | (not measured yet) | ≤ 64 by test | down: standing's 38 and the scene's streams, at most 22 (`scene::Pacer`) |
+| on foot together, 3 m apart | 132.7 | 132.9 | 54.9 | 52.4 | PoseFrame 31.2, PlayerMotion 8.9 |
+| standing together | 131.5 | 131.7 | 31.9 | 31.9 | PoseFrame 18.7, PlayerMotion 1.3 |
+| fight, 24 NPCs (half walking) | 137.1 | 187.1 | 59.4 | 83.4 | up: PoseFrame 31.2, PlayerMotion 8.9, Cue 1.6; down: PoseFrame 28.5, NpcMotion 18.4, PlayerMotion 8.9, NpcAwareness 4.2 |
+| driving, the host a passenger | 147.0 | 131.6 | 52.1 | 41.4 | up: PoseFrame 18.7, PlayerMotion 8.9, VehicleMotion 8.9 |
+| apart (500 m) | 131.5 | 131.7 | 8.6 | 8.8 | PoseFrame 2.9, PlayerMotion 1.5 |
+| 4 players on foot, a guest's link | 133.6 | 386.5 | 54.9 | 145.1 | down: three Vs' PoseFrame 86.4, PlayerMotion 26.6 |
+| a scene watched: 3 actors' bodies, a cutscene's camera | 131.5 | 472.8 | 32.1 | 52.9 | down: PoseFrame 18.6, ActorFrame 11.4, SceneCamera 4.8, RigTracks 2.7 (the scene's streams at most 22: `scene::Pacer`) |
 
 kbit/s on the wire, each way, 38 datagrams/s for a V's 60 messages/s (the
-test sends state and pose together). Before, the pose alone was 104 kbit/s
-(431 bytes at 30 Hz) and the NPC list 21 bytes an NPC at 10 Hz. The
-synthetic walk cycle (`tests/motion.hpp`) averages 138 bytes a pose frame;
-real play's poses are in the recordings below. The test checks every row against 64 (the fight's down
-96, four players' down 192) and that no row grew.
+test sends state and pose together); CI, 2026-11-22, protocol 17. Before,
+the pose alone was 104 kbit/s (431 bytes at 30 Hz) and the NPC list 21
+bytes an NPC at 10 Hz. The synthetic walk cycle (`tests/motion.hpp`)
+averages 130 bytes a pose frame here (150 before protocol 17; 114 in
+`netcode_test.cpp`, whose keys fall on the same two moments of the stride);
+real play's poses are in the recordings below. The test checks every row
+against 64 (the fight's down 96, four players' down 192) and that no row
+grew, and prints the fight's row stream by stream.
+
+The fight's up is the fullest row a guest sends: its V's pose and state,
+6 shots a second with their 6 tracer ends, 2 ricochets and 4 charge cues
+(12 `Cue`s a second, 1.6 kbit/s, 2.4 with ENet's 8 bytes a message), 2
+strikes. It was 64.3 or more from run to run, over the budget, since the
+cues joined it (protocol 13: 2.2 kbit/s of cues, 3.0 with their headers,
+on 61.3); protocol 17's shorter forms (What goes on the wire) took 4.8
+from the pose, 0.7 from the state, 0.6 from the cues. A run's timing moves
+a row by 1 to 2 kbit/s (42 datagrams/s here instead of 38, 32 bytes each:
+events that miss their frame's datagram).
 
 Recordings of real play (`tandem-peer traffic`, `recordings/play/` of the
 integration worktree, a V's own upstream as its game sent it):
@@ -80,12 +93,19 @@ events, taps and recordings above it see `PlayerState`, `PoseState`,
   (smallest three, 13+13+12 bits, ≤ 0.0015 rad); between keys, per bone 2
   bits say kept (within 0.002 rad of its key's), turned (a rotation vector
   from the key's, 3 signed bytes of 1/256 rad, up to ±0.5 rad, ≤ 0.004
-  rad) or whole.
+  rad; in 2 bytes, 5 signed bits a step, when the turn is within 1/16
+  rad: the same turn, bit for bit, protocol 17) or whole.
   No acknowledgements: a frame names its key; a receiver that lost the key
   takes the bones left out from its newest key (they moved little), and
   drops frames only before its first key. The host decodes a guest's
   stream and re-encodes it for the others (one encoder per player), so
   each link's keys are its own.
+  Around the rotations (protocol 17, written out in `protocol.cpp`: 34
+  bytes on a frame between keys, 21 on a key, 48 before): the player in a
+  byte, the key as how many frames back it is (a varint), a key's time
+  whole and another frame's low 32 bits (`PoseDecoder` completes them from
+  its key's time: the frames it can decode have one), no codes on a key
+  (all whole), no length (the codes say it).
 - **`NpcMotion`**: positions in 1/128 m from an origin (±256 m; wider
   spreads go whole as `NpcStates`), yaw in 1/65536 turn, only the NPCs that
   moved more than 2 cm, turned more than 0.01 rad or changed what they
@@ -94,8 +114,13 @@ events, taps and recordings above it see `PlayerState`, `PoseState`,
   once. The guest's `NpcBook` fills in the rest, so `NpcStates` comes out
   whole (detection counts stay right).
 - **`PlayerMotion`**, **`VehicleMotion`**: a V's orientation is its yaw
-  (16 bits), velocities in cm/s, a car's orientation in 5 bytes: 40 bytes
-  for a V instead of 60, 39 for a car instead of 57.
+  (16 bits), velocities in cm/s, a car's orientation in 5 bytes, the
+  player in a byte (protocol 17; `PlayerId` is 4 everywhere else): 37 bytes
+  for a V instead of 60, 37 for a car instead of 57.
+- **`Cue`** (a shot's end, a bounce, a charge: up to a dozen a second
+  from a V that fires): the player in a byte; a charge's level (255
+  steps, `proto::ChargeLevel`) and hand in a byte each, not three floats:
+  20 bytes for a place, 10 for a charge, 23 before (protocol 17).
 - **A scene's streams** (scene replay: each actor's body as `ActorFrame`,
   the camera as `SceneCamera`): one budget for all of them on the host,
   22 kbit/s by default, split by `scene::Pacer`
