@@ -266,6 +266,7 @@ read):
 | `paint [puppet]` | the custom paint the car's own state says (`VehicleComponentPS`): our V's car (the one it sits in, else its last), or the first remote player's car copy: `stock`, `primary R,G,B [secondary R,G,B] [lights HUE]`, `unique RECORD` |
 | `car marks` | the shared vehicles another player's quickhack is marked on now (their traffic ids; `Hacks.reds`), or `none` |
 | `device KIND WHAT` | the nearest device of KIND within 40 m: `attitude` (to our V: `friendly`, `neutral`, `hostile`), `puppet` (to the first puppet), `target` (what it follows: `none`, `V`, `puppet`, `other`), `alarm` (its security system: `SAFE`, `ALERTED`, `COMBAT`), `mark` (the player whose hack is marked on it; 0: none) |
+| `nameplate [path\|apart] [player N]` | the first remote player's nameplate (player N's) on the HUD's last tick (`PartyHud.reds`): `engine X Y of W x H, within B, in screen B, uv U V, distance D (ours M m), slot 'S', told N times; ours X Y, in view B; apart A units (P px, Q % of the height), plate on\|off` (the engine's screen projection in the HUD's units beside our own projection of the same tick), or `script X Y of W x H px, in view B, plate on\|off`; `path`: `engine` or `script`; `apart`: Q alone |
 | `upload` | the upload on our V (an NPC's hack or trace), percent of its `QuickHackUpload` pool (`none`: no upload) |
 
 In a scenario: `query VAR WHAT [ARGS]` asks, waits 10 s for this answer
