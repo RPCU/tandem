@@ -690,6 +690,39 @@ std::optional<proto::Seat> Runtime::RemoteSeat(proto::PlayerId player, std::uint
   return it->second.second;
 }
 
+void Runtime::PushLights(proto::TrafficLights lights) {
+  std::lock_guard _(m_lock);
+  if (m_lightsIn.size() < 64)
+    m_lightsIn.push_back(std::move(lights));
+}
+
+std::vector<proto::TrafficLights> Runtime::TakeLights() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_lightsIn, {});
+}
+
+void Runtime::NoteLightSaid(std::uint64_t entity, std::uint8_t color) {
+  std::lock_guard _(m_lightsLock);
+  if (m_lightsSaid.size() < 512)
+    m_lightsSaid.push_back({.entity = entity, .color = color});
+}
+
+std::vector<proto::TrafficLight> Runtime::TakeLightsSaid() {
+  std::lock_guard _(m_lightsLock);
+  return std::exchange(m_lightsSaid, {});
+}
+
+void Runtime::FollowLights(std::vector<std::uint64_t> entities) {
+  std::ranges::sort(entities);
+  std::lock_guard _(m_lightsLock);
+  m_lightsFollowed = std::move(entities);
+}
+
+bool Runtime::FollowsLight(std::uint64_t entity) const {
+  std::lock_guard _(m_lightsLock);
+  return std::ranges::binary_search(m_lightsFollowed, entity);
+}
+
 void Runtime::PushRemoteVehicle(const proto::VehicleState &vehicle) {
   std::lock_guard _(m_tracksLock);
   m_vehicles[vehicle.player].Push(vehicle);
@@ -704,7 +737,11 @@ sync::VehicleView Runtime::VehicleOf(proto::PlayerId player) {
   std::uint64_t delayUs = 100'000;
   if (const auto body = m_tracks.find(player); body != m_tracks.end() && !body->second.Empty())
     delayUs = body->second.DelayUs();
-  return car->second.At(now > delayUs ? now - delayUs : 0);
+  // The moment smoothed: a step of the clock estimate or of the delay is
+  // spread over frames, not a jolt of the car (and of a passenger's camera).
+  const auto target = now > delayUs ? now - delayUs : 0;
+  return m_vehicleSmoothing.load(std::memory_order_relaxed) ? car->second.Draw(net::NowUs(), target)
+                                                            : car->second.At(target);
 }
 
 void Runtime::SubmitLocalTransit(const proto::Transit &transit) {
@@ -1731,7 +1768,9 @@ sync::VehicleView Runtime::TrafficOf(proto::TrafficId id) {
   const auto car = m_trafficTracks.find(id);
   if (car == m_trafficTracks.end())
     return {};
-  return car->second.At(now > kDelayUs ? now - kDelayUs : 0);
+  const auto target = now > kDelayUs ? now - kDelayUs : 0;
+  return m_vehicleSmoothing.load(std::memory_order_relaxed) ? car->second.Draw(net::NowUs(), target)
+                                                            : car->second.At(target);
 }
 
 void Runtime::SetSharedTraffic(const std::map<proto::TrafficId, proto::TrafficSpawn> &traffic,

@@ -114,6 +114,25 @@ VehicleView VehicleTrack::At(std::uint64_t renderUs) {
   return view;
 }
 
+std::uint64_t RenderClock::At(std::uint64_t localUs, std::uint64_t targetUs) {
+  const double target = static_cast<double>(targetUs);
+  if (!m_have || localUs < m_localUs) {
+    m_have = true;
+    m_localUs = localUs;
+    m_renderUs = target;
+    return targetUs;
+  }
+  const double elapsed = static_cast<double>(localUs - m_localUs);
+  m_localUs = localUs;
+  const double ahead = m_renderUs + elapsed;
+  const double error = target - ahead;
+  if (std::abs(error) > static_cast<double>(kSnapUs))
+    m_renderUs = target;
+  else
+    m_renderUs = ahead + std::clamp(error, -kSlew * elapsed, kSlew * elapsed);
+  return m_renderUs > 0.0 ? static_cast<std::uint64_t>(m_renderUs) : 0;
+}
+
 bool MayDrive(const DriveAsk &ask) {
   if (!ask.ownerInSession)
     return false;

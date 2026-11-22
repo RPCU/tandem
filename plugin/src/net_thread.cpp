@@ -573,6 +573,9 @@ struct NetThread::Impl {
                 // A street race's word: Races.reds (activity.hpp), not the hits'.
                 if (const auto *race = std::get_if<proto::Race>(&e.message))
                   Activities::Get().PushRace({.kind = RaceNote::Kind::Heard, .race = *race});
+                // Another game's traffic lights: Lights.reds (TandemStreet).
+                else if (const auto *lights = std::get_if<proto::TrafficLights>(&e.message))
+                  runtime.PushLights(*lights);
                 else
                   Combat::Get().PushInbound(e.message);
               } else if constexpr (std::is_same_v<E, events::Trade>) {

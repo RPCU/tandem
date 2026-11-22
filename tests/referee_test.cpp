@@ -1189,6 +1189,21 @@ TEST_CASE("referee: a street race is described, seated, ordered and paid by its 
   CHECK(Rules(host) == std::vector<std::string>{"value.range"});
 }
 
+TEST_CASE("referee: traffic lights are another game's word, never ours back") {
+  auto guest = Guest();
+  guest.Received(
+      1, proto::TrafficLights{.owner = 3, .lights = {{.entity = 9, .color = proto::kLightRed}}},
+      kSecond);
+  guest.Received(1, proto::TrafficLights{.owner = 1, .full = true}, kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1, proto::TrafficLights{.owner = 2}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
+  guest.Received(1, proto::TrafficLights{.owner = 9}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"ids.unknown-player"});
+  guest.Received(1, proto::TrafficLights{.owner = 3, .lights = {{.entity = 0}}}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+}
+
 TEST_CASE("referee: what a game runs without is its own word, passed on, never back") {
   auto guest = Guest();
   guest.Received(

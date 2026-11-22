@@ -36,6 +36,25 @@ struct DriveAsk {
 };
 bool MayDrive(const DriveAsk &ask);
 
+// The moment a remote car is drawn at, frame after frame: it runs with our
+// own clock and moves toward the target (the host clock less the delay) by
+// at most a tenth of the time that passed, so a step of the clock estimate or
+// of the delay is spread over frames instead of moving the car at once (at
+// 20 m/s a car moves 2 cm a millisecond: under a passenger's camera a 10 ms
+// step was a 20 cm jolt). A target farther than kSnapUs is taken at once.
+class RenderClock {
+public:
+  static constexpr std::uint64_t kSnapUs = 250'000;
+  static constexpr double kSlew = 0.1;
+
+  std::uint64_t At(std::uint64_t localUs, std::uint64_t targetUs);
+
+private:
+  std::uint64_t m_localUs{};
+  double m_renderUs{};
+  bool m_have{};
+};
+
 class VehicleTrack {
 public:
   static constexpr std::uint64_t kExtrapolateUs = 500'000;
@@ -47,6 +66,11 @@ public:
   // Where the car is drawn at `renderUs` (host clock, the body's delay
   // applied). Called once a frame: it fades corrections as time goes.
   VehicleView At(std::uint64_t renderUs);
+  // The same, the moment smoothed (RenderClock): `targetUs` on the host
+  // clock, `localUs` our own clock now.
+  VehicleView Draw(std::uint64_t localUs, std::uint64_t targetUs) {
+    return At(m_clock.At(localUs, targetUs));
+  }
   bool Empty() const { return m_samples.empty(); }
 
 private:
@@ -56,5 +80,6 @@ private:
   std::uint64_t m_lastRenderUs{};
   proto::Vec3 m_offset{};
   std::optional<proto::VehicleState> m_guess;
+  RenderClock m_clock;
 };
 } // namespace tandem::sync

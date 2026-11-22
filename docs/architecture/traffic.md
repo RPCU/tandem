@@ -142,6 +142,7 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
 | `TrafficHandover`      | Event, one-shot | host → owner                                | give it to `to`                                                                                                                                      |
 | `TrafficHandoverState` | Event, one-shot | giver → host → receiver                     | place, orientation, velocity, health, flags (inherited: the host's record)                                                                           |
 | `TrafficHandoverDone`  | Event, one-shot | receiver or giver → host                    | runs it now (or cannot: it goes); a giver's refusal                                                                                                  |
+| `TrafficLights`        | Event           | area owner → its linked players             | traffic lights by entity id and colour: on change, all round its V every 5 s ("Traffic lights")                                                      |
 
 "Owner → all" reads "owner → the players linked with it, through the host".
 
@@ -205,6 +206,35 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   (60 m): beyond it a car's proxy has nobody at the wheel, which at that
   distance is behind a windscreen. Inside it the driver is an NPC proxy
   seated with `NpcSeat`, and costs what any NPC costs.
+
+## Traffic lights
+
+Written 2026-11-22, not yet run in game. The game runs each crossing natively and tells each light entity its colour
+(`TrafficLightChangeEvent`; engine facts §13.156); two games ran their
+crossings apart, green on one screen and red on the other. **The area
+owner's lights are the truth** (`scripts/tandem/Lights.reds`,
+`TrafficLights`, appended, protocol 20):
+
+- A game that owns its area says each colour its game gives a light as it
+  changes, and every 5 s all the lights it knows within 150 m of its V
+  (`full`); through the host to the players linked with it, as its NPCs'
+  word (`Endpoint::SendCombat`, `ShareNpc`), stamped with its id by the
+  host.
+- A game that does not own its area takes only its area owner's: each light
+  that owner named shows the owner's colour the light's own way
+  (`TrafficLight.TandemShow`: the lamps off, yellow from the colour it had,
+  or red or green), and the game's own changes of those lights are dropped
+  (the light's event hook asks `TandemStreet.FollowsLight`: a read, on any
+  thread). The others keep their own colours; a light the owner has not
+  named for 12 s, an owner that changes, or our game owning its area again
+  hands them back to our game from their next change.
+- A late joiner or an area that changes owner has the owner's whole set
+  within 5 s; a lost change is put right by the next full set.
+- What follows the light is only what the light shows: the NPCs' crossings
+  and the traffic lanes of the follower's game run on its own phase (its
+  traffic is the owner's proxies there).
+- `tools/game.sh cmd lights` lists the counts and each light within 60 m
+  with its colour, on each game, to compare.
 
 ## Collisions: who simulates the impact
 

@@ -8,6 +8,7 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "combat.hpp"
 #include "mods.hpp"
 #include "runtime.hpp"
 
@@ -71,6 +72,16 @@ struct TandemStreetCar {
   float health{1.f};
 };
 static_assert(alignof(TandemStreetCar) <= 8, "the script VM aligns struct locals to 8");
+
+// A traffic light's colour: another game's word (owner: that game; full: it
+// named every light it knows round its V) or our own game's (owner 0).
+struct TandemStreetLight {
+  Red::EntityID entity;
+  std::uint32_t owner{};
+  std::int32_t color{};
+  bool full{};
+};
+static_assert(alignof(TandemStreetLight) <= 8, "the script VM aligns struct locals to 8");
 
 struct TandemStreet : Red::IScriptable {
   // A shared vehicle's id: the announcer's player id and its own counter.
@@ -262,6 +273,58 @@ struct TandemStreet : Red::IScriptable {
                                              .position = {position.X, position.Y, position.Z}});
   }
 
+  // Our lights while our game runs our street: those that changed, or all
+  // we know round our V (`full`), entity by entity with its colour.
+  static void SendLights(bool full, Red::DynArray<Red::EntityID> entities,
+                         Red::DynArray<std::int32_t> colors) {
+    proto::TrafficLights lights{.full = full};
+    for (std::uint32_t i = 0; i < entities.size() && i < colors.size(); ++i) {
+      if (entities[i].hash == 0 || colors[i] < 0 || colors[i] > proto::kLightYellow)
+        continue;
+      if (lights.lights.size() == proto::kMaxLights) {
+        Combat::Get().Send(lights);
+        lights.lights.clear();
+      }
+      lights.lights.push_back(
+          {.entity = entities[i].hash, .color = static_cast<std::uint8_t>(colors[i])});
+    }
+    if (!lights.lights.empty() || full)
+      Combat::Get().Send(std::move(lights));
+  }
+  // The other games' lights since the last call.
+  static Red::DynArray<TandemStreetLight> TakeLights() {
+    Red::DynArray<TandemStreetLight> out;
+    for (const auto &said : Runtime::Get().TakeLights())
+      for (const auto &light : said.lights)
+        out.PushBack({.entity = Red::EntityID(light.entity),
+                      .owner = said.owner,
+                      .color = light.color,
+                      .full = said.full});
+    return out;
+  }
+  // (a light's own event hook: any thread) the colour our game gave it.
+  static void LightSaid(Red::EntityID entity, std::int32_t color) {
+    if (entity.hash != 0 && color >= 0 && color <= proto::kLightYellow)
+      Runtime::Get().NoteLightSaid(entity.hash, static_cast<std::uint8_t>(color));
+  }
+  static Red::DynArray<TandemStreetLight> TakeLightsSaid() {
+    Red::DynArray<TandemStreetLight> out;
+    for (const auto &light : Runtime::Get().TakeLightsSaid())
+      out.PushBack({.entity = Red::EntityID(light.entity), .color = light.color});
+    return out;
+  }
+  // The lights that show another game's colours now (the game thread's
+  // word), and the question a light's hook asks (any thread).
+  static void FollowLights(Red::DynArray<Red::EntityID> entities) {
+    std::vector<std::uint64_t> hashes;
+    for (const auto &entity : entities)
+      hashes.push_back(entity.hash);
+    Runtime::Get().FollowLights(std::move(hashes));
+  }
+  static bool FollowsLight(Red::EntityID entity) {
+    return Runtime::Get().FollowsLight(entity.hash);
+  }
+
   RTTI_IMPL_TYPEINFO(TandemStreet);
   RTTI_IMPL_ALLOCATOR();
 };
@@ -307,7 +370,20 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStreetCar, "TandemStreetCar", {
   RTTI_PROPERTY(health);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemStreetLight, "TandemStreetLight", {
+  RTTI_PROPERTY(entity);
+  RTTI_PROPERTY(owner);
+  RTTI_PROPERTY(color);
+  RTTI_PROPERTY(full);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemStreet, "TandemStreet", {
+  RTTI_METHOD(SendLights);
+  RTTI_METHOD(TakeLights);
+  RTTI_METHOD(LightSaid);
+  RTTI_METHOD(TakeLightsSaid);
+  RTTI_METHOD(FollowLights);
+  RTTI_METHOD(FollowsLight);
   RTTI_METHOD(MakeId);
   RTTI_METHOD(OwnerOf);
   RTTI_METHOD(RunBy);

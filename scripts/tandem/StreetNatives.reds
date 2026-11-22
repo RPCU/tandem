@@ -58,7 +58,29 @@ public native struct TandemStreetCar {
   native let health: Float;
 }
 
+// A traffic light's colour (Lights.reds): another game's word (owner: that
+// game; full: it named every light it knows round its V) or our own game's
+// (owner 0). Colours as worldTrafficLightColor: 0 green, 1 red, 2 yellow.
+public native struct TandemStreetLight {
+  native let entity: EntityID;
+  native let owner: Uint32;
+  native let color: Int32;
+  native let full: Bool;
+}
+
 public native class TandemStreet extends IScriptable {
+  // Our lights while our game runs our street: those that changed, or all
+  // we know round our V (full).
+  public static native func SendLights(full: Bool, entities: array<EntityID>, colors: array<Int32>)
+  // The other games' lights since the last call.
+  public static native func TakeLights() -> array<TandemStreetLight>
+  // (a light's own event hook: any thread) the colour our game gave it.
+  public static native func LightSaid(entity: EntityID, color: Int32)
+  public static native func TakeLightsSaid() -> array<TandemStreetLight>
+  // The lights that show another game's colours now, and the question a
+  // light's hook asks (any thread).
+  public static native func FollowLights(entities: array<EntityID>)
+  public static native func FollowsLight(entity: EntityID) -> Bool
   // A shared vehicle's id: its announcer's player id and its counter.
   public static native func MakeId(owner: Uint32, counter: Uint32) -> Uint32
   // Who announced it (the id says), and who runs it now (a hand-over moves

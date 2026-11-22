@@ -357,6 +357,23 @@ all seven (`UpdateStrategyPreCheckRequests`, final.reds :141167); a set of
 three (strategies 1, 5, 7) crashed a job thread 30 ms later (`police-host`,
 2026-11-21). `Police.reds` now asks all seven. [broken-on-2.5]
 
+### 13.156 Traffic lights: the native crossing tells each light its colour (2026-11-22, game 2.50, scripts read)
+
+A traffic light is a placed device entity, `TrafficLight` (a `Device`;
+pedestrian lights `CrossingLight`, its subclass), with the same static
+`EntityID` in every game. Its phase is not the script's: the native
+`TrafficLightListenerComponent` (RTTI `worldTrafficLightListenerComponent`,
+0xb8, no script surface) queues `TrafficLightChangeEvent{lightColor}`
+(`worldTrafficLightColor`: GREEN 0, RED 1, YELLOW 2, INVALID 3) on the
+light, and `TrafficLight.OnTrafficLightChangeEvent` (final.reds :280206)
+turns its lamps: off, then for YELLOW `CommenceLightChangeSequence` from the
+colour it had (to red: yellow; to green: red and yellow), else the colour
+(`CompleteLightChangeSequence`), kept in `m_lightState`. The NPCs' crossing
+(`CrosswalkEvent`) and the traffic system's lanes read the native phase, not
+the device; no seed or clock of the phase is exposed, so two games' crossings
+run apart. A light given a colour by script the same way shows it until the
+next event. `Lights.reds` (traffic.md, "Traffic lights"). [2.5-untested]
+
 ## 13.34 Traffic and police: open questions (need the game)
 
 1. Does `ChangeDensityModifier(0.0)` remove the crowd's **parked** cars,

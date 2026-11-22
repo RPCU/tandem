@@ -1811,3 +1811,29 @@ TEST_CASE("what a game runs without survives encoding: reliable, small, appended
   many.entries.pop_back();
   CHECK_FALSE(refused(many));
 }
+
+TEST_CASE("traffic lights survive encoding: reliable, appended, bounded") {
+  const TrafficLights some{.owner = 2,
+                           .full = true,
+                           .lights = {{.entity = 0x1234'5678'9ABC'DEF0ull, .color = kLightRed},
+                                      {.entity = 77, .color = kLightYellow},
+                                      {.entity = 78, .color = kLightGreen}}};
+  RoundTrips(some);
+  RoundTrips(TrafficLights{.owner = 3});                                      // none known
+  CHECK(Message(TrafficLights{}).index() == Message(Degraded{}).index() + 1); // appended
+  CHECK(std::string(NameOf(TrafficLights{})) == "TrafficLights");
+  CHECK(ChannelOf(TrafficLights{}) == Channel::Event);
+  CHECK(IsReliable(TrafficLights{}));
+  CHECK(IsCombat(TrafficLights{}));
+  // Refused on the wire: a light with no entity, a colour of no version,
+  // more lights than a message holds.
+  const auto refused = [](const TrafficLights &said) { return !Decode(Encode(said)).has_value(); };
+  CHECK(refused({.lights = {{.entity = 0}}}));
+  CHECK(refused({.lights = {{.entity = 5, .color = 3}}}));
+  TrafficLights many;
+  many.lights.assign(kMaxLights + 1, {.entity = 5});
+  CHECK(refused(many));
+  many.lights.pop_back();
+  CHECK_FALSE(refused(many));
+  CHECK(Encode(many).size() < 1200);
+}

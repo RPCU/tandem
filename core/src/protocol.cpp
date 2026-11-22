@@ -61,6 +61,15 @@ bool Fits(const Degraded &degraded) {
   return true;
 }
 
+bool Fits(const TrafficLights &lights) {
+  if (lights.lights.size() > kMaxLights)
+    return false;
+  for (const auto &light : lights.lights)
+    if (light.entity == 0 || light.color > kLightYellow)
+      return false;
+  return true;
+}
+
 namespace {
 // What a bone takes in a pose frame's rotations, by its code.
 constexpr std::size_t PoseCodeBytes(std::uint8_t code) {
@@ -535,6 +544,8 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *degraded = std::get_if<Degraded>(&message); degraded && !Fits(*degraded))
     return std::nullopt;
+  if (const auto *lights = std::get_if<TrafficLights>(&message); lights && !Fits(*lights))
+    return std::nullopt;
   // A live vendor names its NPC; a dead one only its entity.
   if (const auto *vendor = std::get_if<NpcVendor>(&message);
       vendor && (vendor->entity == 0 || (vendor->flags & ~kVendorDead) != 0 ||
@@ -704,7 +715,8 @@ bool IsCombat(const Message &message) {
          std::holds_alternative<NpcVendor>(message) || std::holds_alternative<ThrowPath>(message) ||
          std::holds_alternative<NpcPlaced>(message) || std::holds_alternative<NpcDeath>(message) ||
          std::holds_alternative<Race>(message) || std::holds_alternative<WeakSpotHit>(message) ||
-         std::holds_alternative<HackTraced>(message);
+         std::holds_alternative<HackTraced>(message) ||
+         std::holds_alternative<TrafficLights>(message);
 }
 
 bool IsTrade(const Message &message) {
@@ -891,7 +903,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "TrafficHack",
                                    "CarPaint",
                                    "HitTaken",
-                                   "Degraded"};
+                                   "Degraded",
+                                   "TrafficLights"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

@@ -143,6 +143,27 @@ public abstract class TandemVehicles {
     return driver;
   }
 
+  // The seat `slot` of `car` in the car's frame (W 1), from whichever of
+  // its slot components has it (W 0: none has).
+  public static func SeatInCar(car: ref<GameObject>, slot: CName) -> Vector4 {
+    let parts = car.GetComponents();
+    for part in parts {
+      let slots = part as SlotComponent;
+      let seat: WorldTransform; // assigned on every path: read only when GetSlotTransform filled it
+      if IsDefined(slots) && slots.GetSlotTransform(slot, seat) {
+        let d = WorldPosition.ToVector4(WorldTransform.GetWorldPosition(seat)) - car.GetWorldPosition();
+        return new Vector4(Vector4.Dot(d, car.GetWorldRight()), Vector4.Dot(d, car.GetWorldForward()), Vector4.Dot(d, car.GetWorldUp()), 1.0);
+      }
+    }
+    return new Vector4(0.0, 0.0, 0.0, 0.0);
+  }
+
+  // Along (Y), across (X) and up (Z) the car, from its origin.
+  public static func InCar(car: ref<GameObject>, world: Vector4) -> Vector4 {
+    let d = world - car.GetWorldPosition();
+    return new Vector4(Vector4.Dot(d, car.GetWorldRight()), Vector4.Dot(d, car.GetWorldForward()), Vector4.Dot(d, car.GetWorldUp()), 0.0);
+  }
+
   // Nobody sits in `slot`, or `child` itself does.
   public static func FreeFor(game: GameInstance, vehicle: ref<VehicleObject>, slot: CName, child: EntityID) -> Bool {
     if !VehicleComponent.IsSlotOccupied(game, vehicle.GetEntityID(), slot) {

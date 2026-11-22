@@ -30,6 +30,8 @@ void SetPoseSource(const RED4ext::Handle<RED4ext::ent::Entity> &entity);
 void BindPosePuppet(std::uint32_t player, const RED4ext::Handle<RED4ext::ent::Entity> &entity);
 // Log counters and checks since the last report.
 void PoseStreamReport();
+// (test) a seated puppet's hips: 0 its player's, 1 their height only.
+void PoseSeatedHips(int mode);
 
 // Scene replay (docs/architecture/scene-replay.md), game thread. Host: the
 // NPC whose body is read as actor `npc` (null entity: no longer). Guest: the
