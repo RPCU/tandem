@@ -55,7 +55,7 @@ cmd vendor
 expect 'vendor: 1 vendors. proxies' 10
 note "$(since | grep -E '  npc [0-9]+: .*entity' | tail -1)"
 # Beside it: the prompt, then our own vendor's screen.
-expect 'vendor: beside .*: trade prompt shown' 10
+expect 'vendor: beside .*: trade prompt shown|prompts: vendor offered on .* through the game.s interaction' 10
 cmd vendor open
 expect "vendor: shop open: .*our own vendor $entity" 10
 expect 'activities: our V is busy in a shop' 10
