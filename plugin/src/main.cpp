@@ -11,6 +11,7 @@
 #include "engine/quests.hpp"
 #include "engine/scenes.hpp"
 #include "engine/trace.hpp"
+#include "engine/vehiclemove.hpp"
 #include "installed.hpp"
 #include "log.hpp"
 #include "mods.hpp"
@@ -257,6 +258,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     // §13.142), which our proxies' deletions make likelier too.
     const auto dismemberment = engine::InstallDismembermentGuard(sdk, handle);
     sdk->gameStates->Add(handle, RED4ext::EGameStateType::Running, &g_running);
+    engine::AskVehicleMove(runtime.config.kinematicRide);
     if (runtime.config.pose)
       engine::InstallPoseStream(sdk, handle);
     else

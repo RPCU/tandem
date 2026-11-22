@@ -18,6 +18,9 @@ bool CanMoveVehicles();
 // The startup check (engine/access.cpp): the class size and the move's
 // address; the feature "vehicle move" is on or off after it.
 bool CheckVehicleMove();
+// Whether tandem.ini asks for the kinematic move (kinematic_ride = on);
+// before the first frame's check. Not asked: the feature is "not asked for".
+void AskVehicleMove(bool asked);
 bool MoveVehicle(RED4ext::ent::Entity *entity, float x, float y, float z, float i, float j, float k,
                  float r, float seconds);
 } // namespace tandem::plugin::engine

@@ -59,7 +59,20 @@ MoveToFn MoveTo() {
 }
 } // namespace
 
+namespace {
+bool g_asked = false;
+} // namespace
+
+void AskVehicleMove(bool asked) { g_asked = asked; }
+
 bool CheckVehicleMove() {
+  // Not asked for (kinematic_ride = on is opt-in; teleports are the
+  // default, vehicles.md "How a copy is moved"): not a degradation.
+  if (!g_asked) {
+    FeatureNotAsked(feature::kVehicleMove,
+                    "tandem.ini kinematic_ride is not on (teleports, the default)");
+    return false;
+  }
   if (!VehicleClass()) {
     FeatureOff(feature::kVehicleMove, "vehicleBaseObject is not the size measured on 2.50");
     return false;
