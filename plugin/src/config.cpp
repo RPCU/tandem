@@ -153,7 +153,7 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
              key == "recorder" || key == "recorder_pose" || key == "friendly_fire" ||
              key == "markers" || key == "party_hud" || key == "enemy_scaling" ||
              key == "death_ledger" || key == "death_bodies" || key == "overlap_despawn" ||
-             key == "native_prompts" || key == "kinematic_ride" || key == "saves") {
+             key == "native_prompts" || key == "saves") {
     auto &flag = key == "story"             ? config.story
                  : key == "quest_freeze"    ? config.questFreeze
                  : key == "quest_interact"  ? config.questInteract
@@ -166,7 +166,6 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
                  : key == "death_bodies"    ? config.deathBodies
                  : key == "overlap_despawn" ? config.overlapDespawn
                  : key == "native_prompts"  ? config.nativePrompts
-                 : key == "kinematic_ride"  ? config.kinematicRide
                  : key == "saves"           ? config.saves
                                             : config.recorderPose;
     if (value == "on" || value == "true")
@@ -359,6 +358,20 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.overlap = std::string(value);
     else
       return Bad("overlap is density, area or off");
+  } else if (key == "vehicle_move") {
+    if (value == "teleport" || value == "kinematic" || value == "velocity")
+      config.vehicleMove = std::string(value);
+    else
+      return Bad("vehicle_move is teleport, kinematic or velocity");
+  } else if (key == "kinematic_ride") {
+    // Its older form (2026-11-22): on was the engine's move on a simulated body.
+    if (value == "on" || value == "true")
+      config.vehicleMove = "velocity";
+    else if (value == "off" || value == "false") {
+      if (config.vehicleMove == "velocity")
+        config.vehicleMove = "teleport";
+    } else
+      return Bad("kinematic_ride is on or off");
   } else if (key == "nameplates") {
     // on, true: what they were before near and always (tandem.ini files of then).
     if (value == "near" || value == "on" || value == "true")
@@ -425,8 +438,10 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return OnOff(config.overlapDespawn);
   if (key == "native_prompts")
     return OnOff(config.nativePrompts);
+  if (key == "vehicle_move")
+    return config.vehicleMove;
   if (key == "kinematic_ride")
-    return OnOff(config.kinematicRide);
+    return OnOff(config.vehicleMove == "velocity");
   if (key == "saves")
     return OnOff(config.saves);
   if (key == "nameplates")

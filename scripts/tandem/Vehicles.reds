@@ -217,4 +217,6 @@ public class TandemMoved {
   public let stalls: Int32;
   public let woken: Bool;
   public let teleportOnly: Bool;
+  // Held in the engine's kinematic state by us (the kinematic path).
+  public let held: Bool;
 }

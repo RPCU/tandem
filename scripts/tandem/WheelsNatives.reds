@@ -70,6 +70,12 @@ public native class TandemWheels extends IScriptable {
   // ... and whether it can be used in this game (the layout check).
   public static native func CanMove() -> Bool
   public static native func Move(vehicle: ref<Entity>, position: Vector4, orientation: Quaternion, seconds: Float) -> Bool
+  // The engine's kinematic state for a vehicle Move drives (on: a kinematic
+  // body, put where told; off: its physics its own again), whether it can
+  // be used here, and whether a body is in it now.
+  public static native func CanHold() -> Bool
+  public static native func Hold(vehicle: ref<Entity>, on: Bool) -> Bool
+  public static native func Held(vehicle: ref<Entity>) -> Bool
 
   // Our own vehicles: the destruction grid and parts as the game reports
   // them, then how it stands (sent when it changed).

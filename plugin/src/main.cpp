@@ -258,7 +258,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     // §13.142), which our proxies' deletions make likelier too.
     const auto dismemberment = engine::InstallDismembermentGuard(sdk, handle);
     sdk->gameStates->Add(handle, RED4ext::EGameStateType::Running, &g_running);
-    engine::AskVehicleMove(runtime.config.kinematicRide);
+    engine::AskVehicleMove(runtime.config.vehicleMove);
     if (runtime.config.pose)
       engine::InstallPoseStream(sdk, handle);
     else
