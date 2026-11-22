@@ -999,8 +999,8 @@ load() {
     echo "+ wait for the menu; xdo: a click on Continue, then space until playing"
     return 0
   }
-  wait_log 'main menu world|in game' 300 || die "$name: no main menu in 5 minutes ($(start_log || true))"
-  if ! wait_log 'in game' 20; then
+  wait_log 'main menu world|in game|playing \(solo\)' 300 || die "$name: no main menu in 5 minutes ($(start_log || true))"
+  if ! wait_log 'in game|playing \(solo\)' 20; then
     local size=${INSTANCE_SIZE:-1280x720}
     local width=${size%x*} height=${size#*x}
     # The first click can come before the menu takes clicks (a first start,
