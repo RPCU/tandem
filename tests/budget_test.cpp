@@ -53,6 +53,7 @@ const char *NameOf(Play play) {
 struct Result {
   double upKbps{}, downKbps{};
   std::string summary;
+  std::string table; // every stream (net::Table)
 };
 
 // Runs `play` for `seconds` with `guests` guests; the link measured is the
@@ -211,7 +212,7 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
   const auto delta = joined.front()->Traffic() - *before;
   const double s = static_cast<double>(net::NowUs() - measuredFrom) / 1e6;
   return {net::WireKbps(delta, net::kSent, s), net::WireKbps(delta, net::kReceived, s),
-          net::Summary(delta, s, 4)};
+          net::Summary(delta, s, 4), net::Table(delta, s)};
 }
 } // namespace
 
@@ -225,6 +226,9 @@ TEST_CASE("typical sessions stay within the bandwidth budget, each way") {
                         "{:6.1f} kbit/s | {}",
                         NameOf(play), legacy.upKbps, legacy.downKbps, compact.upKbps,
                         compact.downKbps, compact.summary));
+    // The fullest row, stream by stream (the numbers of netcode.md's table).
+    if (play == Play::Fight)
+      MESSAGE(std::format("{}, every stream:\n{}", NameOf(play), compact.table));
     CHECK(compact.upKbps < kBudgetKbps);
     CHECK(compact.downKbps < (play == Play::Fight ? kFightDownKbps : kBudgetKbps));
     CHECK(compact.upKbps <= legacy.upKbps * 1.05);
