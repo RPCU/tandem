@@ -680,7 +680,7 @@ public class TandemPartyHud {
 
   // One projection of `body`: its slot lifted by `lift`, or the world point
   // `at` when it has no such slot.
-  private func Project(body: ref<GameObject>, component: CName, slot: CName, lift: Float, at: Vector4) -> ref<TandemPlateAnchor> {
+  private func ProjectionOf(body: ref<GameObject>, component: CName, slot: CName, lift: Float, at: Vector4) -> ref<TandemPlateAnchor> {
     let anchor = new TandemPlateAnchor();
     // (Every field set: the VM does not clear a local.)
     let data: inkScreenProjectionData;
@@ -735,12 +735,12 @@ public class TandemPartyHud {
       let there = WorldPosition.ToVector4(WorldTransform.GetWorldPosition(transform));
       height = there.Z - feet.Z;
     }
-    entry.head = this.Project(body, component, slot, 0.0, head);
+    entry.head = this.ProjectionOf(body, component, slot, 0.0, head);
     if !IsDefined(entry.head) {
       this.m_tripped = "RegisterScreenProjection gave nothing";
       return;
     }
-    entry.chest = this.Project(body, component, slot, -1.0, chest);
+    entry.chest = this.ProjectionOf(body, component, slot, -1.0, chest);
     this.m_host.TandemWake();
     entry.anchoredTo = body;
     entry.slot = slot;
@@ -752,7 +752,7 @@ public class TandemPartyHud {
     TandemNative.Log(s"hud: player \(entry.player)'s nameplate anchored by the engine: \(how)");
   }
 
-  private func Release(anchor: ref<TandemPlateAnchor>) -> Void {
+  private func Unlisten(anchor: ref<TandemPlateAnchor>) -> Void {
     if !IsDefined(anchor) || !IsDefined(anchor.projection) {
       return;
     }
@@ -766,9 +766,9 @@ public class TandemPartyHud {
   }
 
   private func Unanchor(entry: ref<TandemPartyEntry>) -> Void {
-    this.Place(entry, false);
-    this.Release(entry.head);
-    this.Release(entry.chest);
+    this.PlateUnder(entry, false);
+    this.Unlisten(entry.head);
+    this.Unlisten(entry.chest);
     entry.head = null;
     entry.chest = null;
     entry.anchoredTo = null;
@@ -778,7 +778,7 @@ public class TandemPartyHud {
 
   // The plate under the carrier's root, where the engine's listener places
   // it, or back under our own canvas.
-  private func Place(entry: ref<TandemPartyEntry>, engine: Bool) -> Void {
+  private func PlateUnder(entry: ref<TandemPartyEntry>, engine: Bool) -> Void {
     if Equals(entry.byEngine, engine) {
       return;
     }
@@ -803,7 +803,7 @@ public class TandemPartyHud {
   // well inside the frame: never told, off screen, or a quarter of the
   // screen's height away, its controller is woken after 1 s (it sleeps
   // between hits) and the engine's projection given up after 3 s.
-  private func Watch(entry: ref<TandemPartyEntry>, now: Float) -> Void {
+  private func Compare(entry: ref<TandemPartyEntry>, now: Float) -> Void {
     let inside = entry.ownSeen && entry.ownX > 0.15 && entry.ownX < 0.85 && entry.ownY > 0.15 && entry.ownY < 0.85;
     let wrong = false;
     entry.apart = -1.0;
@@ -839,14 +839,14 @@ public class TandemPartyHud {
   // nameplate is and what placed it, both projections of the same tick:
   // path: engine, script; apart: the engine's from ours, percent of the
   // screen's height (none: ours placed it).
-  public func PlateQuery(player: Uint32, what: String) -> String {
+  public func PlateQuery(whose: Uint32, part: String) -> String {
     for entry in this.m_entries {
-      if player == 0u || entry.player == player {
+      if whose == 0u || entry.player == whose {
         let on = entry.plateNow ? "on" : "off";
-        if Equals(what, "path") {
+        if Equals(part, "path") {
           return entry.byEngine ? "engine" : "script";
         }
-        if Equals(what, "apart") {
+        if Equals(part, "apart") {
           return entry.byEngine && entry.apart >= 0.0 ? FloatToStringPrec(100.0 * entry.apart / this.m_hostHeight, 2) : "none";
         }
         if !entry.byEngine {
@@ -1120,12 +1120,15 @@ public class TandemPartyHud {
       }
       let placed = IsDefined(entry.head) && entry.head.updates > 0;
       if IsDefined(entry.head) {
-        this.Watch(entry, now);
+        this.Compare(entry, now);
       }
-      this.Place(entry, placed);
+      this.PlateUnder(entry, placed);
       if placed {
         headSeen = entry.head.inScreen;
-        seen = headSeen || (IsDefined(entry.chest) && entry.chest.updates > 0 ? entry.chest.inScreen : atChest.visible);
+        seen = headSeen || atChest.visible;
+        if IsDefined(entry.chest) && entry.chest.updates > 0 {
+          seen = headSeen || entry.chest.inScreen;
+        }
       }
       let off = !seen || hiddenBody;
       entry.where.SetVisible(linked && off && !this.m_compact);
@@ -1209,7 +1212,8 @@ public class TandemPartyHud {
   private func Log(entry: ref<TandemPartyEntry>, state: String) -> Void {
     let where = entry.inView ? "in view" : s"off screen (arrow side \(entry.side))";
     let plate = entry.plateOn ? "on" : "off";
-    TandemNative.Log(s"hud: player \(entry.player) \"\(TandemPartyHud.NameOf(entry.player))\" health \(entry.health) % status \(TandemPartyHud.StatusName(entry.status))\(StrLen(state) > 0 ? s" [\(state)]" : ""), \(entry.metres) m, \(where), nameplate \(plate), \(entry.linked ? "linked: in the party list" : "not linked: no entry"), placed by \(entry.loggedEngine ? "the engine" : "our projection")");
+    let by = entry.loggedEngine ? "the engine" : "our projection";
+    TandemNative.Log(s"hud: player \(entry.player) \"\(TandemPartyHud.NameOf(entry.player))\" health \(entry.health) % status \(TandemPartyHud.StatusName(entry.status))\(StrLen(state) > 0 ? s" [\(state)]" : ""), \(entry.metres) m, \(where), nameplate \(plate), \(entry.linked ? "linked: in the party list" : "not linked: no entry"), placed by \(by)");
   }
 
   public static func StatusName(status: Int32) -> String {
