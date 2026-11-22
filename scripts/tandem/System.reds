@@ -1620,12 +1620,17 @@ public class TandemSystem extends ScriptableSystem {
     } else if Equals(command, "vehicle moves") {
       // (test) how the vehicles other games run were moved here.
       TandemNative.Log(s"vehicle \(this.MoveReport())");
+    } else if Equals(command, "street list") {
+      // (test) every shared vehicle as we have it, to compare two games.
+      if IsDefined(this.m_traffic) {
+        this.m_traffic.ListReport();
+      }
     } else if Equals(command, "street lanes") {
       // (test) our driven traffic round our V, and what stopped for whom.
       if IsDefined(this.m_traffic) {
         this.m_traffic.LanesReport();
       }
-    } else if Equals(command, "npc parity") || StrBeginsWith(command, "npc sense ") {
+    } else if Equals(command, "npc parity") || StrBeginsWith(command, "npc sense ") || StrBeginsWith(command, "npc seats ") {
       // (test) "npc parity": how far each NPC we run is in detecting each V
       // (ours against the puppets'); "npc sense player|npc": the puppets'
       // visible object as a player's, or as the NPC body's (the default).
@@ -4110,7 +4115,8 @@ public class TandemSystem extends ScriptableSystem {
             this.m_moveStalledBodies += 1;
             if this.m_moveStalledBodies <= 5 {
               TandemDegraded.Fallback("vehicle teleported", s"body \(EntityID.ToDebugStringDecimal(id)) does not follow the kinematic move (15 frames, \(gap) m from its place)");
-              TandemNative.Log(s"vehicles: body \(EntityID.ToDebugStringDecimal(id)) does not follow the kinematic move (15 frames, \(gap) m from its place): teleported from now on");
+              let stuck = car as VehicleObject;
+              TandemNative.Log(s"vehicles: body \(EntityID.ToDebugStringDecimal(id)) \(IsDefined(stuck) ? TDBID.ToStringDEBUG(stuck.GetRecordID()) : "not a vehicle") does not follow the kinematic move (15 frames, \(gap) m from its place, a crowd vehicle \(IsDefined(stuck) && stuck.IsCrowdVehicle()), ours \(!GameInstance.GetDynamicEntitySystem().IsManaged(id))): teleported from now on");
             }
             if this.m_moveStalledBodies >= 5 && this.m_moveFollowed == 0 {
               this.m_moveKinematic = false;
@@ -4131,7 +4137,9 @@ public class TandemSystem extends ScriptableSystem {
     }
     let same = !first && AbsF(to.X - moved.x) < 0.002 && AbsF(to.Y - moved.y) < 0.002 && AbsF(to.Z - moved.z) < 0.002
       && AbsF(orientation.i * moved.i + orientation.j * moved.j + orientation.k * moved.k + orientation.r * moved.r) > 0.999999;
-    if same && moved.rested && gap < 0.05 {
+    // (a parked car rests 0.1 to 0.2 m from its owner's transform, on its own
+    // suspension: moved every frame it never came nearer)
+    if same && moved.rested && gap < 1.0 {
       moved.at = now;
       return;
     }
@@ -4142,7 +4150,10 @@ public class TandemSystem extends ScriptableSystem {
         moved.py = is.Y;
         moved.pz = is.Z;
         moved.kinematic = true;
-        moved.rested = same && gap < 0.003;
+        moved.rested = same;
+        if same {
+          moved.stalls = 0;
+        }
         this.Moved(moved, to, orientation, now);
         return;
       }

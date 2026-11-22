@@ -85,6 +85,8 @@ public class TandemNpcProxy {
   public let seatRetryAt: Float;
   public let seatedIn: EntityID;
   public let seatedSlot: CName;
+  // Since when its body is here (0: not seen yet): seated a second later.
+  public let bodySince: Float;
   // Out of a seat: our controller goes back on at this time.
   public let reattachAt: Float;
   // What it was spawned from (to bring it back, see Reconcile).
@@ -159,6 +161,11 @@ public class TandemNpcs {
   private let m_riders: Int32;
   private let m_hidden: Int32;
   private let m_hiddenIds: array<EntityID>;
+  // Our own NPCs to hold back, since when our game saw each (SuppressSoon).
+  private let m_freshIds: array<EntityID>;
+  // (test: npc seats off) proxies are not seated in shared vehicles.
+  private let m_noStreetSeats: Bool;
+  private let m_freshAt: array<Float>;
   // Host: guests' status effects waiting for their puppet (the instigator).
   private let m_pendingEffects: array<TandemNpcEvent>;
   private let m_pendingSince: array<Float>;
@@ -691,6 +698,29 @@ public class TandemNpcs {
     return this.m_hiddenIds;
   }
 
+  // ... but not in the frames it streams in: hidden on the tick it was first
+  // seen, a fresh NPC took the game down a moment later (a riding guest,
+  // three rides in three: 0xc0000005 at +0x253048, a component with no
+  // owner yet told of the entity's visibility, twice right after these
+  // lines; and at +0x2AE4A10; engine/npcs.md §13.154). It is held back a
+  // second after our game first saw it, and not announced meanwhile.
+  private func SuppressSoon(npc: ref<ScriptedPuppet>) -> Void {
+    let id = npc.GetEntityID();
+    let i = ArrayFindFirst(this.m_freshIds, id);
+    if i < 0 {
+      if ArraySize(this.m_freshIds) >= 256 {
+        ArrayErase(this.m_freshIds, 0);
+        ArrayErase(this.m_freshAt, 0);
+      }
+      ArrayPush(this.m_freshIds, id);
+      ArrayPush(this.m_freshAt, this.m_now);
+    } else if this.m_now - this.m_freshAt[i] >= 1.0 {
+      ArrayErase(this.m_freshIds, i);
+      ArrayErase(this.m_freshAt, i);
+      this.Suppress(npc);
+    }
+  }
+
   private func Suppress(npc: ref<ScriptedPuppet>) -> Void {
     let id = npc.GetEntityID();
     if ArrayContains(this.m_hiddenIds, id) {
@@ -702,6 +732,7 @@ public class TandemNpcs {
     if IsDefined(vendors) {
       vendors.Keep(npc);
     }
+    TandemNative.LogDebug(s"npcs: holding back our own \(EntityID.ToDebugString(id)) \(TDBID.ToStringDEBUG(npc.GetRecordID()))");
     TandemProxies.Pacify(npc);
     npc.HideIrreversibly();
     ArrayPush(this.m_hiddenIds, id);
@@ -898,14 +929,14 @@ public class TandemNpcs {
           // hidden at the wheel, not announced while in there.
           riders += 1;
         } else if by != 0u && !TandemRegionRules.Engaged(this.m_game, npc) {
-          this.Suppress(npc);
+          this.SuppressSoon(npc);
         } else if TandemVendors.IsBuried(npc) {
           // Our copy of a vendor the session says died (Vendors.reds).
-          this.Suppress(npc);
+          this.SuppressSoon(npc);
         } else if hides && this.IsTwinOfProxy(TandemPlaced.IdOf(npc)) {
           // Another game runs this placed NPC already (its proxy is here).
-          this.Suppress(npc);
-          TandemNative.Log(s"regions: our own \(EntityID.ToDebugString(id)) is a placed NPC another game runs: held back");
+          this.SuppressSoon(npc);
+          TandemNative.LogDebug(s"regions: our own \(EntityID.ToDebugString(id)) is a placed NPC another game runs: held back");
         } else {
           known = new TandemNpcKnown();
           known.id = id;
@@ -1165,6 +1196,11 @@ public class TandemNpcs {
       return;
     }
     let watched = this.Watched(player);
+    if StrBeginsWith(command, "npc seats ") {
+      this.m_noStreetSeats = Equals(command, "npc seats off");
+      TandemNative.Log(s"npc seats: proxies seated in shared vehicles \(!this.m_noStreetSeats)");
+      return;
+    }
     if StrBeginsWith(command, "npc sense ") {
       let asPlayer = Equals(command, "npc sense player");
       let n = 0;
@@ -1499,6 +1535,21 @@ public class TandemNpcs {
     }
     if proxy.seatOwner == 0u {
       proxy.seatChanged = false;
+      return;
+    }
+    if this.m_noStreetSeats && TandemStreet.IsStreetSeat(proxy.seatOwner) {
+      proxy.seatRetryAt = now + 1.0;
+      return;
+    }
+    // Not in the frames its body comes: a guest crashed twice within 0.3 s of
+    // seating two proxies 33 ms after their bodies came (0xc0000005 at
+    // +0x2AE4A10, a gameAction state handed a null owner on a job thread:
+    // 2026-11-22, engine/npcs.md §13.154).
+    if proxy.bodySince == 0.0 {
+      proxy.bodySince = now;
+    }
+    if now - proxy.bodySince < 1.0 {
+      proxy.seatRetryAt = now + 0.25;
       return;
     }
     let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
