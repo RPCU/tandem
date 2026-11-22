@@ -14,7 +14,7 @@ cmd coop status
 expect 'coop: Not in a session' 10
 # The game as a guest of the mock player, from the menu's Join.
 peer host --mode front --body male
-cmd coop join "$here:27450"
+cmd coop join "$here:$gport"
 expect 'session: starting as join of' 10
 expect 'in the session as player [0-9]+' 20
 expect 'coop notice: Joined' 10
