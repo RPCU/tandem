@@ -1610,6 +1610,11 @@ public class TandemSystem extends ScriptableSystem {
       TandemLoot.Command(this.GetGameInstance(), command);
     } else if Equals(command, "puppet attitude") {
       this.ReportAttitudes();
+    } else if Equals(command, "puppet relations") {
+      // (test) whether the engine took the declared relations, again.
+      if IsDefined(this.m_attitudes) {
+        TandemNative.Log(this.m_attitudes.Declared());
+      }
     } else if StrBeginsWith(command, "puppet group") {
       // (test) the puppets' attitude group, now and for those to come
       // ("puppet group" alone: each its own again).
@@ -3155,7 +3160,7 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   private func TickAttitudes() -> Void {
-    if !IsDefined(this.m_attitudes) || ArraySize(this.m_puppets) == 0 {
+    if !IsDefined(this.m_attitudes) {
       return;
     }
     let bodies: array<ref<GameObject>>;
@@ -3165,7 +3170,16 @@ public class TandemSystem extends ScriptableSystem {
         ArrayPush(bodies, body);
       }
     }
-    this.m_attitudes.Tick(this.Now(), bodies);
+    // The NPCs that came since the last tick (taken off their queue with or
+    // without puppets), then the 2 s scan.
+    this.m_attitudes.Spawned(this.Now(), bodies);
+    if ArraySize(this.m_puppets) > 0 {
+      this.m_attitudes.Tick(this.Now(), bodies);
+    }
+  }
+
+  public func Attitudes() -> ref<TandemAttitudes> {
+    return this.m_attitudes;
   }
 
   // (test, tools/game.sh cmd puppet attitude) each puppet's attitude group,

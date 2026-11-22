@@ -47,7 +47,7 @@ static_assert(alignof(TandemStreamedPoint) <= 8, "the script VM aligns struct lo
 
 namespace {
 // Kinds (scripts/tandem/StreamingNatives.reds TandemStreaming.Kind*).
-constexpr std::size_t kKinds = 9;
+constexpr std::size_t kKinds = 10;
 // A kind nobody drains (no tick yet: the main menu's world) stops growing
 // here; what is past it is dropped, and counted.
 constexpr std::size_t kMaxQueued = 65536;

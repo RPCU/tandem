@@ -12,16 +12,31 @@
 //   between every agent now in group a and every agent now in group b
 //   (per-agent pairs, both ways). Agents that join either group later do
 //   not get it, and GetAttitudeRelation never shows it.
-// So a puppet's group gives it nothing by itself. It gets V's attitudes
-// agent by agent:
-// - when it is put in its group: SetAttitudeRelation from it to every
-//   group seen on an NPC around V or a puppet, with V's group relation;
-// - every 2 s, each NPC around V or a puppet: the attitudes it and V have
-//   to each other, onto the puppet's agent (AttitudeAgent.SetAttitudeTowards),
-//   once per NPC and puppet, again when the NPC's attitude to V changes (a
-//   quest turning a faction friendly or the police hostile). What changed
-//   between an NPC and a puppet alone stays (that V provoked it).
+// So the group table must hold the puppets' relations from the start: the
+// player's own Attitude records are cloned for each group of ours as the
+// tweaks load (AttitudeTweak.reds). Start reads the table back and logs
+// whether the engine took them ("attitudes: declared relations ...").
+// What the records cannot give is copied at run time, agent by agent:
+// - a relation of V's that changed since the records (a quest's or a
+//   security system's persistent change), or every relation when the
+//   records did not take: SetAttitudeRelation between a puppet's group and
+//   each group seen on an NPC around V or a puppet;
+// - each NPC, as it and V see each other, onto the puppet's agent
+//   (AttitudeAgent.SetAttitudeTowards) where that differs from what the
+//   groups give: on the tick after the NPC came into the world
+//   (NPCPuppet.OnGameAttached, queued), and every 2 s for what changed
+//   since (a quest turning one NPC friendly). What changed between an NPC
+//   and a puppet alone stays (that V provoked it).
 // Nothing is persistent: never saved.
+
+// An NPC came into our world. It may run on a job thread while the world
+// streams in: queued only, taken by TandemAttitudes.Spawned on the tick.
+@wrapMethod(NPCPuppet)
+protected cb func OnGameAttached() -> Bool {
+  let result = wrappedMethod();
+  TandemStreaming.QueueStreamed(TandemStreamKind.Npc(), this.GetEntityID(), n"None", true);
+  return result;
+}
 
 public class TandemNpcAttitude {
   public let npc: EntityID;
@@ -45,6 +60,12 @@ public class TandemAttitudes {
   // Each NPC around and each puppet, with the NPC's attitudes to and from V
   // as last copied onto that puppet.
   private let m_pairs: array<ref<TandemNpcAttitude>>;
+  // NPCs that came into the world next to a puppet, by what the engine's
+  // own relations gave the puppet on our first tick with them: V's
+  // attitudes, or not (then copied).
+  private let m_freshSame: Int32;
+  private let m_freshDiffer: Int32;
+  private let m_lastFresh: EntityID;
 
   // One per puppet at a time (3 guests at most, core endpoint.hpp kMaxGuests).
   public static func Groups() -> array<CName> {
@@ -71,7 +92,154 @@ public class TandemAttitudes {
       }
     }
     TandemNative.Log(s"attitudes: \(declared) of 4 puppet groups declared");
+    TandemStreaming.TakeStreamed(TandemStreamKind.Npc());
     this.Befriend(TandemAttitudes.Shared());
+    TandemNative.Log(this.Declared());
+  }
+
+  // Whether the engine's group table holds the relations AttitudeTweak.reds
+  // declared: every vanilla group's relation to `player` next to its
+  // relation to the first group of ours, both read from the table
+  // (GetAttitudeRelation never shows what the runtime copy sets). A group
+  // of ours with no relation reads friendly (0), so the groups that tell are
+  // those `player` is not friendly with. One line, for the log and for
+  // "puppet relations" (test).
+  public func Declared() -> String {
+    let read = TweakDBInterface.GetInt(TandemAttitudeRelations.ReadFlat(), -1);
+    let cloned = TweakDBInterface.GetInt(TandemAttitudeRelations.MirroredFlat(), -1);
+    let tweak = s"tweak: \(read) Attitude records read, \(TweakDBInterface.GetInt(TandemAttitudeRelations.PlayersFlat(), -1)) with player, \(cloned) cloned";
+    if read < 0 {
+      tweak = "tweak: never ran";
+    }
+    let system = GameInstance.GetAttitudeSystem(this.m_game);
+    let all = TandemAttitudes.Groups();
+    let ours = all[0];
+    let groups = TandemAttitudeRelations.RecordsOf("AttitudeGroup");
+    let telling = 0;
+    let same = 0;
+    let differ = "";
+    for record in groups {
+      let group = record as AttitudeGroup_Record;
+      let name = n"None";
+      if IsDefined(group) {
+        name = group.Name();
+      }
+      if IsNameValid(name) && !TandemAttitudes.IsOurs(name) && NotEquals(name, n"player") {
+        let players = EnumInt(system.GetAttitudeRelation(n"player", name));
+        let puppets = EnumInt(system.GetAttitudeRelation(ours, name));
+        if players != 0 {
+          telling += 1;
+        }
+        if players == puppets && players != 0 {
+          same += 1;
+        } else if players != puppets && StrLen(differ) < 120 {
+          differ += s" \(NameToString(name)) \(players)/\(puppets)";
+        }
+      }
+    }
+    let verdict = "unknown (no group player is not friendly with)";
+    if telling > 0 && same == telling {
+      verdict = "took";
+    } else if telling > 0 && same == 0 {
+      verdict = "did NOT take (the runtime copy carries them)";
+    } else if telling > 0 {
+      verdict = "took in part";
+    }
+    let line = s"attitudes: declared relations \(verdict): \(same) of \(telling) groups player is not friendly with read the same for \(NameToString(ours)), of \(ArraySize(groups)) groups (\(tweak))";
+    if StrLen(differ) > 0 {
+      line += s"; player/\(NameToString(ours)) differ:\(differ)";
+    }
+    return line;
+  }
+
+  // (test query attitude ...) "V a/b puppet c/d": how V and a puppet stand
+  // with a group (the engine's group table: the group to it / it to the
+  // group) or with an NPC (agent to agent: the NPC to it / it to the NPC);
+  // EAIAttitude values, 0 friendly, 1 neutral, 2 hostile.
+  public func QueryGroup(group: CName, puppet: CName) -> String {
+    let system = GameInstance.GetAttitudeSystem(this.m_game);
+    let vGroup = this.PlayerGroup();
+    return s"V \(EnumInt(system.GetAttitudeRelation(group, vGroup)))/\(EnumInt(system.GetAttitudeRelation(vGroup, group))) puppet \(EnumInt(system.GetAttitudeRelation(group, puppet)))/\(EnumInt(system.GetAttitudeRelation(puppet, group)))";
+  }
+
+  public func QueryNpc(npc: ref<GameObject>, body: ref<GameObject>) -> String {
+    let player = GetPlayer(this.m_game);
+    if !IsDefined(npc) || !IsDefined(body) || !IsDefined(player) || !IsDefined(npc.GetAttitudeAgent()) || !IsDefined(body.GetAttitudeAgent()) {
+      return "none";
+    }
+    let group = npc.GetAttitudeAgent().GetAttitudeGroup();
+    return s"V \(EnumInt(GameObject.GetAttitudeBetween(npc, player)))/\(EnumInt(GameObject.GetAttitudeBetween(player, npc))) puppet \(EnumInt(GameObject.GetAttitudeBetween(npc, body)))/\(EnumInt(GameObject.GetAttitudeBetween(body, npc))) (\(NameToString(group)))";
+  }
+
+  // (test query attitude fresh) the NPCs that came next to a puppet since
+  // the session began, by what the engine alone gave the puppet, and the
+  // last one (QueryNpc reads it: "test query attitude npc fresh").
+  public func QueryFresh() -> String {
+    return s"\(this.m_freshSame) same \(this.m_freshDiffer) differ";
+  }
+
+  public func LastFresh() -> EntityID {
+    return this.m_lastFresh;
+  }
+
+  // Each tick: the NPCs that came into the world since the last one get
+  // V's attitudes on every puppet now, not at the next 2 s scan. Logged
+  // (debug) per NPC and puppet: what the engine's relations alone gave
+  // ("engine alone": the declared relations at work), and what stands after
+  // the copy, which is what the NPC's first decisions read.
+  public func Spawned(now: Float, bodies: array<ref<GameObject>>) -> Void {
+    let streamed = TandemStreaming.TakeStreamed(TandemStreamKind.Npc());
+    let player = GetPlayer(this.m_game);
+    if ArraySize(streamed) == 0 || ArraySize(bodies) == 0 || !IsDefined(player) {
+      return;
+    }
+    let vAgent = player.GetAttitudeAgent();
+    let fresh: array<ref<NPCPuppet>>;
+    for event in streamed {
+      let npc = GameInstance.FindEntityByID(this.m_game, event.entity) as NPCPuppet;
+      if IsDefined(npc) && IsDefined(npc.GetAttitudeAgent()) && !npc.IsPrevention() && !ArrayContains(fresh, npc) {
+        let group = npc.GetAttitudeAgent().GetAttitudeGroup();
+        if !TandemAttitudes.IsOurs(group) {
+          ArrayPush(fresh, npc);
+        }
+      }
+    }
+    if ArraySize(fresh) == 0 || !IsDefined(vAgent) {
+      return;
+    }
+    let before: array<Bool>;
+    for npc in fresh {
+      for body in bodies {
+        ArrayPush(before, this.AsV(npc, vAgent, body));
+      }
+    }
+    this.See(fresh);
+    this.CopyAgents(now, player, fresh, bodies);
+    let i = 0;
+    for npc in fresh {
+      this.m_lastFresh = npc.GetEntityID();
+      for body in bodies {
+        let after = this.AsV(npc, vAgent, body);
+        if before[i] {
+          this.m_freshSame += 1;
+        } else {
+          this.m_freshDiffer += 1;
+        }
+        let group = npc.GetAttitudeAgent().GetAttitudeGroup();
+        TandemNative.LogDebug(s"attitudes: fresh npc \(EntityID.ToDebugStringDecimal(npc.GetEntityID())) (\(NameToString(group))) to V \(EnumInt(npc.GetAttitudeAgent().GetAttitudeTowards(vAgent))), puppet \(EntityID.ToDebugStringDecimal(body.GetEntityID())) engine alone: \(before[i] ? "same" : "differs"), on its first tick: \(after ? "same" : "differs")");
+        i += 1;
+      }
+    }
+  }
+
+  // Whether an NPC and a puppet see each other as the NPC and V do.
+  private func AsV(npc: ref<NPCPuppet>, vAgent: ref<AttitudeAgent>, body: ref<GameObject>) -> Bool {
+    let npcAgent = npc.GetAttitudeAgent();
+    let bodyAgent = body.GetAttitudeAgent();
+    if !IsDefined(bodyAgent) || !TandemAttitudes.IsOurs(bodyAgent.GetAttitudeGroup()) {
+      return true;
+    }
+    return Equals(npcAgent.GetAttitudeTowards(bodyAgent), npcAgent.GetAttitudeTowards(vAgent)) && Equals(bodyAgent.GetAttitudeTowards(npcAgent), vAgent.GetAttitudeTowards(npcAgent));
   }
 
   // A group for this player's puppet: the one it holds, a free one, or the
@@ -135,15 +303,24 @@ public class TandemAttitudes {
     if !IsDefined(player) {
       return;
     }
-    let vGroup = this.PlayerGroup();
     let around = player.GetNPCsAroundObject(60.0);
     for body in bodies {
-      for npc in body.GetNPCsAroundObject(60.0) {
+      let near = body.GetNPCsAroundObject(60.0);
+      for npc in near {
         if !ArrayContains(around, npc) {
           ArrayPush(around, npc);
         }
       }
     }
+    this.See(around);
+    this.CopyAgents(now, player, around, bodies);
+  }
+
+  // The groups of these NPCs that are new to us, and V's relation to every
+  // group seen, where it is new or changed, between the agents of that
+  // group and of ours.
+  private func See(around: array<ref<NPCPuppet>>) -> Void {
+    let vGroup = this.PlayerGroup();
     let added = "";
     for npc in around {
       let agent = npc.GetAttitudeAgent();
@@ -179,7 +356,6 @@ public class TandemAttitudes {
       }
       i += 1;
     }
-    this.CopyAgents(now, player, around, bodies);
   }
 
   // V's group relation to a group, between the agents in one of ours and
@@ -187,6 +363,12 @@ public class TandemAttitudes {
   // both ways; the group table it does not touch is logged for reference).
   private func CopyRelation(ours: CName, other: CName, vTowards: Int32, towardsV: Int32, why: String) -> Void {
     let system = GameInstance.GetAttitudeSystem(this.m_game);
+    // A group met for the first time whose declared relation is V's
+    // already: nothing to set (the engine gives it to every agent, those
+    // to come too).
+    if Equals(why, "new") && EnumInt(system.GetAttitudeRelation(ours, other)) == vTowards && EnumInt(system.GetAttitudeRelation(other, ours)) == towardsV {
+      return;
+    }
     system.SetAttitudeRelation(ours, other, IntEnum<EAIAttitude>(vTowards));
     TandemNative.Log(s"attitudes: \(NameToString(ours)) / \(NameToString(other)) (\(why)): V's \(vTowards)/\(towardsV) set between their agents (group table \(EnumInt(system.GetAttitudeRelation(ours, other))))");
   }

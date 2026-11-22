@@ -259,6 +259,9 @@ read):
 | `held [player N \| puppet]` | `RIGHT LEFT HOW`: the records in the right and left hand slots of our V (player N's puppet, the first remote player's; `none`: empty; `TransactionSystem`) and `dual` when the game dual wields them (our V: its state machine's `IsDualWielding`; a puppet: two weapons in hand, both tagged `DualWield`), else `single` |
 | `npc ID health` | a shared NPC's health, percent: our own NPC or our proxy |
 | `wanted` | our V's wanted level, 0..5 (`PreventionSystem.GetHeatStageAsInt`) |
+| `attitude group NAME` | `V a/b puppet c/d`: the group's relation to V's group / V's to it, then to the first puppet's group / its to it (`AttitudeSystem.GetAttitudeRelation`, the group table; 0 friendly, 1 neutral, 2 hostile) |
+| `attitude npc ID\|fresh\|nearest` | the same between agents (`GameObject.GetAttitudeBetween`), then the NPC's group: a shared NPC's id, the last NPC that came into the world beside a puppet, or the nearest to our V within 60 m |
+| `attitude fresh` | `N same M differ`: the NPCs that came into the world beside a puppet, by what the engine's relations alone gave it next to V's, before any copy (`Attitudes.reds`) |
 | `threat puppet` | the largest threat value an NPC we run near our V holds on the first remote player's puppet (`TargetTrackerComponent`) |
 | `paint [puppet]` | the custom paint the car's own state says (`VehicleComponentPS`): our V's car (the one it sits in, else its last), or the first remote player's car copy: `stock`, `primary R,G,B [secondary R,G,B] [lights HUE]`, `unique RECORD` |
 | `car marks` | the shared vehicles another player's quickhack is marked on now (their traffic ids; `Hacks.reds`), or `none` |
