@@ -30,7 +30,8 @@
   `phone-regroup`, not run in game yet). API for the story work:
   `TandemTravel.OfferRegroup(game, player, reason, label)` (reason 2: a
   story scene; `label` its title) and
-  `TandemTravel.RegroupTo(game, player)`. Every fast travel tandem starts
+  `TandemTravel.RegroupTo(game, player)` (the story's join offer takes it:
+  `story.md`, _Scenes_). Every fast travel tandem starts
   asks for the fast travel loading screen first, as the world map does
   (`inkSetNextLoadingScreenEvent`, type `FastTravel`), and nothing moves V
   (no hop) before that loading screen has ended: in game (2026-11-19) a

@@ -117,7 +117,12 @@ INDEX` (the mock host's). The host's test hub (`cmd story hub`) is held
   - _Scenes_: each game sends its V's scene tier (`StoryState`). A guest
     within 30 m of the host in a tier 3+ scene has its weapons lowered, tier
     4+ also invulnerable; a guest further than 100 m from a tier 4+ scene
-    gets an offer to join (the regroup itself: TODO).
+    gets an offer to join ("NAME started a scene", "Join NAME" on Choice1),
+    once per scene, not across a story gate (`GateBetween`) nor while
+    watching. Taking it is the regroup action (`TandemTravel.RegroupTo`,
+    `travel.md`: its loading screen or hop, our own fast travel locks, the
+    host told "NAME is on the way"); when our V cannot go the offer stays
+    (scenario `story-join`, `cmd story join`; not yet run in game).
   - _Fast travel blocked_ (2026-11-21, not yet run in game): a guest's own
     quest locks say nothing of the host's mission (its story is frozen), so
     the host says it: `kStoryNoFastTravel` (128, the last free bit of
@@ -594,7 +599,7 @@ test watch|play|off`.
       would leave its V past the barrier.
     - Tests: `tests/prefabs_test.cpp`; mock player `--gates N`; scenario
       `gates-guest`; `tools/game.sh cmd story gates`.
-  - Not yet verified in game: scenarios `story-guest`, `story-host`, `story-johnny`,
+  - Not yet verified in game: scenarios `story-guest`, `story-join`, `story-host`, `story-johnny`,
     `story-private`, `story-private-host`, `story-private-calls`, `story-session-items`,
     `story-gigs-apart`, `story-restrict-guest`, `story-restrict-host`,
     `spectate-guest`, `spectate-leave`, `spectate-host`, `spectate-ride`,

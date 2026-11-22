@@ -18,8 +18,7 @@ expect 'choice: hub closed' 5
 expect 'phone: call with judy ended' 10
 # The host's tier 4 with the host not drawn near us: the offer to join.
 expect 'story: join offer shown' 10
-cmd story join
-expect 'story: join offer accepted' 5
+# Taking it: story-join.sh (an idle host stands nowhere to go to).
 expect 'reward: given' 15
 # The reward (QuestRewards.MinigameMoney) reached our inventory.
 query rewarded money

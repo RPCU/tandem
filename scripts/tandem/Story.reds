@@ -89,6 +89,8 @@ public class TandemStorySystem extends ScriptableSystem {
   private let m_holdGod: Bool;
   private let m_offerShown: Bool;
   private let m_offerOpen: Bool;
+  // The offer's key was pressed: taken at the next tick.
+  private let m_offerPressed: Bool;
   // The host's story flags (StoryState: 1 braindance, 2 plays as Johnny),
   // and ours as last sent; story effects of the host's V we wear too.
   private let m_hostFlags: Int32;
@@ -1230,7 +1232,20 @@ public class TandemStorySystem extends ScriptableSystem {
     this.m_restrictions.GuestTick(this.Now(), holds);
     // Far from a cinematic: offered to join (once per scene). Not while
     // watching it: we follow the host's camera wherever it goes.
+    // The key pressed on the offer (OnAction only notes it).
+    if this.m_offerPressed {
+      this.m_offerPressed = false;
+      if this.m_offerOpen {
+        this.AcceptOffer();
+      }
+    }
     if tier >= 4 && !watching && (distance < 0.0 || distance > 100.0) {
+      // Never across a gate our own story keeps closed (StoryWorld's
+      // GateBetween: the join would carry our V through it).
+      if !this.m_offerShown && IsDefined(this.m_world) && this.m_world.GateBetween() {
+        this.m_offerShown = true;
+        TandemNative.Log("story: join offer not shown: a gate our story keeps closed lies between us and the host");
+      }
       if !this.m_offerShown {
         this.m_offerShown = true;
         this.m_offerOpen = true;
@@ -1258,15 +1273,29 @@ public class TandemStorySystem extends ScriptableSystem {
     TandemNative.HookRan(n"Story.TandemStorySystem.OnAction");
     if this.m_offerOpen && Equals(ListenerAction.GetName(action), n"Choice1")
       && Equals(ListenerAction.GetType(action), gameinputActionType.BUTTON_RELEASED) {
-      this.AcceptOffer();
+      // Acted on at the tick (UpdateHolds): the regroup is the travel's.
+      this.m_offerPressed = true;
     }
   }
 
-  public func AcceptOffer() -> Void {
+  // The offer taken: our V goes to the host's by the regroup action
+  // (TandemTravel.RegroupTo: the fast travel's loading screen or a hop, our
+  // own fast travel locks, the host told "NAME is on the way"). When it
+  // cannot go now (locked: the travel's own notice says so) the offer
+  // stays, to be pressed again. False: nothing to accept, or not gone.
+  public func AcceptOffer() -> Bool {
+    if !this.m_offerOpen {
+      TandemNative.Log("story: no join offer to accept");
+      return false;
+    }
+    let name = this.NameOf(this.m_host);
+    if !TandemTravel.RegroupTo(this.GetGameInstance(), this.m_host) {
+      TandemNative.Log(s"story: join offer accepted: cannot go to \(name) now (the offer stays)");
+      return false;
+    }
     this.CloseOffer();
-    // TODO (milestone 4's regroup): bring our V next to the host's behind a
-    // loading screen.
-    TandemNative.Log("story: join offer accepted (regroup: TODO)");
+    TandemNative.Log(s"story: join offer accepted: on the way to \(name)");
+    return true;
   }
 
   private func ReleaseHolds() -> Void {
