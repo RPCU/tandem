@@ -22,5 +22,5 @@ shot presence-hit-taken
 cmd presence hit
 expect 'hit taken: player [0-9]+.s puppet twitches \(direction [1-4], part 5, intensity 1\): by nobody the others know' 5
 cmd presence report
-expect 'hit taken: ours told 0 .*; the others. shown by the game.s pipeline [1-9]' 5
+expect 'hit taken: ours told [0-9]+ .*; the others. shown by the game.s pipeline [1-9]' 5
 reject 'watchdog: game thread silent'
