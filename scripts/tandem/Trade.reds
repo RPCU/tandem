@@ -166,16 +166,25 @@ public class TandemTradeTable {
     return !IsDefined(revive) || (!revive.IsDown() && !revive.Prompting());
   }
 
-  // The nearest player within reach that our V faces (70 degrees each
-  // side: as the game's own prompts, none for someone behind us), 0 if none.
+  // Every player here gets the game's own prompt on its body (Prompts.reds:
+  // the game's range and look-at; one who is down gets none). Of those whose
+  // body does not take it, the nearest within reach that our V faces (70
+  // degrees each side: as the game's own prompts, none for someone behind
+  // us), 0 if none: the prompt we draw.
   private func Nearest(player: ref<PlayerPuppet>) -> Uint32 {
     let best = 0u;
     let bestAt = TandemTradeTable.StartRange();
     let at = player.GetWorldPosition();
     let ahead = player.GetWorldForward();
+    let prompts = this.m_system.Prompts();
+    let text = TandemText.Get("Trade-Prompt");
     for other in this.m_system.PuppetPlayers() {
       let puppet = this.m_system.PuppetOf(other);
-      if IsDefined(puppet) && !TandemElsewhere.IsElsewhere(this.m_game, other) {
+      if !IsDefined(puppet) || TandemElsewhere.IsElsewhere(this.m_game, other) {
+        // Not here.
+      } else if IsDefined(prompts) && TandemNative.RemoteLife(other) == 0 && prompts.OfferOn(TandemPromptKind.Trade(), other, puppet, true, this.NameOf(other), text) {
+        // The game's own interaction shows it.
+      } else {
         let there = puppet.GetWorldPosition();
         let far = Vector4.Distance(at, there);
         let flat = SqrtF((there.X - at.X) * (there.X - at.X) + (there.Y - at.Y) * (there.Y - at.Y));
@@ -192,7 +201,15 @@ public class TandemTradeTable {
   // The game's interaction prompt on the player beside us: [F] Trade. A
   // downed player's revive prompt comes first (Revive.reds).
   private func Prompt(player: ref<PlayerPuppet>) -> Void {
-    let target = this.Free(player) ? this.Nearest(player) : 0u;
+    let free = this.Free(player);
+    let target = free ? this.Nearest(player) : 0u;
+    // The key on the game's own prompt (Prompts.reds).
+    let prompts = this.m_system.Prompts();
+    let pressed = IsDefined(prompts) ? prompts.TakePress(TandemPromptKind.Trade()) : 0u;
+    if pressed != 0u && free {
+      this.Ask(pressed);
+      return;
+    }
     if target == 0u {
       this.HidePrompt();
       return;

@@ -53,6 +53,10 @@ public class TandemVendors {
   private let m_savedVisualizers: VisualizersInfo;
   private let m_listening: Bool;
   private let m_lastScan: Float;
+  // The vendor the last scan found fit for a prompt (0: none): offered to
+  // the game's own interaction every tick (Prompts.reds).
+  private let m_offerNpc: Uint32;
+  private let m_offerBody: wref<ScriptedPuppet>;
   // Our own vendors the session says died: hidden, watched (a body that
   // streams in again is a new one).
   private let m_buried: array<EntityID>;
@@ -255,6 +259,8 @@ public class TandemVendors {
     this.m_you = you;
     let player = GetPlayer(this.m_game);
     if you == 0u || !IsDefined(player) {
+      this.m_offerNpc = 0u;
+      this.m_offerBody = null;
       this.HidePrompt();
       return;
     }
@@ -273,6 +279,23 @@ public class TandemVendors {
       this.m_lastScan = now;
       this.Prompt(player);
     }
+    // Between two scans the game's own prompt stays offered; its key.
+    let prompts = this.m_system.Prompts();
+    if IsDefined(prompts) {
+      if this.m_offerNpc != 0u && IsDefined(this.m_offerBody) {
+        this.OfferProxy(prompts);
+      }
+      let pressed = prompts.TakePress(TandemPromptKind.Vendor());
+      if pressed != 0u && pressed == this.m_offerNpc && IsDefined(this.m_offerBody) {
+        this.Open(pressed, this.m_offerBody);
+      }
+    }
+  }
+
+  // The last scan's vendor, on the game's own interaction (false: its
+  // body does not take it, the prompt is ours to draw).
+  private func OfferProxy(prompts: ref<TandemPrompts>) -> Bool {
+    return prompts.OfferOn(TandemPromptKind.Vendor(), this.m_offerNpc, this.m_offerBody, false, TandemVendors.NameOf(this.m_offerBody), TandemText.Get("Vendor-Trade"));
   }
 
   // ---- the prompt ----
@@ -481,6 +504,17 @@ public class TandemVendors {
     let body = this.Yields() ? null : this.Nearest(player, TandemProgress.VendorReach(), npc);
     let shop = IsDefined(body) ? this.Decide(player, npc, body) : 3;
     if !IsDefined(body) || !TandemProgress.VendorPrompts(shop) {
+      this.m_offerNpc = 0u;
+      this.m_offerBody = null;
+      this.HidePrompt();
+      return;
+    }
+    this.m_shop = shop;
+    this.m_offerNpc = npc;
+    this.m_offerBody = body;
+    let prompts = this.m_system.Prompts();
+    if IsDefined(prompts) && this.OfferProxy(prompts) {
+      // On the proxy itself, by the game's own interaction (Prompts.reds).
       this.HidePrompt();
       return;
     }
@@ -488,7 +522,6 @@ public class TandemVendors {
     if !IsDefined(board) {
       return;
     }
-    this.m_shop = shop;
     let shown = FromVariant<InteractionChoiceHubData>(board.GetVariant(GetAllBlackboardDefs().UIInteractions.InteractionChoiceHub));
     // Ours already, for this NPC; or the game's own prompt is up (it wins).
     if npc == this.m_target && (shown.id == TandemVendors.HubId() || shown.active) {
