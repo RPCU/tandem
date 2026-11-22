@@ -228,3 +228,77 @@ has no flag we know. **No guard for these in tandem**: the two ranges are
 named by `tools/game.sh bt` (`known crash site:`) so a freeze there is
 recognized; a crash seen there in game is the evidence to design one
 from. [2.5-static]
+
+### 13.142 An NPC detached in the middle of an action: its dismemberment component read after its own detach (2026-11-22, game 2.50, exe read)
+
+The guest of a two-game session (instance b; it had ridden in the host's
+car, then fought on foot) crashed at 00:09:39: `0xC0000005` at `+0x253048`,
+a read of address `0x68`, on a job thread. The commit that followed took it
+for the street's bodies (181 asked again in 90 s, §13.141's cause). The
+stack (`tools/game.sh bt`, 63 frames; the crash log's first 20 agree) says
+it was an NPC.
+
+- **The stack, named**, innermost first. [2.5-static]
+  - `0x14025302C` (hash 2784304484): slot +0x198 of
+    `gameDismembermentComponent` (vtable `0x14314E868`, in `rax` at the
+    fault). It takes `[this+0xA8]`, then locks and reads `[that+0x68]`, with
+    no test: `this+0xA8` was null. Slot +0x170 (`0x142B33CF8`) sets that
+    field; slot +0x190, the component's detach (`0x140252ED4`), releases what
+    it points at (`0x140252F44`, by the id at +0x90) and zeroes +0x98, +0xA0
+    and +0xA8. Found, the entry (0x430 bytes, by that id) gets bit `0x20`
+    at +0x40B.
+  - `0x1403D1BF8` (hash 2569998565), the entity telling its components that
+    its mask changed: clears bit `0x20` of `entity+0x15C`, calls slot +0x198
+    of every component (16-byte handles at +0xA0, count +0xAC), then its own
+    slot +0x170 with the `u16` at +0x158.
+  - `0x140823F24` (hash 237772099) `(runtime, entity handle, u16 bits)`:
+    clears `bits` in the entity's mask (pending at +0x68: a count in the
+    low 4 bits, the mask above, bit 31 "pending"; current at +0x158) under
+    the runtime's lock at +0x229F58. While the count at +0x229F5C is 0 the
+    change is queued (a 0x38-byte record, `0x14074BE2C`); otherwise, when
+    the flag of value 8 at `entity+0x15C` is clear, it is applied in place
+    and `0x1403D1BF8` called.
+  - `0x140823D7C` (hash 1672482762): the stop of an action object, slot
+    +0x28 of two vtables without an RTTI name (`0x1430965C8`,
+    `0x143096760`) that lie on either side of
+    `gameActionHitReactionState`'s (`0x1430966A8`): it gives its entry back
+    (`0x140823E70`) and clears the mask bit of value 8 of its owner. Called by
+    `0x1408234A4` (hash 3287092066: state to 5, and the stop when it was 2
+    or 3), from `0x141085E34`, from `0x1402346B0` (hash 3694205479), the
+    deactivation shared by the AI behaviour tree's action nodes (some fifty
+    vtable slots hold it: by the nearest RTTI vtable, those of
+    `AIbehaviorActionMountNodeDefinition`, `…UnmountNodeDefinition`,
+    `…ActionDieTreeNodeDefinition`, `…DriveChaseTargetTreeNodeDefinition`
+    among them).
+  - below it some 35 frames of nested tree nodes being deactivated, down to
+    `0x1401AC7FC` (hash 3765574005), the tree's teardown, called by
+    `0x1405EE548` (hash 1937315105), `AICAgent`'s slot +0x190, through
+    `AIHumanComponent`'s (`0x1410E6ACC`, hash 1258428571).
+  - `0x140206A14` (hash 2263681375), the entity's detach: state byte +0x156
+    to 5, **slot +0x190 of every component from the last to the first**,
+    then the entity's +0x168; from the detach job `0x140DBB958` (§13.101's).
+- **So**: the engine detached an NPC whose behaviour tree still had an
+  action running that held that bit of the entity's mask. The dismemberment
+  component, later in the list, was detached first; the AI component's
+  detach then stopped the action, the entity told every component of the
+  change, and the dismemberment component read the pointer its own detach
+  had just zeroed. An order of the engine's own; it needs the runtime's
+  count at +0x229F5C to be non-zero at that moment (else the change is
+  queued). [2.5-static]
+- **What it is not**: not §13.140's site (no stub, no pooling update), not
+  a body freed too early (§13.6, §13.101: the entity is alive), not a
+  vehicle. Deleting the old body first and backing off, as the street's
+  check now does, and the engine's `CancelStub` both leave it as it was.
+- **Which NPC, and which action: not known.** In the 3 s before, ten NPC
+  proxies had their controller detached (bodies going), one NPC had been
+  knocked out by our V 3 s earlier, and the guest was in combat; the vtables
+  around the stop are the hit reaction's. A proxy's AI component is
+  switched off (`TandemProxies.Pacify`), which may leave an action begun
+  before it running for good: inference, to check live (`AICAgent+0x4EE`
+  and the tree at +0xE0 of a proxy that was hit). [2.5-untested]
+- **What would cover it** (not built): a guard in the plugin, of the kind
+  of §13.98's, on `0x14025302C`: return when `[this+0xA8]` is null (the
+  component is detached: there is no entry to mark), the function's bytes
+  checked at startup. Stated exactly, no side effect skipped. From scripts
+  there is no lever: nothing reads whether an action runs, and a proxy
+  deleted a few seconds later is only less likely to be in one.
