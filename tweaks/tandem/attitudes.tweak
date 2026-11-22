@@ -6,9 +6,16 @@
 // One group per puppet at a time (3 guests at most: endpoint.hpp kMaxGuests),
 // and the shared one the puppet records start in.
 //
-// A group's relations to the others are not part of its record (they are
-// Attitude records naming two groups): the script copies the player's
-// relations into these groups at runtime.
+// A group's relations to the others are not part of its record: they are
+// Attitude records naming two groups (group1, group2, value). Ours are not
+// listed here: scripts/tandem/AttitudeTweak.reds, a scripted tweak TweakXL
+// runs as it loads this file, clones every Attitude record that names
+// Attitudes.Group_Player once per group below, with the group in the
+// player's place (Attitudes.TandemRelation<N>_<other group's name>, N the
+// group's place below, from 0), so the list is the running game's own.
+// Whether the engine's relation table takes them is logged at each start
+// ("attitudes: declared relations ..."); the script still copies at run
+// time what the records do not give.
 
 Attitudes.Group_TandemPlayer : Attitudes.Group_Player {
   name = "tandem_player";

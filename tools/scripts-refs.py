@@ -11,7 +11,9 @@ sees. Checked here, from this tree alone:
 - every record of ours the scripts name ("Character.TandemPuppetWa",
   t"Mappins.TandemPingMappin") is defined in tweaks/tandem, or begins one
   that is (a name finished at run time): a missing record spawns nothing,
-  silently.
+  silently. A file that declares a scripted tweak (a class that extends
+  TweakXL's ScriptableTweak) creates records itself: the ones it names are
+  defined there.
 
 Usage: tools/scripts-refs.py   (exit 1 on a finding)
 """
@@ -66,6 +68,9 @@ def main() -> int:
     records = set()
     for path in (ROOT / "tweaks/tandem").rglob("*.tweak"):
         records.update(re.findall(r"^([A-Za-z_]\w*\.\w+)\s*(?::|\{)", path.read_text(), re.M))
+    for path, (raw, code) in sources.items():
+        if re.search(r"\bextends\s+ScriptableTweak\b", code):
+            records.update(re.findall(r'"([A-Za-z_]\w*\.\w*Tandem\w*)"', raw))
     problems = 0
     for path, (raw, code) in sources.items():
         for number, line in enumerate(code.splitlines(), 1):
