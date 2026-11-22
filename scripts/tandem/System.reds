@@ -334,9 +334,9 @@ public class TandemSystem extends ScriptableSystem {
   // were tried: they do not reach a system after a save loads.)
   private final func OnPlayerAttach(request: ref<PlayerAttachRequest>) -> Void {
     if GameInstance.GetSystemRequestsHandler().IsPreGame() {
-      if TandemNative.IsConfigured() {
-        TandemNative.Log("main menu world: not a game");
-      }
+      // (Said with no role too: the test tools wait for it to click Continue,
+      // and a game with role = off never got past its menu: solo, recorder.)
+      TandemNative.Log("main menu world: not a game");
       return;
     }
     let player = GetPlayer(this.GetGameInstance());
