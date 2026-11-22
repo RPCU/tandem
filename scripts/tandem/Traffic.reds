@@ -134,6 +134,9 @@ public class TandemTraffic {
   private let m_despawnAsked: array<EntityID>;
   private let m_despawn: Bool;
   private let m_despawnRead: Bool;
+  private let m_despawnMode: String;
+  // How many of our own vehicles were taken out of our world (Remove).
+  private let m_removed: Int32;
   // Ours: how many times a car stopped for a partner's V on foot.
   private let m_yields: Int32;
   // Ours: how many shared vehicles gave their place to a nearer one.
@@ -251,6 +254,7 @@ public class TandemTraffic {
     ArrayClear(this.m_despawnAsked);
     this.m_heldBack = 0;
     this.m_swapped = 0;
+    this.m_removed = 0;
     this.m_next = 1u;
   }
 
@@ -284,7 +288,7 @@ public class TandemTraffic {
     }
     let area = TandemArea.Owns() ? "ours" : s"player \(TandemRegions.AreaOwner(this.m_you))'s";
     let shared = TandemStreet.Shared();
-    return s"count: \(ArraySize(this.m_cars)) (\(mine) run by us, \(ArraySize(this.m_cars) - mine) shown as proxies; \(parked) parked, \(wrecks) wrecks, \(own) bodies of our own world), area \(area), \(ArraySize(shared)) proxies in the session's record, \(ArraySize(this.m_live)) vehicles in our world, \(ArraySize(this.m_taken)) taken by players, \(ArraySize(this.m_retired)) proxies kept for reuse, \(this.m_given) given, \(this.m_taken2) taken over, \(bodies) proxy body(ies) here, \(this.m_yields) stop(s) for a player on foot, \(this.m_swapped) swapped for a nearer one";
+    return s"count: \(ArraySize(this.m_cars)) (\(mine) run by us, \(ArraySize(this.m_cars) - mine) shown as proxies; \(parked) parked, \(wrecks) wrecks, \(own) bodies of our own world), area \(area), \(ArraySize(shared)) proxies in the session's record, \(ArraySize(this.m_live)) vehicles in our world, \(ArraySize(this.m_taken)) taken by players, \(ArraySize(this.m_retired)) proxies kept for reuse, \(this.m_given) given, \(this.m_taken2) taken over, \(bodies) proxy body(ies) here, \(this.m_yields) stop(s) for a player on foot, \(this.m_swapped) swapped for a nearer one, \(this.m_removed) of our own removed (another game's street)";
   }
 
   // The shared vehicle a body is (0: none), whoever runs it.
@@ -984,16 +988,28 @@ public class TandemTraffic {
     let waitingNear = 0.0;
     for vehicle in this.m_live {
       if IsDefined(vehicle) {
-        ArrayPush(live, vehicle);
         let body = vehicle.GetEntityID();
         let at = vehicle.GetWorldPosition();
         // A car of our own crowd inside a higher-ranked linked player's
         // region: that game runs the street there. Ours is held back (it
-        // is announced once it has driven out, if we run our area then).
-        let held = !away && !IsDefined(this.FindBody(body)) && this.HeldBack(vehicle, body, at, owns, entities);
+        // is announced once it has driven out, if we run our area then),
+        // and with overlap_despawn = remove (the default) taken out of our
+        // world, with whoever sits in it: no car exists here that the game
+        // running the street does not have (a riding guest's own traffic
+        // drove beside the host's and crashed into its copies, 2026-11-22).
+        // So is any other car of our own making there (a parked crowd car),
+        // when another game runs our area.
+        let held = !away && !IsDefined(this.FindBody(body)) && (this.HeldBack(vehicle, body, at, owns, entities) || !owns && this.OneSided(vehicle, body, entities));
+        let removed = false;
         if held {
           heldBack += 1;
-          this.AskDespawn(vehicle, body);
+          removed = this.Remove(vehicle, body);
+          if !removed {
+            this.AskDespawn(vehicle, body);
+          }
+        }
+        if !removed {
+          ArrayPush(live, vehicle);
         }
         // A racer of our street race is ours to share wherever it drives.
         let racer = !held && !away && TandemRaces.Racer(this.m_game, vehicle);
@@ -1256,14 +1272,64 @@ public class TandemTraffic {
     return TandemRegionRules.CoveredBy(at, TandemRegionRules.Radius(), unplaced) != 0u;
   }
 
-  // (overlap_despawn = on, a probe) A held back car is asked to leave, once:
+  // A car of our own making where another game runs the street, beside
+  // the crowd's (HeldBack): a parked crowd car of ours. Not a placed one
+  // (the same in every game: shared by its own id), nor a quest's, the
+  // police's or a wreck.
+  private func OneSided(vehicle: ref<VehicleObject>, body: EntityID, entities: ref<DynamicEntitySystem>) -> Bool {
+    return !EntityID.IsStatic(body) && this.Eligible(vehicle, body, entities) && !vehicle.IsQuest() && !vehicle.IsPrevention() && !vehicle.IsDestroyed();
+  }
+
+  // (overlap_despawn = remove, the default) Out of our world at once: the
+  // vehicle and the NPCs in its seats (our crowd's driver and passengers;
+  // never a player or a puppet). True when it was removed.
+  private func Remove(vehicle: ref<VehicleObject>, body: EntityID) -> Bool {
+    this.ReadDespawn();
+    if !Equals(this.m_despawnMode, "remove") || vehicle.IsPlayerMounted() {
+      return false;
+    }
+    let system = TandemSystem.Of(this.m_game);
+    let mounting = GameInstance.GetMountingFacility(this.m_game);
+    let seats: array<wref<VehicleSeat_Record>>;
+    VehicleComponent.GetSeats(this.m_game, vehicle, seats);
+    for seat in seats {
+      let slotId: MountingSlotId;
+      slotId.id = seat.SeatName();
+      let info = mounting.GetMountingInfoSingleWithIds(EntityID.FromHash(0ul), body, slotId);
+      let npc = EntityID.IsDefined(info.childId) ? GameInstance.FindEntityByID(this.m_game, info.childId) as ScriptedPuppet : null;
+      if IsDefined(npc) {
+        if npc.IsPlayer() || (IsDefined(system) && system.PlayerOfPuppet(npc.GetEntityID()) != 0u) {
+          return false;
+        }
+      }
+    }
+    for seat in seats {
+      let slotId: MountingSlotId;
+      slotId.id = seat.SeatName();
+      let info = mounting.GetMountingInfoSingleWithIds(EntityID.FromHash(0ul), body, slotId);
+      let npc = EntityID.IsDefined(info.childId) ? GameInstance.FindEntityByID(this.m_game, info.childId) as ScriptedPuppet : null;
+      if IsDefined(npc) {
+        TandemWheels.Dispose(npc);
+      }
+    }
+    this.m_removed += 1;
+    TandemNative.LogDebug(s"street: our \(TDBID.ToStringDEBUG(vehicle.GetRecordID())) \(EntityID.ToDebugString(body)) removed (another game runs the street here)");
+    return TandemWheels.Dispose(vehicle);
+  }
+
+  private func ReadDespawn() -> Void {
+    if !this.m_despawnRead {
+      this.m_despawnRead = true;
+      this.m_despawnMode = TandemNative.Setting("overlap_despawn");
+      this.m_despawn = Equals(this.m_despawnMode, "ask");
+    }
+  }
+
+  // (overlap_despawn = ask) A held back car is asked to leave, once:
   // the prevention system's own despawn of a vehicle and its passengers,
   // which waits until nobody looks.
   private func AskDespawn(vehicle: ref<VehicleObject>, body: EntityID) -> Void {
-    if !this.m_despawnRead {
-      this.m_despawnRead = true;
-      this.m_despawn = Equals(TandemNative.Setting("overlap_despawn"), "on");
-    }
+    this.ReadDespawn();
     if !this.m_despawn || ArrayContains(this.m_despawnAsked, body) {
       return;
     }

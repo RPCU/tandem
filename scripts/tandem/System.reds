@@ -142,6 +142,7 @@ public class TandemSystem extends ScriptableSystem {
   private let m_moveMode: String;
   private let m_held: array<ref<TandemMoved>>;
   private let m_heldReleased: Int32;
+  private let m_snapNotHeld: Int32;
   private let m_movers: array<ref<TandemMoved>>;
   private let m_movedKinematic: Int32;
   private let m_movedTeleport: Int32;
@@ -4279,7 +4280,10 @@ public class TandemSystem extends ScriptableSystem {
         ArrayPush(this.m_held, moved);
       }
     }
-    if this.m_moveKinematic && !moved.teleportOnly && !first && gap <= TandemSystem.SnapDistance() {
+    // (A body not held yet, its physics not ready: teleported this frame,
+    // held on a later one; the engine's setter dies on a body still being
+    // attached, engine/vehicles.md §13.155.)
+    if this.m_moveKinematic && (!this.m_moveHold || moved.held) && !moved.teleportOnly && !first && gap <= TandemSystem.SnapDistance() {
       if TandemWheels.Move(car, to, orientation, ClampF(step, 0.005, 0.2)) {
         this.m_movedKinematic += 1;
         moved.px = is.X;
@@ -4307,6 +4311,8 @@ public class TandemSystem extends ScriptableSystem {
       this.m_snapOff += 1;
     } else if moved.teleportOnly {
       this.m_snapStalled += 1;
+    } else if this.m_moveHold && !moved.held {
+      this.m_snapNotHeld += 1;
     } else {
       this.m_snapJump += 1;
       TandemNative.LogDebug(s"vehicles: body \(EntityID.ToDebugStringDecimal(id)) \(gap) m from its place: teleported");
@@ -4346,7 +4352,7 @@ public class TandemSystem extends ScriptableSystem {
     this.MovePath();
     let error = MaxF(this.m_moveError, this.m_moveErrorBefore);
     let path = this.m_moveHold ? "kinematic" : this.m_moveKinematic ? "velocity" : "teleport";
-    return s"moves: path \(path), \(this.m_movedKinematic) moved by the engine, \(ArraySize(this.m_held)) held kinematic now, \(this.m_heldReleased) given their physics back, \(this.m_movedTeleport) teleports (\(this.m_snapFirst) first placements, \(this.m_snapJump) over \(TandemSystem.SnapDistance()) m, \(this.m_snapStalled) of bodies that do not follow, \(this.m_snapOff) with the path off), \(this.m_moveStalledBodies) body(ies) that do not follow, \(this.m_moveRefused) refused, \(this.m_rideHeld) frame(s) our seat's car was not teleported, largest error \(error) m in the last 10 to 20 s";
+    return s"moves: path \(path), \(this.m_movedKinematic) moved by the engine, \(ArraySize(this.m_held)) held kinematic now, \(this.m_heldReleased) given their physics back, \(this.m_movedTeleport) teleports (\(this.m_snapFirst) first placements, \(this.m_snapJump) over \(TandemSystem.SnapDistance()) m, \(this.m_snapStalled) of bodies that do not follow, \(this.m_snapOff) with the path off, \(this.m_snapNotHeld) not held yet), \(this.m_moveStalledBodies) body(ies) that do not follow, \(this.m_moveRefused) refused, \(this.m_rideHeld) frame(s) our seat's car was not teleported, largest error \(error) m in the last 10 to 20 s";
   }
 
   private func TickDeleting() -> Void {

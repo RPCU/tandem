@@ -95,8 +95,10 @@
 //                        ; player's region covers ours: density (thinned by how much
 //                        ; is covered), area (a crowd null area over that region:
 //                        ; untested), off (only off deep inside it) (ini only)
-//   overlap_despawn = off ; on: our own crowd cars left inside such a region are
-//                        ; asked to despawn (a probe, untested) (ini only)
+//   overlap_despawn = remove ; our own vehicles where another game runs the street
+//                        ; (inside a higher-ranked player's region, or riding in
+//                        ; its area): remove (gone from our world), ask (the
+//                        ; game's despawn, once nobody looks), off (ini only)
 //   saves = on           ; off: this game never saves (a test game: locked from
 //                        ; its first tick until it ends) (ini only)
 //   vehicle_move = teleport ; how the vehicles other games run (their cars, their
@@ -254,7 +256,10 @@ struct Config {
   // only deep inside). And whether our own crowd cars left inside a cover
   // are asked to despawn (a probe, untested).
   std::string overlap{"density"};
-  bool overlapDespawn{false};
+  // Our own vehicles in another game's area (traffic.md, "One street"):
+  // "remove" (gone from our world at once), "ask" (the game's own despawn,
+  // which waits until nobody looks), "off" (left as they are).
+  std::string overlapDespawn{"remove"};
   // The prompts on another player's body (Trade, Revive) and on a partner's
   // vendor are the game's own interactions (scripts/tandem/Prompts.reds);
   // off: all drawn by us, as before.

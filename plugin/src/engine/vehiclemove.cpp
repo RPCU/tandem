@@ -49,6 +49,15 @@ constexpr std::uint32_t kVehicleSize = 0xBC0;
 constexpr std::size_t kRigidBody = 0x2D8;
 constexpr std::size_t kRuntimeData = 0x5F0;
 constexpr std::size_t kPhysicsState = 0x260;
+// The physics object (+0x2D0, null for a body without one): the setter
+// calls through its +0x68 and the move writes through its +0x60 and +0xD0
+// without a check. A vehicle still being attached (a copy just spawned) or
+// detached has the object without them: in game 2026-11-22 the setter read
+// +0x68 null and both games died (0xC0000005, +0x53A742). Such a body is
+// not moved by the engine this frame (the caller teleports it, and tries
+// again on the next).
+constexpr std::size_t kPhysicsObject = 0x2D0;
+constexpr std::size_t kPhysicsObjectNeeds[] = {0x60, 0x68, 0xD0};
 constexpr std::uint32_t kDrivenKinematically = 0x100;
 // The setter's own read of the state, 0x1D bytes in on 2.50
 // (`mov r15d, [rcx+0x260]`): the offset above is the one it uses.
@@ -112,6 +121,10 @@ std::uint8_t *BodyOf(RED4ext::ent::Entity *entity) {
   if (!*reinterpret_cast<void *const *>(base + kRigidBody) ||
       !*reinterpret_cast<void *const *>(base + kRuntimeData))
     return nullptr;
+  if (const auto *physics = *reinterpret_cast<const std::uint8_t *const *>(base + kPhysicsObject))
+    for (const auto at : kPhysicsObjectNeeds)
+      if (!*reinterpret_cast<void *const *>(physics + at))
+        return nullptr;
   return base;
 }
 } // namespace

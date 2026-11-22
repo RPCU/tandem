@@ -76,6 +76,9 @@ public native class TandemWheels extends IScriptable {
   public static native func CanHold() -> Bool
   public static native func Hold(vehicle: ref<Entity>, on: Bool) -> Bool
   public static native func Held(vehicle: ref<Entity>) -> Bool
+  // The engine's removal of an entity (entEntity.Dispose): our own crowd's
+  // vehicles and riders where another game runs the street.
+  public static native func Dispose(entity: ref<Entity>) -> Bool
 
   // Our own vehicles: the destruction grid and parts as the game reports
   // them, then how it stands (sent when it changed).

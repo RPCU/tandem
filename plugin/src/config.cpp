@@ -152,22 +152,21 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
   } else if (key == "story" || key == "quest_freeze" || key == "quest_interact" ||
              key == "recorder" || key == "recorder_pose" || key == "friendly_fire" ||
              key == "markers" || key == "party_hud" || key == "enemy_scaling" ||
-             key == "death_ledger" || key == "death_bodies" || key == "overlap_despawn" ||
-             key == "native_prompts" || key == "saves") {
-    auto &flag = key == "story"             ? config.story
-                 : key == "quest_freeze"    ? config.questFreeze
-                 : key == "quest_interact"  ? config.questInteract
-                 : key == "recorder"        ? config.recorder
-                 : key == "friendly_fire"   ? config.friendlyFire
-                 : key == "enemy_scaling"   ? config.enemyScaling
-                 : key == "markers"         ? config.markers
-                 : key == "party_hud"       ? config.partyHud
-                 : key == "death_ledger"    ? config.deathLedger
-                 : key == "death_bodies"    ? config.deathBodies
-                 : key == "overlap_despawn" ? config.overlapDespawn
-                 : key == "native_prompts"  ? config.nativePrompts
-                 : key == "saves"           ? config.saves
-                                            : config.recorderPose;
+             key == "death_ledger" || key == "death_bodies" || key == "native_prompts" ||
+             key == "saves") {
+    auto &flag = key == "story"            ? config.story
+                 : key == "quest_freeze"   ? config.questFreeze
+                 : key == "quest_interact" ? config.questInteract
+                 : key == "recorder"       ? config.recorder
+                 : key == "friendly_fire"  ? config.friendlyFire
+                 : key == "enemy_scaling"  ? config.enemyScaling
+                 : key == "markers"        ? config.markers
+                 : key == "party_hud"      ? config.partyHud
+                 : key == "death_ledger"   ? config.deathLedger
+                 : key == "death_bodies"   ? config.deathBodies
+                 : key == "native_prompts" ? config.nativePrompts
+                 : key == "saves"          ? config.saves
+                                           : config.recorderPose;
     if (value == "on" || value == "true")
       flag = true;
     else if (value == "off" || value == "false")
@@ -358,6 +357,16 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.overlap = std::string(value);
     else
       return Bad("overlap is density, area or off");
+  } else if (key == "overlap_despawn") {
+    // on, true: what "ask" was before (2026-11-22).
+    if (value == "remove" || value == "ask" || value == "off")
+      config.overlapDespawn = std::string(value);
+    else if (value == "on" || value == "true")
+      config.overlapDespawn = "ask";
+    else if (value == "false")
+      config.overlapDespawn = "off";
+    else
+      return Bad("overlap_despawn is remove, ask or off");
   } else if (key == "vehicle_move") {
     if (value == "teleport" || value == "kinematic" || value == "velocity")
       config.vehicleMove = std::string(value);
@@ -435,7 +444,7 @@ std::string SettingOf(const Config &config, std::string_view key) {
   if (key == "overlap")
     return config.overlap;
   if (key == "overlap_despawn")
-    return OnOff(config.overlapDespawn);
+    return config.overlapDespawn;
   if (key == "native_prompts")
     return OnOff(config.nativePrompts);
   if (key == "vehicle_move")
