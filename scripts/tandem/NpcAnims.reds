@@ -510,7 +510,14 @@ public class TandemNpcAnims {
       let missed = changed & (settling ? 15 : 31);
       if missed != 0 {
         this.m_missed += 1;
-        TandemDegraded.Fallback("npc state polled", s"npc \(id)\(TandemNpcAnims.Diff(sent.anim, anim, missed))");
+        // A crowd prop the engine takes from the hand with no slot event (a
+        // protester's board or stone, dropped as the crowd panics: npc 379,
+        // 2026-11-22) is the poll's by design, not a fallback; a weapon or a
+        // state the events missed is.
+        let prop = missed == 8 && StrBeginsWith(TDBID.ToStringDEBUG(sent.anim.weapon), "Items.crowd_");
+        if !prop {
+          TandemDegraded.Fallback("npc state polled", s"npc \(id)\(TandemNpcAnims.Diff(sent.anim, anim, missed))");
+        }
         if (missed & 7) != 0 {
           this.m_missedStates += 1;
         }

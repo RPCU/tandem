@@ -211,7 +211,15 @@ peer2() {
   nohup build/linux/peer/tandem-peer "${args[@]}" >"$cache/peer2.log" 2>&1 &
   echo "  second mock player: ${args[*]} ($cache/peer2.log)"
 }
-cmd() { $game cmd "$*" >/dev/null || fail "command not taken: $*"; }
+# The scenarios name the Steam game's port (27450); on an instance the game
+# hosts on its own (game.sh: TANDEM_GAME_PORT, default 27550), which the
+# mock player's arguments already follow: the game's lines and commands too.
+game_port=${TANDEM_GAME_PORT:-$([ "${TANDEM_INSTANCE:-a}" = main ] || [ "${TANDEM_INSTANCE:-a}" = 0 ] && echo 27450 || echo 27550)}
+cmd() {
+  local text="$*"
+  text=${text//27450/$game_port}
+  $game cmd "$text" >/dev/null || fail "command not taken: $text"
+}
 # The pilot's own log (each step, its checks, the pad's safety) is kept in
 # $cache/pilot.log (.cache/pilot.log) and goes with a failure's evidence.
 piloted=''
@@ -225,9 +233,10 @@ pilot() {
   [ "$status" = 0 ] || fail "the pilot's routine $1 did not pass ($cache/pilot.log)"
 }
 reset() {
-  local result status=0 silent back
+  local result status=0 silent back moves
   silent=$(watchdog_lines silent)
   back=$(watchdog_lines back)
+  moves=$(since | grep -c 'elsewhere: a teleport' || true)
   result=$($game test-reset 2>&1) || status=$?
   echo "  ${result:-test reset: no answer}"
   [ "$status" = 0 ] || fail "the game is not in its test state"
@@ -235,6 +244,8 @@ reset() {
   # loading screen (the watchdog's "silent" line, which scenarios reject):
   # wait it out and mark after it (comms-objective on instance b,
   # 2026-11-22).
+  # The watchdog speaks 5 s into the silence: after a teleport, wait for it.
+  [ "$(since | grep -c 'elsewhere: a teleport' || true)" = "$moves" ] || sleep 7
   past_loading "$silent" "$back"
 }
 sessioned=0
@@ -340,6 +351,8 @@ moved() {
   cmd "$@"
   # The watchdog says "silent" after 5 s without a tick.
   sleep 7
+  # The watchdog speaks 5 s into the silence: after a teleport, wait for it.
+  [ "$(since | grep -c 'elsewhere: a teleport' || true)" = "$moves" ] || sleep 7
   past_loading "$silent" "$back"
 }
 fixture_file=tools/scenarios/fixtures.txt
@@ -379,7 +392,7 @@ at() {
 shot() { mkdir -p "$out" && $game shot "$1" >/dev/null && cp "$cache/shots/$1.png" "$out/"; }
 
 expect() {
-  local pattern=$1 timeout=${2:-30} start=$SECONDS
+  local pattern=${1//27450/$game_port} timeout=${2:-30} start=$SECONDS
   while ((SECONDS - start < timeout)); do
     if since | grep -qE "$pattern"; then
       echo "  ok: $pattern"
@@ -405,8 +418,9 @@ expect_peer() {
 }
 expect_peer2() { expect_peer "$1" "${2:-30}" "$cache/peer2.log" 0; }
 reject() {
-  if since | grep -qE "$1"; then
-    fail "unexpected: $(since | grep -E "$1" | head -1 | cut -c1-160)"
+  local pattern=${1//27450/$game_port}
+  if since | grep -qE "$pattern"; then
+    fail "unexpected: $(since | grep -E "$pattern" | head -1 | cut -c1-160)"
   else
     echo "  ok, none: $1"
   fi
