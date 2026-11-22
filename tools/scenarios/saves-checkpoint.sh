@@ -1,6 +1,8 @@
 # A guest's checkpoint (tandem.ini checkpoint, here asked by command): the leave steps, the save (dry: counted as written), then the same session joined again
 # shellcheck shell=bash disable=SC2317
-ensure join
+# Reads whether a save may be written (test games lock theirs: saves = off);
+# runs dry, and a guest in a session saves nothing.
+ensure join saves=on
 host_world - --mode idle
 expect 'in the session as player' 30
 expect 'save: leave solo -> session' 20
