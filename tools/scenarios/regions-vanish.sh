@@ -15,6 +15,6 @@ expect 'regions: handover in: npc [0-9]{8,} from player [0-9]+ health [0-9.]+ ef
 expect 'coop notice: far left the session' 5
 pause 6
 cmd npc count
-expect 'npcs shared: [0-9]+, .*ours [3-9][0-9]*, proxies 0'
+expect 'npcs shared: [0-9]+, .*ours ([3-9]|[1-9][0-9]+), proxies 0'
 reject 'consistency: proxy [0-9]+ has no NPC on the host, removed'
 reject 'watchdog: game thread silent'

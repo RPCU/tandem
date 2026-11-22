@@ -32,7 +32,7 @@ expect 'regions: npc [0-9]{8,} is ours to run, from player [0-9]+ \(handed over\
 expect 'regions: handover in: npc [0-9]{8,} from player [0-9]+ health [0-9.]+ effects 0 target player 1' 10
 pause 6
 cmd npc count
-expect 'npcs shared: [0-9]+, .*ours [3-9][0-9]*, proxies 0'
+expect 'npcs shared: [0-9]+, .*ours ([3-9]|[1-9][0-9]+), proxies 0'
 # (A line "did not wake up: spawned again in place" here is the fallback of
 # docs/architecture/regions.md §4: note it in docs/research/engine/regions.md.)
 reject 'regions: handover in: npc [0-9]+ from player [0-9]+ refused'
