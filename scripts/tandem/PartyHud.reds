@@ -63,6 +63,10 @@ public class TandemPlateAnchor {
   public let distance: Float;
   public let inScreen: Bool;
   public let updates: Int32;
+  // The engine's currentPosition is in window pixels; our plates and the
+  // root are in the HUD's own space (3840 x 2160 at 16:9): window pixels
+  // times this (measured 2026-11-22 at 1280 x 720: 246 275 for our 729 827).
+  public let toHost: Float = 1.0;
 
   // The engine's word, each time it projects (inkScreenProjection.
   // RegisterListener, as the damage numbers listen to theirs).
@@ -70,15 +74,15 @@ public class TandemPlateAnchor {
   protected cb func OnProjected(projection: ref<inkScreenProjection>) -> Bool {
     let at = projection.currentPosition;
     let uv = projection.uvPosition;
-    this.x = at.X;
-    this.y = at.Y;
+    this.x = at.X * this.toHost;
+    this.y = at.Y * this.toHost;
     this.uvX = uv.X;
     this.uvY = uv.Y;
     this.distance = projection.distanceToCamera;
     this.inScreen = projection.IsInScreen();
     this.updates += 1;
     if IsDefined(this.plate) {
-      this.plate.SetMargin(new inkMargin(at.X, at.Y, 0.0, 0.0));
+      this.plate.SetMargin(new inkMargin(this.x, this.y, 0.0, 0.0));
     }
   }
 }
@@ -810,6 +814,10 @@ public class TandemPartyHud {
   // screen's height away, its controller is woken after 1 s (it sleeps
   // between hits) and the engine's projection given up after 3 s.
   private func Compare(entry: ref<TandemPartyEntry>, now: Float) -> Void {
+    let window = this.m_width * this.m_scale;
+    if IsDefined(entry.head) && window > 0.0 {
+      entry.head.toHost = this.m_hostWidth / window;
+    }
     let inside = entry.ownSeen && entry.ownX > 0.15 && entry.ownX < 0.85 && entry.ownY > 0.15 && entry.ownY < 0.85;
     let wrong = false;
     entry.apart = -1.0;
