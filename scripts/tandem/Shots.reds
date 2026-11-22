@@ -309,10 +309,19 @@ public class TandemShots {
     // from the NPC's own animation state: that one is used as it is (never
     // swapped here, the two would undo each other). Only an empty hand gets
     // the shot's weapon.
-    if !IsDefined(weapon) && TDBID.IsValid(shot.weapon) {
+    // A shot named with an item that is no weapon (a crowd NPC's phone in
+    // its hand: npcs-shoot-guest, 2026-11-22) would wait for an empty hand
+    // for ever: a pistol stands in for it.
+    let shotWeapon = shot.weapon;
+    let item = TweakDBInterface.GetItemRecord(shotWeapon);
+    let category = IsDefined(item) ? item.ItemCategory() : null;
+    if TDBID.IsValid(shotWeapon) && (!IsDefined(category) || NotEquals(category.Type(), gamedataItemCategory.Weapon)) {
+      shotWeapon = t"Items.Preset_Lexington_Default";
+    }
+    if !IsDefined(weapon) && TDBID.IsValid(shotWeapon) {
       if !this.m_handed {
         this.m_handed = true;
-        TandemNative.LogDebug(s"shots: npc \(shot.npc)'s proxy has nothing in its hand: given \(TDBID.ToStringDEBUG(shot.weapon))");
+        TandemNative.LogDebug(s"shots: npc \(shot.npc)'s proxy has nothing in its hand: given \(TDBID.ToStringDEBUG(shotWeapon))\(shotWeapon != shot.weapon ? s" (for \(TDBID.ToStringDEBUG(shot.weapon)), no weapon)" : "")");
       }
       let given = ArrayFindFirst(this.m_givenTo, proxy.GetEntityID());
       if given < 0 || now - this.m_givenAt[given] > 2.0 || now < this.m_givenAt[given] {
@@ -322,7 +331,7 @@ public class TandemShots {
         } else {
           this.m_givenAt[given] = now;
         }
-        TandemWeapons.Hold(proxy, slot, shot.weapon);
+        TandemWeapons.Hold(proxy, slot, shotWeapon);
       }
       this.m_waitingFor = "an empty hand";
       return false;
