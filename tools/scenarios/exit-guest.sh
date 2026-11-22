@@ -1,6 +1,9 @@
 # As a guest in a session, the pause menu's Exit saves our V first: the leave steps, the save, then the exit to the main menu (dry: the save counted as written, the exit only logged)
 # shellcheck shell=bash disable=SC2317
-ensure join
+# The exit flow reads whether a save may be written: a test game locks its
+# saves (saves = off); this one runs dry and a guest in a session saves
+# nothing, so the lock is off here.
+ensure join saves=on
 host_world - --mode idle
 expect 'in the session as player' 30
 expect 'save: leave solo -> session' 20
