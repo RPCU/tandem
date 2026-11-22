@@ -117,6 +117,14 @@ public:
   // Our world was rebuilt around our V (a fast travel): every NPC goes, and
   // new ones come where we are now.
   void Rebuild(std::uint64_t nowUs, Outbox &out);
+  // Regions (regions.md): the endpoint asks us to hand an NPC of ours over
+  // to `to` (true: `state` filled, it is no longer ours; false: we keep it,
+  // held or a body); one we take over from another game, from its record;
+  // one that is no longer ours (another runs it, or it left the record).
+  bool Give(proto::NpcId npc, proto::PlayerId to, proto::NpcHandoverState &state);
+  void Adopt(const proto::NpcHandoverState &state, const proto::NpcSpawn &spawn,
+             std::uint64_t nowUs);
+  void Release(proto::NpcId npc);
 
   // A hit one of our NPCs lands on our own V (never a message).
   std::function<void(const proto::PlayerHit &)> hitOwnV;

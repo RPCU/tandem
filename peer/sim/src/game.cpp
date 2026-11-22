@@ -205,6 +205,28 @@ void Game::OnEvent(const SessionEvent &event, std::uint64_t nowUs, Outbox &out) 
           Say(std::format("sim: resync of domains {:#x} {}", e.domains,
                           e.player == m_scene.self ? "asked" : "sent"));
         }
+        // Regions (regions.md): the host's world gives, takes and lets go of
+        // NPCs as the endpoint arbitrates. A simulated guest runs none: it
+        // answers nothing (its scene keeps the proxy, which a refusal would
+        // leave behind as the host drops the NPC).
+        if (m_world) {
+          if constexpr (std::is_same_v<E, events::NpcGive>) {
+            p::NpcHandoverState state;
+            if (m_world->Give(e.npc, e.to, state))
+              m_endpoint->GiveNpc(std::move(state));
+            else
+              m_endpoint->RefuseNpc(e.npc);
+          } else if constexpr (std::is_same_v<E, events::NpcTake>) {
+            const auto &shared = m_endpoint->SharedNpcs();
+            const auto spawn = shared.find(e.state.npc);
+            if (spawn != shared.end())
+              m_world->Adopt(e.state, spawn->second, nowUs);
+            m_endpoint->AdoptNpc(e.state.npc, spawn != shared.end());
+          } else if constexpr (std::is_same_v<E, events::NpcOwnerChanged>) {
+            if (e.was == m_scene.self)
+              m_world->Release(e.npc);
+          }
+        }
         if (!m_world)
           return;
         // The host's world answers what guests do to it.

@@ -109,6 +109,8 @@ HostWorld::HostWorld(Config config, Random random, Coverage *coverage)
                                 "npc.refuse-not-yours",
                                 "npc.refuse-too-far",
                                 "npc.freed-on-leave",
+                                "npc.given",
+                                "npc.taken",
                                 "npc.time-bubble",
                                 "npc.corpse-removed",
                                 "npc.quest-item",
@@ -986,6 +988,54 @@ void HostWorld::OnPlayerLeft(p::PlayerId player, std::uint64_t nowUs, Outbox &ou
   }
   std::erase_if(m_endings, [&](const Ending &ending) { return ending.by == player; });
   (void)out;
+}
+
+bool HostWorld::Give(p::NpcId id, p::PlayerId to, p::NpcHandoverState &state) {
+  const auto *npc = Find(id);
+  if (!npc || !npc->Alive() || npc->holder != p::kNoPlayer)
+    return false;
+  state = {.npc = id,
+           .to = to,
+           .position = npc->position,
+           .yaw = npc->yaw,
+           .health = npc->spec.health > 0.f ? npc->health / npc->spec.health : 1.f,
+           .poise = npc->spec.poise > 0.f ? npc->poise / npc->spec.poise : 1.f,
+           .target = npc->target};
+  if (npc->target != p::kNoPlayer)
+    state.hostileTo = static_cast<std::uint8_t>(1u << ((npc->target - 1) & 7));
+  Release(id);
+  Hit("npc.given");
+  return true;
+}
+
+void HostWorld::Adopt(const p::NpcHandoverState &state, const p::NpcSpawn &spawn,
+                      std::uint64_t nowUs) {
+  SimNpc npc;
+  npc.id = state.npc;
+  npc.spec = m_config.cast.front();
+  for (const auto &spec : m_config.cast)
+    if (TweakDBID(spec.record) == spawn.record)
+      npc.spec = spec;
+  // A blind hand-over (its owner left, or its world was rebuilt) has no
+  // state: where the record last had it.
+  const bool blind = (state.flags & p::kHandoverBlind) != 0;
+  npc.position = blind ? spawn.position : state.position;
+  npc.home = npc.goal = npc.position;
+  npc.yaw = blind ? spawn.yaw : state.yaw;
+  npc.health = npc.spec.health * (state.health >= 0.f ? std::min(state.health, 1.f) : 1.f);
+  npc.poise = npc.spec.poise * (state.poise >= 0.f ? std::min(state.poise, 1.f) : 1.f);
+  npc.mode = state.target != p::kNoPlayer ? NpcMode::Alerted : NpcMode::Idle;
+  npc.target = state.target;
+  npc.modeUntilUs = nowUs + 4'000'000;
+  npc.anim = {.npc = npc.id};
+  m_npcs[npc.id] = std::move(npc);
+  Hit("npc.taken");
+}
+
+void HostWorld::Release(p::NpcId id) {
+  m_npcs.erase(id);
+  std::erase_if(m_uploads, [&](const Upload &upload) { return upload.state.npc == id; });
+  std::erase_if(m_endings, [&](const Ending &ending) { return ending.npc == id; });
 }
 
 void HostWorld::Rebuild(std::uint64_t nowUs, Outbox &out) {

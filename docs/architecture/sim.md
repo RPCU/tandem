@@ -215,10 +215,25 @@ guest): no violation, no failed check; 59 of 72 message types sent, 87 of
 134 feature paths taken (the report lists the rest: rewards come 37 s into
 the default quest, leaves every 45 s).
 
+`sim-fuzz` on 2026-11-22 (204 seeds of 30 s at `--pace 4`, the chaos
+guest leaving and joining again under a new id), state kept across a leave:
+a rejoined guest heard a bag dropped by its former self (`WorldItem`'s
+dropper) and a call it had answered (`PhoneCall`'s `answeredBy`) as names
+of a player never in its session (`ids.unknown-player`; also a claim told
+the stack's taker who had left). Fixed: a leaver's bags lie there as
+nobody's, a stack it took answers a claim as gone, a call it answered is
+the host's. A leaver's holds are now released before its NPCs go to their
+heirs or away (one it held and ran went with it in silence:
+`stuck.after-leave`). The sim's own host world ignored the region
+hand-overs (`sim-check: npc N is in the session's record and not in the
+world` after one came back): it now gives, takes and lets go of NPCs
+(`npc.given`, `npc.taken`).
+
 ## Open
 
-- Regions: the simulated guest owns no NPCs (`tandem-peer --mode region`
-  does); its referee checks ownership both ways.
+- Regions: the simulated guest runs no NPCs (it answers no hand-over;
+  `tandem-peer --mode region` does); its referee checks ownership both
+  ways.
 - A real host recorded (`.tsession`) as the world model's training data:
   the sim's NPCs keep the game's enums and rules, not its pacing.
 - The pose stream: the simulated V sends no `PoseState`.
