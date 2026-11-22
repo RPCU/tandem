@@ -1178,7 +1178,7 @@ public class TandemNpcs {
     let bit = 1;
     for v in watched {
       if IsDefined(v) && p != this.m_you {
-        let level = (mask & bit) != 0 ? 1.0 : ClampF(senses.GetDetection(v.GetEntityID()) / 100.0, 0.0, 1.0);
+        let level = (mask & bit) != 0 ? 1.0 : (Equals(GameObject.GetAttitudeTowards(npc, v), EAIAttitude.AIA_Hostile) ? ClampF(senses.GetDetection(v.GetEntityID()) / 100.0, 0.0, 1.0) : 0.0);
         if level >= 0.01 {
           ArrayPush(this.m_awareNpcs, id);
           ArrayPush(this.m_awarePlayers, p);
@@ -1297,7 +1297,12 @@ public class TandemNpcs {
     let senses = npc.GetSensesComponent();
     let bit = 1;
     for v in watched {
-      if IsDefined(v) && ((IsDefined(senses) && senses.GetDetection(v.GetEntityID()) >= 100.0) || NPCPuppet.IsInCombatWithTarget(npc, v)) {
+      // Only an NPC hostile to that V: the senses fill their meter for any
+      // NPC body they see, a puppet's too, whatever the attitude (a
+      // neutral homeless man had a guest's puppet at 100 and the host's V
+      // at 0, both on foot beside him, and the guest went into combat:
+      // 2026-11-22); for a V the game counts it for the hostile alone.
+      if IsDefined(v) && ((IsDefined(senses) && senses.GetDetection(v.GetEntityID()) >= 100.0 && Equals(GameObject.GetAttitudeTowards(npc, v), EAIAttitude.AIA_Hostile)) || NPCPuppet.IsInCombatWithTarget(npc, v)) {
         mask += bit;
       }
       bit *= 2;

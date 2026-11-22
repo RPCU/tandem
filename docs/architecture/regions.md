@@ -332,7 +332,10 @@ companions, the session lost.
   hidden) and never announced. Everything we already ran when the regions
   met stays ours and is shown to the other player (no pop on either
   screen); only _new_ spawns in the overlap are held back. Our NPCs outside
-  that region are untouched.
+  that region are untouched. One that holds a weapon is faded out the
+  animation system's way (`TandemVisibility.Fade`), not hidden
+  irreversibly: that call on an armed NPC crashed the game (engine facts
+  §13.154); it stays a body one can walk into.
 
 - **A linked player that outranks us and has said nothing of where it is**
   (we just joined, or it sends no state): for three seconds our game

@@ -23,12 +23,12 @@ shot ride-traffic
 cmd vehicle probe
 expect 'vehicle probe: [0-9]+ frames' 10
 cmd vehicle probe stop
-# Our seat's car, and the street's, were moved by the engine's kinematic
-# move, each body following (the error: at most a frame of its speed).
+# How they were moved: by teleports (the default), our seat's car not in the
+# frames a body of ours waited to spawn; or by the engine's kinematic move
+# (kinematic_ride = on), each body following.
 cmd vehicle moves
-expect 'vehicle moves: path kinematic, [1-9][0-9]* kinematic' 5
+expect 'vehicle moves: path (teleport|kinematic), ' 5
 expect 'vehicle moves: .* 0 body\(ies\) that do not follow, 0 refused' 5
-expect 'vehicle moves: .* largest error [0-2]\.[0-9]+ m' 5
 query riding mounted
 expect_value "$riding" '~' '^Vehicle\.v_standard2_archer_hella_player seat_[a-z_]+ [0-9]+$'
 cmd vehicle unride

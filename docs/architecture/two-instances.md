@@ -329,6 +329,19 @@ What the sandbox does **not** do: it is not a jail. The game can still write
 elsewhere in the home directory (as any game can). It protects the three
 things named: the install, the prefix, the cloud folder.
 
+## A test game never saves
+
+`tools/instance.sh role` and `tools/game.sh role` write `saves = off`: the
+game locks saving from its first tick (`TandemSystem.LockTestSaves`, as the
+pilot does) and logs `saves: off`. A hosting instance autosaved in the fight
+that killed its V, and every start after loaded that save, dead
+(2026-11-22: its two newest autosaves were moved to
+`tandem-instances/a/run/saves-aside`). `tools/instance.sh load` asks
+`test query health` once the save plays and fails when the V is dead or the
+game takes no command (`playing (health 100)` otherwise). Resetting two
+games in the same seconds left both Vs 28 m from the test field and failed
+both resets: reset one, wait for `test reset: ready`, then the other.
+
 ## Recommended setup
 
 ```

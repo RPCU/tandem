@@ -22,11 +22,35 @@
   ([`revive.md`](revive.md)).
 - **How a copy is moved** (`TandemSystem.MoveBody`, `scripts/tandem/System.reds`;
   `TandemWheels.Move`, `plugin/src/engine/vehiclemove.cpp`; engine facts
-  §13.141; written 2026-11-22 from the decompiled function, **nothing of it
-  run in game**). Every vehicle another game runs (a player's car copy, a
-  lent or rolling car, a proxy of its traffic) goes through one function,
-  every frame:
-  - **The engine's kinematic vehicle move** is the default: the body is
+  §13.141). Every vehicle another game runs (a player's car copy, a lent or
+  rolling car, a proxy of its traffic) goes through one function, every
+  frame. **In game, two instances, 2026-11-22** (a guest riding in the
+  host's car, the host on autodrive for 150 s, both Vs checked alive):
+
+  <!-- prettier-ignore -->
+  | | teleports (`kinematic_ride = off`, the default) | kinematic move (`on`) |
+  | --- | --- | --- |
+  | the ride | whole, the two together at the end (27 proxies on the guest) | one of two rides whole; in the other the guest's V slid to the copy's wheel after 2 min 12 s (the driver's puppet out of its seat here, cause not found), its game drove the copy and the host left it 1 km behind |
+  | `body was gone` | 0 and 0 | 0 and 0 |
+  | vehicles with a body on both games, mid-ride | 45 of 51, median 0.04 m apart | 39 of 54, median 13 m (the ride above); 13 of 18, median 0.007 m (the whole one) |
+  | frames our seat's car was held for a spawn | 127 in 150 s | none |
+  | error of a moved body | none (put where told) | 0.35 m (host), 2.9 to 3.8 m (guest, at speed) |
+  | frames a second while driving, host / guest | 28 to 30 / 19 to 22 | 20 to 23 / 10 to 17 |
+  | script tick, mean, host / guest | 2.7 / 3.2 ms | 5.9 / 6.2 ms at worst |
+
+  One run each on one machine running both games (30 frames a second at
+  rest), so the frame rates are an indication, not a benchmark; the
+  kinematic move did not come out cheaper, and its copies collide with the
+  rider's own world (the guest's game showed the "damaging vehicles" hint in
+  the copy). **So the default is the teleports**, with the rule that fixed
+  the missing traffic: the car our own V is mounted to is not teleported
+  two frames running while a body of ours waits to spawn
+  (`RideTeleportAllowed`; `TandemEntities.Create` keeps the list), and a
+  body whose owner says the same transform twice is left alone. The
+  kinematic move stays behind `kinematic_ride = on`: it follows (56 479
+  moves on the guest, no body refused), and what it needs before it can be
+  the default is below.
+  - **The engine's kinematic vehicle move** (`kinematic_ride = on`): the body is
     given the transform its owner says and the linear and angular velocity
     that take it there in the frame's world time (clamped to 5..200 ms).
     It is the engine's own call for a vehicle driven kinematically (five
@@ -58,9 +82,11 @@
     body had none and carried a V on its hood. Decided so: the owner's car
     is the truth, our V is hit as by any car and never moved with it. To
     check in game.
-  - **At rest**: the same transform twice and the body within 3 mm of it:
-    left alone (no call: zero velocity was the last one given), until the
-    owner's transform changes or the body is 5 cm off (pushed, sagging).
+  - **At rest**: the same transform twice: sent there once more (no
+    velocity left), then left alone where its own suspension puts it (a
+    parked proxy rests 0.1 to 0.2 m from its owner's transform, measured:
+    moved every frame it never came nearer), until the owner's transform
+    changes or the body is 1 m off.
     Nothing said of where it is (a stream that stopped): it is settled
     where it was last sent (`SettleBody`), never left rolling. A wreck and
     a parked car are at rest.
@@ -72,12 +98,15 @@
     (`PhysicsWakeUp`), and at the fifteenth it is teleported for good, with
     a log line (the first five). Five such bodies and none that followed:
     the whole path goes back to teleports, with a line.
-  - **The fallback**: `kinematic_ride = off` (`tandem.ini`), or a
-    `vehicleBaseObject` that is not the 0xBC0 bytes measured on 2.50 (the
-    plugin logs it once): every body is teleported every frame as before,
-    the car our V rides in every other frame while a body spawns
-    (measured: bodies then come within 0.1 s; its motion is halved for
-    those frames).
+  - **Open before it can be the default**: what unseats the driver's
+    puppet in a copy that has a speed (and the rider's V then taking its
+    wheel: a copy must never be driven by a passenger's game unasked);
+    collisions of a copy with the rider's own world (damage and hits must
+    stay its owner's); the frame cost; wheels and sound, not looked at.
+  - **Without it** (the default, or a `vehicleBaseObject` that is not the
+    0xBC0 bytes measured on 2.50, or a game without the function: the
+    plugin logs which once): every body that moves is teleported every
+    frame, the car our V rides in every other frame while a body spawns.
   - **In the log**: once a run, `vehicles: the vehicles other games run
     are moved by the engine's kinematic move …` or `… are teleported every
     frame (kinematic_ride = off | the vehicle layout check failed)`;
