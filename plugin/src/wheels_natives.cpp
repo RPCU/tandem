@@ -91,6 +91,12 @@ struct TandemWheels : Red::IScriptable {
   static bool Held(Red::Handle<Red::ent::Entity> vehicle) {
     return engine::VehicleHeld(vehicle.instance);
   }
+  // The engine's own removal of an entity from the world (entEntity.Dispose,
+  // a native the scripts do not declare): our own crowd's vehicles and their
+  // riders where another game runs the street (Traffic.reds Remove).
+  static bool Dispose(Red::Handle<Red::ent::Entity> entity) {
+    return entity && Red::CallVirtual(entity.instance, "Dispose");
+  }
 
   // A vehicle named across games: a player's car, a shared world vehicle.
   static std::uint32_t CarOf(std::uint32_t player) { return proto::PlayerCar(player); }
@@ -377,6 +383,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemWheels, "TandemWheels", {
   RTTI_METHOD(CanHold);
   RTTI_METHOD(Hold);
   RTTI_METHOD(Held);
+  RTTI_METHOD(Dispose);
   RTTI_METHOD(CarOf);
   RTTI_METHOD(StreetOf);
   RTTI_METHOD(IsStreet);
