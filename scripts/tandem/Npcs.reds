@@ -87,6 +87,8 @@ public class TandemNpcProxy {
   public let seatedSlot: CName;
   // Since when its body is here (0: not seen yet): seated a second later.
   public let bodySince: Float;
+  // Kept out of its seat and out of sight while our own V rides.
+  public let seatWaits: Bool;
   // Out of a seat: our controller goes back on at this time.
   public let reattachAt: Float;
   // What it was spawned from (to bring it back, see Reconcile).
@@ -165,6 +167,13 @@ public class TandemNpcs {
   private let m_freshIds: array<EntityID>;
   // (test: npc seats off) proxies are not seated in shared vehicles.
   private let m_noStreetSeats: Bool;
+  private let m_noSeatHold: Bool;
+  private let m_seatWaits: Int32;
+  // (test: npc hide off) our own NPCs held back keep their looks.
+  private let m_noHide: Bool;
+  // (test: npc hide fade) every one is faded, none hidden irreversibly.
+  private let m_fadeAll: Bool;
+  private let m_faded: Int32;
   private let m_freshAt: array<Float>;
   // Host: guests' status effects waiting for their puppet (the instigator).
   private let m_pendingEffects: array<TandemNpcEvent>;
@@ -734,7 +743,23 @@ public class TandemNpcs {
     }
     TandemNative.LogDebug(s"npcs: holding back our own \(EntityID.ToDebugString(id)) \(TDBID.ToStringDEBUG(npc.GetRecordID()))");
     TandemProxies.Pacify(npc);
-    npc.HideIrreversibly();
+    if !this.m_noHide {
+      // HideIrreversibly on an NPC that holds a weapon took the game down a
+      // moment later, three times in three (0xc0000005 at +0x253048: a
+      // component with no owner told of the visibility change; gangers and
+      // a quest's armed freaks, never the unarmed crowd: engine/npcs.md
+      // §13.154). An armed one is faded out the animation system's way, its
+      // weapon with it (TandemVisibility.Fade, as a puppet is hidden).
+      let transactions = GameInstance.GetTransactionSystem(this.m_game);
+      let right = transactions.GetItemInSlot(npc, t"AttachmentSlots.WeaponRight");
+      let left = transactions.GetItemInSlot(npc, t"AttachmentSlots.WeaponLeft");
+      if IsDefined(right) || IsDefined(left) || this.m_fadeAll {
+        TandemVisibility.Fade(this.m_game, npc, false, 0.0);
+        this.m_faded += 1;
+      } else {
+        npc.HideIrreversibly();
+      }
+    }
     ArrayPush(this.m_hiddenIds, id);
     this.m_hidden += 1;
   }
@@ -1196,8 +1221,15 @@ public class TandemNpcs {
       return;
     }
     let watched = this.Watched(player);
+    if StrBeginsWith(command, "npc hide ") {
+      this.m_noHide = Equals(command, "npc hide off");
+      this.m_fadeAll = Equals(command, "npc hide fade");
+      TandemNative.Log(s"npc hide: our own NPCs held back are hidden \(!this.m_noHide), all by the fade \(this.m_fadeAll); \(this.m_hidden) so far, \(this.m_faded) of them faded (armed)");
+      return;
+    }
     if StrBeginsWith(command, "npc seats ") {
       this.m_noStreetSeats = Equals(command, "npc seats off");
+      this.m_noSeatHold = Equals(command, "npc seats nohold");
       TandemNative.Log(s"npc seats: proxies seated in shared vehicles \(!this.m_noStreetSeats)");
       return;
     }
@@ -1535,11 +1567,37 @@ public class TandemNpcs {
     }
     if proxy.seatOwner == 0u {
       proxy.seatChanged = false;
+      if proxy.seatWaits {
+        // Out of its vehicle before it ever sat here: on foot, in sight.
+        proxy.seatWaits = false;
+        TandemVisibility.Fade(game, npc, true, 0.3);
+        TandemNative.HoldPuppet(TandemNative.NpcPuppetId(proxy.npc), false);
+      }
       return;
     }
-    if this.m_noStreetSeats && TandemStreet.IsStreetSeat(proxy.seatOwner) {
-      proxy.seatRetryAt = now + 1.0;
+    // Not while our own V sits in a vehicle: a proxy mounted then took the
+    // game down within 0.3 s, five rides in five (0xc0000005 at +0x2AE4A10,
+    // a job thread: an action handed a null object and asked whether it is
+    // the local player; on foot, never: engine/npcs.md §13.154). It waits
+    // out of sight, its controller held, and takes its seat when our V is on
+    // its feet again: from our seat the others' cars have nobody at the
+    // wheel meanwhile.
+    let own = GetPlayer(game);
+    let riding = IsDefined(own) && GameInstance.GetMountingFacility(game).IsMountedToAnything(own.GetEntityID());
+    if riding || (this.m_noStreetSeats && TandemStreet.IsStreetSeat(proxy.seatOwner)) {
+      if !proxy.seatWaits {
+        proxy.seatWaits = true;
+        this.m_seatWaits += 1;
+        TandemVisibility.Fade(game, npc, false, 0.0);
+        TandemNative.HoldPuppet(TandemNative.NpcPuppetId(proxy.npc), true);
+        TandemNative.LogDebug(s"npcs: proxy \(proxy.npc) waits for its seat out of sight (our V rides: \(riding))");
+      }
+      proxy.seatRetryAt = now + 0.5;
       return;
+    }
+    if proxy.seatWaits {
+      proxy.seatWaits = false;
+      TandemVisibility.Fade(game, npc, true, 0.3);
     }
     // Not in the frames its body comes: a guest crashed twice within 0.3 s of
     // seating two proxies 33 ms after their bodies came (0xc0000005 at
@@ -1579,7 +1637,9 @@ public class TandemNpcs {
     // body's own transform reads as nonsense, (-16351, -14557, -16348), and
     // the controller walked it towards its target from there, 27 km away
     // in its own belief, for as long as it sat: 2026-11-21).
-    TandemNative.HoldPuppet(TandemNative.NpcPuppetId(proxy.npc), true);
+    if !this.m_noSeatHold {
+      TandemNative.HoldPuppet(TandemNative.NpcPuppetId(proxy.npc), true);
+    }
     TandemNative.Log(s"npcs: proxy \(proxy.npc) seated in \(NameToString(slot)) of player \(proxy.seatOwner)'s vehicle");
   }
 
