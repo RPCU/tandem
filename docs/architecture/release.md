@@ -143,6 +143,12 @@ one without. Rather than handle every such case, tandem requires it.
 - `versions.txt` of a report says what the game said, and whether
   `archive/pc/ep1` holds files (all `tandem-report.exe` can know).
 
+A **core feature this game version turned off** (`degradations.md`: puppet
+movement, pose stream, quest nodes, quest freeze) blocks the same way, with
+its own sentence in `Runtime::Problems` (`degraded::CoreProblem`, shown in
+the player's language by `TandemDegradedSay.CoreText`); it is known at the
+first frame, so the hooks stay, passing through.
+
 **Co-op off** (`Runtime::Blocked`) means: no hook is installed (the game
 runs as without tandem), `Runtime::Choose` refuses any session (so
 `TandemNative.IsConfigured()` stays false and `TandemSystem` stays idle),
@@ -206,9 +212,11 @@ version 5, the host runs 6`, nothing on the guest's screen (a session
   their game has no Phantom Liberty …"). A host whose own game lacks it
   (only possible with `compat = off`) refuses everyone, with the words the
   other way round. Final, like a version refusal.
-- **`kProtocolVersion` is 17** since the streams of every frame and shot
-  got shorter wire forms (`PoseFrame`, `PlayerMotion`, `VehicleMotion`,
-  `Cue`: `netcode.md`, "What goes on the wire") (2026-11-22; 16: dual
+- **`kProtocolVersion` is 18** since every game says what it runs without
+  (`Degraded`, appended; bumped all the same: a game of 17 would stay
+  silent, `degradations.md`) (2026-11-22; 17: the streams of every frame
+  and shot got shorter wire forms (`PoseFrame`, `PlayerMotion`,
+  `VehicleMotion`, `Cue`: `netcode.md`, "What goes on the wire"); 16: dual
   wielding gave a hand to a `Charge` cue (`at.y`), a smart round
   (`kThrowLeftHand`) and a strike (`kStrikeLeftHand`), and 15: `CarPaint`
   appended, the same day;

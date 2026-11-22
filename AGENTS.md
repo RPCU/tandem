@@ -49,6 +49,7 @@ addresses, 192.0.2.x / 198.51.100.x / 203.0.113.x, and fake names).
 | `task threads:check`    | script hooks that may run on job threads only read and queue |
 | `task refs:check`       | script calls of ours and our TweakDB records exist           |
 | `task scenarios:check`  | scenarios name real peer flags, commands, helpers, log lines |
+| `task degraded:check`   | degradation ids: catalogue, texts EN + FR, doc rows, uses    |
 | `task docs:check`       | doc links and § numbers resolve; no fact lost since HEAD     |
 | `task mods:check DIR=…` | other mods' script hooks against tandem's (conflicts)        |
 | `task scenario -- …`    | in-game scenarios against the mock player (NAME, all, list)  |
@@ -69,7 +70,8 @@ of memory); push the branch and read the run (Git, below). Locally, the
 cheap ones: `task relay:test` for `relay/`, `task pilot:test` for
 `tools/pilot/`, `task k8s:check` for `deploy/`,
 `task natives:check`, `task strings:check`, `task menu:check`,
-`task threads:check`, `task refs:check`, `task scenarios:check` and `task docs:check`;
+`task threads:check`, `task refs:check`, `task scenarios:check`,
+`task degraded:check` and `task docs:check`;
 `task scripts:check` for `scripts/` needs the game machine.
 
 `tools/build.sh TASK…` builds where there is room (Git, below), when a
@@ -260,6 +262,24 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
 - anya's keyboard is AZERTY: simulated keys land on other letters. Restart
   the game only for script or plugin changes; `tools/game.sh cmd …` needs
   none.
+
+### No silent fallback (`docs/architecture/degradations.md`)
+
+- **Whatever takes a lesser path than the intended one registers it**, by
+  an id of the catalogue (`core/src/degraded.cpp`): a state that holds
+  (`TandemDegraded.State(id, why)` … `Over(id)`, `Chosen` for a
+  `tandem.ini` switch; `Degradations::Get().Start` in the plugin; an engine
+  feature by `engine::FeatureOff`) or a fallback taken for one body
+  (`TandemDegraded.Fallback(id, why)`). A log line alone is a silent
+  failure: the registry is what the player (a notice, the status panel),
+  the other players (`proto::Degraded`), the session's start and end lines
+  and the tests read. A core id (co-op cannot be right without it) means no
+  session. A new id: its catalogue row, its text in `Text.reds`
+  (`Degraded-Id-…`, English and French), its row in `degradations.md`
+  (`task degraded:check`).
+- **A scenario fails on an entry it did not declare** (`expect_degraded ID`,
+  `allow_fallback ID`): one that tests a fallback on purpose says so; any
+  other entry is a bug to fix, not to allow.
 
 ### Engine access
 

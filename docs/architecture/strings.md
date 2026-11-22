@@ -174,8 +174,70 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Name-Title` | Your co-op name | Votre nom en coop | Coop.reds |
 | `Name-Ask` | The name the other players see over your V and in their party list: 1 to 16 characters (cancel: V for now) | Le nom que les autres joueurs voient au-dessus de votre V et dans leur liste d'équipe : 1 à 16 caractères (annuler : V pour l'instant) | Coop.reds, Settings.reds |
 | `Name-Invalid` | Not a name: {1}. 1 to 16 characters, without ; or # | Nom refusé : {1}. 1 à 16 caractères, sans ; ni # | Coop.reds, Settings.reds |
-| `Session-EngineOff` | This game version turns parts of co-op off: {1} | Cette version du jeu désactive des parties du coop : {1} | System.reds |
 | `Session-Renamed` | {1} is taken in this session: the others see you as {2} | {1} est déjà pris dans cette session : les autres vous voient comme {2} | System.reds |
+
+### What the game runs without
+
+`Degraded-Id-<id>`: one per id of the catalogue (`degradations.md`), filled
+into the others as `{1}` or `{2}`.
+
+<!-- prettier-ignore -->
+| Key | English | French | Shown by |
+| --- | --- | --- | --- |
+| `Session-CoreOff` | Co-op did not start: this game version cannot run it without {1}. See the co-op menu | La coop n'a pas démarré : cette version du jeu ne peut pas la faire fonctionner sans {1}. Voir le menu coop | System.reds |
+| `Degraded-CoreOff` | This game cannot run co-op without {1}. tandem does not match this game version ({2}): update tandem, or the game. | Ce jeu ne peut pas faire fonctionner la coop sans {1}. tandem ne correspond pas à cette version du jeu ({2}) : mettez à jour tandem, ou le jeu. | Degraded.reds |
+| `Degraded-CoreEnded` | Co-op stopped: this game can no longer run it right. See the co-op menu | Coop arrêtée : ce jeu ne peut plus la faire fonctionner correctement. Voir le menu coop | System.reds |
+| `Degraded-Off` | Co-op runs without: {1} | La coop fonctionne sans : {1} | Degraded.reds |
+| `Degraded-Chosen` | By your settings, co-op runs without: {1} | Selon vos réglages, la coop fonctionne sans : {1} | Degraded.reds |
+| `Degraded-Back` | Back to normal: {1} | De retour à la normale : {1} | Degraded.reds |
+| `Degraded-Fallback` | Co-op fell back: {1} | La coop s'est rabattue sur un repli : {1} | Degraded.reds |
+| `Degraded-Other` | {1}'s game runs without: {2} | Le jeu de {1} fonctionne sans : {2} | Degraded.reds |
+| `Degraded-OtherBack` | {1}'s game is back to normal: {2} | Le jeu de {1} est revenu à la normale : {2} | Degraded.reds |
+| `Degraded-StatusOff` | Runs without: {1} | Fonctionne sans : {1} | Degraded.reds |
+| `Degraded-StatusChosen` | Runs without (your setting): {1} | Fonctionne sans (votre réglage) : {1} | Degraded.reds |
+| `Degraded-StatusFallback` | Fell back {2} time(s): {1} | Repli utilisé {2} fois : {1} | Degraded.reds |
+| `Degraded-Id-puppet-movement` | the movement of other players and shared NPCs | le déplacement des autres joueurs et des PNJ partagés | Degraded.reds |
+| `Degraded-Id-pose-stream` | the other players' body animation | l'animation du corps des autres joueurs | Degraded.reds |
+| `Degraded-Id-quest-nodes` | the reading of quests (story sync, private scenes) | la lecture des quêtes (synchro de l'histoire, scènes privées) | Degraded.reds |
+| `Degraded-Id-quest-freeze` | the pause of your own story while you play the host's | la mise en pause de votre propre histoire pendant celle de l'hôte | Degraded.reds |
+| `Degraded-Id-clip-lengths` | the exact pace of other players' steps | le rythme exact des pas des autres joueurs | Degraded.reds |
+| `Degraded-Id-looks` | the other players' looks (stand-in bodies instead) | l'apparence des autres joueurs (corps de substitution à la place) | Degraded.reds |
+| `Degraded-Id-look-keys` | your own look sent to the others | l'envoi de votre apparence aux autres | Degraded.reds |
+| `Degraded-Id-third-person-mark` | third-person clothes on other players | les vêtements à la troisième personne des autres joueurs | Degraded.reds |
+| `Degraded-Id-quest-prefabs` | the host's quest interiors | les intérieurs de quête de l'hôte | Degraded.reds |
+| `Degraded-Id-workspots` | NPCs shown at their work spots | les PNJ affichés à leur poste d'activité | Degraded.reds |
+| `Degraded-Id-physics-watch` | the watch on long physics pauses | la surveillance des longues pauses de la physique | Degraded.reds |
+| `Degraded-Id-transform-guard` | the guard against an engine crash | la protection contre un plantage du moteur | Degraded.reds |
+| `Degraded-Id-anim-trace` | the animation trace | la trace des animations | Degraded.reds |
+| `Degraded-Id-vehicle-move` | smooth movement of other players' vehicles (they are teleported) | le déplacement fluide des véhicules des autres joueurs (ils sont téléportés) | Degraded.reds |
+| `Degraded-Id-drawn-prompts` | the game's own prompts on players and vendors (tandem draws them) | les invites natives du jeu sur les joueurs et les marchands (tandem les dessine) | Degraded.reds |
+| `Degraded-Id-attitude-relations` | declared faction relations (copied NPC by NPC instead) | les relations de faction déclarées (copiées PNJ par PNJ à la place) | Degraded.reds |
+| `Degraded-Id-scene-privacy` | private scenes (every scene counts as important) | les scènes privées (toute scène compte comme importante) | Degraded.reds |
+| `Degraded-Id-interaction-casts` | the reading of who an interaction involves | la lecture de qui participe à une interaction | Degraded.reds |
+| `Degraded-Id-scene-voice` | V's own voice in replayed scenes | la voix de V dans les scènes rejouées | Degraded.reds |
+| `Degraded-Id-prompt-drawn` | a prompt drawn by tandem instead of the game's own | une invite dessinée par tandem au lieu de celle du jeu | Degraded.reds |
+| `Degraded-Id-vehicle-teleported` | a vehicle teleported instead of moved smoothly | un véhicule téléporté au lieu d'être déplacé en douceur | Degraded.reds |
+| `Degraded-Id-street-body-respawned` | a street vehicle that vanished was spawned again | un véhicule de rue disparu a été recréé | Degraded.reds |
+| `Degraded-Id-proxy-respawned` | a shared NPC that vanished was spawned again | un PNJ partagé disparu a été recréé | Degraded.reds |
+| `Degraded-Id-npc-state-polled` | an NPC's change of state was caught late | un changement d'état d'un PNJ a été détecté en retard | Degraded.reds |
+| `Degraded-Id-grapple-held` | a grabbed NPC held in place by hand | un PNJ saisi maintenu en place manuellement | Degraded.reds |
+| `Degraded-Id-loot-not-shared` | dropped items were not shared | des objets lâchés n'ont pas été partagés | Degraded.reds |
+| `Degraded-Id-record-substituted` | something from another player's mods is shown otherwise here | un élément des mods d'un autre joueur est affiché autrement ici | Degraded.reds |
+| `Degraded-Id-look-not-received` | a player sent no look: a stand-in body | un joueur n'a envoyé aucune apparence : corps de substitution | Degraded.reds |
+| `Degraded-Id-stand-in-look` | a player's look could not be applied: a stand-in body | l'apparence d'un joueur n'a pas pu être appliquée : corps de substitution | Degraded.reds |
+| `Degraded-Id-body-incomplete` | a player's body is missing a part | il manque un élément au corps d'un joueur | Degraded.reds |
+| `Degraded-Id-workspot-not-entered` | an NPC could not take its work spot | un PNJ n'a pas pu prendre son poste d'activité | Degraded.reds |
+| `Degraded-Id-scene-camera-missing` | a scene's camera was missing: your own view stays | la caméra d'une scène manquait : votre propre vue reste | Degraded.reds |
+| `Degraded-Id-carried-by-placement` | your V is carried in a vehicle by repeated placement | votre V est transporté dans un véhicule par placements répétés | Degraded.reds |
+| `Degraded-Id-revive-ended-by-hand` | a revive's death effects were ended by hand | les effets de mort d'une réanimation ont été retirés manuellement | Degraded.reds |
+| `Degraded-Id-race-watched` | you could not get into the race car: you watch | impossible de monter dans la voiture de course : vous regardez | Degraded.reds |
+| `Degraded-Id-v-slowed-as-entity` | your V is slowed another way than intended | votre V est ralenti autrement que prévu | Degraded.reds |
+| `Degraded-Id-radio-not-matched` | a car radio did not take its driver's station | un autoradio n'a pas pris la station du conducteur | Degraded.reds |
+| `Degraded-Id-device-not-matched` | a device did not take the host's state | un appareil n'a pas pris l'état de l'hôte | Degraded.reds |
+| `Degraded-Id-police-not-spawned` | a police unit could not appear | une unité de police n'a pas pu apparaître | Degraded.reds |
+| `Degraded-Id-quest-signals-dropped` | part of your paused story was lost: load your last save after leaving | une partie de votre histoire en pause a été perdue : chargez votre dernière sauvegarde en quittant | Degraded.reds |
+| `Degraded-Id-no-room` | no room left for another body or animation | plus de place pour un autre corps ou une autre animation | Degraded.reds |
+| `Degraded-Id-puppet-not-driven` | a player's body could not be moved | le corps d'un joueur n'a pas pu être déplacé | Degraded.reds |
 
 ### Shared words
 

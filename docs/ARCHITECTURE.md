@@ -72,7 +72,7 @@ task touches ([Topic files](#topic-files)).
 | `nix/`, `default.nix` | relay package and OCI image (and its arm64 twin, `relayImageArm64`); redscript (the game's scc, built for Linux) | `nix-build -A relayImage` |
 | `deploy/kubernetes/base` | kustomize base for the relay; `kgateway/`: the base with kgateway in front of its HTTP side; `playit/`: reached through playit.gg tunnels (the agent as a sidecar, PROXY v2); `edge/`: a component putting each replica on its own edge node, UDP by hostPort (no UDP load balancer); `kgateway-edge/`: both | `task k8s:check` |
 | `deploy/systemd` | `tandem-relay.service`, the relay on a plain server (`docs/relay.md`) | — |
-| `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp`, `RegionNatives.reds` `region_natives.cpp`, `StreetNatives.reds` `street_natives.cpp`, `PresenceNatives.reds` `presence_natives.cpp`, `ActivityNatives.reds` `activity_natives.cpp`, `ProgressNatives.reds` `progress_natives.cpp`, `TradeNatives.reds` `trade_natives.cpp`, `CommsNatives.reds` `comms_natives.cpp`, `ModsNatives.reds` `mods_natives.cpp`, `WheelsNatives.reds` `wheels_natives.cpp`, `PilotNatives.reds` `pilot_natives.cpp`, `StreamingNatives.reds` `streaming_natives.cpp`, `ObjectsNatives.reds` `objects_natives.cpp` | `task scripts:check`, `task natives:check` |
+| `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp`, `RegionNatives.reds` `region_natives.cpp`, `StreetNatives.reds` `street_natives.cpp`, `PresenceNatives.reds` `presence_natives.cpp`, `ActivityNatives.reds` `activity_natives.cpp`, `ProgressNatives.reds` `progress_natives.cpp`, `TradeNatives.reds` `trade_natives.cpp`, `CommsNatives.reds` `comms_natives.cpp`, `ModsNatives.reds` `mods_natives.cpp`, `WheelsNatives.reds` `wheels_natives.cpp`, `PilotNatives.reds` `pilot_natives.cpp`, `StreamingNatives.reds` `streaming_natives.cpp`, `ObjectsNatives.reds` `objects_natives.cpp`, `DegradedNatives.reds` `degraded_natives.cpp` | `task scripts:check`, `task natives:check` |
 | `tweaks/` | TweakXL records, installed to `r6/tweaks/tandem` (the puppet records, their attitude groups, the player marker, the ping marker, the prompts' choices) | — |
 | `dist/` | files installed next to the DLL (`tandem.ini`, shipped as `tandem.default.ini`) and `INSTALL.md`, the players' guide | `task package` |
 | `cmake/` | `clang-cl-msvc.cmake`: the Windows cross toolchain | — |
@@ -272,6 +272,10 @@ Each such piece of access is a named feature, checked at the first frame
 and listed in one log line, `engine: N features on, M off: …`
 (`tools/game.sh engine`): the features, their checks and what each turns
 off are in [`architecture/engine-access.md`](architecture/engine-access.md).
+A feature that is off is never only a log line: it is registered with what
+the game runs without, told to every player, and a core one means no
+session ([`architecture/degradations.md`](architecture/degradations.md), the
+rule for every fallback, the scripts' too).
 
 Before relying on any engine fact from `docs/research/`, check its tag:
 `[2.5-verified]` can be used, `[2.31-only]` and `[unverified]` need checking
@@ -340,6 +344,7 @@ plugin") and its open problems.
 - `comms.md`: pings (the tag key outside the scanner), the link and what it shares (scanner tags, Ping reveals; `link = auto|ask|off`), waypoints, the danger callout; why no emotes, and no text chat (not wanted, the user's decision); the consistency of each.
 - `relay.md`: the relay's sessions, join codes, abuse limits, replicas (sharding, redirects, the entrance, drain, restarts), the packet path, wire format, deployment, the game side (a relay that goes silent is held through).
 - `engine-access.md`: the checked address lookup (`engine::Find`), every feature that goes by a hash, an offset or a vtable slot with its startup check and what it turns off, the `engine:` startup line. For any new hook or call by hash.
+- `degradations.md`: no silent fallback: the registry of what a game runs without (states, fallbacks, core or degraded, chosen), every id and who registers it, what the player and the other players are shown (`proto::Degraded`), core off means no session, how a scenario declares an expected one. For any new fallback or lesser path.
 - `testing.md`: test levels, scenarios, every `tandem-peer` mode and flag.
 - `recordings.md`: NPC record and replay, gameplay recordings (`.tplay`), recorded host sessions (`.tsession`), the recorder (`recorder = on`: play recorded as it happens, solo or in a session), the planned simulated second game.
 - `two-instances.md`: two real games on the game machine (tried 2026-11-19: they play a session over loopback; a guest froze once, starts under load trip the engine's watchdog): results and measurements, findings, the setup (`tools/instance.sh`: a game folder and a prefix per instance, outside Steam, sandboxed off the player's files), the first-try checklist; the plugin's `TANDEM_CONFIG`, `TANDEM_CMD`, `TANDEM_PORT`, `TANDEM_LOG` (`core/include/tandem/instance.hpp`).
