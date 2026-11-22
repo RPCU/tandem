@@ -515,7 +515,11 @@ public class TandemNpcAnims {
         // 2026-11-22) is the poll's by design, not a fallback; a weapon or a
         // state the events missed is.
         let prop = missed == 8 && StrBeginsWith(TDBID.ToStringDEBUG(sent.anim.weapon), "Items.crowd_");
-        if !prop {
+        // A workspot is the poll's by design too: entering one has no event,
+        // and leaving one by an interruption (a fight, a door) raises none
+        // (devices-door, 2026-11-22: npc 7's workspot -> 0).
+        let workspot = missed == 16;
+        if !prop && !workspot {
           TandemDegraded.Fallback("npc state polled", s"npc \(id)\(TandemNpcAnims.Diff(sent.anim, anim, missed))");
         }
         if (missed & 7) != 0 {
