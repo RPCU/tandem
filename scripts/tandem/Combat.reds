@@ -302,7 +302,10 @@ public abstract class TandemCombat {
       if i < ArraySize(sent) && sent[i] > 0.0 {
         most = MaxF(sent[i] * allowance * 1.01, 1.0);
       }
-      values[i] = MinF(values[i], most);
+      // A stand-in's own damage means nothing (Attacks.REMOVE_BulletWithDamage
+      // computed 1 for a 20-point area hit: combat-friendly-fire,
+      // 2026-11-22): the sender's word is the hit.
+      values[i] = standIn ? (i < ArraySize(sent) ? sent[i] : 0.0) : MinF(values[i], most);
       total += values[i];
       i += 1;
     }
