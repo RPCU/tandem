@@ -27,6 +27,12 @@ bool InstallQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle h
                         const std::vector<std::string> &allow, const std::vector<std::string> &gigs,
                         bool freeze);
 void RemoveQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle);
+// At the first frame (access.hpp). "quest nodes": the hook and the RTTI
+// sizes its reads rely on (off: nothing is observed, no scene is classed).
+// "quest freeze": what gives held signals back, the context's constructor
+// and the root phase's ExecutePath slot (off: QuestFreezeAvailable is false,
+// the guest's quests are never frozen).
+bool CheckQuests();
 
 // Game thread. The hook is in and the engine layouts are the measured ones.
 bool QuestFreezeAvailable();

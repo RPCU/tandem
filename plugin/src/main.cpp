@@ -2,6 +2,7 @@
 
 #include "comms.hpp"
 #include "config.hpp"
+#include "engine/access.hpp"
 #include "engine/guards.hpp"
 #include "engine/hooks.hpp"
 #include "engine/pose.hpp"
@@ -96,6 +97,10 @@ struct ScriptFrame {
 
 bool OnRunningUpdate(RED4ext::CGameApplication *) {
   tandem::plugin::threads::NoteFrame();
+  // Once, at the first frame: what of the engine this game lets us use
+  // (engine/access.hpp). A blocked plugin touches nothing and checks nothing.
+  if (!tandem::plugin::engine::AccessChecked() && !tandem::plugin::Runtime::Get().Blocked())
+    tandem::plugin::engine::CheckAccess();
   if (!tandem::plugin::Runtime::Get().Started())
     return false;
   Red::ScriptGameInstance game;
@@ -240,6 +245,8 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     sdk->gameStates->Add(handle, RED4ext::EGameStateType::Running, &g_running);
     if (runtime.config.pose)
       engine::InstallPoseStream(sdk, handle);
+    else
+      engine::FeatureNotAsked(engine::feature::kPoseStream, "tandem.ini pose = off");
     // The quest node hook (engine/quests.cpp): the guest's quest freeze, only
     // when asked for, and which scene each game plays (scene privacy).
     // Whatever the role (a session may be chosen in the co-op menu): it
@@ -249,12 +256,18 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
                                runtime.config.publicScenes});
       engine::InstallQuestFreeze(sdk, handle, runtime.config.questFreezeAllow,
                                  runtime.config.questFreezeGigs, runtime.config.questFreeze);
+    } else {
+      const char *why = "tandem.ini quest_freeze, scene_privacy and scene_replay off";
+      engine::FeatureNotAsked(engine::feature::kQuestNodes, why);
+      engine::FeatureNotAsked(engine::feature::kQuestFreeze, why);
     }
     // The scripted moments marked by hand (docs/architecture/scripted-moments.md,
     // "The moment list"): shipped beside the DLL, plus tandem.ini's.
     LoadMoments(PluginDirectory(handle) / "moments.txt");
     if (runtime.config.trace || runtime.config.mirror)
       engine::InstallTrace(sdk, handle, runtime.config.trace);
+    else
+      engine::FeatureNotAsked(engine::feature::kTrace, "tandem.ini trace and mirror off");
     // The recorder (recording.hpp): its own key, whatever the role.
     Recording::Get().Configure(runtime.config.recorder,
                                PluginDirectory(handle) / "recordings" / "auto",

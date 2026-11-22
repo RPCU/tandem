@@ -12,9 +12,8 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "../log.hpp"
+#include "access.hpp"
 #include "guards.hpp"
-
-#include <RED4ext/Relocation.hpp>
 
 #include <windows.h>
 
@@ -102,15 +101,16 @@ const char *WineVersion() {
 } // namespace
 
 std::string InstallCrashGuards(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle) {
+  const auto f = feature::kTransformGuard;
   const char *wine = WineVersion();
-  if (!wine)
+  if (!wine) {
+    FeatureNotAsked(f, "not Wine");
     return "off (not Wine)";
-  const auto update = RED4ext::UniversalRelocBase::Resolve(kTransformUpdate);
-  const auto job = RED4ext::UniversalRelocBase::Resolve(kTransformJob);
-  if (!update || !job) {
-    log::Error("transform guard: its functions are not in this game's address library");
-    return "off (not found)";
   }
+  const auto update = FindAddress(f, "the transform update", kTransformUpdate);
+  const auto job = FindAddress(f, "the transform job", kTransformJob);
+  if (!update || !job)
+    return "off (not found)";
   // Every check, so the log names each difference at once.
   bool ok = Matches("the update's start", update, kUpdateStart);
   ok = Matches("the job's handle", job + kZeroAt, kZero) && ok;
@@ -124,15 +124,18 @@ std::string InstallCrashGuards(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginH
       ok = false;
     }
   }
-  if (!ok)
+  if (!ok) {
+    FeatureOff(f, "the transform update or its job differ from 2.50");
     return "off (code differs from 2.50)";
+  }
   g_target = reinterpret_cast<void *>(update);
   if (!sdk->hooking->Attach(handle, g_target, reinterpret_cast<void *>(&Detour),
                             reinterpret_cast<void **>(&g_original))) {
-    log::Error("transform guard: could not hook the transform update");
+    FeatureOff(f, "could not hook the transform update");
     g_target = nullptr;
     return "off (hook refused)";
   }
+  FeatureOn(f);
   log::Info("transform guard: on (Wine {}): an expired entity's transform update is skipped", wine);
   return "on";
 }

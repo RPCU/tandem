@@ -47,7 +47,7 @@ add_library(tandem SHARED
   src/objects_natives.cpp
   src/threads.cpp
   src/stall.cpp
-  src/engine/layout.cpp
+  src/engine/access.cpp
   src/engine/animation.cpp
   src/engine/controller.cpp
   src/engine/hooks.cpp

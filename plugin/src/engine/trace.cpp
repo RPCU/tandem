@@ -7,10 +7,10 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "../log.hpp"
+#include "access.hpp"
 #include "trace.hpp"
 
 #include <RED4ext/RTTISystem.hpp>
-#include <RED4ext/Relocation.hpp>
 #include <RED4ext/Scripting/Natives/Generated/ent/IComponent.hpp>
 #include <RED4ext/Scripting/Natives/entEntity.hpp>
 
@@ -62,8 +62,13 @@ void Detour(RED4ext::ent::IComponent *component, RED4ext::CName name,
 mirror:
   if (g_playerClass && component && component->owner &&
       component->owner->GetType()->IsA(g_playerClass) && feature && *feature) {
-    std::lock_guard _(g_mirrorLock);
-    for (auto &target : g_mirrors) {
+    // The targets copied under our lock, the engine called without it.
+    std::vector<RED4ext::Handle<RED4ext::ent::IComponent>> targets;
+    {
+      std::lock_guard _(g_mirrorLock);
+      targets = g_mirrors;
+    }
+    for (auto &target : targets) {
       if (target) {
         // A copy of the handle per call: the callee destroys its argument.
         auto copy = *feature;
@@ -99,13 +104,18 @@ void ClearMirrors() {
 
 bool InstallTrace(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle, bool logging) {
   g_logging = logging;
-  g_target = reinterpret_cast<void *>(RED4ext::UniversalRelocBase::Resolve(kApplyFeature));
-  if (!g_target || !sdk->hooking->Attach(handle, g_target, reinterpret_cast<void *>(&Detour),
-                                         reinterpret_cast<void **>(&g_original))) {
-    log::Warn("trace: ApplyFeature not hooked");
+  const auto f = feature::kTrace;
+  g_target = Find<void *>(f, "AnimationControllerComponent::ApplyFeature", kApplyFeature);
+  if (g_target && !sdk->hooking->Attach(handle, g_target, reinterpret_cast<void *>(&Detour),
+                                        reinterpret_cast<void **>(&g_original))) {
+    FeatureOff(f, "could not hook ApplyFeature");
     g_target = nullptr;
+  }
+  if (!g_target) {
+    log::Warn("trace: ApplyFeature not hooked");
     return false;
   }
+  FeatureOn(f);
   log::Info("trace: anim feature hook on{}", logging ? ", logging every distinct feature" : "");
   return true;
 }

@@ -14,6 +14,11 @@ namespace tandem::plugin::engine {
 // At plugin load: the idle-controller hook that spots our puppets.
 bool InstallHooks(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle);
 void RemoveHooks(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle);
+// At the first frame (access.hpp): the layouts the hook and the controller
+// read, and the functions they call. Until it has passed the hook only calls
+// the engine's function; on a mismatch it stays that way and no controller
+// is attached.
+bool CheckMovement();
 
 // Game thread: give a puppet our movement controller. False (and logged) when
 // the entity has no move component or the engine layouts don't match.

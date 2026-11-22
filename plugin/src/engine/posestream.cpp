@@ -52,13 +52,13 @@
 #include "../log.hpp"
 #include "../perf.hpp"
 #include "../runtime.hpp"
+#include "access.hpp"
 #include "posestream.hpp"
 
 #include "tandem/pose.hpp"
 #include "tandem/rigpose.hpp"
 
 #include <RED4ext/RTTISystem.hpp>
-#include <RED4ext/Relocation.hpp>
 #include <RED4ext/Scripting/Natives/animRig.hpp>
 
 #include <windows.h>
@@ -160,6 +160,23 @@ template <class T> bool ReadAt(std::uintptr_t address, T &value) {
   if (address < 0x10000 || address > 0x00007FFFFFFFFFF0)
     return false;
   return CopyOut(reinterpret_cast<const void *>(address), &value, sizeof(T));
+}
+
+// Whether the pointer a graph instance holds at +0x40 is an animRig: its
+// vtable lies in the game's image and its class says so. Job threads, once
+// per rig address (the maps below remember the answer); guarded. (Called
+// under the maps' locks: GetType only answers the class, it cannot wait.)
+RED4ext::CClass *g_rigClass = nullptr; // CheckPoseStream
+bool IsRig(std::uintptr_t address) {
+  std::uintptr_t vtable = 0;
+  if (!g_rigClass || !ReadAt(address, vtable) || !InGameImage(vtable))
+    return false;
+  __try {
+    auto *type = reinterpret_cast<RED4ext::ISerializable *>(address)->GetType();
+    return type && type->IsA(g_rigClass);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
 }
 
 // ---- the read side: the local V's skeleton, mapped to the body rig ----
@@ -355,6 +372,8 @@ std::mutex g_targetLock;
 std::vector<TargetMap> g_targets;
 
 bool MapTarget(std::uintptr_t rigAddress, TargetMap &map) {
+  if (!IsRig(rigAddress))
+    return false;
   const auto *rig = reinterpret_cast<const RED4ext::anim::Rig *>(rigAddress);
   const auto &names = rig->boneNames;
   const auto &reference = rig->referencePoseMS;
@@ -518,6 +537,8 @@ RigSlot *RigSlotOf(std::uintptr_t instance) {
 // The rig's bones by name and its reference pose, local space. Under the
 // slot's lock.
 bool MapRig(std::uintptr_t rigAddress, RigSlot &slot) {
+  if (!IsRig(rigAddress))
+    return false;
   const auto *resource = reinterpret_cast<const RED4ext::anim::Rig *>(rigAddress);
   const auto &names = resource->boneNames;
   const auto count = names.Size();
@@ -745,12 +766,27 @@ bool ActorIsOtherRig(std::uint32_t npc) {
 
 // ---- game thread ----
 
+// What the hooks read of the SDK's anim::Rig (2.50).
+static_assert(__builtin_offsetof(RED4ext::anim::Rig, referencePoseLS) == 0x48);
+static_assert(__builtin_offsetof(RED4ext::anim::Rig, boneNames) == 0x50);
+static_assert(__builtin_offsetof(RED4ext::anim::Rig, referencePoseMS) == 0x60);
+static_assert(__builtin_offsetof(RED4ext::anim::Rig, trackNames) == 0xE8);
+static_assert(__builtin_offsetof(RED4ext::anim::Rig, referenceTracks) == 0xF8);
+
 bool LayoutOk() {
   if (!g_layoutChecked.exchange(true)) {
-    auto *animated = RED4ext::CRTTISystem::Get()->GetClass("entAnimatedComponent");
-    auto *rig = RED4ext::CRTTISystem::Get()->GetClass("animRig");
-    const bool ok = animated && animated->GetSize() == kComponentSize && rig &&
-                    rig->GetSize() == sizeof(RED4ext::anim::Rig);
+    // Every check, so the log names each mismatch at once: class sizes and
+    // property offsets from RTTI, measured on 2.50.
+    const auto f = feature::kPoseStream;
+    bool ok = ClassSizeIs(f, "entAnimatedComponent", kComponentSize);
+    ok = ClassSizeIs(f, "animRig", sizeof(RED4ext::anim::Rig)) && ok;
+    ok = PropertyAt(f, "entAnimatedComponent", "rig", 0x138) && ok;
+    ok = PropertyAt(f, "entAnimatedComponent", "graph", 0x150) && ok;
+    ok = PropertyAt(f, "animRig", "boneNames", 0x50) && ok;
+    ok = PropertyAt(f, "animRig", "referencePoseMS", 0x60) && ok;
+    ok = PropertyAt(f, "animRig", "trackNames", 0xE8) && ok;
+    ok = PropertyAt(f, "animRig", "referenceTracks", 0xF8) && ok;
+    g_rigClass = RED4ext::CRTTISystem::Get()->GetClass("animRig");
     g_layoutOk = ok;
     if (!ok)
       log::Error("pose stream: entAnimatedComponent or animRig differ from 2.50: poses are off");
@@ -778,27 +814,37 @@ std::uintptr_t RootComponent(const RED4ext::Handle<RED4ext::ent::Entity> &entity
 } // namespace
 
 bool InstallPoseStream(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle) {
-  g_jobTarget = reinterpret_cast<void *>(RED4ext::UniversalRelocBase::Resolve(kEntityJob));
-  g_commitTarget = reinterpret_cast<void *>(RED4ext::UniversalRelocBase::Resolve(kCommit));
+  const auto f = feature::kPoseStream;
+  g_jobTarget = Find<void *>(f, "the entity animation job", kEntityJob);
+  g_commitTarget = Find<void *>(f, "the pose commit", kCommit);
   if (!g_jobTarget || !g_commitTarget) {
-    log::Error("pose stream: the animation job or the pose commit is not in this game version");
     g_jobTarget = g_commitTarget = nullptr;
     return false;
   }
   if (!sdk->hooking->Attach(handle, g_jobTarget, reinterpret_cast<void *>(&DetourJob),
                             reinterpret_cast<void **>(&g_originalJob))) {
-    log::Error("pose stream: could not hook the animation job");
+    FeatureOff(f, "could not hook the animation job");
     g_jobTarget = g_commitTarget = nullptr;
     return false;
   }
   if (!sdk->hooking->Attach(handle, g_commitTarget, reinterpret_cast<void *>(&DetourCommit),
                             reinterpret_cast<void **>(&g_originalCommit))) {
-    log::Error("pose stream: could not hook the pose commit");
+    FeatureOff(f, "could not hook the pose commit");
     sdk->hooking->Detach(handle, g_jobTarget);
     g_jobTarget = g_commitTarget = nullptr;
     return false;
   }
   log::Info("pose stream: hooks on");
+  return true;
+}
+
+bool CheckPoseStream() {
+  // Not installed (tandem.ini pose = off, or a hash missing): said already.
+  if (!g_jobTarget || !g_commitTarget)
+    return false;
+  if (!LayoutOk())
+    return false;
+  FeatureOn(feature::kPoseStream);
   return true;
 }
 

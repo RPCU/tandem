@@ -7,6 +7,7 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "addresses.hpp"
+#include "engine/access.hpp"
 #include "engine/animation.hpp"
 #include "engine/hooks.hpp"
 #include "engine/look.hpp"
@@ -637,6 +638,13 @@ struct TandemNative : Red::IScriptable {
 
   // A command for the running game (tools/game.sh cmd): the first line of
   // tandem.cmd, which is then removed. Empty when there is none.
+  // Engine access (engine/access.hpp): whether one feature is on in this
+  // game (false too before the first frame's check), the features that are
+  // off ("" when none), and the startup line, for `cmd engine`.
+  static bool EngineOn(Red::CString feature) { return engine::FeatureIsOn(feature.c_str()); }
+  static Red::CString EngineOff() { return Red::CString(engine::FeaturesOff().c_str()); }
+  static Red::CString EngineReport() { return Red::CString(engine::AccessSummary().c_str()); }
+
   static Red::CString TakeCommand() {
     const auto &path = Runtime::Get().config.commandFile;
     std::error_code error;
@@ -667,6 +675,9 @@ struct TandemNative : Red::IScriptable {
     static auto *stateClass = Red::GetClass("gamePuppetPS");
     static const auto *stateProperty =
         objectClass ? objectClass->GetProperty("persistentState") : nullptr;
+    // (The byte's place is checked at the first frame: engine/access.cpp.)
+    if (!engine::FeatureIsOn(engine::feature::kThirdPerson))
+      return false;
     if (!entity || !stateProperty || !stateClass || !entity->GetType()->IsA(objectClass))
       return false;
     const auto &state = *reinterpret_cast<const Red::Handle<Red::ISerializable> *>(
@@ -2314,6 +2325,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(ClipLengths);
   RTTI_METHOD(ApplyLook);
   RTTI_METHOD(TakeCommand);
+  RTTI_METHOD(EngineOn);
+  RTTI_METHOD(EngineOff);
+  RTTI_METHOD(EngineReport);
   RTTI_METHOD(MarkThirdPerson);
   RTTI_METHOD(IsMirror);
   RTTI_METHOD(MirrorPlayerTo);

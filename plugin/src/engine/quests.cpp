@@ -46,13 +46,13 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "../log.hpp"
+#include "access.hpp"
 #include "quests.hpp"
 #include "scenes.hpp"
 
 #include <RED4ext/DynArray.hpp>
 #include <RED4ext/GameEngine.hpp>
 #include <RED4ext/RTTISystem.hpp>
-#include <RED4ext/Relocation.hpp>
 #include <RED4ext/ResourcePath.hpp>
 #include <RED4ext/SharedSpinLock.hpp>
 
@@ -82,6 +82,18 @@ constexpr std::size_t kNodeSize = 0x48, kNodeId = 0x40;
 constexpr std::size_t kContextSize = 0x340, kContextStack = 0xF8;
 constexpr std::size_t kSystemSize = 0x300, kSystemLock = 0x60, kSystemRoot = 0x68;
 constexpr std::size_t kExecutePathSlot = 0x120 / 8;
+// The function in that slot on 2.50, by address-library hash: the root
+// phase is a questRootInstance (its vtable 0x143699f88 holds 0x140bea3d0
+// there), a plain questPhaseInstance (0x14308a948) holds 0x140bea4c4. A root
+// whose slot holds neither is not called.
+constexpr std::uint32_t kRootExecutePath = 2987275044;
+constexpr std::uint32_t kPhaseExecutePath = 3749393265;
+// The context is not an RTTI class: its 0x340 bytes (Codeware's
+// QuestContext, 2.50) are followed by this many of ours, which the engine's
+// CreateContext must leave untouched. A larger context is caught there
+// instead of overrunning the stack, and turns the freeze off.
+constexpr std::size_t kContextGuard = 0x200;
+constexpr std::byte kGuardByte{0xA5};
 constexpr std::uint32_t kMaxPath = 64, kMaxStack = 32;
 constexpr std::size_t kMaxHeld = 4096;
 constexpr std::uint8_t kRefused = 1; // the engine's own "nothing here" (see above)
@@ -119,6 +131,11 @@ using ExecutePathFn = std::uint8_t (*)(void *phase, void *context,
 
 ExecuteNodeFn g_original = nullptr;
 void *g_target = nullptr;
+// CheckQuests: the context's constructor and the two functions the root
+// phase's slot may hold (0: not in this game).
+CreateContextFn g_createContext = nullptr;
+std::uintptr_t g_rootExecutePath = 0, g_phaseExecutePath = 0;
+std::atomic_bool g_replayOk{false};
 std::atomic_bool g_active{false};
 bool g_freezeAllowed = false; // tandem.ini quest_freeze = on (set at load)
 std::atomic_bool g_layoutChecked{false}, g_layoutOk{false};
@@ -448,14 +465,13 @@ std::uint8_t Detour(void *phase, void *node, void *context, const void *socket, 
 
 bool LayoutOk() {
   if (!g_layoutChecked.exchange(true)) {
-    auto *rtti = RED4ext::CRTTISystem::Get();
-    const auto size = [&](const char *name) {
-      auto *type = rtti->GetClass(name);
-      return type ? type->GetSize() : 0u;
-    };
-    const bool ok =
-        size("questPhaseInstance") == kPhaseSize && size("CResource") == kResourceSize &&
-        size("questNodeDefinition") == kNodeSize && size("questQuestsSystem") == kSystemSize;
+    // Every check, so the log names each mismatch at once (sizes from RTTI,
+    // measured on 2.50).
+    const auto f = feature::kQuestNodes;
+    bool ok = ClassSizeIs(f, "questPhaseInstance", kPhaseSize);
+    ok = ClassSizeIs(f, "CResource", kResourceSize) && ok;
+    ok = ClassSizeIs(f, "questNodeDefinition", kNodeSize) && ok;
+    ok = ClassSizeIs(f, "questQuestsSystem", kSystemSize) && ok;
     g_layoutOk = ok;
     if (!ok)
       log::Error("quest: questPhaseInstance, CResource, questNodeDefinition or questQuestsSystem "
@@ -473,18 +489,38 @@ void *QuestsSystem() {
   return engine->framework->gameInstance->GetSystem(type);
 }
 
-// Gives one held signal back to its phase. Game thread.
-std::uint8_t Replay(void *system, void *root, const Held &held) {
-  alignas(16) std::array<std::byte, kContextSize> context{};
-  static RED4ext::UniversalRelocFunc<CreateContextFn> createContext(kCreateContext);
-  createContext(system, context.data(), 1, 0, -1, -1);
+// The root phase's ExecutePath, when its vtable holds one of the two
+// functions measured on 2.50 in that slot; null (and the freeze off) when not.
+ExecutePathFn ExecutePathOf(void *root) {
+  std::uintptr_t vtable = 0, target = 0;
+  if (ReadAt(reinterpret_cast<std::uintptr_t>(root), vtable) && InGameImage(vtable) &&
+      ReadAt(vtable + kExecutePathSlot * sizeof(void *), target) && target &&
+      (target == g_rootExecutePath || target == g_phaseExecutePath))
+    return reinterpret_cast<ExecutePathFn>(target);
+  g_replayOk = false;
+  FeatureOff(feature::kQuestFreeze,
+             std::format("the root phase's vtable slot +0x{:X} holds {:#x}, not the function "
+                         "measured on 2.50",
+                         kExecutePathSlot * sizeof(void *), target));
+  return nullptr;
+}
+
+// Gives one held signal back to its phase. Game thread, under the quests
+// system's lock. 0 when given; when the engine's context is not the one
+// measured, the offset it wrote at past its end (nothing given then).
+std::size_t Replay(void *system, void *root, ExecutePathFn executePath, const Held &held) {
+  alignas(16) std::array<std::byte, kContextSize + kContextGuard> context{};
+  std::memset(context.data() + kContextSize, static_cast<int>(kGuardByte), kContextGuard);
+  g_createContext(system, context.data(), 1, 0, -1, -1);
+  for (std::size_t i = kContextSize; i < context.size(); ++i)
+    if (context[i] != kGuardByte)
+      return i;
   RED4ext::DynArray<std::uint16_t> path;
   for (const auto id : held.phase)
     path.PushBack(id);
   RED4ext::DynArray<std::array<std::byte, 16>> outputs; // QuestNodeSocket[]
-  const auto vtable = *reinterpret_cast<void ***>(root);
-  const auto executePath = reinterpret_cast<ExecutePathFn>(vtable[kExecutePathSlot]);
-  return executePath(root, context.data(), &path, held.node, held.socket, &outputs);
+  executePath(root, context.data(), &path, held.node, held.socket, &outputs);
+  return 0;
 }
 // Gives held signals back to their phases, in the order they came. Game
 // thread. Answers how many (-1: no quests system).
@@ -497,17 +533,38 @@ int GiveBack(const std::vector<Held> &held) {
     log::Error("quest: no quests system: {} held signals dropped", held.size());
     return -1;
   }
+  const auto executePath = g_replayOk.load() ? ExecutePathOf(root) : nullptr;
+  if (!executePath) {
+    log::Error("quest: this game's quest phases are not laid out as on 2.50: {} held signals "
+               "dropped, the guest's own story must reload its last save",
+               held.size());
+    return -1;
+  }
   auto *lock = reinterpret_cast<RED4ext::SharedSpinLock *>(
       reinterpret_cast<std::uintptr_t>(system) + kSystemLock);
   int given = 0;
   t_replaying = true;
+  // (The engine's own lock, as its callers hold it; none of ours.)
   lock->Lock();
+  std::size_t overrun = 0;
   for (const auto &signal : held) {
-    Replay(system, root, signal);
+    overrun = Replay(system, root, executePath, signal);
+    if (overrun)
+      break;
     ++given;
   }
   lock->Unlock();
   t_replaying = false;
+  if (overrun) {
+    g_replayOk = false;
+    FeatureOff(feature::kQuestFreeze,
+               std::format("the quest context is larger than the 0x{:X} bytes measured on 2.50 "
+                           "(written at +0x{:X})",
+                           kContextSize, overrun));
+    log::Error("quest: {} of {} held signals not given back: the guest's own story must reload "
+               "its last save",
+               held.size() - given, held.size());
+  }
   return given;
 }
 } // namespace
@@ -527,14 +584,15 @@ bool InstallQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle h
     for (const auto &path : gigs)
       g_gigs.insert(RED4ext::ResourcePath(path.c_str()).hash);
   }
-  g_target = reinterpret_cast<void *>(RED4ext::UniversalRelocBase::Resolve(kExecuteNode));
+  g_target = Find<void *>(feature::kQuestNodes, "the quest phase's ExecuteNode", kExecuteNode);
   if (!g_target) {
-    log::Error("quest: ExecuteNode is not in this game version: no quest freeze");
+    FeatureOff(feature::kQuestFreeze, "no quest node hook");
     return false;
   }
   if (!sdk->hooking->Attach(handle, g_target, reinterpret_cast<void *>(&Detour),
                             reinterpret_cast<void **>(&g_original))) {
-    log::Error("quest: could not hook ExecuteNode: no quest freeze");
+    FeatureOff(feature::kQuestNodes, "could not hook ExecuteNode");
+    FeatureOff(feature::kQuestFreeze, "no quest node hook");
     g_target = nullptr;
     return false;
   }
@@ -552,7 +610,35 @@ void RemoveQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle ha
   g_target = nullptr;
 }
 
-bool QuestFreezeAvailable() { return g_target && g_freezeAllowed && LayoutOk(); }
+bool CheckQuests() {
+  // Not installed (tandem.ini): said by the plugin's startup, nothing to check.
+  if (!g_target)
+    return false;
+  const bool nodes = LayoutOk();
+  if (nodes)
+    FeatureOn(feature::kQuestNodes);
+  if (!g_freezeAllowed) {
+    FeatureNotAsked(feature::kQuestFreeze, "tandem.ini quest_freeze = off");
+    return nodes;
+  }
+  // The freeze gives its held signals back through these: without them it
+  // must not start.
+  const auto f = feature::kQuestFreeze;
+  g_createContext = Find<CreateContextFn>(f, "QuestsSystem::CreateContext", kCreateContext);
+  g_rootExecutePath = FindAddress(f, "the root phase's ExecutePath", kRootExecutePath);
+  g_phaseExecutePath = FindAddress(f, "the quest phase's ExecutePath", kPhaseExecutePath);
+  const bool replay = g_createContext && g_rootExecutePath && g_phaseExecutePath;
+  if (!nodes)
+    FeatureOff(f, "the quest node hook's layouts differ from 2.50");
+  else if (replay)
+    FeatureOn(f);
+  g_replayOk = nodes && replay;
+  return g_replayOk;
+}
+
+bool QuestFreezeAvailable() {
+  return g_target && g_freezeAllowed && LayoutOk() && g_replayOk.load();
+}
 
 bool QuestFrozen() { return g_active.load(); }
 
@@ -610,6 +696,8 @@ void SetQuestGrouped(bool grouped) {
 bool QuestGrouped() { return g_grouped.load(); }
 
 void SetPhaseNotes(bool on) {
+  // (The notes read the phase by offset: only on the measured layout.)
+  on = on && LayoutOk();
   g_phaseNotes = on;
   if (!on) {
     std::lock_guard _(g_phaseLock);
@@ -650,7 +738,7 @@ void SetQuestTrace(bool on) {
     g_tracedPhases.clear();
     g_tracedNodes.clear();
   }
-  g_trace = on && g_target != nullptr;
+  g_trace = on && g_target != nullptr && LayoutOk();
   log::Info("quest trace: {}", g_trace ? "on" : g_target ? "off" : "no hook (scene_privacy off?)");
 }
 

@@ -16,4 +16,7 @@ constexpr std::int32_t kPhysicsQueueCapacity = 0xFFFF;
 // startup layout check failed: logged once, at the first call). Game thread
 // only; reads, never writes.
 std::int32_t PhysicsBacklog();
+// At the first frame (access.hpp): runs that layout check (the bytes of the
+// four functions that give the queues' offsets, and the system's global).
+bool CheckPhysics();
 } // namespace tandem::plugin::engine

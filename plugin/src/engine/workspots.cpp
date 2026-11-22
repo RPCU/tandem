@@ -2,10 +2,10 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "../log.hpp"
+#include "access.hpp"
 #include "workspots.hpp"
 
 #include <RED4ext/RTTISystem.hpp>
-#include <RED4ext/Relocation.hpp>
 #include <RED4ext/Scripting/Natives/CResource.hpp>
 #include <RED4ext/Scripting/Natives/Generated/work/WorkspotInstance.hpp>
 #include <RED4ext/Scripting/Natives/Generated/work/WorkspotSystem.hpp>
@@ -44,22 +44,10 @@ RED4ext::CClass *ClassOf(const char *name) {
   return rtti ? rtti->GetClass(name) : nullptr;
 }
 
-// Checked once: both classes have the sizes measured on 2.50.
-bool LayoutMatches() {
-  static const bool ok = [] {
-    auto *system = ClassOf("workWorkspotSystem");
-    auto *instance = ClassOf("workWorkspotInstance");
-    if (!system || !instance || system->size != kSystemSize || instance->size != kInstanceSize) {
-      log::Error("workspots: workWorkspotSystem 0x{:X} and workWorkspotInstance 0x{:X} bytes, "
-                 "measured as 0x{:X} and 0x{:X} on 2.50: workspots not read",
-                 system ? system->size : 0, instance ? instance->size : 0, kSystemSize,
-                 kInstanceSize);
-      return false;
-    }
-    return true;
-  }();
-  return ok;
-}
+// CheckWorkspots (the first frame): both classes have the sizes measured on
+// 2.50 and the lookup is in this game.
+GetInstanceFn g_find = nullptr;
+std::atomic_bool g_layoutOk{false};
 
 // The object a handle at `offset` of `base` points to, when it is of class
 // `type` (or derives from it); null otherwise.
@@ -79,9 +67,22 @@ template <class T> T Read(const void *base, std::size_t offset) {
 }
 } // namespace
 
+bool CheckWorkspots() {
+  const auto f = feature::kWorkspots;
+  bool ok = ClassSizeIs(f, "workWorkspotSystem", kSystemSize);
+  ok = ClassSizeIs(f, "workWorkspotInstance", kInstanceSize) && ok;
+  g_find = Find<GetInstanceFn>(f, "the workspot system's instance lookup", kGetWorkspotInstance);
+  g_layoutOk = ok && g_find;
+  if (g_layoutOk)
+    FeatureOn(f);
+  else
+    log::Error("workspots: not as measured on 2.50: workspots not read");
+  return g_layoutOk;
+}
+
 WorkspotRead WorkspotOf(std::uint64_t entity) {
   WorkspotRead read;
-  if (entity == 0 || !LayoutMatches())
+  if (entity == 0 || !g_layoutOk)
     return read;
   auto *system = Red::GetRuntimeSystem<Red::workWorkspotSystem>();
   if (!system)
@@ -89,11 +90,10 @@ WorkspotRead WorkspotOf(std::uint64_t entity) {
   static auto *instanceClass = ClassOf("workWorkspotInstance");
   static auto *treeClass = ClassOf("workWorkspotTree");
   static auto *resourceClass = ClassOf("workWorkspotResource");
-  static RED4ext::UniversalRelocFunc<GetInstanceFn> find(kGetWorkspotInstance);
   auto &lock = *reinterpret_cast<RED4ext::SharedSpinLock *>(
       reinterpret_cast<std::uint8_t *>(system) + kSystemLock);
   std::shared_lock guard(lock);
-  auto *instance = find(system, entity);
+  auto *instance = g_find(system, entity);
   if (!instance)
     return read;
   auto *type = instance->GetType();
