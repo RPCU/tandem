@@ -155,6 +155,8 @@ public class TandemPartyEntry {
 
 public class TandemPartyHud {
   private let m_game: GameInstance;
+  private let m_pathSince: Float;
+  private let m_pathTold: Bool;
   private let m_root: ref<inkVerticalPanel>;
   private let m_plates: ref<inkCanvas>;
   private let m_entries: array<ref<TandemPartyEntry>>;
@@ -674,13 +676,20 @@ public class TandemPartyHud {
     let path = Equals(why, "") ? s"the engine's screen projection (carried by DamageDigitsGameController, its root \(RoundF(this.m_hostWidth)) x \(RoundF(this.m_hostHeight)), slot '\(NameToString(this.m_slot))')" : s"our own projection (\(why))";
     if NotEquals(path, this.m_path) {
       this.m_path = path;
+      this.m_pathSince = this.m_now;
+      this.m_pathTold = false;
       TandemNative.Log(s"hud: nameplates placed by \(path)");
-      // Our own projection is the lesser path (degradations.md).
       if Equals(why, "") {
         TandemDegraded.Over("nameplate projection");
-      } else {
-        TandemDegraded.State("nameplate projection", why);
       }
+    }
+    // Our own projection is the lesser path (degradations.md), told once it
+    // has lasted 5 s: the game hides the damage numbers' widget for a
+    // moment around a loading screen or a menu (2 s, 2026-11-22), which is
+    // not a degradation.
+    if NotEquals(why, "") && !this.m_pathTold && this.m_now - this.m_pathSince >= 5.0 {
+      this.m_pathTold = true;
+      TandemDegraded.State("nameplate projection", why);
     }
     if NotEquals(why, "") {
       this.Unproject();
@@ -692,6 +701,8 @@ public class TandemPartyHud {
   // `at` when it has no such slot.
   private func ProjectionOf(body: ref<GameObject>, component: CName, slot: CName, lift: Float, at: Vector4) -> ref<TandemPlateAnchor> {
     let anchor = new TandemPlateAnchor();
+    let window = this.m_width * this.m_scale;
+    anchor.toHost = window > 0.0 ? this.m_hostWidth / window : 1.0;
     // (Every field set: the VM does not clear a local.)
     let data: inkScreenProjectionData;
     if IsNameValid(slot) {
