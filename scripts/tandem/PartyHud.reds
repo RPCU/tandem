@@ -157,6 +157,7 @@ public class TandemPartyHud {
   private let m_game: GameInstance;
   private let m_pathSince: Float;
   private let m_pathTold: Bool;
+  private let m_pathTicks: Int32;
   private let m_root: ref<inkVerticalPanel>;
   private let m_plates: ref<inkCanvas>;
   private let m_entries: array<ref<TandemPartyEntry>>;
@@ -678,6 +679,7 @@ public class TandemPartyHud {
       this.m_path = path;
       this.m_pathSince = this.m_now;
       this.m_pathTold = false;
+      this.m_pathTicks = 0;
       TandemNative.Log(s"hud: nameplates placed by \(path)");
       if Equals(why, "") {
         TandemDegraded.Over("nameplate projection");
@@ -687,7 +689,12 @@ public class TandemPartyHud {
     // has lasted 5 s: the game hides the damage numbers' widget for a
     // moment around a loading screen or a menu (2 s, 2026-11-22), which is
     // not a degradation.
-    if NotEquals(why, "") && !this.m_pathTold && this.m_now - this.m_pathSince >= 5.0 {
+    // (Counted in ticks of ours, not seconds: a loading screen stops the
+    // ticks, and its seconds are not the widget's absence: regroup, 2026-11-22.)
+    if NotEquals(why, "") {
+      this.m_pathTicks += 1;
+    }
+    if NotEquals(why, "") && !this.m_pathTold && this.m_pathTicks >= 100 && this.m_now - this.m_pathSince >= 5.0 {
       this.m_pathTold = true;
       TandemDegraded.State("nameplate projection", why);
     }

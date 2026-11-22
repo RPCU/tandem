@@ -1502,7 +1502,11 @@ private final func ChangeHeatStage(newHeatStage: EPreventionHeatStage, heatChang
       TandemNative.Log(s"police: heat refused for our V (\(heatChangeReason)): it did nothing, the police here are after another player");
       return;
     }
-    TandemNative.Log(s"police: our V gets heat (\(heatChangeReason))");
+    let police = TandemPolice.Of(this.GetGameInstance());
+    let v = GetPlayer(this.GetGameInstance());
+    let now = EngineTime.ToFloat(GameInstance.GetSimTime(this.GetGameInstance()));
+    let dealt = IsDefined(v) ? now - EngineTime.ToFloat(v.GetLastDamageInflictedTime()) : -1.0;
+    TandemNative.Log(s"police: our V gets heat (\(heatChangeReason)): answering another's chase \(IsDefined(police) && police.Answering()), our own act \(this.m_tandemOwnAct ? now - this.m_tandemOwnActAt : -1.0) s ago, our V's last hit \(dealt) s ago");
   }
   wrappedMethod(newHeatStage, heatChangeReason);
 }
