@@ -640,7 +640,7 @@ n"personalLinkPlayerWorkspot")` (F:99110-:99160; the action is
   guest's action on a quest switch moves the quest; that a greyed prompt
   shows the reason. [2.5-untested]
 
-### 13.153 A choice of our own on a puppet's interaction component (2026-11-22, read in final.reds (2.50), not run)
+### 13.153 A choice of our own on a puppet's interaction component (2026-11-22, read in final.reds (2.50); run on instance b)
 
 For `docs/architecture/prompts.md` (`scripts/tandem/Prompts.reds`). F is
 `final.reds (2.50)` (`tools/scripts-decompile.sh`).
@@ -703,10 +703,40 @@ isHoldAction, localizedName, … }] }`, F:232377, F:395204):
   (F:22158) turns `Grapple`, `TakedownLayer`, `AerialTakedown` and
   `NewPerkFinisherLayer` back on: a player template may carry an
   interaction component of its own with a `Revive` layer. [unverified]
-- **Unknown until run**: whether V's `player_*_tpp_cutscene.ent` has an
-  `Interaction` component; whether a donor's, cloned into the template
-  being built (`Body.reds`), keeps its layers and is seen by the
-  interaction scanner; `GenericTalk`'s range. [unverified]
+- **Measured on a running game** (instance b, 2026-11-22, a stand-in
+  body `Character.TandemStandInWa`, Panam's template): its descriptor
+  links `Grapple`, `TakedownLayer`, `Loot` (+ `QualityRange_*`),
+  `AerialTakedown`, `GenericTalk`, `ReturnTalk`, `BossTakedownLayer`,
+  `MassiveTargetTakedownLayer` (each a `DeviceVisualizerDefinition`,
+  `LookAt`, not dynamic), `NewPerkFinisherLayer`, `RemoteTakedownLayer`
+  (`Proximity`); `GenericTalk` and `ReturnTalk` are off by default. Panam's
+  record's `objectActions` start with `GenericInteraction.PickUpBody`,
+  `.Talk` (UI `Interactions.GenericTalk`, caption `LocKey#312`, "Talk"),
+  `.ReturnTalk`, then the takedowns. [2.5-verified]
+  - The game's prompt is built from the choices a layer holds **as it
+    activates** (vanilla's `OnInteractionActivated` pushes the record's
+    choices then): a choice set from a later tick shows only in place of
+    one already up, never brings a prompt up. Set in the same event (a
+    wrap after vanilla's handler), it shows. [2.5-verified]
+  - `SetSingleChoice(choice, layer)` never showed a choice; `SetChoices([choice],
+layer)` and `InteractionSetChoicesEvent` do. [2.5-verified]
+  - The prompt shows `GetLocalizedText(localizedName)`, and the hub's
+    `localizedName` is the **record's caption** followed by the choice's
+    `caption` (`'LocKey#273 Trade'` read "Open"). A record caption
+    `"LocKey#Tandem-Trade-Prompt"` (a Codeware localization key of
+    `Text.reds`) shows our text ("[F] Trade"). [2.5-verified]
+  - `GenericTalk` deactivates ~1.2 s after it activates and activates again
+    a second later, our V still and looking at the body (the crowd talk's
+    own logic, not ours); `ReturnTalk` stays active. [2.5-verified]
+- **A dump that crashed the game**: reading `HotSpotLayerDefinition`'s
+  Codeware fields (`group`, `priorityMultiplier`, `areaFilterDefinition`,
+  `gameLogicFilterDefinition` and the prereqs' class names) in a loop over
+  a descriptor's layers: an access violation in the script VM
+  (`Cyberpunk2077.exe+0x4753d00`). `tag`, `enabled` and the linked layers'
+  `tag` and `visualizerDefinition` read safely. [2.5-verified]
+- **Unknown until run**: which layers the `Interaction` component of V's
+  own `player_*_tpp_cutscene.ent` has (`Prompts.reds` falls back to
+  `GenericTalk` when it has no `ReturnTalk`). [unverified]
 
 ### 13.92 Contests: what the game's own data says of a fist fight, a race, a shooting competition (2026-11-20, read in final.reds, not run)
 

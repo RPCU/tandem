@@ -23,11 +23,13 @@ expect 'prompts press: \(test\) a revive choice event queued on tandem-peer' 5
 expect 'prompts: revive pressed on tandem-peer: the game.s choice event' 5
 expect 'revive: reviving tandem-peer \(test hold\)' 5
 expect_peer 'player 1 starts reviving us' 5
+# From here: its body offers Trade again once it is up (said in the same
+# tick as "is up").
+mark
 expect 'revive: we revived tandem-peer' 15
 expect_peer 'our V is up \(revived by player 1\)' 5
 expect 'revive: tandem-peer is up' 5
 # Up again: Trade again.
-mark
 expect 'prompts: trade offered on tandem-peer through the game.s interaction' 10
 reject 'prompts: .*back to drawn prompts'
 reject 'threads: hook Prompts'

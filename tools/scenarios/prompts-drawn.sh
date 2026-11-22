@@ -6,6 +6,9 @@ ensure host trade=on native_prompts=off
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode mirror --offset 1.2,0,0 --body female
 expect 'joined \(player [0-9]+' 20
 expect 'puppet [0-9]+: controller handed to the engine' 30
+# The body may be built again within a second (a stand-in once no look
+# came): the prompts meet each body within a second of its existing.
+pause 2
 cmd prompts
 expect 'prompts: drawn by us \(tandem.ini native_prompts = off\), 1 bodies' 10
 expect 'prompts:   tandem-peer entity [0-9a-f]+: drawn drawn layer off ' 5

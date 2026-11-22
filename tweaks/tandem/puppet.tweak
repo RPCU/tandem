@@ -38,6 +38,9 @@ Character.TandemPuppetWa : Character.Panam {
   // mappin's HideUIDetection): it has its own marker (Markers.reds).
   hideUIElements = true;
   hideUIDetection = true;
+  // No "Talk" of an NPC's on a player: the game would push it on the
+  // GenericTalk layer, where our own prompts go (scripts/tandem/Prompts.reds).
+  objectActions -= [ "GenericInteraction.Talk", "GenericInteraction.ReturnTalk" ];
   // The base record's gender entry is Panam's (female, panam.ent): clothing
   // appearances are chosen by gender, so each body states its own.
   genders = [
@@ -102,6 +105,7 @@ Character.TandemStandInWa : Character.Panam {
   voiceTag = "";
   hideUIElements = true;
   hideUIDetection = true;
+  objectActions -= [ "GenericInteraction.Talk", "GenericInteraction.ReturnTalk" ];
 }
 
 Character.TandemStandInMa : Character.Kerry {
@@ -115,6 +119,7 @@ Character.TandemStandInMa : Character.Kerry {
   voiceTag = "";
   hideUIElements = true;
   hideUIDetection = true;
+  objectActions -= [ "GenericInteraction.Talk", "GenericInteraction.ReturnTalk" ];
 }
 
 // For tests: Panam herself, no customisation. Proves the movement controller

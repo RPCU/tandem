@@ -1,12 +1,12 @@
 // The prompts on another player's body ("Trade", "Revive") and on a
 // partner's vendor, as the game's own interactions: a choice on the body's
 // interaction component (ScriptedPuppet's `Interaction`, the one that
-// carries an NPC's Talk, Loot and Grapple), on its GenericTalk layer, set
-// with InteractionComponent.SetSingleChoice; the key comes back as the
-// game's InteractionChoiceEvent. Range, the look-at test, line of sight,
-// no prompt from a seat, which prompt wins on screen and the key's binding
-// are then the game's (docs/architecture/prompts.md; engine-knowledge
-// §13.153).
+// carries an NPC's Talk, Loot and Grapple), on its ReturnTalk layer (else
+// GenericTalk), put there with InteractionComponent.SetChoices as the layer
+// activates; the key comes back as the game's InteractionChoiceEvent.
+// Range, the look-at test, line of sight, no prompt from a seat, which
+// prompt wins on screen and the key's binding are then the game's
+// (docs/architecture/prompts.md; engine-knowledge §13.153).
 //
 // Who offers what stays with its feature (Revive.reds, Trade.reds,
 // Vendors.reds): each calls OfferOn every tick its own rules allow, and
@@ -15,7 +15,7 @@
 // game's interaction does not prove to work on it: one log line says which
 // way each body goes, and why.
 //
-// Not run in game yet (2026-11-22): every "to see" of prompts.md.
+// Seen in game on instance b (2026-11-22): "[F] Trade" on a puppet.
 
 public abstract class TandemPromptKind {
   // In order of priority on one body: a downed player's revive comes
@@ -43,6 +43,18 @@ public abstract class TandemPromptKind {
       return "TandemTrade";
     }
     return kind == 3 ? "TandemVendor" : "";
+  }
+
+  // The Text.reds key of the prompt: the caption of the kind's record
+  // (tweaks/tandem/prompts.tweak, "LocKey#Tandem-<key>").
+  public static func TextKey(kind: Int32) -> String {
+    if kind == 1 {
+      return "Revive-Prompt";
+    }
+    if kind == 2 {
+      return "Trade-Prompt";
+    }
+    return kind == 3 ? "Vendor-Trade" : "";
   }
 
   // The kind a choice of the game's event is (0: not ours).
@@ -81,14 +93,13 @@ public class TandemPromptBody {
   public let kind: Int32;
   public let id: Uint32;
   public let text: String;
+  // The layer of its component our choices go on (TandemPrompts.LayerOf).
+  public let layer: CName;
   public let layerOn: Bool;
   public let layerSince: Float;
   // Our V activates the layer (in its range, looking at the body).
   public let active: Bool;
   public let activeSince: Float;
-  // Our choice was set on the layer (times since it went active).
-  public let setAt: Float;
-  public let sets: Int32;
   // The game's own prompt on screen holds our choice.
   public let shown: Bool;
   public let shownSince: Float;
@@ -140,11 +151,12 @@ public class TandemPrompts {
   // The last choice event of ours, and the last one "prompts press" made.
   private let m_eventAt: Float;
   private let m_testAt: Float;
-  // The layer our choices go on: an NPC's "Talk" layer, the one vanilla
-  // gives a person you walk up to and look at (ScriptedPuppet.
-  // ToggleInteractionLayers). Never Grapple or a takedown layer: vanilla
-  // answers any choice on those with a takedown
-  // (ProcessSyncedAnimationPuppetActions). (test) "prompts layer NAME".
+  // The layer our choices go on when a body's component has it (LayerOf):
+  // an NPC's ReturnTalk, a talk layer whose choices vanilla pushes from the
+  // record's actions only (ours have none: tweaks/tandem/puppet.tweak).
+  // Never Grapple or a takedown layer: vanilla answers any choice on those
+  // with a takedown (ProcessSyncedAnimationPuppetActions). (test) "prompts
+  // layer NAME".
   private let m_layer: CName;
   // tandem.ini native_prompts = off: no body was given a component, and
   // none of the puppets' layers is touched.
@@ -167,7 +179,7 @@ public class TandemPrompts {
     this.m_lastSweep = -1000.0;
     this.m_lastQuiet = -1000.0;
     if !IsNameValid(this.m_layer) {
-      this.m_layer = n"GenericTalk";
+      this.m_layer = n"ReturnTalk";
     }
     this.m_untouched = false;
     this.m_off = false;
@@ -195,7 +207,7 @@ public class TandemPrompts {
       TandemNative.Log(s"prompts: drawn by us, none is the game's own interaction (\(this.m_offWhy))");
       if this.m_untouched { TandemDegraded.Chosen("drawn prompts", this.m_offWhy); } else { TandemDegraded.State("drawn prompts", this.m_offWhy); }
     } else {
-      TandemNative.Log(s"prompts: the game's own interactions, layer \(NameToString(this.m_layer)), choices\(actions); a body they do not prove to work on goes back to drawn prompts");
+      TandemNative.Log(s"prompts: the game's own interactions, layer \(NameToString(this.m_layer)), choices\(actions); each body proves them or falls back to the drawn ones");
       TandemDegraded.Over("drawn prompts");
     }
   }
@@ -374,6 +386,15 @@ public class TandemPrompts {
       TandemNative.Log(s"prompts: \(b.label): the game's own interaction works (activated \(b.activations), shown \(b.shows), pressed)");
     }
     this.Pressed(b);
+    // Vanilla's handler of the press resets the body's choices
+    // (ScriptedPuppet.OnInteractionUsed): the layer off for a tick and on
+    // again brings ours back with its next activation.
+    if b.layerOn {
+      b.body.EnableInteraction(b.layer, false);
+      b.layerOn = false;
+      b.active = false;
+      b.shown = false;
+    }
   }
 
   private func Pressed(b: ref<TandemPromptBody>) -> Void {
@@ -425,7 +446,7 @@ public class TandemPrompts {
       return;
     }
     for layer in [n"Grapple", n"TakedownLayer", n"AerialTakedown", n"NewPerkFinisherLayer", n"BossTakedownLayer", n"MassiveTargetTakedownLayer", n"RemoteTakedownLayer", n"OnePunchAttackLayer", n"Loot", n"GenericTalk", n"ReturnTalk"] {
-      if !(b.layerOn && Equals(layer, this.m_layer)) {
+      if !(b.layerOn && Equals(layer, b.layer)) {
         b.body.EnableInteraction(layer, false);
       }
     }
@@ -447,12 +468,14 @@ public class TandemPrompts {
       b.drawn = true;
       b.why = "its body has no Interaction component";
       TandemDegraded.Fallback("prompt drawn", s"\(label): its body has no Interaction component");
+    } else {
+      b.layer = TandemPrompts.LayerOf(body.TandemInteraction(), this.m_layer);
     }
     let who = s"\(label) (\(partner ? "a player's puppet" : "an NPC's proxy"), entity \(TandemNative.EntityHex(b.entity)))";
     if b.drawn {
       TandemNative.Log(s"prompts: \(who): drawn prompts (\(b.why))");
     } else {
-      TandemNative.Log(s"prompts: \(who): the game's own interaction (its Interaction component, layer \(NameToString(this.m_layer))), not yet seen working");
+      TandemNative.Log(s"prompts: \(who): the game's own interaction (its Interaction component, layer \(NameToString(b.layer))), not yet seen working");
     }
     if partner {
       this.Quiet(b);
@@ -469,14 +492,28 @@ public class TandemPrompts {
       if b.kind != b.offerKind || b.id != b.offerId {
         TandemNative.Log(s"prompts: \(TandemPromptKind.PromptWord(b.offerKind)) offered on \(b.label) through the game's interaction");
       }
+      let kindChanged = b.kind != b.offerKind;
       b.kind = b.offerKind;
       b.id = b.offerId;
       b.text = b.offerText;
       b.shown = false;
-      b.sets = 0;
+      // Where the body's activation handler puts our choice (the wrap of
+      // ScriptedPuppet.OnInteractionActivated below).
+      b.body.tandemPromptLayer = b.layer;
+      if kindChanged && b.layerOn {
+        // Its layer is on (maybe active, a prompt up): off for a tick and on
+        // again, so that it activates anew with our choice.
+        b.body.EnableInteraction(b.layer, false);
+        b.layerOn = false;
+        b.active = false;
+        TandemNative.LogDebug(s"prompts: \(b.label): layer off and on again for the \(TandemPromptKind.PromptWord(b.kind)) choice");
+        return;
+      }
     }
+    // What it puts there.
+    b.body.tandemPromptKind = b.kind;
     if !b.layerOn {
-      b.body.EnableInteraction(this.m_layer, true);
+      b.body.EnableInteraction(b.layer, true);
       b.layerOn = true;
       b.layerSince = now;
     }
@@ -484,7 +521,6 @@ public class TandemPrompts {
     if active && !b.active {
       b.active = true;
       b.activeSince = now;
-      b.sets = 0;
       b.said = false;
       b.facedSince = -1.0;
       b.activations += 1;
@@ -518,7 +554,6 @@ public class TandemPrompts {
     if shown && !b.shown {
       b.shows += 1;
       b.shownSince = now;
-      b.sets = 0;
       b.facedSince = -1.0;
       TandemNative.Log(s"prompts: \(TandemPromptKind.PromptWord(b.kind)) shown on \(b.label) by the game (\(TandemPrompts.HubWords(hub)))");
     } else if !shown && b.shown {
@@ -528,17 +563,13 @@ public class TandemPrompts {
     if shown {
       return;
     }
-    // Not on screen: set (again: vanilla resets the layer's choices when it
-    // activates and after any press, ScriptedPuppet.OnInteractionActivated
-    // and OnInteractionUsed), a few times per activation.
-    if (changed || now - b.setAt >= 0.25) && b.sets < 8 {
-      this.PutChoice(b);
+    // Not on screen. Our choice went on the layer as it activated (the wrap
+    // of ScriptedPuppet.OnInteractionActivated below): one set later never
+    // brings a prompt up (2026-11-22, instance b).
+    if now - b.activeSince < 1.5 {
       return;
     }
-    if b.sets < 3 || now - b.activeSince < 1.5 {
-      return;
-    }
-    // Set and still not shown. A body the game never showed a choice of
+    // Still not shown. A body the game never showed a choice of
     // ours on, while no prompt we draw is up, goes back to drawn prompts:
     // when it is the game's own look-at target and the game's prompt holds
     // something else,
@@ -566,32 +597,51 @@ public class TandemPrompts {
     }
   }
 
-  private func PutChoice(b: ref<TandemPromptBody>) -> Void {
-    let component = b.body.TandemInteraction();
-    if !IsDefined(component) {
-      this.Fallback(b, "its Interaction component is gone");
-      return;
-    }
-    let record = TandemPromptKind.ChoiceRecord(b.kind);
+  // Our choice, alone on its layer: the kind's record, whose caption is
+  // the prompt's text (a key of Text.reds, tweaks/tandem/prompts.tweak), and
+  // the text again as the choice's own caption, which the choice event
+  // carries back.
+  public static func ChoicesOf(kind: Int32, text: String) -> array<InteractionChoice> {
+    let record = TandemPromptKind.ChoiceRecord(kind);
     let choice: InteractionChoice;
-    choice.caption = b.text;
+    choice.caption = text;
     choice.choiceMetaData.tweakDBName = record;
     choice.choiceMetaData.tweakDBID = TDBID.Create("Interactions." + record);
-    component.SetSingleChoice(choice, this.m_layer);
-    b.setAt = this.m_now;
-    b.sets += 1;
-    TandemNative.LogDebug(s"prompts: \(TandemPromptKind.PromptWord(b.kind)) choice set on \(b.label) (#\(b.sets) of this activation)");
+    let choices: array<InteractionChoice>;
+    ArrayPush(choices, choice);
+    return choices;
+  }
+
+  // The layer of a body's component our choices go on: `preferred` when
+  // its interaction descriptor has it, else GenericTalk (every NPC's).
+  // ReturnTalk is preferred: GenericTalk is the game's crowd talk, which
+  // deactivates it every ~1.2 s and activates it again a second later (a
+  // prompt that blinks; 2026-11-22, instance b), ReturnTalk stays active.
+  public static func LayerOf(component: ref<InteractionComponent>, preferred: CName) -> CName {
+    let descriptor = ResourceRef.GetResource(component.definitionResource) as gameinteractionsInteractionDescriptorResource;
+    if IsDefined(descriptor) {
+      let linked = descriptor.definition.layersDefinition;
+      for set in linked {
+        if Equals(set.tag, preferred) {
+          return preferred;
+        }
+      }
+    }
+    return n"GenericTalk";
   }
 
   // Nothing of ours on its layer, and the layer off (no "Talk" of the
   // game's own on a player or on another game's NPC meanwhile).
   private func Withdraw(b: ref<TandemPromptBody>, why: String) -> Void {
+    if IsDefined(b.body) {
+      b.body.tandemPromptKind = 0;
+    }
     let component = b.body.TandemInteraction();
     if IsDefined(component) {
-      component.ResetChoices(this.m_layer);
+      component.ResetChoices(b.layer);
     }
     if b.layerOn {
-      b.body.EnableInteraction(this.m_layer, false);
+      b.body.EnableInteraction(b.layer, false);
       b.layerOn = false;
     }
     if b.kind != 0 {
@@ -621,7 +671,7 @@ public class TandemPrompts {
     }
     let ours = player.GetEntityID();
     let layers: array<gameinteractionsActiveLayerData>;
-    component.GetActivatorsForLayer(this.m_layer, layers);
+    component.GetActivatorsForLayer(b.layer, layers);
     for layer in layers {
       if IsDefined(layer.activator) && layer.activator.GetEntityID() == ours {
         return true;
@@ -630,7 +680,7 @@ public class TandemPrompts {
     let inputs: array<gameinteractionsActiveLayerData>;
     component.GetActiveInputLayers(inputs);
     for layer in inputs {
-      if Equals(layer.layerName, this.m_layer) && IsDefined(layer.activator) && layer.activator.GetEntityID() == ours {
+      if Equals(layer.layerName, b.layer) && IsDefined(layer.activator) && layer.activator.GetEntityID() == ours {
         return true;
       }
     }
@@ -675,7 +725,7 @@ public class TandemPrompts {
       return false;
     }
     for choice in hub.choices {
-      if Equals(choice.localizedName, text) {
+      if Equals(GetLocalizedText(choice.localizedName), text) || StrContains(choice.localizedName, text) {
         return true;
       }
     }
@@ -812,7 +862,7 @@ public class TandemPrompts {
       let event = new InteractionChoiceEvent();
       event.hotspot = best.body;
       event.activator = player;
-      event.layerData.tag = this.m_layer;
+      event.layerData.tag = best.layer;
       event.choice.caption = best.text;
       event.choice.choiceMetaData.tweakDBName = record;
       event.choice.choiceMetaData.tweakDBID = TDBID.Create("Interactions." + record);
@@ -823,6 +873,17 @@ public class TandemPrompts {
     } else {
       let hub = this.Hub();
       TandemNative.Log(s"prompts: \(this.m_off ? s"drawn by us (\(this.m_offWhy))" : "the game's own interactions"), \(ArraySize(this.m_bodies)) bodies; the game's prompt now: \(TandemPrompts.HubWords(hub)); key \(this.m_keyHeld ? "held" : "up")");
+      let board = GameInstance.GetBlackboardSystem(this.m_game).Get(GetAllBlackboardDefs().UIInteractions);
+      if IsDefined(board) {
+        let dialogs = FromVariant<DialogChoiceHubs>(board.GetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs));
+        for d in dialogs.choiceHubs {
+          let names = "";
+          for c in d.choices {
+            names += s" '\(c.localizedName)'";
+          }
+          TandemNative.Log(s"prompts:   dialog hub \(d.id) '\(d.title)' state \(d.activityState):\(names)");
+        }
+      }
       for b in this.m_bodies {
         TandemNative.Log(s"prompts:   \(b.label) entity \(TandemNative.EntityHex(b.entity)): \(this.StatusLine(b.body))\(b.drawn ? s" (\(b.why))" : "")");
       }
@@ -835,6 +896,34 @@ public class TandemPrompts {
 @addMethod(ScriptedPuppet)
 public func TandemInteraction() -> ref<InteractionComponent> {
   return this.m_interactionComponent;
+}
+
+// What the body's activation handler puts on its layer: the kind of our
+// choice (0: none) and the layer, written on the game thread's tick
+// (TandemPrompts.Carry, Withdraw).
+@addField(ScriptedPuppet)
+public let tandemPromptKind: Int32;
+
+@addField(ScriptedPuppet)
+public let tandemPromptLayer: CName;
+
+// The game's prompt is built from the choices a layer holds as it
+// activates: a choice set later shows only in place of one already up
+// (2026-11-22, instance b). Vanilla's own handler pushes the record's
+// choices here (DetermineInteractionState → PushChoicesToInteractionComponent:
+// a reset, then SetChoices); ours replaces them in the same event, so the
+// prompt comes up with it, as an NPC's "Talk" does.
+// job thread safe: it reads two fields of its own entity and calls its own
+// interaction component, as the wrapped handler itself does.
+@wrapMethod(ScriptedPuppet)
+protected cb func OnInteractionActivated(evt: ref<InteractionActivationEvent>) -> Bool {
+  let result = wrappedMethod(evt);
+  let kind = this.tandemPromptKind;
+  if kind != 0 && Equals(evt.eventType, gameinteractionsEInteractionEventType.EIET_activate) && Equals(evt.layerData.tag, this.tandemPromptLayer) && IsDefined(evt.activator as PlayerPuppet) && IsDefined(this.m_interactionComponent) {
+    let text = TandemText.Get(TandemPromptKind.TextKey(kind));
+    this.m_interactionComponent.SetChoices(TandemPrompts.ChoicesOf(kind, text), this.tandemPromptLayer);
+  }
+  return result;
 }
 
 // The key on a choice of ours, as the game's own choice event

@@ -5,18 +5,22 @@
 // is the game's interaction key as the player bound it.
 //
 // Each is the door's "Open" (the record vanilla's own scripts name, a press
-// of Choice1) under our name; the text shown is the choice's own caption,
-// from scripts/tandem/Text.reds. Without these records the scripts draw the
-// prompts themselves, as before ("prompts: no record ...").
+// of Choice1) under our name, its caption our text: the game's prompt shows
+// the record's caption, here a key of scripts/tandem/Text.reds (Codeware's
+// localization, English and French). Without these records the scripts draw
+// the prompts themselves, as before ("prompts: no record ...").
 
 Interactions.TandemRevive : Interactions.Open {
   name = "TandemRevive";
+  caption = "LocKey#Tandem-Revive-Prompt";
 }
 
 Interactions.TandemTrade : Interactions.Open {
   name = "TandemTrade";
+  caption = "LocKey#Tandem-Trade-Prompt";
 }
 
 Interactions.TandemVendor : Interactions.Open {
   name = "TandemVendor";
+  caption = "LocKey#Tandem-Vendor-Trade";
 }
