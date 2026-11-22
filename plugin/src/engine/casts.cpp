@@ -92,7 +92,13 @@ void Prepare() {
   for (const char *name :
        {"PlayInDevice", "PlayInDeviceSimple", "EnterWorkspot", "EnterWorkspotWithIK"})
     sinks.names.insert(CName(name).hash);
-  auto *workspots = RED4ext::CRTTISystem::Get()->GetClass("WorkspotGameSystem");
+  // The native class's RTTI name (gameWorkspotGameSystem); the script name
+  // is only an alias, which GetClass does not resolve: with it alone this
+  // never found the class (seen once the degradations registry showed it,
+  // 2026-11-22).
+  auto *workspots = RED4ext::CRTTISystem::Get()->GetClass("gameWorkspotGameSystem");
+  if (!workspots)
+    workspots = RED4ext::CRTTISystem::Get()->GetClass("WorkspotGameSystem");
   auto *device = RED4ext::CRTTISystem::Get()->GetClass("Device");
   auto *operations = RED4ext::CRTTISystem::Get()->GetClass("DeviceOperations");
   if (!workspots || !device) {
