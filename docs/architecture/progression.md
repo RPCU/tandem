@@ -184,7 +184,10 @@ decided: a guest keeps its own vendors; `scripts/tandem/Vendors.reds`,
    N s ago and has left our world since", or the vendor ids around).
    **Not yet run in game.**
 3. **The prompt.** Beside a vendor's proxy (2.5 m, in front of our V), the
-   game's interaction prompt says "Trade" under the vendor's name; a
+   proxy carries "Trade" as the game's own interaction
+   ([`prompts.md`](prompts.md); its key opens the shop the same way), or,
+   on a body that does not take it or with `native_prompts = off`, the
+   prompt we draw says "Trade" under the vendor's name; a
    partner's revive and a trade prompt come first. A press opens **our
    own game's vendor of that entity**: `UISystem.RequestVendorMenu` (as
    the drop point does) with our hidden copy's entity, so the screen finds

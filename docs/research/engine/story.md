@@ -640,6 +640,69 @@ n"personalLinkPlayerWorkspot")` (F:99110-:99160; the action is
   guest's action on a quest switch moves the quest; that a greyed prompt
   shows the reason. [2.5-untested]
 
+### 13.153 A choice of our own on a puppet's interaction component (2026-11-22, read in final.reds (2.50), not run)
+
+For `docs/architecture/prompts.md` (`scripts/tandem/Prompts.reds`). F is
+`final.reds (2.50)` (`tools/scripts-decompile.sh`).
+
+- **The component.** `ScriptedPuppet` asks for a component named
+  `Interaction` (`m_interactionComponent`, F:20342) and never requires
+  it. `InteractionComponent` (F:66048): `SetSingleChoice(choice, opt
+layer)`, `SetChoices`, `ResetChoices(opt layer, opt deactivate)`,
+  `GetActiveInputLayers(out)`, `GetActivatorsForLayer(layer, out)` (each
+  `gameinteractionsActiveLayerData { activator, linkedLayersName,
+layerName }`, F:216602). A layer is switched by
+  `InteractionSetEnableEvent { enable, layer, linkedLayers }` queued on
+  the entity (`ScriptedPuppet.EnableInteraction`, F:22893). Layers are
+  the component's data: none can be added from script.
+  [2.5-verified offline]
+- **An NPC's layers** (F:20776 `ToggleInteractionLayers`, once, attaching;
+  F:22580): `GenericTalk` (on for a crowd NPC whose record says
+  `CanHaveGenericTalk`, or `ForceCanHaveGenericTalk`; off under a `Busy`
+  status effect, F:72373), `ReturnTalk`, `Loot`, `Grapple`,
+  `TakedownLayer`, `AerialTakedown`, `BossTakedownLayer`,
+  `MassiveTargetTakedownLayer`, `RemoteTakedownLayer`,
+  `NewPerkFinisherLayer`, `OnePunchAttackLayer`, `QualityRange_*`.
+  [2.5-verified offline]
+- **What vanilla does on those layers.** Activation
+  (`OnInteractionActivated`, F:22556, an `InteractionActivationEvent {
+eventType: EIET_activate | EIET_deactivate }`): for the named layers,
+  `ScriptedPuppetPS.DetermineInteractionState` (F:25238) builds choices
+  from the record's `objectActions` and `PushChoicesToInteractionComponent`
+  (F:25526) **resets the layer's choices first**; deactivation resets
+  them too. A press (`OnInteractionUsed`, F:22615): the actions in
+  `choice.data` (none in a choice of ours), a takedown **for any choice on
+  `Grapple`, `TakedownLayer`, `BossTakedownLayer` or
+  `MassiveTargetTakedownLayer`** (`ProcessSyncedAnimationPuppetActions`,
+  F:22826), then `ResetChoices()` on every layer but `Loot`. A second
+  handler of the same event, `ScriptedPuppet.OnInteraction` (F:22780),
+  acts on the names `Loot` and `Revive` (the cut multiplayer's: a
+  `ResurrectEvent` to a `PlayerPuppet` hotspot, nothing on an NPC).
+  [2.5-verified offline]
+- **A choice.** `InteractionChoice { caption: String, captionParts, data,
+choiceMetaData { tweakDBName, tweakDBID, type } }` (F:118045). The key
+  and the default caption come from `Interactions.<tweakDBName>`
+  (`InteractionBase_Record`: `Name`, `Action`, `Caption`, F:19035); the
+  cut multiplayer's pickup sets only `tweakDBName = "PickUp"` and reads
+  `InteractionChoiceEvent.actionType == BUTTON_PRESSED` (F:515492).
+  Vanilla puts a reason in `caption` to show it (`SetInactiveReasonAsCaption`,
+  F:28013): that `caption` replaces the record's text is read from that,
+  not seen. Records the scripts name: `Interactions.Open`, `On`, `Off`,
+  `Arm`, `Disarm`, `None`, `NewPerkFinisherBluntHold`. No input action
+  with `Hold` in its name appears in the scripts: a hold choice's action
+  is to read from the game's `inputContexts.xml`. [2.5-untested]
+- **What the UI is told.** The engine writes the prompt on screen into
+  `UIInteractions.InteractionChoiceHub` (`InteractionChoiceHubData { id,
+active, title, choices: [InteractionChoiceData { inputAction,
+isHoldAction, localizedName, … }] }`, F:232377, F:395204):
+  `Prompts.reds` reads it to know its choice shows.
+  `InteractionManager.IsInteractionLookAtTarget(activator, hotspot)`
+  (F:193622). [2.5-untested]
+- **Unknown until run**: whether V's `player_*_tpp_cutscene.ent` has an
+  `Interaction` component; whether a donor's, cloned into the template
+  being built (`Body.reds`), keeps its layers and is seen by the
+  interaction scanner; `GenericTalk`'s range. [unverified]
+
 ### 13.92 Contests: what the game's own data says of a fist fight, a race, a shooting competition (2026-11-20, read in final.reds, not run)
 
 - **Fist fights** (Beat on the Brat and every other brawl): the quest puts

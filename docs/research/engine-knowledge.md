@@ -143,6 +143,7 @@ found through this table, each number once.
 | 13.140 | A dynamic entity deleted before its stub exists: freed under the population system | `vehicles.md` |
 | 13.150 | CrystalCoat / TwinTone: a vehicle's custom paint | `vehicles.md` |
 | 13.151 | Dual wielding (akimbo): two weapons, two state machines, what tells them apart | `combat.md` |
+| 13.153 | A choice of our own on a puppet's interaction component | `story.md` |
 
 ## Top traps (one line each)
 

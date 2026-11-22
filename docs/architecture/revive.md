@@ -24,9 +24,12 @@
   (`ResurrectEvents`), then `PlayerPuppet.OnResurrected` (wrapped) sets 40 %
   health, with 3 s of invulnerability. On the others' screens a downed
   puppet is outlined through walls (vanilla multiplayer's look,
-  `ForceVisionAppearance`) with a notice; within 2 m the game's own
-  interaction prompt (`UIInteractions.InteractionChoiceHub`, "[Hold F]
-  Revive") appears; holding `Choice1` for 10 s with the HUD progress bar
+  `ForceVisionAppearance`) with a notice; its body carries "Revive" as
+  the game's own interaction ([`prompts.md`](prompts.md): the game's range
+  and look-at, "[F] Revive", the choice event the press), or, on a body
+  that does not take it, in a seat, or with `native_prompts = off`,
+  within 2 m the prompt we draw (`UIInteractions.InteractionChoiceHub`,
+  "[Hold F] Revive"); holding `Choice1` for 10 s with the HUD progress bar
   (`UI_HUDProgressBar`) sends `Revive` (start, cancel, done) to the downed
   V's game through the host, which drops it unless the target is down; the
   downed game shows "NAME is reviving you" on the same bar and accepts a
@@ -94,8 +97,9 @@ IsDeathMenuBlocked` (wrapped, `TandemRevive.KeepsWorld`) says blocked, so
   **stays seated** in the game's own death pose; its `Seat` is unchanged,
   so the others' puppet stays in the seat, outlined as downed. At the
   wheel the car is braked to a stop (`ForceBrakesUntilStoppedOrFor`, 20 s).
-  The reviver revives **from beside the car**, on foot, with the same
-  prompt: within 2.5 m of the seated body (2 m on foot) and facing it
+  The reviver revives **from beside the car**, on foot, with the drawn
+  prompt (never the game's interaction: [`prompts.md`](prompts.md)):
+  within 2.5 m of the seated body (2 m on foot) and facing it
   (the camera within 60°, the door one faces), the car's own door prompt
   on the same key held off meanwhile (`GameplayRestriction.
 VehicleNoInteraction`); it lets go past 3 m. **While the car moves**

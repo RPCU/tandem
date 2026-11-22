@@ -280,6 +280,8 @@ scenarios that assert effects so: `npcs-shoot-guest`,
 `combat-friendly-fire(-off)` (health), `npcs-hurt-guest`,
 `combat-melee-guest` (`health` before the host's first hit, then `health
 low`), `revive-game`,
+`prompts-game`, `prompts-revive`, `prompts-drawn` (`prompt`: which way a
+body's prompts go, `prompts.md`),
 `revive-peer` (health after the revive), `trade-peer`, `phone-trade` (item
 counts, money unchanged; the mock player keeps no inventory: its `applied`
 line is its side), `story-guest` (the reward's money), `drive`, `ride`
@@ -373,7 +375,7 @@ Reading a played session (`tools/game.sh threads` at its end):
   without anyone driving. `--radio STATION` (0–13, a station name, or
   `off`) plays that station on its radio: sent at the wheel and again when
   your V gets in (`tools/game.sh cmd vehicle ride`). `--paint
-  RRGGBB[,RRGGBB][@HUE]` gives the car a custom paint (`CarPaint`: its
+RRGGBB[,RRGGBB][@HUE]` gives the car a custom paint (`CarPaint`: its
   colour, a second one, its lights' hue), `--paint-off-at S` takes it off
   S seconds after the seat (scenario `paint`).
 - **drive --seat SLOT** — the same car, but the mock player rides in SLOT

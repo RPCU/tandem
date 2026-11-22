@@ -11,10 +11,12 @@ and §13.38.8.
 
 ## What a player does
 
-1. **Start.** Within 2 m of another player's puppet, out of combat, the
-   game's interaction prompt shows the player's name and "Trade" (the
-   prompt revive uses; a downed player's revive prompt comes first). The
-   interaction key asks. **Or from the game's phone, at any distance**: the
+1. **Start.** Out of combat, on foot, another player's puppet carries
+   "Trade" as the game's own interaction ([`prompts.md`](prompts.md): the
+   game's range and look-at; a downed player's Revive comes first). On a
+   body that does not take it, or with `native_prompts = off`: within 2 m
+   of the puppet, facing it, the prompt we draw with the player's name.
+   The interaction key asks. **Or from the game's phone, at any distance**: the
    player's row in the contact list, then "Trade" ([`comms.md`](comms.md),
    "The phone"; `TandemTradeTable.AskFromPhone`, built 2026-11-21, not run
    in game). The same request, refused with "You can't trade right now"
@@ -158,7 +160,7 @@ ask in another player's name.
    stamped stats) showing the right tier and tooltip.
 4. A traded unique item arriving with its quality, tier and mods.
 5. The prompt on a puppet next to the revive prompt and next to a vehicle
-   or a body's own prompt.
+   or a body's own prompt ([`prompts.md`](prompts.md), "To see").
 6. The screen not stopping time for us (the skip of `VendorStash`'s time
    dilation), and what a fight does to an open screen.
 7. The storage screen opened on a puppet far away (a trade from the
