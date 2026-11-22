@@ -16,13 +16,13 @@ expect 'revive: on the way, the fast travel.s loading screen' 5
 expect 'revive: there, the loading screen ended' 60
 expect 'coop notice: Vik patched you up' 5
 expect 'revive: our V is up at 40 %' 15
-# The trip's loading screen silenced the game thread on purpose: the hang
-# check reads from here on.
-mark
 # Up in the clinic (Viktor's spot -1546.73 1227.39 11.52, within 10 m).
 query at position
 expect_value "$at" '~' '^-15(3[6-9]|4[0-9]|5[0-6])\.[0-9]+ 12(1[7-9]|2[0-9]|3[0-7])\.'
 expect_peer 'player 1 is up' 10
+# The trip's loading screen silenced the game thread on purpose: the hang
+# check reads from here on.
+mark
 cmd revive water off
 expect 'revive water: the real water' 5
 # In real water (not run yet): stand in water deeper than V, then
