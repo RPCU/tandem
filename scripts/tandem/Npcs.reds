@@ -444,7 +444,11 @@ public class TandemNpcs {
     }
     ArrayPush(this.m_standIns, attack);
     TandemNative.Log(s"combat: attack \(TDBID.ToStringDEBUG(attack)) unknown here, stood in by \(TDBID.ToStringDEBUG(standIn)) (its damage: at most the sender's)");
-    TandemDegraded.Fallback("record substituted", s"attack \(TDBID.ToStringDEBUG(attack)) unknown here: stood in by \(TDBID.ToStringDEBUG(standIn))");
+    // A hit that names no attack (the mock player's) has nothing to stand
+    // in for; a record this game lacks (a mod's) is the fallback.
+    if TDBID.IsValid(attack) {
+      TandemDegraded.Fallback("record substituted", s"attack \(TDBID.ToStringDEBUG(attack)) unknown here: stood in by \(TDBID.ToStringDEBUG(standIn))");
+    }
   }
 
   public func ForwardedPierce(hit: ref<gameHitEvent>, out pierce: Float) -> Bool {
