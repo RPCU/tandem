@@ -28,6 +28,9 @@ public:
   std::optional<proto::Presence> TakeLocal();
   void SubmitCue(const proto::Cue &cue);
   std::vector<proto::Cue> TakeLocalCues();
+  // A hit our V took, for the others' puppets of it.
+  void SubmitHitTaken(const proto::HitTaken &hit);
+  std::vector<proto::HitTaken> TakeLocalHitsTaken();
   // The status effects that show on our V (any order); true when the set
   // changed (it goes out then).
   bool SubmitStatusVisuals(std::vector<std::uint64_t> records);
@@ -39,6 +42,9 @@ public:
   void PushCue(const proto::Cue &cue, std::uint64_t nowUs);
   // Cues half a second old (a loading screen, a stall) are not drawn.
   std::vector<proto::Cue> TakeCues(std::uint64_t nowUs);
+  // The hits other Vs took; as cues, one half a second old is not shown.
+  void PushHitTaken(const proto::HitTaken &hit, std::uint64_t nowUs);
+  std::vector<proto::HitTaken> TakeHitsTaken(std::uint64_t nowUs);
   void PushReaction(const proto::NpcReaction &reaction);
   std::vector<proto::NpcReaction> TakeReactions();
   void PushStatusVisuals(const proto::StatusVisuals &visuals);
@@ -66,6 +72,8 @@ private:
   std::vector<proto::Cue> m_localCues;                                  // m_lock
   std::map<proto::PlayerId, proto::Presence> m_remote;                  // m_lock
   std::vector<std::pair<proto::Cue, std::uint64_t>> m_cues;             // m_lock
+  std::vector<proto::HitTaken> m_localHitsTaken;                        // m_lock
+  std::vector<std::pair<proto::HitTaken, std::uint64_t>> m_hitsTaken;   // m_lock
   std::vector<proto::NpcReaction> m_reactions;                          // m_lock
   std::vector<std::uint64_t> m_statusSent;                              // game thread
   std::optional<std::vector<std::uint64_t>> m_statusLocal;              // m_lock

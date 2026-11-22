@@ -220,31 +220,25 @@ public class TandemShots {
       let npcs = system.NpcsSync();
       let shooter = IsDefined(npcs) ? GameInstance.FindEntityByID(this.m_game, npcs.EntityOfNpc(hit.npc)) as GameObject : null;
       if IsDefined(body) && IsDefined(shooter) && !body.IsDead() {
-        TandemShots.ShowHit(body, shooter, new Vector4(hit.x, hit.y, hit.z, 1.0), new Vector4(hit.dx, hit.dy, hit.dz, 0.0));
+        TandemShots.ShowHit(body, shooter, hit.player, new Vector4(hit.x, hit.y, hit.z, 1.0), new Vector4(hit.dx, hit.dy, hit.dz, 0.0));
       }
       this.Once(n"report", s"shots: player \(hit.player) reports npc \(hit.npc)'s shot hit their V (shown on the puppet: \(IsDefined(body) && IsDefined(shooter)))");
     }
   }
 
   // A bullet's hit on the puppet as the game shows one (its hit reaction,
-  // sounds, effects), dealing nothing: no damage, no floater. Our own
-  // pipeline passes it (it carries DealNoDamage: SimulatedByGuest).
-  public static func ShowHit(body: ref<ScriptedPuppet>, shooter: ref<GameObject>, at: Vector4, way: Vector4) -> Void {
-    let context: AttackInitContext;
-    context.record = TweakDBInterface.GetAttackRecord(t"Attacks.REMOVE_BulletWithDamage");
-    context.instigator = shooter;
-    context.source = shooter;
-    let hit = new gameHitEvent();
-    hit.attackData = new AttackData();
-    hit.target = body;
-    hit.hitPosition = at;
-    hit.hitDirection = way;
-    hit.attackData.AddFlag(hitFlag.DealNoDamage, n"tandem_shot_report");
-    hit.attackData.AddFlag(hitFlag.DontShowDamageFloater, n"tandem_shot_report");
-    hit.attackData.SetSource(shooter);
-    hit.attackData.SetInstigator(shooter);
-    hit.attackData.SetAttackDefinition(IAttack.Create(context));
-    GameInstance.GetDamageSystem(body.GetGame()).QueueHitEvent(hit, body);
+  // sounds, effects), dealing nothing: the hit a ShotHit names (a game tells
+  // its V's hits as HitTaken now, HitsTaken.reds; the simulated V still
+  // says ShotHit), queued as any hit a V took, on the zone at its height.
+  public static func ShowHit(body: ref<ScriptedPuppet>, shooter: ref<GameObject>, player: Uint32, at: Vector4, way: Vector4) -> Void {
+    let hits = TandemHitsTaken.Of(body.GetGame());
+    if !IsDefined(hits) {
+      return;
+    }
+    let feet = body.GetWorldPosition();
+    let offset = new Vector4(at.X - feet.X, at.Y - feet.Y, at.Z - feet.Z, 0.0);
+    hits.Queue(body, shooter, TweakDBInterface.GetAttackRecord(t"Attacks.REMOVE_BulletWithDamage"), 10, at, way, TandemHitsTaken.ZoneAt(body, offset), 0, false);
+    hits.NoteShown(player);
   }
 
   // ---- guest ----
@@ -530,8 +524,9 @@ public class TandemShots {
     return false;
   }
 
-  // A hit on our V from a proxy's shot (DealDamages, Combat.reds): the host
-  // shows it on our puppet.
+  // A hit on our V from a proxy's shot (DealDamages, Combat.reds): our
+  // game's decision. The others show it on our puppet as every hit our V
+  // takes (HitTaken, HitsTaken.reds: no ShotHit from a game any more).
   public func Report(hitEvent: ref<gameHitEvent>) -> Void {
     if !IsDefined(hitEvent) || hitEvent.target != GetPlayer(this.m_game) {
       return;
@@ -540,8 +535,7 @@ public class TandemShots {
     let system = this.System();
     let npc = IsDefined(from) && IsDefined(system) ? system.NpcOfProxy(from.GetEntityID()) : 0u;
     if npc != 0u {
-      TandemNative.SendShotHit(npc, hitEvent.hitPosition, hitEvent.hitDirection);
-      this.Once(n"hit", s"shots: npc \(npc)'s shot hit our V (our game's decision), reported to the host");
+      this.Once(n"hit", s"shots: npc \(npc)'s shot hit our V (our game's decision)");
     }
   }
 
