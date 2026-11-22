@@ -570,6 +570,12 @@ public class TandemPolice {
           mine.SetAttitudeTowards(theirs, EAIAttitude.AIA_Hostile);
           if !ours {
             npc.m_tandemSparesV = npc.GetReceivedDamageByPlayerLastTimeStamp() <= 0.0;
+            // Kept off our V in the same pass, not the next: in between, an
+            // officer that saw our V beside the wanted puppet went hostile
+            // to it and gave our V a star (police-host-cars, 2026-11-22).
+            if npc.m_tandemSparesV && !oursWanted {
+              TandemPolice.KeepOff(npc, ourV);
+            }
           }
         } else if wanted && !ours && npc.m_tandemSparesV {
           if npc.GetReceivedDamageByPlayerLastTimeStamp() > 0.0 {
