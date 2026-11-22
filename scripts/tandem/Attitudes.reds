@@ -66,6 +66,11 @@ public class TandemAttitudes {
   private let m_freshSame: Int32;
   private let m_freshDiffer: Int32;
   private let m_lastFresh: EntityID;
+  // The NPC queue (TandemStreamKind.Npc), taken here and split: the NPCs
+  // that came into the world (ours, Spawned), and what the game changed on
+  // one (NpcAnims.reds: its states, weapon, workspot), kept for TakeChanged.
+  private let m_came: array<TandemStreamed>;
+  private let m_changed: array<TandemStreamed>;
 
   // One per puppet at a time (3 guests at most, core endpoint.hpp kMaxGuests).
   public static func Groups() -> array<CName> {
@@ -93,6 +98,8 @@ public class TandemAttitudes {
     }
     TandemNative.Log(s"attitudes: \(declared) of 4 puppet groups declared");
     TandemStreaming.TakeStreamed(TandemStreamKind.Npc());
+    ArrayClear(this.m_came);
+    ArrayClear(this.m_changed);
     this.Befriend(TandemAttitudes.Shared());
     TandemNative.Log(this.Declared());
   }
@@ -182,13 +189,41 @@ public class TandemAttitudes {
     return this.m_lastFresh;
   }
 
+  // The NPC queue since the last call, each event to its reader's list.
+  private func Drain() -> Void {
+    let streamed = TandemStreaming.TakeStreamed(TandemStreamKind.Npc());
+    for event in streamed {
+      if event.attached {
+        ArrayPush(this.m_came, event);
+      } else {
+        ArrayPush(this.m_changed, event);
+      }
+    }
+    // Nobody takes the changes (no session, not recording): they are of no
+    // use later.
+    if ArraySize(this.m_changed) > 4096 {
+      ArrayClear(this.m_changed);
+    }
+  }
+
+  // What the game changed on NPCs since the last call (cls: what; queued by
+  // the wraps of NpcAnims.reds), in order. Game thread.
+  public func TakeChanged() -> array<TandemStreamed> {
+    this.Drain();
+    let taken = this.m_changed;
+    ArrayClear(this.m_changed);
+    return taken;
+  }
+
   // Each tick: the NPCs that came into the world since the last one get
   // V's attitudes on every puppet now, not at the next 2 s scan. Logged
   // (debug) per NPC and puppet: what the engine's relations alone gave
   // ("engine alone": the declared relations at work), and what stands after
   // the copy, which is what the NPC's first decisions read.
   public func Spawned(now: Float, bodies: array<ref<GameObject>>) -> Void {
-    let streamed = TandemStreaming.TakeStreamed(TandemStreamKind.Npc());
+    this.Drain();
+    let streamed = this.m_came;
+    ArrayClear(this.m_came);
     let player = GetPlayer(this.m_game);
     if ArraySize(streamed) == 0 || ArraySize(bodies) == 0 || !IsDefined(player) {
       return;

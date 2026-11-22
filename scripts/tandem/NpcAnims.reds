@@ -1,10 +1,16 @@
-// How the host's NPCs animate, on the guests' proxies (docs/architecture/npcs.md,
-// NPCs; engine-knowledge §13.21). The host samples, four times a second, what
-// each shared NPC's animation graph reads: its high-level, upper-body and
-// stance states (NPCStatesComponent), the weapon in its right hand, whom it
-// looks or aims at, and the workspot it plays in (a bench, a wall to lean
-// on, a cigarette). It sends only what changed (NpcAnims, reliable), and
-// each shot of its weapon (NpcShot). A guest puts its brain-off proxy in the
+// How the NPCs a game runs animate, on the others' proxies
+// (docs/architecture/npcs.md, NPCs; engine-knowledge §13.21). The owner
+// sends what each shared NPC's animation graph reads: its high-level,
+// upper-body and stance states (NPCStatesComponent), the weapon in its right
+// hand, whom it looks or aims at, and the workspot it plays in (a bench, a
+// wall to lean on, a cigarette). It sends only what changed (NpcAnims,
+// reliable), when the game changes it: the wraps below queue the NPC as the
+// game sets a state, puts an item in or out of its right hand, starts or
+// ends its workspot, and the next tick reads it and sends (Events). Under
+// them, whom an NPC out of Relaxed is after is read four times a second (no
+// event says the top threat changed), and everything every 2 s (Sample),
+// which logs what the events missed. Each shot of its weapon goes as
+// NpcShot. A guest puts its brain-off proxy in the
 // same states the way NPCStatesComponent does it (anim features, wrappers,
 // blackboard, combat mode), gives it the weapon, a look-at, and plays the
 // same workspot on it, so the proxy's own graph plays the animations with
@@ -12,6 +18,80 @@
 //
 // Owned by TandemNpcs (Npcs.reds), which calls Sample/Forget on the host
 // and Follow/Drop on a guest.
+
+// The game set one of the three states. Every script path ends in these
+// (final.reds: the statics NPCPuppet.ChangeHighLevelState and siblings, the
+// AI actions' ChangeNPCState and ResetNPCState all raise NPCStateChangeSignal
+// -> ScriptedPuppet.OnSignalNPCStateChangeSignal ->
+// OnNPCStateChangeSignalReceived -> these; OnDead calls the upper body's
+// itself), the only callers of SetCurrent...State besides our TandemFollow.
+// They may run on a job thread (the AI's signals): they read, call the
+// wrapped method and queue the NPC; TandemNpcAnims.Events acts on the tick.
+@wrapMethod(NPCStatesComponent)
+private final func ChangeHighLevelState(newState: gamedataNPCHighLevelState) -> Void {
+  let before = this.GetCurrentHighLevelState();
+  wrappedMethod(newState);
+  let owner = this.GetOwner();
+  if IsDefined(owner) && NotEquals(before, this.GetCurrentHighLevelState()) {
+    TandemStreaming.QueueStreamed(TandemStreamKind.Npc(), owner.GetEntityID(), n"high", false);
+  }
+}
+
+@wrapMethod(NPCStatesComponent)
+private final func ChangeUpperBodyState(newState: gamedataNPCUpperBodyState) -> Void {
+  let before = this.GetCurrentUpperBodyState();
+  wrappedMethod(newState);
+  let owner = this.GetOwner();
+  if IsDefined(owner) && NotEquals(before, this.GetCurrentUpperBodyState()) {
+    TandemStreaming.QueueStreamed(TandemStreamKind.Npc(), owner.GetEntityID(), n"upper", false);
+  }
+}
+
+@wrapMethod(NPCStatesComponent)
+private final func ChangeStanceState(newState: gamedataNPCStanceState) -> Void {
+  let before = this.GetCurrentStanceState();
+  wrappedMethod(newState);
+  let owner = this.GetOwner();
+  if IsDefined(owner) && NotEquals(before, this.GetCurrentStanceState()) {
+    TandemStreaming.QueueStreamed(TandemStreamKind.Npc(), owner.GetEntityID(), n"stance", false);
+  }
+}
+
+// An item came into an NPC's right hand, or left it (the engine's slot
+// events, as the game's own anim wrappers follow them). Queued only.
+@wrapMethod(NPCPuppet)
+protected cb func OnItemAddedToSlot(evt: ref<ItemAddedToSlot>) -> Bool {
+  let result = wrappedMethod(evt);
+  if Equals(evt.GetSlotID(), t"AttachmentSlots.WeaponRight") {
+    TandemStreaming.QueueStreamed(TandemStreamKind.Npc(), this.GetEntityID(), n"weapon", false);
+  }
+  return result;
+}
+
+@wrapMethod(NPCPuppet)
+protected cb func OnItemRemovedFromSlot(evt: ref<ItemRemovedFromSlot>) -> Bool {
+  let result = wrappedMethod(evt);
+  if Equals(evt.GetSlotID(), t"AttachmentSlots.WeaponRight") {
+    TandemStreaming.QueueStreamed(TandemStreamKind.Npc(), this.GetEntityID(), n"weapon", false);
+  }
+  return result;
+}
+
+// A puppet's workspot started or ended (V's own class overrides both
+// without calling these). Queued only.
+@wrapMethod(ScriptedPuppet)
+protected cb func OnWorkspotStartedEvent(evt: ref<WorkspotStartedEvent>) -> Bool {
+  let result = wrappedMethod(evt);
+  TandemStreaming.QueueStreamed(TandemStreamKind.Npc(), this.GetEntityID(), n"workspot", false);
+  return result;
+}
+
+@wrapMethod(ScriptedPuppet)
+protected cb func OnWorkspotFinishedEvent(evt: ref<WorkspotFinishedEvent>) -> Bool {
+  let result = wrappedMethod(evt);
+  TandemStreaming.QueueStreamed(TandemStreamKind.Npc(), this.GetEntityID(), n"workspot", false);
+  return result;
+}
 
 // Host: one shot of an NPC's weapon (every NPC shot goes through
 // AIWeapon.Fire: AI behaviours and devices alike).
@@ -105,10 +185,17 @@ public final func TandemFollow(high: gamedataNPCHighLevelState, upper: gamedataN
   }
 }
 
-// What the host last sent for one NPC.
+// What the owner last sent for one NPC.
 public class TandemNpcAnimSent {
   public let npc: Uint32;
+  public let entity: EntityID;
   public let anim: TandemNpcAnim;
+  // Read once more at this time (0: no): what an event's change brings a
+  // moment after it (the workspot's instance, whom it is after).
+  public let settleAt: Float;
+  // The round of events it was last read in (several events in a tick: one
+  // read).
+  public let round: Int32;
 }
 
 // A guest's view of one proxy: the host's latest state, and what of it is
@@ -246,11 +333,40 @@ public class TandemNpcAnims {
   private let m_applied: Int32;
   private let m_you: Uint32;
 
+  // Owner: the time of this tick, the last 2 s poll and whether this
+  // sampling is one, the round of events.
+  private let m_now: Float;
+  private let m_lastSlow: Float;
+  private let m_slow: Bool;
+  private let m_round: Int32;
+  // Owner: the game's own changes taken off the queue, by what changed
+  // (high, upper, stance, weapon, workspot), for NPCs we share.
+  private let m_events: array<Int32>;
+  // Owner: messages sent, by what found the change: an NPC's first read, an
+  // event, the read a moment after an event, the 4 Hz read of whom it is
+  // after, the 2 s poll (what has no event: a workspot's entry, a target).
+  private let m_first: Int32;
+  private let m_byEvent: Int32;
+  private let m_settled: Int32;
+  private let m_byTarget: Int32;
+  private let m_polled: Int32;
+  // Owner: changes the events should have told and a poll found (of them,
+  // those of the three states).
+  private let m_missed: Int32;
+  private let m_missedStates: Int32;
+
   // Guest: the host's NPC shots whose bullet was drawn.
   private let m_bullets: Int32;
 
+  // Whom an NPC out of Relaxed is after is read this often, and an NPC once
+  // more this long after an event.
   public static func Interval() -> Float {
     return 0.25;
+  }
+
+  // Everything is read this often, under the events.
+  public static func SlowInterval() -> Float {
+    return 2.0;
   }
 
   // The component a proxy plays the host's workspots from.
@@ -261,6 +377,7 @@ public class TandemNpcAnims {
   public func Start(game: GameInstance, npcs: ref<TandemNpcs>) -> Void {
     this.m_game = game;
     this.m_npcs = npcs;
+    this.m_events = [0, 0, 0, 0, 0];
     // Every proxy and player puppet gets a workspot component of its own
     // while it is built (Codeware: components can be added until the entity
     // initializes).
@@ -285,33 +402,196 @@ public class TandemNpcAnims {
   }
 
   public func Report() -> String {
-    return s"anims: \(ArraySize(this.m_sent)) sent, \(ArraySize(this.m_proxies)) followed, \(this.m_applied) applied, \(this.m_shots) shots";
+    return s"anims: \(ArraySize(this.m_sent)) sent, \(ArraySize(this.m_proxies)) followed, \(this.m_applied) applied, \(this.m_shots) shots; changes sent: \(this.m_first) first, \(this.m_byEvent) by events (\(this.m_events[0]) high, \(this.m_events[1]) upper, \(this.m_events[2]) stance, \(this.m_events[3]) weapon, \(this.m_events[4]) workspot), \(this.m_settled) settled, \(this.m_byTarget) by the target read, \(this.m_polled) polled, missed \(this.m_missed) (\(this.m_missedStates) of them states)";
   }
 
-  // ---- host ----
+  // ---- the owner ----
 
-  // Whether this tick samples (Npcs.Share runs at 10 Hz, states at 4).
+  // Each frame: the NPCs the game changed since the last one (the wraps at
+  // the top), read and sent now. Only those we run and already share: any
+  // other is a proxy, a hidden copy of ours, or not announced yet (its
+  // first Sample reads it whole).
+  public func Events(now: Float, you: Uint32) -> Void {
+    this.m_now = now;
+    let system = GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"TandemSystem") as TandemSystem;
+    let attitudes = IsDefined(system) ? system.Attitudes() : null;
+    if !IsDefined(attitudes) {
+      return;
+    }
+    let events = attitudes.TakeChanged();
+    if ArraySize(events) == 0 {
+      return;
+    }
+    this.m_round += 1;
+    for event in events {
+      let sent = this.FindSentOf(event.entity);
+      if IsDefined(sent) {
+        let what = TandemNpcAnims.EventIndex(event.cls);
+        this.m_events[what] += 1;
+        if sent.round != this.m_round {
+          sent.round = this.m_round;
+          let npc = GameInstance.FindEntityByID(this.m_game, event.entity) as ScriptedPuppet;
+          // The dead are not sampled (Npcs.Share): their death goes its own way.
+          if IsDefined(npc) && !npc.IsDead() && IsDefined(this.m_npcs) && this.m_npcs.OwnsEntity(event.entity) {
+            let anim = this.StateOf(npc, sent.npc, you);
+            let changed = TandemNpcAnims.Changed(sent.anim, anim);
+            sent.settleAt = now + TandemNpcAnims.Interval();
+            if changed != 0 {
+              TandemNative.LogDebug(s"npc anims: event (\(NameToString(event.cls))): npc \(sent.npc)\(TandemNpcAnims.Diff(sent.anim, anim, changed))");
+              sent.anim = anim;
+              this.m_byEvent += 1;
+              this.Send(anim);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private static func EventIndex(what: CName) -> Int32 {
+    if Equals(what, n"high") {
+      return 0;
+    }
+    if Equals(what, n"upper") {
+      return 1;
+    }
+    if Equals(what, n"stance") {
+      return 2;
+    }
+    if Equals(what, n"weapon") {
+      return 3;
+    }
+    return 4;
+  }
+
+  // Whether this tick samples (Npcs.Share runs at 10 Hz, Sample at 4), and
+  // whether as the 2 s poll.
   public func Due(now: Float) -> Bool {
+    this.m_now = now;
     if now - this.m_last >= TandemNpcAnims.Interval() {
       this.m_last = now;
+      this.m_slow = now - this.m_lastSlow >= TandemNpcAnims.SlowInterval();
+      if this.m_slow {
+        this.m_lastSlow = now;
+      }
       return true;
     }
     return false;
   }
 
-  // One shared NPC: its state now, sent when it changed.
+  // One shared NPC, four times a second. Its first time: everything, sent.
+  // Every 2 s, and once a moment after an event: everything, sent when it
+  // differs from what was sent; a state, a weapon or a workspot found
+  // there is one the events missed, and logged. In between: only whom an
+  // NPC out of Relaxed is after.
   public func Sample(npc: ref<ScriptedPuppet>, id: Uint32, you: Uint32) -> Void {
-    let anim = this.StateOf(npc, id, you);
     let sent = this.FindSent(id);
     if !IsDefined(sent) {
       sent = new TandemNpcAnimSent();
       sent.npc = id;
+      sent.entity = npc.GetEntityID();
+      sent.anim = this.StateOf(npc, id, you);
       ArrayPush(this.m_sent, sent);
-    } else if TandemNpcAnims.Same(sent.anim, anim) {
+      this.m_first += 1;
+      this.Send(sent.anim);
       return;
     }
-    sent.anim = anim;
-    TandemNative.SendNpcAnim(id, anim.highLevel, anim.upperBody, anim.stance, anim.flags, anim.weapon, anim.target, anim.workspot, anim.workspotEntry, anim.workspotAnim);
+    let settling = sent.settleAt > 0.0;
+    if this.m_slow || (settling && this.m_now >= sent.settleAt) {
+      sent.settleAt = 0.0;
+      let anim = this.StateOf(npc, id, you);
+      let changed = TandemNpcAnims.Changed(sent.anim, anim);
+      if changed == 0 {
+        return;
+      }
+      // After an event the workspot's instance and the target may follow;
+      // a state or the weapon never does: their events are the change.
+      let missed = changed & (settling ? 15 : 31);
+      if missed != 0 {
+        this.m_missed += 1;
+        if (missed & 7) != 0 {
+          this.m_missedStates += 1;
+        }
+        if this.m_missed <= 10 || this.m_missed % 25 == 0 {
+          TandemNative.Log(s"npc anims: poll caught a change the events missed: npc \(id)\(TandemNpcAnims.Diff(sent.anim, anim, missed)) (\(this.m_missed) missed so far)");
+        }
+      } else if settling {
+        this.m_settled += 1;
+      } else {
+        this.m_polled += 1;
+      }
+      sent.anim = anim;
+      this.Send(anim);
+      return;
+    }
+    if sent.anim.highLevel != EnumInt(gamedataNPCHighLevelState.Relaxed) {
+      let target = this.ThreatOf(npc, you);
+      if target != sent.anim.target {
+        sent.anim.target = target;
+        this.m_byTarget += 1;
+        this.Send(sent.anim);
+      }
+    }
+  }
+
+  private func Send(anim: TandemNpcAnim) -> Void {
+    TandemNative.SendNpcAnim(anim.npc, anim.highLevel, anim.upperBody, anim.stance, anim.flags, anim.weapon, anim.target, anim.workspot, anim.workspotEntry, anim.workspotAnim);
+  }
+
+  // What differs between two states of an NPC: 1 high, 2 upper, 4 stance,
+  // 8 weapon, 16 workspot (those have events), 32 the workspot's entry,
+  // 64 the target (those do not).
+  public static func Changed(a: TandemNpcAnim, b: TandemNpcAnim) -> Int32 {
+    let changed = 0;
+    if a.highLevel != b.highLevel {
+      changed += 1;
+    }
+    if a.upperBody != b.upperBody {
+      changed += 2;
+    }
+    if a.stance != b.stance {
+      changed += 4;
+    }
+    if NotEquals(a.weapon, b.weapon) || (a.flags & 1) != (b.flags & 1) {
+      changed += 8;
+    }
+    if a.workspot != b.workspot || (a.flags & 2) != (b.flags & 2) {
+      changed += 16;
+    }
+    if a.workspotEntry != b.workspotEntry {
+      changed += 32;
+    }
+    if a.target != b.target {
+      changed += 64;
+    }
+    return changed;
+  }
+
+  // The same in words, for the log: only what `which` (Changed's bits) names.
+  public static func Diff(a: TandemNpcAnim, b: TandemNpcAnim, which: Int32) -> String {
+    let words = "";
+    if (which & 1) != 0 {
+      words += s" high \(a.highLevel) -> \(b.highLevel)";
+    }
+    if (which & 2) != 0 {
+      words += s" upper \(a.upperBody) -> \(b.upperBody)";
+    }
+    if (which & 4) != 0 {
+      words += s" stance \(a.stance) -> \(b.stance)";
+    }
+    if (which & 8) != 0 {
+      words += s" weapon \(TDBID.ToStringDEBUG(a.weapon)) -> \(TDBID.ToStringDEBUG(b.weapon))";
+    }
+    if (which & 16) != 0 {
+      words += s" workspot \(a.workspot) -> \(b.workspot)";
+    }
+    if (which & 32) != 0 {
+      words += s" entry \(a.workspotEntry) -> \(b.workspotEntry)";
+    }
+    if (which & 64) != 0 {
+      words += s" target \(a.target) -> \(b.target)";
+    }
+    return words;
   }
 
   public func Forget(id: Uint32) -> Void {
@@ -337,11 +617,7 @@ public class TandemNpcAnims {
     // Whom it is after: only once it is no longer relaxed (a relaxed NPC's
     // looks are its own small talk, not worth a message).
     if NotEquals(npc.GetHighLevelStateFromBlackboard(), gamedataNPCHighLevelState.Relaxed) {
-      let tracker = npc.GetTargetTrackerComponent();
-      let threat: TrackedLocation;
-      if IsDefined(tracker) && tracker.GetTopHostileThreat(false, threat) {
-        anim.target = this.TargetOf(threat.entity as GameObject, you);
-      }
+      anim.target = this.ThreatOf(npc, you);
     }
     // The game's own instance map (TandemActivity.Workspot): Codeware's
     // GetWorkspotInstance hashes the key otherwise and found none of the
@@ -371,6 +647,16 @@ public class TandemNpcAnims {
       return "its instance is not laid out as measured";
     }
     return "no instance";
+  }
+
+  // An NPC's top hostile threat, as TargetOf says it (0: none).
+  private func ThreatOf(npc: ref<ScriptedPuppet>, you: Uint32) -> Uint32 {
+    let tracker = npc.GetTargetTrackerComponent();
+    let threat: TrackedLocation;
+    if IsDefined(tracker) && tracker.GetTopHostileThreat(false, threat) {
+      return this.TargetOf(threat.entity as GameObject, you);
+    }
+    return 0u;
   }
 
   // A player id (us or a puppet), 0x10000 + a shared NPC's id, or 0.
@@ -408,8 +694,13 @@ public class TandemNpcAnims {
     return null;
   }
 
-  public static func Same(a: TandemNpcAnim, b: TandemNpcAnim) -> Bool {
-    return a.highLevel == b.highLevel && a.upperBody == b.upperBody && a.stance == b.stance && a.flags == b.flags && Equals(a.weapon, b.weapon) && a.target == b.target && a.workspot == b.workspot && a.workspotEntry == b.workspotEntry;
+  private func FindSentOf(entity: EntityID) -> ref<TandemNpcAnimSent> {
+    for sent in this.m_sent {
+      if sent.entity == entity {
+        return sent;
+      }
+    }
+    return null;
   }
 
   // (test) Host: someone sitting, leaning or smoking to share. The nearest

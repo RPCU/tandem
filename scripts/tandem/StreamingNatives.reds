@@ -55,7 +55,10 @@ public abstract class TandemStreamKind {
   public static func NetworkPing() -> Int32 { return 7; }
   // Our V got into a vehicle (entity: the vehicle, cls: the seat).
   public static func Mounted() -> Int32 { return 8; }
-  // An NPC came into our world (Attitudes.reds: V's attitudes on the puppets).
+  // An NPC came into our world (attached; Attitudes.reds: V's attitudes on
+  // the puppets), or the game changed something its animation reads (not
+  // attached, cls: n"high", n"upper", n"stance", n"weapon", n"workspot";
+  // NpcAnims.reds). One taker, which splits them: TandemAttitudes.Drain.
   public static func Npc() -> Int32 { return 9; }
 }
 
