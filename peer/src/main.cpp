@@ -172,6 +172,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -514,8 +515,9 @@ struct Options {
   int meleeSeconds{0};
   int menuAtSeconds{-1};
   int reactNpcsSeconds{0};
-  std::string holdRecord;   // what our V holds in its right hand ("": nothing said)
-  int holsterAtSeconds{-1}; // put it away N s in, for 5 s (-1: never)
+  std::string holdRecord;     // what our V holds in its right hand ("": nothing said)
+  std::string holdLeftRecord; // ...and in its left (--hold-left: dual wielding)
+  int holsterAtSeconds{-1};   // put it away N s in, for 5 s (-1: never)
   // Vehicle combat (docs/architecture/vehicle-combat.md). drive: our car is
   // hit this long after we sit (dents, a flat tyre, a part off), burns 4 s
   // later and blows up 4 s after that (-1: never); we leave it this long
@@ -665,7 +667,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     there (give a smart --shot-weapon: Items.Preset_Yukimura_Default)\n"
          "  --strike KIND      --hit-npcs: what each hit carries: plain (35 health), nonlethal\n"
          "                     (a blunt hit: knocks out), cap (leave 1 HP), poise (10 health,\n"
-         "                     40 poise), head (a headshot), blade (a katana on the left arm)\n"
+         "                     40 poise), head (a headshot), blade (a katana on the left arm),\n"
+         "                     offhand (the left hand's weapon's: --hold-left)\n"
          "  --hit-you N        host: an NPC (a replayed one if any) hits each guest's V for\n"
          "                     10 physical every N seconds\n"
          "  --hit-you-melee X  --hit-you: on, the hits are melee (blockable; the guest\n"
@@ -724,6 +727,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     session, for 5 seconds\n"
          "  --hold RECORD      our V holds this item in its right hand (a weapon for --shoot\n"
          "                     and --melee to be seen and heard: Items.Preset_Lexington_Default)\n"
+         "  --hold-left RECORD our V also holds this item in its left hand (dual wielding:\n"
+         "                     two pistols); --shoot, --charge and --smart then alternate\n"
+         "                     hands, the left hand's said as the left's\n"
          "  --holster-at N     --hold: put it away N seconds after another player is in the\n"
          "                     session, and draw it again 5 seconds later\n"
          "  --held-record NAME:TYPE[:CATEGORY], --vehicle-record NAME:TYPE[:SEATS],\n"
@@ -1553,7 +1559,8 @@ Options Parse(int argc, char **argv) {
     else if (flag == "--shot-weapon")
       options.shotWeapon = std::string(value);
     else if (flag == "--strike") {
-      constexpr std::string_view kinds[] = {"plain", "nonlethal", "cap", "poise", "head", "blade"};
+      constexpr std::string_view kinds[] = {"plain", "nonlethal", "cap",    "poise",
+                                            "head",  "blade",     "offhand"};
       if (std::ranges::find(kinds, value) == std::end(kinds))
         Usage(std::format("unknown strike {}", value));
       options.strike = std::string(value);
@@ -1681,6 +1688,8 @@ Options Parse(int argc, char **argv) {
       options.reactNpcsSeconds = std::max(1, Number<int>(value));
     else if (flag == "--hold")
       options.holdRecord = value;
+    else if (flag == "--hold-left")
+      options.holdLeftRecord = value;
     else if (flag == "--holster-at")
       options.holsterAtSeconds = Number<int>(value);
     else if (flag == "--drive-seconds")
@@ -3850,6 +3859,9 @@ tandem::proto::NpcStrike StrikeOf(std::string_view kind, tandem::proto::NpcId np
     strike.attackType = 7;
     strike.zone = 2; // ArmLeft
     strike.part = 0; // LEFT_ARM
+  } else if (kind == "offhand") {
+    // A dual wielding V's left hand's shot: a plain hit, its hand said.
+    strike.flags = proto::kStrikeLeftHand;
   }
   return strike;
 }
@@ -4271,12 +4283,30 @@ int main(int argc, char **argv) {
       else if (sessionEarly.size() < 100'000)
         sessionEarly.push_back(message);
     });
+  // --hold, --hold-left: what our V holds (a hand not named is empty).
+  const auto ourHeld = [&] {
+    tandem::proto::Held held;
+    if (!options.holdRecord.empty()) {
+      held.right = TweakDBID(options.holdRecord);
+      held.rightHint = options.holdHint;
+    }
+    if (!options.holdLeftRecord.empty())
+      held.left = TweakDBID(options.holdLeftRecord);
+    return held;
+  };
+  // Dual wielding: the hand of the next shot, charge and smart round (the
+  // right first, then the other each time).
+  const bool akimbo = !options.holdLeftRecord.empty();
+  bool leftShot = false, leftCharge = true, leftSmart = false;
+  if (!options.holdRecord.empty() || akimbo) {
+    endpoint->SetLocalHeld(ourHeld());
+    if (akimbo)
+      Log("holding {} / {} (dual wielding)", options.holdRecord, options.holdLeftRecord);
+    else
+      Log("holding {}", options.holdRecord);
+  }
   // --strike blade: our puppet holds a katana, so the host's NPC reacts to
   // (and is cut by) a blade: its hit reaction reads the attacker's weapon.
-  if (!options.holdRecord.empty()) {
-    endpoint->SetLocalHeld({.right = TweakDBID(options.holdRecord), .rightHint = options.holdHint});
-    Log("holding {}", options.holdRecord);
-  }
   if (options.strike == "blade") {
     endpoint->SetLocalHeld({.right = TweakDBID("Items.Preset_Katana_Default")});
     Log("holding Items.Preset_Katana_Default");
@@ -5040,7 +5070,8 @@ int main(int argc, char **argv) {
               // Echoed, unless we hold our own (--hold, --held-record, --strike
               // blade): the host's empty hands, heard at the join, replaced it.
               if ((options.mode == Mode::Mirror || options.mode == Mode::Front) &&
-                  options.holdRecord.empty() && options.strike != "blade")
+                  options.holdRecord.empty() && options.holdLeftRecord.empty() &&
+                  options.strike != "blade")
                 endpoint->SetLocalHeld(e.held);
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcSpawn>) {
               liveNpcs.insert(e.spawn.npc);
@@ -5263,7 +5294,8 @@ int main(int argc, char **argv) {
                   StationName(e.radio.on ? e.radio.station : -1), e.radio.track);
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteShot>) {
               ++heardShots;
-              Log("player {}: weapon event {}", e.shot.player, e.shot.effect);
+              Log("player {}: weapon event {} ({} hand)", e.shot.player, e.shot.effect,
+                  e.shot.hand == tandem::proto::Hand::Left ? "left" : "right");
               if ((options.mode == Mode::Mirror || options.mode == Mode::Front) &&
                   e.shot.player == followed())
                 endpoint->SendLocalShot(e.shot);
@@ -7250,15 +7282,19 @@ int main(int argc, char **argv) {
       tandem::proto::Vec3 from = lastSent.value_or(tandem::proto::Vec3{});
       from.z += 1.4f;
       const auto npc = smartAt;
+      // --hold-left: every other round from the left hand's weapon.
+      const bool left = akimbo && std::exchange(leftSmart, !leftSmart);
+      const auto flags = static_cast<std::uint8_t>(tandem::proto::kThrowHoming |
+                                                   (left ? tandem::proto::kThrowLeftHand : 0));
       if (endpoint->SendCombat(
               tandem::proto::Throw{.id = ++throwId,
                                    .kind = tandem::proto::ThrowKind::Smart,
-                                   .flags = tandem::proto::kThrowHoming,
+                                   .flags = flags,
                                    .item = TweakDBID("Items.Preset_Yukimura_Default"),
                                    .origin = from,
                                    .velocity = {0.f, 1.f, 0.f},
                                    .npc = npc}))
-        Log("our smart round at npc {}", npc);
+        Log("our smart round at npc {}{}", npc, left ? " (left hand)" : "");
     }
     // --defend: a parry, then a block, of an NPC's attack on our V.
     if (options.defendSeconds && !options.host && endpoint->IsJoined() && !liveNpcs.empty() &&
@@ -7786,26 +7822,36 @@ int main(int argc, char **argv) {
     // from a guest, heard by the host's NPCs (Noise, gamedataStimType.Gunshot 28).
     if (options.shootSeconds && endpoint->IsJoined() && now >= nextShot) {
       nextShot = now + std::chrono::seconds(options.shootSeconds);
-      endpoint->SendLocalShot({.hand = tandem::proto::Hand::Right, .effect = 16});
+      // --hold-left: each hand in turn, its bullet and its bounce the
+      // same hand's (kTraceLeftHand).
+      const bool left = akimbo && std::exchange(leftShot, !leftShot);
+      const std::uint8_t hand = left ? tandem::proto::kTraceLeftHand : std::uint8_t{0};
+      endpoint->SendLocalShot(
+          {.hand = left ? tandem::proto::Hand::Left : tandem::proto::Hand::Right, .effect = 16});
       if (const auto at = beyond()) {
-        endpoint->SendLocalCue({.kind = tandem::proto::CueKind::Trace, .at = *at});
+        endpoint->SendLocalCue({.kind = tandem::proto::CueKind::Trace, .arg = hand, .at = *at});
         // --ricochet: it bounced off where it ended and hit something there.
         if (options.ricochet) {
-          endpoint->SendLocalCue(
-              {.kind = tandem::proto::CueKind::Ricochet, .at = {at->x + 3.f, at->y, at->z + 1.5f}});
+          endpoint->SendLocalCue({.kind = tandem::proto::CueKind::Ricochet,
+                                  .arg = hand,
+                                  .at = {at->x + 3.f, at->y, at->z + 1.5f}});
           Log("ricochet");
         }
       }
       if (!options.host)
         endpoint->SendNoise({.stim = 28, .radius = 25.f});
-      Log("gunshot");
+      Log("gunshot{}", left ? " (left hand)" : "");
     }
     // --charge: charging for 1 s, ready for 0.5 s, full for 1 s, said on
     // each change and every 0.25 s with how charged; then the shot and the
     // charge's end.
     if (options.chargeSeconds && endpoint->IsJoined()) {
-      if (!chargeFrom && now >= nextCharge)
+      if (!chargeFrom && now >= nextCharge) {
         chargeFrom = now;
+        // --hold-left: every other charge is the left hand's weapon's (the
+        // right's first).
+        leftCharge = akimbo && !leftCharge;
+      }
       if (chargeFrom) {
         namespace proto = tandem::proto;
         const double in = std::chrono::duration<double>(now - *chargeFrom).count();
@@ -7815,19 +7861,24 @@ int main(int argc, char **argv) {
                                     : proto::kChargeIdle;
         if (step != chargeStep || now - chargeSaid >= std::chrono::milliseconds(250)) {
           if (step != chargeStep)
-            Log("charge step {}", step);
+            Log("charge step {}{}", step, leftCharge ? " (left hand)" : "");
           chargeStep = step;
           chargeSaid = now;
           const float charged =
               step == proto::kChargeIdle ? 0.f : std::min(1.f, static_cast<float>(in) / 1.5f);
-          endpoint->SendLocalCue({.kind = proto::CueKind::Charge,
-                                  .arg = static_cast<std::uint8_t>(step),
-                                  .at = {charged, 0.f, 0.f}});
+          endpoint->SendLocalCue(
+              {.kind = proto::CueKind::Charge,
+               .arg = static_cast<std::uint8_t>(step),
+               .at = {charged, leftCharge ? proto::kChargeLeftHand : proto::kChargeRightHand,
+                      0.f}});
         }
         if (step == proto::kChargeIdle) {
-          endpoint->SendLocalShot({.hand = proto::Hand::Right, .effect = 16});
+          endpoint->SendLocalShot(
+              {.hand = leftCharge ? proto::Hand::Left : proto::Hand::Right, .effect = 16});
           if (const auto at = beyond())
-            endpoint->SendLocalCue({.kind = proto::CueKind::Trace, .at = *at});
+            endpoint->SendLocalCue({.kind = proto::CueKind::Trace,
+                                    .arg = leftCharge ? proto::kTraceLeftHand : std::uint8_t{0},
+                                    .at = *at});
           Log("charged shot");
           chargeFrom.reset();
           chargeStep = -1;
@@ -7867,14 +7918,14 @@ int main(int argc, char **argv) {
       }
     }
     // --holster-at: the weapon away, then drawn again.
-    if (options.holsterAtSeconds >= 0 && !options.holdRecord.empty() && holsterStep < 2) {
+    if (options.holsterAtSeconds >= 0 && (!options.holdRecord.empty() || akimbo) &&
+        holsterStep < 2) {
       if (holsterStep == 0 && shared >= options.holsterAtSeconds) {
         endpoint->SetLocalHeld({});
         holsterStep = 1;
         Log("weapon holstered");
       } else if (holsterStep == 1 && shared >= options.holsterAtSeconds + 5) {
-        endpoint->SetLocalHeld(
-            {.right = TweakDBID(options.holdRecord), .rightHint = options.holdHint});
+        endpoint->SetLocalHeld(ourHeld());
         holsterStep = 2;
         Log("weapon drawn");
       }
