@@ -663,7 +663,7 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) {
       system.Npcs().NoteOwnHit(hitEvent.target.GetEntityID());
     }
     wrappedMethod(hitEvent);
-    // Guest: a proxy's shot (Shots.reds) hit our V: the host shows it.
+    // Guest: a proxy's shot (Shots.reds) hit our V, by our game's decision.
     let shots = TandemShots.Of(game);
     if IsDefined(shots) {
       shots.Report(hitEvent);
@@ -815,6 +815,13 @@ private final func ProcessPipeline(hitEvent: ref<gameHitEvent>, cache: ref<Cache
   }
   // Our V's bullet hit this after a ricochet: the others draw its bounce.
   TandemPresenceSync.OurRicochet(game, hitEvent);
+  // A hit another V took, shown on its puppet (HitsTaken.reds): its
+  // player's game ran it, ours only lets the body react.
+  if TandemHitsTaken.IsShown(game, hitEvent) {
+    wrappedMethod(hitEvent, cache);
+    TandemHitsTaken.Forget(game, hitEvent);
+    return;
+  }
   // A duel is its starter's: a hit on a fist fight's opponent from a V
   // that is not in it is dropped (Contests.reds).
   if TandemContests.Watched(game, hitEvent) {
@@ -830,6 +837,9 @@ private final func ProcessPipeline(hitEvent: ref<gameHitEvent>, cache: ref<Cache
   let victim = TandemCombat.PuppetPlayer(game, hitEvent.target);
   if victim != 0u {
     TandemNative.LogDebug(s"combat: a hit on player \(victim)'s puppet enters the pipeline (type \(EnumInt(hitEvent.attackData.GetAttackType())))");
+    // Its reaction is our game's own, now: not shown again when that V's
+    // game tells the hit (HitsTaken.reds).
+    TandemHitsTaken.Native(game, victim, hitEvent);
   }
   // Guest: a hit on a proxy goes to the host once its pipeline has ended,
   // with the poise PostProcess took.
@@ -846,6 +856,9 @@ private final func ProcessPipeline(hitEvent: ref<gameHitEvent>, cache: ref<Cache
   // A proxy's attack on our V we blocked or parried: the NPC recoils in its
   // owner's game (Outcomes.reds).
   TandemOutcomes.ReportDefence(game, hitEvent);
+  // A hit that took health of our V: the others show it on our puppet as
+  // the hit it was (HitsTaken.reds).
+  TandemHitsTaken.Ours(game, hitEvent);
   let system = TandemCombat.System(game);
   if IsDefined(system) && system.IsForwardedHit(hitEvent) {
     if !hitEvent.attackData.HasFlag(hitFlag.SuccessfulAttack) {

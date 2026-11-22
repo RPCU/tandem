@@ -22,6 +22,31 @@ public native struct TandemCue {
   native let z: Float;
 }
 
+// A hit another player's V took, as its game ran it (proto::HitTaken).
+public native struct TandemHitTaken {
+  native let player: Uint32;
+  // proto::HitBy: 0 nobody we know, 1 a shared NPC, 2 a player
+  native let by: Int32;
+  native let attacker: Uint32;
+  native let attack: TweakDBID;
+  // gamedataAttackType
+  native let attackType: Int32;
+  // 1 melee, 2 it staggered the V, 4 it knocked it down, 8 critical
+  native let flags: Int32;
+  // EHitReactionZone and EHitShapeType of the hit shape, -1: none
+  native let zone: Int32;
+  native let shape: Int32;
+  // the health it took, 0..1 of the V's whole
+  native let share: Float;
+  // where it landed, from the V's position; the way it went
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let dx: Float;
+  native let dy: Float;
+  native let dz: Float;
+}
+
 public native struct TandemNpcReaction {
   native let npc: Uint32;
   native let by: Uint32;
@@ -65,6 +90,8 @@ public native class TandemPresence extends IScriptable {
   public static native func Flags(player: Uint32) -> Int32;
   public static native func SendCue(kind: Int32, arg: Int32, at: Vector4) -> Void;
   public static native func TakeCues() -> array<TandemCue>;
+  public static native func SendHitTaken(by: Int32, attacker: Uint32, attack: TweakDBID, attackType: Int32, flags: Int32, zone: Int32, shape: Int32, share: Float, offset: Vector4, direction: Vector4) -> Void;
+  public static native func TakeHitsTaken() -> array<TandemHitTaken>;
   public static native func Observe(player: Uint32, position: Vector4, dt: Float) -> array<TandemHeard>;
   public static native func Forget(player: Uint32) -> Void;
   public static native func Flinch(player: Uint32, strength: Float, direction: Vector4, forward: Vector4) -> Void;

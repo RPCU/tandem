@@ -59,6 +59,10 @@ public class TandemHeardPuppet {
   public let ricochets: Int32;
   public let charges: Int32;
   public let flinches: Int32;
+  // Its health fell: the flinch for it is due then (0: none), unless its
+  // game tells the hit it was meanwhile (HitsTaken.reds).
+  public let hurtDue: Float;
+  public let hurtHow: Int32;
   // Water: the swimming loop effect started on it (0 none, 1 the surface's,
   // 2 the dive's), its strokes so far.
   public let water: Int32;
@@ -128,6 +132,7 @@ public class TandemPresenceSync {
   private let m_hud: ref<TandemPartyHud>;
   private let m_reactions: ref<TandemReactionsSync>;
   private let m_status: ref<TandemStatusVisuals>;
+  private let m_hitsTaken: ref<TandemHitsTaken>;
 
   public static func Of(game: GameInstance) -> ref<TandemPresenceSync> {
     let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
@@ -143,6 +148,8 @@ public class TandemPresenceSync {
     this.m_reactions.Start(game);
     this.m_status = new TandemStatusVisuals();
     this.m_status.Start(game);
+    this.m_hitsTaken = new TandemHitsTaken();
+    this.m_hitsTaken.Start(game);
     this.m_listener = new TandemPresenceListener();
     this.m_listener.sync = this;
     let boards = GameInstance.GetBlackboardSystem(game);
@@ -178,6 +185,7 @@ public class TandemPresenceSync {
     this.m_hud = null;
     this.m_reactions = null;
     this.m_status = null;
+    this.m_hitsTaken = null;
   }
 
   // The session ended: nothing of it is heard or shown any more.
@@ -198,6 +206,9 @@ public class TandemPresenceSync {
     if IsDefined(this.m_status) {
       this.m_status.End();
     }
+    if IsDefined(this.m_hitsTaken) {
+      this.m_hitsTaken.End();
+    }
   }
 
   public func Hud() -> ref<TandemPartyHud> {
@@ -210,6 +221,10 @@ public class TandemPresenceSync {
 
   public func Status() -> ref<TandemStatusVisuals> {
     return this.m_status;
+  }
+
+  public func HitsTaken() -> ref<TandemHitsTaken> {
+    return this.m_hitsTaken;
   }
 
   // A time ability's sound plays on that player's puppet now (Ability).
@@ -454,7 +469,14 @@ public class TandemPresenceSync {
         heard.right = TandemNative.RemoteHeld(player, false);
         this.HandTick(heard, body, false, now);
         this.HandTick(heard, body, true, now);
+        if heard.hurtDue > 0.0 && now >= heard.hurtDue {
+          this.Flinched(heard, body, now);
+        }
       }
+    }
+    // The hits the others' Vs took, as their games tell them.
+    if IsDefined(this.m_hitsTaken) {
+      this.m_hitsTaken.Tick(now, system);
     }
     this.DrawCues(system, now);
     while ArraySize(this.m_cosmeticAt) > 0 && now - this.m_cosmeticAt[0] > 2.0 {
@@ -567,7 +589,7 @@ public class TandemPresenceSync {
         this.Holster(heard, body);
         break;
       case 6:
-        this.Hurt(heard, body, event.arg);
+        this.Hurt(heard, body, event.arg, now);
         break;
       case 7:
         this.Voice(heard, body, n"stlh_death", "down");
@@ -771,11 +793,30 @@ public class TandemPresenceSync {
     }
   }
 
-  // Hit: V's own pain context, the NPC body's twitch (the one hit reaction
-  // that plays without its brain and without moving it) and a flinch laid
-  // over the streamed pose.
-  private func Hurt(heard: ref<TandemHeardPuppet>, body: ref<GameObject>, how: Int32) -> Void {
+  // Its health fell: V's own pain context now. The reaction is the hit's
+  // own when its game tells it (HitsTaken.reds: where it landed, the way it
+  // went, through the game's pipeline); what is never told (damage over
+  // time, a fall, a lost message) flinches a quarter of a second later,
+  // from the front.
+  private func Hurt(heard: ref<TandemHeardPuppet>, body: ref<GameObject>, how: Int32, now: Float) -> Void {
     this.Voice(heard, body, n"onPlayerHit", "hurt");
+    heard.hurtDue = now + 0.25;
+    heard.hurtHow = how;
+  }
+
+  // The flinch of a fall of health no hit explained: the NPC body's twitch
+  // (the one hit reaction that plays without its brain and without moving
+  // it) and a flinch laid over the streamed pose.
+  private func Flinched(heard: ref<TandemHeardPuppet>, body: ref<GameObject>, now: Float) -> Void {
+    let how = heard.hurtHow;
+    let fellAt = heard.hurtDue - 0.25;
+    heard.hurtDue = 0.0;
+    // A hit shown on it around the fall (told a moment before or after
+    // the health, or run by our own game) was that fall.
+    if IsDefined(this.m_hitsTaken) && this.m_hitsTaken.ShownSince(heard.player, fellAt - 0.6) {
+      TandemNative.LogDebug(s"reaction: player \(heard.player)'s health fell with a hit shown on its puppet: no flinch of ours");
+      return;
+    }
     let strength = how >= 2 ? 1.0 : (how == 1 ? 0.6 : 0.25);
     TandemPresence.Flinch(heard.player, strength, new Vector4(0.0, 0.0, 0.0, 0.0), body.GetWorldForward());
     TandemReactionsSync.Twitch(body, 3, how, 4);
@@ -1023,7 +1064,7 @@ public class TandemPresenceSync {
       for player in system.PuppetPlayers() {
         let body = system.PuppetOf(player);
         if IsDefined(body) {
-          this.Hurt(this.Known(player), body, 2);
+          this.Hurt(this.Known(player), body, 2, this.m_last);
         }
       }
     } else if Equals(command, "tracer both") {
@@ -1079,6 +1120,10 @@ public class TandemPresenceSync {
       if IsDefined(this.m_hud) {
         this.m_hud.Command(StrAfterFirst(command, "hud "), system);
       }
+    } else if StrBeginsWith(command, "hit") {
+      if IsDefined(this.m_hitsTaken) {
+        this.m_hitsTaken.Command(StrAfterFirst(command, "hit "), system);
+      }
     } else if StrBeginsWith(command, "react") {
       if IsDefined(this.m_reactions) {
         this.m_reactions.Command(StrAfterFirst(command, "react "), system);
@@ -1088,7 +1133,7 @@ public class TandemPresenceSync {
         this.m_status.Command(StrAfterFirst(command, "status "));
       }
     } else {
-      TandemNative.Log(s"presence: unknown command '\(command)' (report, steps auto|on|off, swim both|fx|sound, vo NAME, sound NAME, fx NAME, flinch, bullet [left], trail, tracer both|bullet|trail, charge on|full|off [left], hud ..., react ..., status ...)");
+      TandemNative.Log(s"presence: unknown command '\(command)' (report, steps auto|on|off, swim both|fx|sound, vo NAME, sound NAME, fx NAME, flinch, hit [npc], bullet [left], trail, tracer both|bullet|trail, charge on|full|off [left], hud ..., react ..., status ...)");
     }
   }
 
@@ -1105,6 +1150,9 @@ public class TandemPresenceSync {
     }
     if IsDefined(this.m_status) {
       this.m_status.Report();
+    }
+    if IsDefined(this.m_hitsTaken) {
+      this.m_hitsTaken.Report();
     }
   }
 }

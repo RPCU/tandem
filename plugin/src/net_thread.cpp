@@ -802,6 +802,8 @@ struct NetThread::Impl {
                 PresenceState::Get().PushRemote(e.presence);
               } else if constexpr (std::is_same_v<E, events::RemoteCue>) {
                 PresenceState::Get().PushCue(e.cue, net::NowUs());
+              } else if constexpr (std::is_same_v<E, events::RemoteHitTaken>) {
+                PresenceState::Get().PushHitTaken(e.hit, net::NowUs());
               } else if constexpr (std::is_same_v<E, events::RemoteStatusVisuals>) {
                 log::Info("player {}: {} status effect(s) show on its V (revision {})",
                           e.visuals.player, e.visuals.records.size(), e.visuals.revision);
@@ -1450,6 +1452,8 @@ struct NetThread::Impl {
       }
       for (const auto &cue : PresenceState::Get().TakeLocalCues())
         endpoint->SendLocalCue(cue);
+      for (const auto &hit : PresenceState::Get().TakeLocalHitsTaken())
+        endpoint->SendLocalHitTaken(hit);
       if (auto visuals = PresenceState::Get().TakeStatusVisuals()) {
         lastStatusVisuals = *visuals;
         endpoint->SetLocalStatusVisuals(std::move(*visuals));

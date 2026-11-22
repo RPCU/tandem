@@ -35,6 +35,22 @@ struct TandemCue {
 };
 static_assert(alignof(TandemCue) <= 8, "the script VM aligns struct locals to 8");
 
+// A hit another player's V took (proto::HitTaken). Plain fields.
+struct TandemHitTaken {
+  std::uint32_t player{};
+  std::int32_t by{}; // proto::HitBy
+  std::uint32_t attacker{};
+  Red::TweakDBID attack;
+  std::int32_t attackType{}; // gamedataAttackType
+  std::int32_t flags{};      // proto::kHitTaken*
+  std::int32_t zone{};       // EHitReactionZone, -1: none
+  std::int32_t shape{};      // EHitShapeType, -1: none
+  float share{};             // the health it took, 0..1 of the V's whole
+  float x{}, y{}, z{};       // where it landed, from the V's position
+  float dx{}, dy{}, dz{};    // the way it went
+};
+static_assert(alignof(TandemHitTaken) <= 8, "the script VM aligns struct locals to 8");
+
 // A host NPC's hit reaction (proto::NpcReaction).
 struct TandemNpcReaction {
   std::uint32_t npc{};
@@ -109,6 +125,39 @@ struct TandemPresence : Red::IScriptable {
     for (const auto &cue : PresenceState::Get().TakeCues(net::NowUs()))
       out.EmplaceBack(TandemCue{cue.player, static_cast<std::int32_t>(cue.kind), cue.arg, cue.at.x,
                                 cue.at.y, cue.at.z});
+    return out;
+  }
+
+  // A hit our V took, as our game ran it, for the others' puppets of it
+  // (proto::HitTaken): `by` proto::HitBy and who, the attack's record and
+  // type, proto::kHitTaken* flags, the hit shape's zone and kind (-1:
+  // none), the share of our V's health it took (0..1), where it landed
+  // from our V's position, the way it went.
+  static void SendHitTaken(std::int32_t by, std::uint32_t attacker, Red::TweakDBID attack,
+                           std::int32_t attackType, std::int32_t flags, std::int32_t zone,
+                           std::int32_t shape, float share, Red::Vector4 offset,
+                           Red::Vector4 direction) {
+    const auto kind = static_cast<proto::HitBy>(Clamped<std::uint8_t>(by, 0, 2));
+    PresenceState::Get().SubmitHitTaken(
+        {.by = kind,
+         .attacker = kind == proto::HitBy::World ? 0u : attacker,
+         .attack = attack.value,
+         .attackType = Clamped<std::uint8_t>(attackType, 0, 255),
+         .flags = static_cast<std::uint8_t>(flags & proto::kHitTakenFlags),
+         .zone = zone < 0 || zone > 254 ? proto::kNoZone : static_cast<std::uint8_t>(zone),
+         .shape = Clamped<std::int8_t>(shape, -1, 127),
+         .share = static_cast<std::uint8_t>(std::clamp(share, 0.f, 1.f) * 255.f + 0.5f),
+         .offset = Vec(offset),
+         .direction = Vec(direction)});
+  }
+  static Red::DynArray<TandemHitTaken> TakeHitsTaken() {
+    Red::DynArray<TandemHitTaken> out;
+    for (const auto &hit : PresenceState::Get().TakeHitsTaken(net::NowUs()))
+      out.EmplaceBack(TandemHitTaken{
+          hit.player, static_cast<std::int32_t>(hit.by), hit.attacker, Red::TweakDBID(hit.attack),
+          hit.attackType, hit.flags, hit.zone == proto::kNoZone ? -1 : hit.zone, hit.shape,
+          static_cast<float>(hit.share) / 255.f, hit.offset.x, hit.offset.y, hit.offset.z,
+          hit.direction.x, hit.direction.y, hit.direction.z});
     return out;
   }
 
@@ -258,6 +307,24 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemCue, "TandemCue", {
   RTTI_PROPERTY(z);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemHitTaken, "TandemHitTaken", {
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(by);
+  RTTI_PROPERTY(attacker);
+  RTTI_PROPERTY(attack);
+  RTTI_PROPERTY(attackType);
+  RTTI_PROPERTY(flags);
+  RTTI_PROPERTY(zone);
+  RTTI_PROPERTY(shape);
+  RTTI_PROPERTY(share);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
+  RTTI_PROPERTY(dx);
+  RTTI_PROPERTY(dy);
+  RTTI_PROPERTY(dz);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcReaction, "TandemNpcReaction", {
   RTTI_PROPERTY(npc);
   RTTI_PROPERTY(by);
@@ -297,6 +364,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemPresence, "TandemPresence", {
   RTTI_METHOD(Flags);
   RTTI_METHOD(SendCue);
   RTTI_METHOD(TakeCues);
+  RTTI_METHOD(SendHitTaken);
+  RTTI_METHOD(TakeHitsTaken);
   RTTI_METHOD(Observe);
   RTTI_METHOD(Forget);
   RTTI_METHOD(Flinch);

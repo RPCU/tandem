@@ -33,6 +33,33 @@ std::vector<proto::Cue> PresenceState::TakeLocalCues() {
   return std::exchange(m_localCues, {});
 }
 
+void PresenceState::SubmitHitTaken(const proto::HitTaken &hit) {
+  std::lock_guard _(m_lock);
+  if (m_localHitsTaken.size() < 32)
+    m_localHitsTaken.push_back(hit);
+}
+
+std::vector<proto::HitTaken> PresenceState::TakeLocalHitsTaken() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localHitsTaken, {});
+}
+
+void PresenceState::PushHitTaken(const proto::HitTaken &hit, std::uint64_t nowUs) {
+  std::lock_guard _(m_lock);
+  // Scripts drain these every frame; a pile-up means nobody is listening.
+  if (m_hitsTaken.size() < 128)
+    m_hitsTaken.emplace_back(hit, nowUs);
+}
+
+std::vector<proto::HitTaken> PresenceState::TakeHitsTaken(std::uint64_t nowUs) {
+  std::lock_guard _(m_lock);
+  std::vector<proto::HitTaken> out;
+  for (const auto &[hit, at] : std::exchange(m_hitsTaken, {}))
+    if (nowUs - at < 500'000)
+      out.push_back(hit);
+  return out;
+}
+
 bool PresenceState::SubmitStatusVisuals(std::vector<std::uint64_t> records) {
   auto set = presence::StatusSet(std::move(records));
   if (set == m_statusSent)

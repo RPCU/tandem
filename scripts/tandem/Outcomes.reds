@@ -1074,6 +1074,11 @@ private final func ModifyHitData(hitEvent: ref<gameHitEvent>) {
   if IsDefined(outcomes) && outcomes.IsStrike(hitEvent) {
     return;
   }
+  // A hit another V took, shown on its puppet: that V's game ran its
+  // target's side (dodge, armour, mitigation); nothing of it here.
+  if TandemHitsTaken.IsShown(GetGameInstance(), hitEvent) {
+    return;
+  }
   wrappedMethod(hitEvent);
 }
 
@@ -1093,6 +1098,11 @@ private final func Process(hitEvent: ref<gameHitEvent>, cache: ref<CacheData>) {
 private final func PostProcess(hitEvent: ref<gameHitEvent>) {
   let outcomes = TandemOutcomes.Of(GetGameInstance());
   if IsDefined(outcomes) && outcomes.IsStrike(hitEvent) {
+    return;
+  }
+  // A hit shown on another V's puppet (HitsTaken.reds): the attack's status
+  // effects are that V's (StatusVisuals shows them), never the puppet's.
+  if TandemHitsTaken.IsShown(GetGameInstance(), hitEvent) {
     return;
   }
   wrappedMethod(hitEvent);
