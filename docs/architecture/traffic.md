@@ -167,9 +167,21 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   crowd cars, held back (never announced inside the host's region) yet
   driving on its screen, 13 to 34 during the ride; density 0 does not
   stop its traffic (`npcs: guest, own crowd off` at the start of the
-  ride). Open: keeping a covered guest's own traffic from spawning (a
-  crowd null area, `overlap = area`, and `overlap_despawn` are untested
-  for it).
+  ride). It drove beside the host's traffic and ran into the copies,
+  which then burnt out on the guest only.
+- **One street, one game's vehicles** (`overlap_despawn = remove`, the
+  default): where another game runs the street (our V inside a
+  higher-ranked player's region, or that game running our area), our own
+  crowd's vehicles and our other dynamic cars there (a parked crowd car;
+  not a placed one, a quest's, the police's or a wreck) are taken out of
+  our world at once with whoever sits in them (`entEntity.Dispose`,
+  `TandemWheels.Dispose`; `TandemTraffic.Remove`; never one with a player
+  or a puppet aboard). Density 0 does not stop the traffic, a crowd null
+  area (`overlap = area`) did not either (measured in a ride: 7 to 10 held
+  back): the vehicles are removed as they come (862 and 1656 in two rides
+  of 150 s), and the riding guest's own within 100 m went from 19 to 36 to
+  none. `ask`: the game's own despawn (`RequestDespawnVehicleAndPassengers`,
+  which waits until nobody looks: 39 asked, the cars stayed); `off`.
 - **A packet** holds at most 32 entries of 28 bytes: position as floats,
   the rotation in 6 bytes (the quaternion's i, j, k in 1/32767 with r ≥ 0,
   under 0.01° of error), the velocity in cm/s. Ten a second is **under
@@ -389,9 +401,8 @@ Not built, in the order I would do them:
 - AVs and the rest that is not a car or a bike are left to each game.
 - A game's own crowd cars where another game runs the street are held
   back (never announced there) and kept from spawning (`regions.md` §6,
-  "The overlap, held back": `overlap`, `overlap_despawn`); one already
-  there is not removed (no known call does: the despawn probe is off by
-  default).
+  "The overlap, held back": `overlap`, `overlap_despawn`) and removed
+  ("One street, one game's vehicles", above).
 
 ## Scenarios to run in game
 

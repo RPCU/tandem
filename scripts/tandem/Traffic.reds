@@ -863,7 +863,17 @@ public class TandemTraffic {
           }
           TandemNative.Log(s"street: check: vehicle \(entry.id) is shared and had no proxy: spawned");
         }
-      } else if !car.mine && !car.claimed && !car.own {
+      } else if !car.mine && !car.claimed && (!car.own || !IsDefined(TandemTraffic.Body(this.m_game, car.body))) {
+        // A body of our own world we gave away (a hand-over: our real car
+        // became its proxy) that our crowd then took out of the world: a
+        // proxy body of our making from now on, spawned as any other. The
+        // parked cars a host handed to a guest by the test field were gone
+        // on the host and shown on the guest (20 of them, 2026-11-22).
+        if car.own {
+          car.own = false;
+          car.goneSince = 0.0;
+          TandemNative.Log(s"street: check: vehicle \(car.id)'s body of our own world is gone: a proxy of ours instead");
+        }
         let body = TandemTraffic.Body(this.m_game, car.body);
         // A body that does not come is asked for again later each time (3 s,
         // 6, 12… up to a minute), the one before it deleted first: asked for
