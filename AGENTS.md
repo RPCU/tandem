@@ -266,7 +266,10 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
 - Prefer RTTI/script names and Codeware; then address-library hashes; raw
   offsets or vtable slots only behind a startup layout check that disables
   the feature on a mismatch. Write down the game version a layout was
-  measured on.
+  measured on. A hash is resolved with `engine::Find` (never
+  `UniversalRelocFunc` or `UniversalRelocBase::Resolve`: they end the
+  process on a missing hash), and the feature gets its check in
+  `CheckAccess` and its row in `docs/architecture/engine-access.md`.
 - Before using an engine fact from `docs/research/`, read its tag (meanings:
   `engine-knowledge.md`). When you verify something in game, update its tag
   and source there.

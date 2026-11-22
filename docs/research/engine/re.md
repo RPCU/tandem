@@ -133,7 +133,10 @@ TweakDBID;` then `SendSeat(record, …)` on foot sent
   loading, and they load on that thread. V's rig (our puppets) is loaded
   with V, so asking at once is fine there. For NPC proxies the controller
   asks after 60 animation updates, and the script attaches it 2 s after
-  the entity first exists. [2.5-verified]
+  the entity first exists. [2.5-verified] The script native
+  `entAnimationControllerComponent.GetAnimationDuration` (`0x1429b6ca8`)
+  only reads its CName and calls the same function: no way around the wait
+  (read in the 2.50 exe, 2026-11-22). [2.5-verified]
 - The first freeze of the day came behind the loading screen, right after
   the NPC sharing's first tick. That was most likely the native type
   mismatch above, not the loading itself. Sharing is now also held until

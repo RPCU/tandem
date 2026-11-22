@@ -174,6 +174,7 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Name-Title` | Your co-op name | Votre nom en coop | Coop.reds |
 | `Name-Ask` | The name the other players see over your V and in their party list: 1 to 16 characters (cancel: V for now) | Le nom que les autres joueurs voient au-dessus de votre V et dans leur liste d'équipe : 1 à 16 caractères (annuler : V pour l'instant) | Coop.reds, Settings.reds |
 | `Name-Invalid` | Not a name: {1}. 1 to 16 characters, without ; or # | Nom refusé : {1}. 1 à 16 caractères, sans ; ni # | Coop.reds, Settings.reds |
+| `Session-EngineOff` | This game version turns parts of co-op off: {1} | Cette version du jeu désactive des parties du coop : {1} | System.reds |
 | `Session-Renamed` | {1} is taken in this session: the others see you as {2} | {1} est déjà pris dans cette session : les autres vous voient comme {2} | System.reds |
 
 ### Shared words

@@ -730,6 +730,10 @@ same), then pass on a rerun. Since 2026-11-19:
 - `tools/game.sh cmd` commands (`teleport home`, `where`, `vehicle ride`,
   `pose loop`, `travel`, `regroup accept`…) need no restart. Restart only
   for script or plugin changes.
+- `tools/game.sh engine` prints the newest log's `engine: N features on, M
+  off: …` line (`cmd engine` asked of a running game first) and fails when
+  a feature is off: what a game update turned off, at once
+  (`engine-access.md`).
 - `tools/game.sh bt` (a frozen game: Proton's crash handler waits) writes
   every thread's stack to `.cache/re/bt.txt`, prints tandem's frames, then
   a `known crash site:` line for each game frame inside a function listed
