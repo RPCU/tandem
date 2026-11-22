@@ -708,6 +708,83 @@ TEST_CASE("a line names only a speaker the guests were told of") {
   CHECK(heard[1].speaker == 0);
 }
 
+TEST_CASE("a cast names only the actors each guest is shown: none apart, all once linked") {
+  // soak-host, 2026-11-22: a joiner's cast named npc 186, which it was never
+  // told of (the referee: ids.unknown-npc). Each guest's cast, line and
+  // props name only the NPCs it shows; its digest agrees.
+  constexpr Timing kDigests{
+      .timeout = 1000ms, .takeover = 400ms, .digest = 100ms, .resyncCooldown = 200ms};
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kDigests);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kDigests);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error, kDigests);
+  REQUIRE((a && b));
+  const std::vector<Endpoint *> all{host.get(), a.get(), b.get()};
+  REQUIRE(Pump(all, [&](std::size_t, const auto &) {
+    return a->IsJoined() && b->IsJoined() && host->Players().size() == 3;
+  }));
+  // a stands by the host; b is 1 km away: linked with nobody.
+  host->SendLocalState({.position = {10.f, 10.f, 5.f}});
+  a->SendLocalState({.position = {12.f, 10.f, 5.f}});
+  b->SendLocalState({.position = {1000.f, 10.f, 5.f}});
+  REQUIRE(Pump(all, [&](std::size_t, const auto &) {
+    return host->LinkedWith(a->You()) && !host->LinkedWith(b->You());
+  }));
+  host->SendNpcSpawn({.npc = 7, .record = 1});
+  host->SendNpcSpawn({.npc = 4, .record = 2});
+  REQUIRE(Pump(all, [&](std::size_t, const auto &) { return a->SharedNpcs().size() == 2; }));
+
+  // The scene: 7 and 4, and 55, which the host's game never shared.
+  auto sample = Talk();
+  sample.actors.push_back({.npc = 55, .position = {11.f, 11.f, 5.f}});
+  scene::Stage stage;
+  for (const auto &message : stage.Update(sample, host->HostNowUs()))
+    host->SendStory(message);
+  host->SendStory(*stage.Line(501, 7, proto::kNoPlayer, 30.f, 0, host->HostNowUs()));
+  host->SendStory(proto::SceneProp{.play = 1, .prop = 1, .record = 9, .holder = 7});
+  Watcher atA, atB;
+  std::vector<proto::SceneLine> linesAtB;
+  std::size_t propsAtB = 0;
+  const auto watch = [&](std::size_t i, const auto &events) {
+    if (i == 1)
+      atA.Take(*a, events);
+    if (i == 2) {
+      atB.Take(*b, events);
+      for (const auto &event : events)
+        if (const auto *story = std::get_if<events::Story>(&event)) {
+          if (const auto *line = std::get_if<proto::SceneLine>(&story->message))
+            linesAtB.push_back(*line);
+          propsAtB += std::holds_alternative<proto::SceneProp>(story->message);
+        }
+    }
+    return false;
+  };
+  Pump(all, watch, 500ms);
+  CHECK(Count(atA.cues, Kind::Actor) == 2);
+  CHECK(std::ranges::none_of(
+      atA.cues, [](const auto &cue) { return cue.kind == Kind::Actor && cue.actor.npc == 55; }));
+  CHECK(Count(atA.cues, Kind::Prop) == 1);
+  REQUIRE(Count(atB.cues, Kind::Begin) == 1);
+  CHECK(Count(atB.cues, Kind::Actor) == 0);
+  REQUIRE(linesAtB.size() == 1);
+  CHECK(linesAtB[0].speaker == 0);
+  CHECK(propsAtB == 0);
+
+  // b comes over: linked, it is told of the NPCs, then of them in the cast.
+  b->SendLocalState({.position = {12.f, 12.f, 5.f}});
+  REQUIRE(Pump(all, [&](std::size_t i, const auto &events) {
+    watch(i, events);
+    return Count(atB.cues, Kind::Actor) == 2;
+  }));
+  CHECK(b->SharedNpcs().size() == 2);
+  // Every record agrees with the host's for it: nothing asked again.
+  Pump(all, watch, 600ms);
+  CHECK(a->Checks().Requests() == 0);
+  CHECK(Count(atB.cues, Kind::Actor) == 2);
+}
+
 TEST_CASE("the host vanishes mid-scene: the scene stops and every proxy is released") {
   const auto port = NextPort();
   std::string error;

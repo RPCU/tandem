@@ -418,7 +418,7 @@ him, no scene running) only the first point applies.
 | scene replay off on one side | a guest with it off ignores the scene messages; a host with it off announces nothing. Both keep today's behaviour | by construction |
 
 Digests: only what lasts and changes rarely is hashed (which scene, which
-play, the cast). The staging area, the rate and the lines are left out:
+play, the cast and props of the NPCs that guest shows). The staging area, the rate and the lines are left out:
 they change too often, and a wrong one heals with the next change.
 
 ## 9. What is built, and where
@@ -436,7 +436,13 @@ they change too often, and a wrong one heals with the next change.
   named an NPC a joiner was never told of, the referee's `ids.unknown-npc`,
   2026-11-21) and hashes scene and cast. `Endpoint`:
   the three story messages through the story path, `SendActorPose` /
-  `events::HostActorPose`, the explicit "no scene" in a story resync.
+  `events::HostActorPose`, the explicit "no scene" in a story resync. Each
+  guest's `SceneCast`, `SceneLine` and `SceneProp` name only the NPCs it
+  is shown (`Endpoint::SceneFor`: an actor out of its view or never shared
+  is left out of its cast, a line's speaker blanked, a prop in its hand not
+  sent; a joiner's cast named npc 186, never announced to it, 2026-11-22),
+  sent again when its view changes (a link, a hand-over, an actor gone);
+  its story digest counts the same NPCs.
 - **Plugin**: `engine/posestream.cpp` (actor sources and actor bindings on
   the two existing hooks; the write side is one function for players and
   actors), `runtime.cpp` (actor pose queues and tracks),

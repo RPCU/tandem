@@ -262,7 +262,10 @@ queues at most: …`.
   off with a 2 s timeout ended the session; with the default 5 s, about
   3 s off would). `Session::Poll` caps the wait at a tenth of the timeout
   (100 to 500 ms, `CapResends`): the link is heard again within half a
-  second of coming back.
+  second of coming back. A join's connect is capped the same way: its tries
+  came at 0, 0.5, 1.5 and 3.5 s, none after that before the join gives up
+  at the timeout (a host that starts listening late, a lossy link that
+  loses the early tries).
 
 ## In game (not run here)
 

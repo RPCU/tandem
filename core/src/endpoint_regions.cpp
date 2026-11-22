@@ -404,6 +404,17 @@ void Endpoint::SendRegionsTo(std::optional<net::PeerId> peer) {
     Broadcast(regions);
 }
 
+void Endpoint::SendRegionsNow() {
+  std::set<proto::PlayerId> players;
+  for (const auto &[id, info] : m_players)
+    players.insert(id);
+  if (auto pairs = m_links.Pairs(players); pairs != m_regionsSent) {
+    m_regionsSent = std::move(pairs);
+    ++m_regionsRevision;
+    SendRegionsTo(std::nullopt);
+  }
+}
+
 void Endpoint::OnLinksChanged(const regions::Links &before, std::vector<SessionEvent> &out) {
   // A guest whose links changed sees other NPCs: the set it sees now, whole
   // (it drops the rest and learns the new ones, as after a resync).
@@ -448,11 +459,16 @@ void Endpoint::MoveNpc(proto::NpcId npc, proto::PlayerId now, proto::NpcHandover
   }
   const proto::NpcOwner word{.npc = npc, .owner = now};
   const proto::NpcGone away{.npc = npc, .reason = proto::kGoneAway};
+  const bool acts = InCast(npc);
   for (const auto &[peer, player] : m_playerOfPeer) {
-    if (player == now)
-      continue; // it gets the state
     const bool saw = player == was || Sees(player, was);
     const bool sees = Sees(player, now);
+    if (player == now) {
+      // It gets the state; a scene's actor is its own now, no proxy to pose.
+      if (acts)
+        SendCastTo(peer);
+      continue;
+    }
     if (sees && saw)
       Send(peer, word);
     else if (sees)
@@ -463,6 +479,9 @@ void Endpoint::MoveNpc(proto::NpcId npc, proto::PlayerId now, proto::NpcHandover
         Send(peer, word);
       Send(peer, away);
     }
+    // A scene's actor it sees now, or no more (SceneFor), after its spawn.
+    if (acts && (player == was || saw != sees))
+      SendCastTo(peer);
   }
   if (now != m_you) {
     const bool saw = was == m_you || Sees(m_you, was);
@@ -501,7 +520,12 @@ void Endpoint::DropNpc(proto::NpcId npc, std::vector<SessionEvent> &out) {
     if (Sees(m_you, owner))
       out.push_back(events::HostNpcGone{away});
   }
+  const bool acts = InCast(npc);
   ForgetNpc(npc);
+  // A scene's actor gone: the casts name it no more (SceneFor).
+  if (acts)
+    for (const auto &[peer, player] : m_playerOfPeer)
+      SendCastTo(peer);
 }
 
 void Endpoint::InheritNpcsOf(proto::PlayerId owner, bool gone, std::vector<SessionEvent> &out) {
@@ -613,13 +637,22 @@ void Endpoint::Arbitrate(std::vector<SessionEvent> &out) {
   std::erase_if(m_places, [&](const auto &place) { return !players.contains(place.first); });
 
   const auto before = m_links;
-  if (m_links.Update(m_places))
-    OnLinksChanged(before, out);
-  if (auto pairs = m_links.Pairs(players); pairs != m_regionsSent) {
-    m_regionsSent = std::move(pairs);
-    ++m_regionsRevision;
-    SendRegionsTo(std::nullopt);
+  // A joiner that said nothing of where it is all this while: linked as
+  // any player whose place is unknown (a mock player standing nowhere).
+  bool released = false;
+  for (auto it = m_placeWaits.begin(); it != m_placeWaits.end();) {
+    if (!m_links.Waiting(it->first) || !m_players.contains(it->first)) {
+      it = m_placeWaits.erase(it);
+    } else if (now >= it->second && !m_places[it->first].known) {
+      m_links.Release(it->first);
+      released = true;
+      it = m_placeWaits.erase(it);
+    } else
+      ++it;
   }
+  if (m_links.Update(m_places) || released)
+    OnLinksChanged(before, out);
+  SendRegionsNow();
   NoteGroup(out);
 
   // Steps that got no answer: again, a few times, then given up (the NPC is

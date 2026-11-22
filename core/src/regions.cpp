@@ -12,7 +12,7 @@ float Distance(const proto::Vec3 &a, const proto::Vec3 &b) {
 }
 
 bool Links::Linked(proto::PlayerId a, proto::PlayerId b) const {
-  if (a == b)
+  if (a == b || m_waiting.contains(a) || m_waiting.contains(b))
     return false;
   if (m_fromWire && (!m_named.contains(a) || !m_named.contains(b)))
     return true; // someone the host has not placed yet
@@ -25,11 +25,20 @@ bool Links::Update(const Places &places) {
   std::erase_if(m_apart, [&](const Pair &pair) {
     return !places.contains(pair.first) || !places.contains(pair.second);
   });
+  std::erase_if(m_waiting, [&](proto::PlayerId player) { return !places.contains(player); });
   for (auto a = places.begin(); a != places.end(); ++a)
     for (auto b = std::next(a); b != places.end(); ++b) {
       const auto key = Key(a->first, b->first);
-      const bool apart = m_apart.contains(key);
-      if (!a->second.known || !b->second.known) {
+      bool apart = m_apart.contains(key);
+      if (m_waiting.contains(a->first) || m_waiting.contains(b->first)) {
+        // A joiner (Linked says apart already): apart until both are
+        // placed, then linked only once closer than kLinkIn.
+        if (!apart)
+          m_apart.insert(key);
+        apart = true;
+        if (!a->second.known || !b->second.known)
+          continue;
+      } else if (!a->second.known || !b->second.known) {
         // Not placed (yet, or any more): together until we know better.
         if (apart) {
           m_apart.erase(key);
@@ -46,6 +55,8 @@ bool Links::Update(const Places &places) {
         changed = true;
       }
     }
+  // Placed: from now on as everyone else.
+  std::erase_if(m_waiting, [&](proto::PlayerId player) { return places.at(player).known; });
   return changed;
 }
 
@@ -86,11 +97,13 @@ void Links::Forget(proto::PlayerId player) {
   std::erase_if(m_apart,
                 [&](const Pair &pair) { return pair.first == player || pair.second == player; });
   m_named.erase(player);
+  m_waiting.erase(player);
 }
 
 void Links::Clear() {
   m_apart.clear();
   m_named.clear();
+  m_waiting.clear();
   m_fromWire = false;
 }
 

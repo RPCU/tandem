@@ -75,13 +75,24 @@ using Places = std::map<proto::PlayerId, Place>;
 
 // Which players are linked. Two players are linked until both their places
 // are known and more than kLinkOut apart, and again once closer than kLinkIn.
+// A player that just joined (Wait) is linked with nobody until its first
+// place is known, then only with who is within kLinkIn: its link is never
+// guessed before its position arrives (a joiner 400 m away was linked for
+// a moment and shown 3 of its cars, 2026-11-22).
 class Links {
 public:
-  // a != b. Players never heard of are linked.
+  // a != b. Players never heard of are linked; a waiting one with nobody.
   bool Linked(proto::PlayerId a, proto::PlayerId b) const;
   // The host: from where everyone is now (the keys are the players in the
-  // session). True when a link formed or broke.
+  // session). True when a link formed or broke. A waiting player that is
+  // placed waits no more.
   bool Update(const Places &places);
+  // The host: `player` joined; linked with nobody until Update places it,
+  // or until Release (a game that says nothing of where it is: then as any
+  // player whose place is unknown).
+  void Wait(proto::PlayerId player) { m_waiting.insert(player); }
+  void Release(proto::PlayerId player) { m_waiting.erase(player); }
+  bool Waiting(proto::PlayerId player) const { return m_waiting.contains(player); }
   // A guest: as the host said (Pairs).
   void Set(const proto::Regions &regions);
   // What the host sends: every player of `players` paired with itself (so a
@@ -98,6 +109,8 @@ private:
   std::set<Pair> m_apart;
   // A guest's: the players the host's last Regions named (others: linked).
   std::set<proto::PlayerId> m_named;
+  // The host's: players that joined and are not placed yet.
+  std::set<proto::PlayerId> m_waiting;
   bool m_fromWire{};
 };
 

@@ -26,6 +26,7 @@
 #include "tandem/trade.hpp"
 #include "tandem/vehicle_combat.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -70,6 +71,11 @@ struct Timing {
   // Host: how long the others have to answer a time skip
   // (activity::kSkipAnswerUs).
   std::chrono::milliseconds skipAnswer{20'000};
+  // Host: a player joining a session where someone is placed is linked with
+  // nobody until its first state places it (regions.md §7), or this long
+  // without one (a game that says nothing of where it is: then linked as a
+  // player whose place is unknown).
+  std::chrono::milliseconds placeWait{2'000};
 };
 
 namespace events {
@@ -1297,6 +1303,21 @@ private:
   bool SharedWith(proto::NpcId npc, proto::PlayerId viewer) const {
     return m_npcs.contains(npc) && Sees(viewer, NpcOwner(npc));
   }
+  // Host: a scene's word that names NPCs (SceneCast, SceneLine, SceneProp)
+  // as `viewer` hears it: only the NPCs SharedWith it (none: nothing for it).
+  static bool NamesSceneNpcs(const proto::Message &message);
+  std::optional<proto::Message> SceneFor(const proto::Message &message,
+                                         proto::PlayerId viewer) const;
+  // A story message to one guest, its scene's NPCs as SceneFor says.
+  void SendSceneTo(net::PeerId peer, const proto::Message &message);
+  // The scene's cast again, as this guest's view holds it now (its view
+  // changed: a link, a hand-over).
+  void SendCastTo(net::PeerId peer);
+  bool InCast(proto::NpcId npc) const {
+    const auto &cast = m_story.Cast();
+    return m_story.SceneOn() && cast &&
+           std::ranges::any_of(cast->actors, [&](const auto &actor) { return actor.npc == npc; });
+  }
   // Host: an owner's word on its NPC, to every guest that sees it.
   void ShareNpc(const proto::Message &message, proto::PlayerId owner, net::PeerId except = 0);
   // An owner's word from our own game: to the host, or to whoever sees it.
@@ -1315,6 +1336,9 @@ private:
   void Arbitrate(std::vector<SessionEvent> &out);
   void OnLinksChanged(const regions::Links &before, std::vector<SessionEvent> &out);
   void SendRegionsTo(std::optional<net::PeerId> peer);
+  // Host: the links as they are now, to everyone, if they differ from the
+  // last sent.
+  void SendRegionsNow();
   // Host: an NPC's records for one guest, or as events for our own game.
   std::vector<proto::Message> NpcRecords(proto::NpcId npc) const;
   void ShowNpcTo(net::PeerId peer, proto::NpcId npc);
@@ -1339,6 +1363,9 @@ private:
 
   regions::Links m_links;
   regions::Places m_places; // where every player is, as last heard
+  // Host: joiners linked with nobody until placed, until when at most
+  // (Timing::placeWait).
+  std::map<proto::PlayerId, std::uint64_t> m_placeWaits;
   // Who runs the world around each player (AreaOwner), and when it is next decided.
   std::map<proto::PlayerId, proto::PlayerId> m_areaOwners;
   std::uint64_t m_nextAreasUs{};

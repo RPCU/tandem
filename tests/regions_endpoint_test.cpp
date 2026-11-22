@@ -39,6 +39,7 @@ struct Game {
       areaHits{}, npcWords{};
   bool refuse{}, fail{};
   std::vector<proto::PlayerId> linked;
+  std::set<proto::PlayerId> everLinked; // every player a RegionsChanged named
   proto::PlayerId leader{};
   std::map<proto::NpcId, float> levels; // the owners' NpcLevel
   std::vector<proto::Defended> defended;
@@ -125,6 +126,7 @@ struct Game {
       else if (const auto *regions = std::get_if<events::RegionsChanged>(&event)) {
         linked = regions->linked;
         leader = regions->leader;
+        everLinked.insert(linked.begin(), linked.end());
       } else if (const auto *give = std::get_if<events::NpcGive>(&event)) {
         asked.push_back(give->npc);
         if (refuse) {
@@ -883,6 +885,9 @@ TEST_CASE("a late joiner sees who owns what, and only what is near it") {
   s->b = Endpoint::Join({"b"}, "127.0.0.1", s->host->LocalPort(), error, kQuick);
   REQUIRE(s->b);
   s->gb.endpoint = s->b.get();
+  // Linked once its first state places it near (regions.md §7).
+  REQUIRE(s->Until([&] { return s->b->IsJoined(); }));
+  Place(*s->b, 20);
   REQUIRE(s->Until([&] { return s->gb.proxies.contains(1); }));
   // Handed over before it came: it learns the owner with the NPC.
   CHECK(s->b->NpcOwner(1) == s->a->You());
@@ -891,6 +896,88 @@ TEST_CASE("a late joiner sees who owns what, and only what is near it") {
   REQUIRE(s->Until([&] { return s->gb.proxies.empty() && s->gb.linked.empty(); }));
   s->For(400ms);
   CHECK(s->b->Checks().Requests() == 0);
+}
+
+TEST_CASE("a player joining far away is linked with nobody from the start: nothing shown") {
+  // wheels-guest-area, 2026-11-22: a joiner 400 m away was linked at its
+  // join (its place unknown), 3 of its cars were spawned as proxies, and it
+  // was unlinked 0.25 s later.
+  auto s = Start();
+  Place(*s->host, 0);
+  Place(*s->a, 20);
+  s->h.Announce(1, {10.f, 0.f, 0.f});
+  REQUIRE(s->Until([&] { return s->ga.proxies.contains(1); }));
+  REQUIRE(s->Until([&] { return s->h.linked.size() == 1; }));
+
+  std::string error;
+  s->b = Endpoint::Join({"far"}, "127.0.0.1", s->host->LocalPort(), error, kQuick);
+  REQUIRE(s->b);
+  s->gb.endpoint = s->b.get();
+  // Its game places its V and announces its NPCs the moment it is in.
+  bool placed = false;
+  REQUIRE(s->Until([&] {
+    if (!placed && s->b->IsJoined()) {
+      Place(*s->b, 400);
+      s->gb.Announce(1, {400.f, 0.f, 0.f});
+      placed = true;
+    }
+    return placed;
+  }));
+  const auto far = s->b->You(), theirs = MakeNpcId(far, 1);
+  REQUIRE(s->Until([&] { return s->host->SharedNpcs().contains(theirs); }));
+  s->For(800ms); // a few passes of the host's arbitration
+  CHECK_FALSE(s->host->LinkedWith(far));
+  CHECK_FALSE(s->h.everLinked.contains(far));
+  CHECK_FALSE(s->ga.everLinked.contains(far));
+  CHECK(s->gb.everLinked.empty());
+  CHECK_FALSE(s->h.shownAt.contains(theirs));
+  CHECK_FALSE(s->ga.shownAt.contains(theirs));
+  CHECK(s->gb.shownAt.empty());
+
+  // It comes near: linked, both sets shown.
+  Place(*s->b, 30);
+  REQUIRE(s->Until([&] { return s->gb.proxies.contains(1) && s->h.proxies.contains(theirs); }));
+  CHECK(s->host->LinkedWith(far));
+  CHECK(s->h.duplicateSpawns + s->gb.duplicateSpawns == 0);
+}
+
+TEST_CASE("a joiner placed between the link's two distances is not linked: no guess") {
+  auto s = Start();
+  Place(*s->host, 0);
+  Place(*s->a, 0);
+  REQUIRE(s->Until([&] { return s->h.linked.size() == 1; }));
+  std::string error;
+  s->b = Endpoint::Join({"b"}, "127.0.0.1", s->host->LocalPort(), error, kQuick);
+  REQUIRE(s->b);
+  s->gb.endpoint = s->b.get();
+  REQUIRE(s->Until([&] { return s->b->IsJoined(); }));
+  Place(*s->b, regions::kLinkIn + 20.f);
+  s->For(600ms);
+  CHECK_FALSE(s->host->LinkedWith(s->b->You()));
+  CHECK(s->gb.everLinked.empty());
+  Place(*s->b, regions::kLinkIn - 20.f);
+  REQUIRE(s->Until([&] { return s->host->LinkedWith(s->b->You()); }));
+}
+
+TEST_CASE("a joiner that never says where it is is linked after the wait, as before") {
+  auto timing = kQuick;
+  timing.placeWait = 1500ms;
+  auto s = Start(false, timing);
+  Place(*s->host, 0);
+  Place(*s->a, 20);
+  s->h.Announce(1, {10.f, 0.f, 0.f});
+  REQUIRE(s->Until([&] { return s->ga.proxies.contains(1); }));
+  std::string error;
+  s->b = Endpoint::Join({"nowhere"}, "127.0.0.1", s->host->LocalPort(), error, timing);
+  REQUIRE(s->b);
+  s->gb.endpoint = s->b.get();
+  REQUIRE(s->Until([&] { return s->b->IsJoined(); }));
+  s->For(300ms);
+  CHECK(s->gb.proxies.empty());
+  // A game standing nowhere (a mock player): with everyone, as a player
+  // whose place is unknown.
+  REQUIRE(s->Until([&] { return s->gb.proxies.contains(1); }, 4s));
+  CHECK(s->host->LinkedWith(s->b->You()));
 }
 
 TEST_CASE("grouped or apart: one fact per player, and a region held for a gig") {
@@ -985,6 +1072,7 @@ TEST_CASE("an NPC's scale: its owner's word, to everyone who sees it, kept, and 
   REQUIRE(s->a);
   s->ga = Game{};
   s->ga.endpoint = s->a.get();
+  REQUIRE(s->Until([&] { return s->a->IsJoined(); }));
   Place(*s->a, 25);
   REQUIRE(s->Until([&] { return s->ga.scales.contains(1); }));
   CHECK(s->ga.scales[1] == 3);

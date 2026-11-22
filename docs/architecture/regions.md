@@ -43,7 +43,10 @@ scenarios at the end are the in-game checks to run.
 - **Two players are linked** when their Vs are closer than 150 m, and stay
   linked until they are farther than 190 m apart (hysteresis). The host
   computes the links from the positions it relays anyway and tells everyone
-  (`Regions`). Players whose position is not known yet count as linked.
+  (`Regions`). A player that joins is linked with nobody until its first
+  position is known, then with who is within 150 m; one that says nothing
+  of where it is for 2 s (`Timing::placeWait`), or whose position is not
+  known otherwise, counts as linked.
 - **Only linked players see each other's NPCs.** An owner's NPCs are shown
   as proxies (brain off, moved by the owner's states) in the games linked
   with it, exactly as guests showed the host's NPCs before. Unlinked players
@@ -405,10 +408,15 @@ replaced. Twins of placed NPCs are merged at once (§3).
 
 - **A late joiner** gets the links (`Regions`), then the NPC domain of the
   owners it is linked with: spawns, owners that differ from the announcer,
-  health, poise, holds, animation states, seats. It is linked with everyone
-  until its first position arrives, then only with who is near (a resync of
-  the NPC domain, `NpcSet` first, drops the rest). Its scripts do not spawn
-  a proxy farther than 250 m from their V.
+  health, poise, holds, animation states, seats. It is linked with nobody
+  until its first position arrives (`regions::Links::Wait`, and `Regions`
+  says so at once), then with who is within 150 m (a link forms: below);
+  nothing is shown either way on a guess (a joiner 400 m away was linked at
+  its join and 3 of its cars spawned as proxies for 0.25 s, 2026-11-22).
+  Still unplaced after 2 s (`Timing::placeWait`: a mock player standing
+  nowhere), it is linked as any player whose position is unknown. In a
+  session where nobody is placed yet (tests) nobody waits. Its scripts do
+  not spawn a proxy farther than 250 m from their V.
 - **A link forms**: the newly linked player is sent the owner's NPC domain,
   as a late joiner. **A link breaks**: it is sent the set it still sees
   (`NpcSet`), and drops the rest. The host's own game gets the same as
@@ -557,7 +565,7 @@ belongs to the world of the player who starts it), and how each point is met.
 | Both players fast travel at once                                  | each epoch moves that owner's NPCs on; with nobody left near them they all go                                                                                                      |
 | A player in cyberspace or a braindance                            | its place is its body's; its game shares no NPC while away (as before), and takes none: it refuses hand-overs                                                                      |
 | NCART                                                             | no NPC is shared from a train (as before); passengers are each game's own                                                                                                          |
-| A guest joins far from everyone                                   | linked until its first state (a moment), then unlinked: its scripts spawn no far proxy, its crowd was never off                                                                    |
+| A guest joins far from everyone                                   | linked with nobody until its first state, then only if within 150 m: no proxy either way, its crowd never off                                                                      |
 | Three players, A–B linked, B–C linked, A–C not                    | an NPC of A's is shown to B only. If B takes it over, C starts seeing it (it is B's now)                                                                                           |
 | A lent body (given in place) when the link breaks                 | it was the game's own entity: hidden for good, like a suppressed NPC (it belongs to the other world now)                                                                           |
 | A woken proxy (taken over) that walks out of its owner's range    | deleted by its owner when it leaves the shared world: it is one of our spawned entities, the game would never stream it out                                                        |
@@ -582,8 +590,8 @@ belongs to the world of the player who starts it), and how each point is met.
 
 Without the game (all in `task test`):
 
-- `regions_test`: links with hysteresis, unknown places, rank, the take,
-  heir and area-owner rules.
+- `regions_test`: links with hysteresis, unknown places, a joiner linked
+  with nobody until placed, rank, the take, heir and area-owner rules.
 - `regions_endpoint_test` (loopback UDP, real endpoints): a guest owns NPCs
   and the host shows them; apart, nothing is shared either way; meeting
   shares both sets; hits, effects, hacks, actions and replies reach the

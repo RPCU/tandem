@@ -145,7 +145,8 @@ bool Record::Note(const proto::Message &message) {
   return true; // nothing kept: every one counts
 }
 
-std::uint32_t Record::Digest() const {
+std::uint32_t Record::Digest(const std::function<bool(proto::NpcId)> &shown) const {
+  const auto sees = [&](proto::NpcId npc) { return !shown || shown(npc); };
   consistency::Hasher hash;
   hash.Add(std::uint64_t{m_haveJournal});
   for (const auto &[key, entry] : m_journal)
@@ -156,14 +157,16 @@ std::uint32_t Record::Digest() const {
       .Add(std::uint64_t{m_scene ? m_scene->play : 0u});
   if (m_cast)
     for (const auto &actor : m_cast->actors)
-      hash.Add(std::uint64_t{actor.npc}).Add(std::uint64_t{actor.flags});
+      if (sees(actor.npc))
+        hash.Add(std::uint64_t{actor.npc}).Add(std::uint64_t{actor.flags});
   // Its props: one lost would stay in a proxy's hand, or never get there.
   for (const auto &[id, prop] : m_props)
-    hash.Add(std::uint64_t{id})
-        .Add(prop.record)
-        .Add(std::uint64_t{prop.holder})
-        .Add(std::uint64_t{prop.holderPlayer})
-        .Add(std::uint64_t{prop.flags});
+    if (prop.holder == 0 || sees(prop.holder))
+      hash.Add(std::uint64_t{id})
+          .Add(prop.record)
+          .Add(std::uint64_t{prop.holder})
+          .Add(std::uint64_t{prop.holderPlayer})
+          .Add(std::uint64_t{prop.flags});
   // The props set down: which ones (where they are moves too often).
   for (const auto &[id, place] : m_placed)
     hash.Add(static_cast<std::uint64_t>(id) | std::uint64_t{1} << 32).Add(place.entity);
@@ -177,6 +180,17 @@ std::uint32_t Record::Digest() const {
   for (const auto prefab : m_prefabs.prefabs)
     hash.Add(prefab);
   return hash.Value();
+}
+
+std::vector<proto::Message> Record::SceneCastNow() const {
+  std::vector<proto::Message> out;
+  if (!m_scene)
+    return out;
+  if (m_cast)
+    out.push_back(*m_cast);
+  for (const auto &[id, prop] : m_props)
+    out.push_back(prop);
+  return out;
 }
 
 void Record::Forget(proto::PlayerId player) {

@@ -67,6 +67,63 @@ TEST_CASE("players are linked until they are known to be apart, with hysteresis"
   CHECK(links.Linked(1, 2));
 }
 
+TEST_CASE("a joiner is linked with nobody until its first place, then only when near") {
+  Links links;
+  Places places{{1, At(0)}, {2, At(50)}};
+  links.Update(places);
+  REQUIRE(links.Linked(1, 2));
+
+  // 3 joins: apart from everyone before any pass, and through passes while
+  // it is not placed; the host names it alone.
+  links.Wait(3);
+  places[3] = {};
+  CHECK_FALSE(links.Linked(1, 3));
+  CHECK_FALSE(links.Linked(3, 2));
+  CHECK_FALSE(links.Update(places));
+  CHECK_FALSE(links.Linked(1, 3));
+  CHECK(links.Pairs({1, 2, 3}) == std::vector<proto::PlayerId>{1, 1, 1, 2, 2, 2, 3, 3});
+  // Its first place, 400 m away: apart still, nothing changed.
+  places[3] = At(400);
+  CHECK_FALSE(links.Update(places));
+  CHECK_FALSE(links.Waiting(3));
+  CHECK_FALSE(links.Linked(1, 3));
+  // Between kLinkIn and kLinkOut it stays apart; inside kLinkIn, linked.
+  places[3] = At(-(kLinkIn + 10));
+  CHECK_FALSE(links.Update(places));
+  CHECK_FALSE(links.Linked(1, 3));
+  places[3] = At(20);
+  CHECK(links.Update(places));
+  CHECK(links.Linked(1, 3));
+  CHECK(links.Linked(2, 3));
+
+  // Placed before the first pass: near, linked at once; between the two
+  // distances, not (no link is guessed).
+  links.Wait(4);
+  places[4] = At(10);
+  links.Wait(5);
+  places[5] = At(-(kLinkIn + 10));
+  CHECK(links.Update(places));
+  CHECK(links.Linked(1, 4));
+  CHECK_FALSE(links.Linked(1, 5));
+
+  // A joiner that never says where it is, once released: linked as any
+  // player whose place is unknown.
+  links.Wait(6);
+  places[6] = {};
+  CHECK_FALSE(links.Update(places));
+  CHECK_FALSE(links.Linked(1, 6));
+  links.Release(6);
+  CHECK(links.Update(places));
+  CHECK(links.Linked(1, 6));
+  // A joiner that leaves waits no more.
+  links.Wait(7);
+  places[7] = {};
+  links.Update(places);
+  places.erase(7);
+  links.Update(places);
+  CHECK_FALSE(links.Waiting(7));
+}
+
 TEST_CASE("links are pairwise: three in a row") {
   Links links;
   const Places places{{1, At(0)}, {2, At(120)}, {3, At(240)}};

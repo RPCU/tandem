@@ -105,12 +105,16 @@ struct Session::Impl {
   // ENet doubles a reliable resend's wait at each try, without bound: after
   // an outage of half the timeout the next try came seconds after the link
   // was back, and a live peer was judged silent (reliability_test.cpp). The
-  // wait is capped at a tenth of the timeout (100 to 500 ms).
+  // wait is capped at a tenth of the timeout (100 to 500 ms). A join's
+  // connect too: its tries came at 0, 0.5, 1.5 and 3.5 s, so a host that
+  // began listening (or a lossy link that lost a try) after 3.5 s was never
+  // tried again before the join gave up at 5 s.
   void CapResends() const {
     const auto cap = std::clamp<enet_uint32>(timeoutMs / 10, 100, 500);
     for (std::size_t i = 0; i < host->peerCount; ++i) {
       auto *peer = &host->peers[i];
-      if (peer->state != ENET_PEER_STATE_CONNECTED || enet_list_empty(&peer->sentReliableCommands))
+      if ((peer->state != ENET_PEER_STATE_CONNECTED && peer->state != ENET_PEER_STATE_CONNECTING) ||
+          enet_list_empty(&peer->sentReliableCommands))
         continue;
       for (auto it = enet_list_begin(&peer->sentReliableCommands);
            it != enet_list_end(&peer->sentReliableCommands); it = enet_list_next(it)) {

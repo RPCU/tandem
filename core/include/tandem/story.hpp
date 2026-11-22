@@ -10,6 +10,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -32,8 +33,10 @@ public:
   // lift would keep a guest's weapons away for good) and its world prefabs
   // (a lost change would keep an interior loaded, or missing, for good). Calls, hubs, effects and
   // lines are short-lived and sent again on every change; StoryStates and StoryGates are left out
-  // (a guest is never sent its own).
-  std::uint32_t Digest() const;
+  // (a guest is never sent its own). `shown`: the NPCs the digest's viewer is
+  // told of (the host's digest for one guest: its cast and props name only
+  // those, as Endpoint::SceneFor sends them); empty: every one.
+  std::uint32_t Digest(const std::function<bool(proto::NpcId)> &shown = {}) const;
   // A player left: its StoryState and StoryGates go.
   void Forget(proto::PlayerId player);
   // What to send a newcomer, in order: the journal snapshot first. With the
@@ -43,6 +46,10 @@ public:
   std::size_t JournalSize() const { return m_journal.size(); }
   // A scene plays (scene replay).
   bool SceneOn() const { return m_scene.has_value(); }
+  // Its cast as last said (none: no scene, or no cast said yet).
+  const std::optional<proto::SceneCast> &Cast() const { return m_cast; }
+  // What of the scene playing names its NPCs: its cast, then its props.
+  std::vector<proto::Message> SceneCastNow() const;
   // The host's V has story restrictions on now.
   bool RestrictionsOn() const { return !m_restrictions.effects.empty(); }
   // The host's quests have prefabs loaded now (WorldPrefabs).

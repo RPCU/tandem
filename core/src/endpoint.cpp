@@ -394,7 +394,12 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
                   .Add(std::uint64_t{TrafficDigestFor(self)})
                   .Add(std::uint64_t{VehicleStreetDigest(self)})
                   .Value(),
-      .story = m_story.Digest(),
+      // A scene's cast and props: of the NPCs `self` shows, the host's word
+      // to it naming only those (SceneFor); a guest's record may hold more
+      // (an actor that went out of its view), never fewer.
+      .story = m_story.Digest([&](proto::NpcId npc) {
+        return host ? SharedWith(npc, self) : m_npcs.contains(npc) && NpcOwner(npc) != m_you;
+      }),
       .players = consistency::Hasher{}
                      .Add(std::uint64_t{consistency::PlayersDigest(
                          {m_players, m_appearances, m_held, m_seats, m_radios, m_stealth, m_paused,
@@ -937,6 +942,7 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
     Broadcast(proto::RegionHold{.player = player, .held = false});
   m_links.Forget(player);
   m_places.erase(player);
+  m_placeWaits.erase(player);
   m_players.erase(player);
   m_askedNames.erase(player);
   m_appearances.erase(player);
@@ -1138,9 +1144,27 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
     taken.push_back(info.name);
   m_askedNames[player] = asked;
   m_players[player] = {player, names::Unique(asked, taken), hello.body};
+  // Where it is we do not know yet: linked with nobody until its first
+  // state says (regions.md §7), so nothing is shown either way on a guess.
+  // In a session nobody has placed yet (a test's), as before: with everyone.
+  const bool waits =
+      std::ranges::any_of(m_places, [](const auto &place) { return place.second.known; });
+  if (waits) {
+    m_places[player] = {};
+    m_links.Wait(player);
+    m_placeWaits[player] =
+        net::NowUs() +
+        static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(m_timing.placeWait).count());
+  }
   Send(peer, proto::Welcome{player, m_host, HostNowUs()});
   out.push_back(events::PlayerJoined{m_players[player]});
   BroadcastRoster();
+  // Everyone, the joiner first, hears it is linked with nobody now, not at
+  // the next pass (a guest takes a player the host has not named to be
+  // linked with everyone).
+  if (waits)
+    SendRegionsNow();
   // After the roster: the guest names us when it says what differs.
   Send(peer, m_identity.install);
   SendModsTo(peer);
@@ -1333,7 +1357,7 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
   // The story so far: journal, tracked entry, call, choice hub, story states.
   if (domains & proto::kDomainStory) {
     for (const auto &message : m_story.ForJoiner(HostNowUs()))
-      Send(peer, message);
+      SendSceneTo(peer, message);
     // A resync also says what is not: no scene plays (a guest that missed
     // its end lets its proxies go).
     if (resync && !m_story.SceneOn())
@@ -1344,6 +1368,9 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
     // Nor any world prefab (a guest that missed the last change unloads).
     if (resync && !m_story.PrefabsOn())
       Send(peer, proto::WorldPrefabs{.player = m_you});
+  } else if (domains & proto::kDomainNpcs) {
+    // Its view changed, not the story: the cast as its view holds it now.
+    SendCastTo(peer);
   }
 }
 
@@ -3482,13 +3509,68 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
     // One guest (a reward): not part of the story a joiner gets.
     for (const auto &[peer, player] : m_playerOfPeer)
       if (player == to)
-        Send(peer, message);
+        SendSceneTo(peer, message);
     return;
   }
   if (!std::holds_alternative<proto::QuestReward>(message) &&
       !std::holds_alternative<proto::Subtitle>(message))
     m_story.Note(message);
-  Broadcast(message);
+  if (!NamesSceneNpcs(message)) {
+    Broadcast(message);
+    return;
+  }
+  for (const auto &[peer, player] : m_playerOfPeer)
+    SendSceneTo(peer, message);
+}
+
+bool Endpoint::NamesSceneNpcs(const proto::Message &message) {
+  return std::holds_alternative<proto::SceneCast>(message) ||
+         std::holds_alternative<proto::SceneLine>(message) ||
+         std::holds_alternative<proto::SceneProp>(message);
+}
+
+std::optional<proto::Message> Endpoint::SceneFor(const proto::Message &message,
+                                                 proto::PlayerId viewer) const {
+  const auto shown = [&](proto::NpcId npc) { return SharedWith(npc, viewer); };
+  if (const auto *cast = std::get_if<proto::SceneCast>(&message)) {
+    // A guest's replay acts with the proxies it has: an actor it was never
+    // told of is no actor of its (soak-host, 2026-11-22: npc 186, out of
+    // its view, named in the cast a joiner got).
+    auto mine = *cast;
+    std::erase_if(mine.actors, [&](const auto &actor) { return !shown(actor.npc); });
+    return proto::Message{std::move(mine)};
+  }
+  if (const auto *line = std::get_if<proto::SceneLine>(&message);
+      line && line->speaker != 0 && !shown(line->speaker)) {
+    // As above for the whole session: a bark is nobody's here, a scene's
+    // line is said without its speaker.
+    if (line->play == 0)
+      return std::nullopt;
+    auto unnamed = *line;
+    unnamed.speaker = 0;
+    return proto::Message{std::move(unnamed)};
+  }
+  if (const auto *prop = std::get_if<proto::SceneProp>(&message);
+      prop && prop->holder != 0 && !shown(prop->holder))
+    return std::nullopt; // in a hand it has no body for
+  return message;
+}
+
+void Endpoint::SendSceneTo(net::PeerId peer, const proto::Message &message) {
+  if (!NamesSceneNpcs(message)) {
+    Send(peer, message);
+    return;
+  }
+  const auto viewer = m_playerOfPeer.find(peer);
+  if (viewer == m_playerOfPeer.end())
+    return;
+  if (const auto mine = SceneFor(message, viewer->second))
+    Send(peer, *mine);
+}
+
+void Endpoint::SendCastTo(net::PeerId peer) {
+  for (const auto &message : m_story.SceneCastNow())
+    SendSceneTo(peer, message);
 }
 void Endpoint::SetLocalTimeEffect(proto::TimeEffect effect) {
   Record(effect);

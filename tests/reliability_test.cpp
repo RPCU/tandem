@@ -4,6 +4,7 @@
 // outage shorter than the timeout ridden out, a longer one ending the
 // session cleanly and a new join working once the link is back.
 
+#include "ports.hpp"
 #include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/shaping.hpp"
@@ -108,6 +109,35 @@ TEST_CASE("a quiet session stays up on pings alone, over a lossy link") {
   pair.Pump(6s, [] { return false; }); // three timeouts with nothing to say
   CHECK_FALSE(pair.guestEnded);
   CHECK(pair.Joined());
+}
+
+TEST_CASE("a join begun before the host listens gets in once it does, before its time is up") {
+  // ENet's connect tries back off (0, 0.5, 1.5, 3.5 s); capped like any
+  // reliable resend (session.cpp, CapResends): one every 200 ms here.
+  const Timing timing{.timeout = 2'000ms, .takeover = 800ms};
+  const auto port = test::NextPort();
+  std::string error;
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error, timing);
+  REQUIRE_MESSAGE(guest, error);
+  bool ended = false;
+  const auto pumpGuest = [&] {
+    for (const auto &event : guest->Update(1ms))
+      ended |= std::holds_alternative<events::Ended>(event);
+  };
+  // Nobody listens for 1.6 s: ENet's own next try would be at 3.5 s, past
+  // the join's 2 s.
+  const auto start = std::chrono::steady_clock::now();
+  while (std::chrono::steady_clock::now() - start < 1600ms)
+    pumpGuest();
+  REQUIRE_FALSE(ended);
+  auto host = Endpoint::Host({"host"}, port, error, timing);
+  REQUIRE_MESSAGE(host, error);
+  while (!ended && !guest->IsJoined() && std::chrono::steady_clock::now() - start < 3s) {
+    host->Update(1ms);
+    pumpGuest();
+  }
+  CHECK(guest->IsJoined());
+  CHECK_FALSE(ended);
 }
 
 TEST_CASE("an outage shorter than the timeout is ridden out; a longer one ends, and joining works "
