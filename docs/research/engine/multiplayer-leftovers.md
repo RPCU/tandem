@@ -63,7 +63,9 @@ vtables from the exe, values read live with `tools/re/mem.py` on anya.
   reload), each an `AnimFeature` subclass to serialise in a new message.
   The states' own event is `NPCStatesComponent.ChangeHighLevelState` /
   `ChangeUpperBodyState` / `ChangeStanceState` (168077–168123, private
-  final, a per-entity component: a wrap may only queue). [2.5-untested]
+  final, a per-entity component: a wrap may only queue; wrapped
+  2026-11-22, `NpcAnims.reds`; their callers: §13.21, the states' entry
+  points). [2.5-untested]
 - Stubs: `gameCpoPickableItem.EquipItem` (`0x142e21fd4`) reads its
   argument and returns. `cpPlayerSystem.IsCPOControlSchemeForced`
   (`0x14101b820`) returns a global byte (`0x143bc43a0`).
@@ -219,7 +221,7 @@ Physics/InputHandler/Inventory/Stats/…Component`. [2.5-untested]
 | --- | --- | --- | --- | --- | --- |
 | 1 | Threat weights keyed on `IsPlayerControlled()` (§13.123) | Host NPCs pick a guest's puppet as a player: 1.0/2.0 instead of 0.01; `BlockTargetingPlayer` applies to it | high (script `@wrapMethod` of `AIActionTarget.RegularThreatCalculation`, `UpdateThreatsValue`, Madness/Boss: raise `threatValue` when `threat` is a tandem puppet; reads only, job-thread safe) | low | host + mock guest, two hostiles nearer the puppet than V: log each NPC's top hostile threat before/after the wrap |
 | 2 | The player-controlled flag itself, `+0x1fc` bit 4 (§13.121), set on guest puppets | All 11 script readers at once (security areas, breach detection, kill attribution) and the native `NoInstigatorIfPlayerControlled` filter | medium (plugin byte write behind a layout check: V's bit set, NPCs' clear) | medium-high: natives may expect `playerSocket` (`+0x1f0`) set with the flag | read-only first: `tools/re` the readers of `+0x1fc`; then one puppet, `game.sh launches 6`, a combat and a security-area scenario, `game.sh bt` on a freeze |
-| 3 | Script side of the replication helpers (§13.120: natives dead, scripts alive) | Animations of NPCs the state poll cannot see (an AI action's animation feature, cover, reload, reactions: §13.120); not the high-level, upper-body and stance states `NpcAnims.reds` polls, which never go through the helpers | high (already used for `PushEventToReplicate`) | low | count call sites per class; wrap the globals on the host, log name/value per NPC for 60 s of a fight |
+| 3 | Script side of the replication helpers (§13.120: natives dead, scripts alive) | Animations of NPCs the state poll cannot see (an AI action's animation feature, cover, reload, reactions: §13.120); not the high-level, upper-body and stance states `NpcAnims.reds` polls, which never go through the helpers | high (already used for `PushEventToReplicate`) | low | counted (§13.120; the name/value log of a fight was not run); the three states are sent from their own wraps instead (`NpcAnims.reds`, 2026-11-22); left: the actions' animation features as new streams |
 | 4 | `RegisterRemotePlayerMappin` / `CPO_RemotePlayerVariant` | Player markers | done | - | - |
 | 5 | Per-owner scriptable systems (`EquipmentSystem`, `PlayerDevelopmentSystem`, §13.123) | Vanilla equipment visuals / stats keyed by owner for a guest body | low | high: both persistent (save pollution); needs a `PlayerPuppet` | none until a PlayerPuppet body is wanted |
 | 6 | `PlayerPuppet`-class guest body (`IsPlayer()` true) | Every `IsPlayer()` check (targeting, aggro, devices) | low: NCO froze it on 2.31 (`puppets.md`); UI systems retarget to the last attached player | high | read-only: list `IsPlayer()` sites that matter; no spawn yet |
@@ -247,12 +249,14 @@ Physics/InputHandler/Inventory/Stats/…Component`. [2.5-untested]
    check (V has the bit, a sample NPC does not; disable on mismatch).
 3. **Animation catalogue (row 3).** Counted and classified
    (§13.120, 2026-11-22): the helpers do not carry the states the 4 Hz
-   poll samples, so wrapping them does not remove it. Left: wrap
-   `NPCStatesComponent`'s three `Change…State` to queue the NPC and
-   sample it on the next tick (the poll kept, slower, under it); and, as
-   new streams with their own messages, the AI actions' animation
-   features, if a two-game fight shows proxies standing still while
-   their NPC strikes or takes cover.
+   poll samples, so wrapping them does not remove it. Done 2026-11-22
+   (`NpcAnims.reds`; `architecture/npcs.md`, NPC animation):
+   `NPCStatesComponent`'s three `Change…State` are wrapped, queue the
+   NPC, and it is read and sent on the next tick; the poll stays under
+   them every 2 s and logs what they missed. Not yet run in game
+   (`npcs-anims-events`). Left: as new streams with their own messages,
+   the AI actions' animation features, if a two-game fight shows proxies
+   standing still while their NPC strikes or takes cover.
 
 ### Verdict: the second player object
 

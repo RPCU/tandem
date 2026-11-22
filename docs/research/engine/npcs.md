@@ -182,6 +182,44 @@ all [2.5-untested].
   `gameHighLevelStateDataEvent` **on the local player** (`:168088`): a
   proxy must not take that path. An `@addMethod(NPCStatesComponent)`
   reaches the private names and helpers.
+- **The states' entry points** (2026-11-22; lines of
+  `~/.cache/tandem/ref/gamescripts/game/final.reds`, the 2.50 dump of
+  `tools/scripts-decompile.sh`). The three natives
+  `AINetStateComponent.SetReplicatedHighLevelState`, `…UpperBodyState`,
+  `…StanceState` (153534–153542) have one script caller each
+  (`SetCurrent…State`, 153645–153690), called only by the private
+  `NPCStatesComponent.ChangeHighLevelState` (153825),
+  `ChangeUpperBodyState` (153858) and `ChangeStanceState` (153866), which
+  also fill the blackboard (`Update…State`). Those run from
+  `OnNPCStateChangeSignalReceived` (153795; `OnDead` 154125 calls the
+  upper body's itself), reached from
+  `ScriptedPuppet.OnSignalNPCStateChangeSignal` (23478). Every script
+  that changes a state raises that signal (`NPCStateChangeSignal`, 10
+  makers): the statics `NPCPuppet.ChangeHighLevelState` (107579; 31
+  callers: status effects, reactions, death and defeat, the security
+  system, quests' AI commands), `ChangeUpperBodyState` (107600; 3),
+  `ChangeStanceState` (107621; 2), and the AI actions'
+  `ChangeNPCState` / `ResetNPCState` (300361, 300400: a tweak action
+  phase's states, most aim, shoot, reload, crouch and cover changes).
+  Past them in scripts: `OnGameAttach` writes the blackboard from the
+  replicated values (153635: the state an NPC spawns with, set by no
+  script), and tandem's own `TandemFollow` on a proxy. Whether native
+  code calls the three natives itself (a spawn's initial state, a mount)
+  cannot be read from scripts: tandem's 2 s poll logs it
+  (`poll caught a change the events missed`). The signal table holds one
+  payload per signal: two changes raised before the handler runs keep
+  the last one's. [2.5-untested]
+- **Other events of what the poll read** (same dump). The right hand:
+  `NPCPuppet.OnItemAddedToSlot(ItemAddedToSlot)` (107242) and
+  `OnItemRemovedFromSlot(ItemRemovedFromSlot)` (107340), `GetSlotID()`
+  on both. A workspot: `ScriptedPuppet.OnWorkspotStartedEvent` (22803)
+  and `OnWorkspotFinishedEvent` (22816); `PlayerPuppet` overrides both
+  without calling them (49175). The top threat: none. The tracker's
+  events (`NewThreat`, `HostileThreatDetected`, `EnemyThreatDetected`,
+  `ThreatRemoved`, 182729–183323; handled by `TargetTrackingExtension`
+  151104–151263 and `AIHumanComponent` 111881–111893) say an entity
+  entered or left the threat list, not that the top one changed.
+  [2.5-untested]
 - **Shots**: every NPC (and turret) shot is `AIWeapon.Fire` (static,
   `:173136`; callers `:155212`, `:171583`); `OnStopShooting` plays
   `gamedataFxAction.ExitShoot` (`:173113`). A guest plays a shot with

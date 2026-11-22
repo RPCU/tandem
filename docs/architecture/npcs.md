@@ -199,7 +199,8 @@ the first group session.
 - **NPC animation** (`scripts/tandem/NpcAnims.reds`, engine-knowledge
   §13.21): the pose stream is too heavy for dozens of NPCs, so the host
   sends what an NPC's animation graph reads and the proxy's own graph
-  plays it. Four times a second the host samples each shared NPC's
+  plays it. The owner reads (when: "When an NPC's animation is read",
+  below) each shared NPC's
   high-level, upper-body and stance states (the `PuppetState` blackboard
   NPCStatesComponent fills), the item in its right hand, whom it is after
   (its top hostile threat: a player, or another shared NPC) and the
@@ -224,8 +225,8 @@ the first group session.
   in it (`PlayNpcInWorkspot`) and jumped to the host's entry; meanwhile
   the controller keeps still (`HoldPuppet`). When the host's NPC gets up
   the proxy plays the slow exit and the controller takes over again.
-  Scenarios `npcs-anims` (guest of a replay with `--anims`) and
-  `npcs-anims-host`. **Not yet verified in game**; open: tracers (the
+  Scenarios `npcs-anims` (guest of a replay with `--anims`),
+  `npcs-anims-host` and `npcs-anims-events`. **Not yet verified in game**; open: tracers (the
   shot's target is sent, not drawn), cover poses beyond the stance, hit
   reactions, ragdolls.
 - **How NPCs see a remote V** (`scripts/tandem/Attitudes.reds`,
@@ -243,8 +244,8 @@ the first group session.
   the engine's relation table takes records TweakXL adds is **not yet
   known**: each start logs
   `attitudes: declared relations took|took in part|did NOT take: A of B
-  groups player is not friendly with read the same for tandem_player_1 …
-  (tweak: R Attitude records read, P with player, C cloned)`, read back
+groups player is not friendly with read the same for tandem_player_1 …
+(tweak: R Attitude records read, P with player, C cloned)`, read back
   through `GetAttitudeRelation` (`cmd puppet relations` logs it again).
   The runtime copy stays under it, for what the records cannot give and
   as the net if they do not take; the only non-saved setter,
@@ -256,8 +257,8 @@ the first group session.
   did not take); and each NPC gets the attitudes it and V have to each
   other on the puppet's agent where they differ, on the tick after it
   came into the world (`NPCPuppet.OnGameAttached`, queued:
-  `TandemStreamKind.Npc`; `attitudes: fresh npc … engine alone:
-  same|differs, on its first tick: same`, debug) and every 2 s within
+  `TandemStreamKind.Npc`, attached; `attitudes: fresh npc … engine alone:
+same|differs, on its first tick: same`, debug) and every 2 s within
   60 m of V or a puppet for what changed since (a quest), forgotten 30 s
   after it leaves range. What changed between an NPC and a puppet alone
   stays its own (that V provoked it). The police are left to `Police.reds`
@@ -342,6 +343,43 @@ the first group session.
   entity of each placed NPC it announces (`NpcPlaced`); the other games
   find their own copy by it (twins), and its death goes into the session's
   ledger: dead in every game until the session ends.
+
+## When an NPC's animation is read
+
+`scripts/tandem/NpcAnims.reds`, the owner's side (2026-11-22; before: every
+shared NPC whole, four times a second). On the game's own change: wraps
+queue the NPC (`TandemStreamKind.Npc`, not attached, `cls` what changed;
+one taker, `TandemAttitudes.Drain`) and `TandemNpcAnims.Events` reads it
+whole and sends it on the next frame's tick, at most one message per NPC
+and frame. Same message and wire form; the receiving side is unchanged.
+
+<!-- prettier-ignore -->
+| What | The game's event (wrapped: reads, calls, queues) | Under it |
+| --- | --- | --- |
+| high-level, upper-body, stance | `NPCStatesComponent.ChangeHighLevelState`, `ChangeUpperBodyState`, `ChangeStanceState`: every script path ends there (engine-knowledge §13.21, the states' entry points) | the 2 s poll |
+| item in the right hand | `NPCPuppet.OnItemAddedToSlot`, `OnItemRemovedFromSlot` (slot `WeaponRight`) | the 2 s poll |
+| workspot (resource) | `ScriptedPuppet.OnWorkspotStartedEvent`, `OnWorkspotFinishedEvent`; read again 0.25 s later (the instance map may fill after the event) | the 2 s poll |
+| workspot entry | none (the workspot's own sequence) | the 2 s poll only |
+| whom it is after | none: `NewThreat`, `HostileThreatDetected`, `ThreatRemoved` say who is in the threat list, not which is on top (the tracker's own weighing, each AI update); read with every event of the NPC | 4 Hz, only for an NPC out of `Relaxed` |
+
+- Gain: a state leaves on the frame after the change, not up to 250 ms
+  later, and a state held for less than 250 ms is no longer skipped.
+- Work left per shared NPC: four times a second, the lookup of what was
+  sent and, out of `Relaxed`, one `GetTopHostileThreat`; every 2 s the
+  whole read (three blackboard reads, the hand's slot,
+  `IsActorInWorkspot`). Before: the whole read four times a second.
+- The 2 s poll sends what it finds and logs what an event should have told
+  (info, the first 10 then every 25th):
+  `npc anims: poll caught a change the events missed: npc N stance 3 -> 1 (K missed so far)`.
+- The command `npc anims` counts the changes sent by what found them:
+  `first`, `by events` (with the events taken per kind), `settled`,
+  `by the target read`, `polled`, `missed M (S of them states)`. Each
+  event's change is a debug line:
+  `npc anims: event (stance): npc N stance 3 -> 1`.
+- Scenario `npcs-anims-events` (a fighting ganger: an event line for the
+  upper body or the stance, no missed state). Not yet run in game: which
+  thread the three wraps run on, and whether native code sets a state past
+  them (the missed line says).
 
 ## Open problems
 
