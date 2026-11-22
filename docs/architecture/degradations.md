@@ -54,21 +54,21 @@ still listed, as `unknown id` (and fails every scenario).
 
 ## What follows from an entry
 
-| | Core state | Degraded state | Chosen state | Fallback |
-| --- | --- | --- | --- | --- |
-| Session | **none**: nothing is hosted or joined | runs | runs | runs |
-| Log | error when it starts | warning when it starts | warning | warning the first time of an id, debug after |
-| This player | the Co-op page's popup and the notice `Session-CoreOff`; in a session: `Degraded-Off`, then the session is left (`Degraded-CoreEnded`) | notice `Degraded-Off` at its start and at each session's start | notice `Degraded-Chosen` | notice `Degraded-Fallback`, the first time of an id |
-| Kept visible | the Co-op page lists only "Write a bug report" | the status panel: "Runs without: …" | "Runs without (your setting): …" | "Fell back N time(s): …" |
-| Other players | (no session) | notice `Degraded-Other` ("NAME's game runs without: …"), a status line while it holds, `Degraded-OtherBack` when it ends | the same | not told |
-| A scenario | fails | fails unless `expect_degraded ID` / `allow_fallback ID` | the same | fails unless `allow_fallback ID` |
+|               | Core state                                                                                                                             | Degraded state                                                                                                           | Chosen state                     | Fallback                                            |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------- | --------------------------------------------------- |
+| Session       | **none**: nothing is hosted or joined                                                                                                  | runs                                                                                                                     | runs                             | runs                                                |
+| Log           | error when it starts                                                                                                                   | warning when it starts                                                                                                   | warning                          | warning the first time of an id, debug after        |
+| This player   | the Co-op page's popup and the notice `Session-CoreOff`; in a session: `Degraded-Off`, then the session is left (`Degraded-CoreEnded`) | notice `Degraded-Off` at its start and at each session's start                                                           | notice `Degraded-Chosen`         | notice `Degraded-Fallback`, the first time of an id |
+| Kept visible  | the Co-op page lists only "Write a bug report"                                                                                         | the status panel: "Runs without: …"                                                                                      | "Runs without (your setting): …" | "Fell back N time(s): …"                            |
+| Other players | (no session)                                                                                                                           | notice `Degraded-Other` ("NAME's game runs without: …"), a status line while it holds, `Degraded-OtherBack` when it ends | the same                         | not told                                            |
+| A scenario    | fails                                                                                                                                  | fails unless `expect_degraded ID` / `allow_fallback ID`                                                                  | the same                         | fails unless `allow_fallback ID`                    |
 
 - **The log**: `degraded: ID is off: REASON` (`is OFF, co-op cannot run
-  without it` for a core one, `is off by choice`), `degraded: ID is back`,
+without it` for a core one, `is off by choice`), `degraded: ID is back`,
   `degraded: fallback ID: REASON`, `degraded: player N's game runs without:
-  A, B (chosen)`; one line when a session is entered and one when it ends,
+A, B (chosen)`; one line when a session is entered and one when it ends,
   `session start: degraded: none` or `session end: degraded: looks, vehicle
-  move (chosen); fallbacks: prompt drawn x3` (a warning unless `none`; kept
+move (chosen); fallbacks: prompt drawn x3` (a warning unless `none`; kept
   in `last-session.txt` for the bug report).
 - **Core off, no session**: `Runtime::Problems` gets a sentence per core
   state that holds and nobody chose (`degraded::CoreProblem`), so
@@ -157,6 +157,7 @@ names of `engine-access.md`.
 | `workspots` | degraded | state | `engine/workspots.cpp` | an NPC's workspot is not read |
 | `physics watch` | degraded | state | `engine/physics.cpp` | a long physics pause is not watched |
 | `transform guard` | degraded | state | `engine/guards.cpp` (Wine) | the engine's own crash on an expired entity is not guarded |
+| `dismemberment guard` | degraded | state | `engine/guards.cpp` | the engine's own crash on an NPC detached in the middle of an action is not guarded (`../research/engine/re.md` §13.142) |
 | `anim trace` | degraded | state | `engine/trace.cpp` (asked for and off) | no animation trace, no mirror |
 | `vehicle move` | degraded | state | `engine/vehiclemove.cpp` (layout, hash); `System.reds` `MovePath` (5 bodies and none followed); chosen: `kinematic_ride = off` | vehicles other games run are teleported every frame |
 | `drawn prompts` | degraded | state | `Prompts.reds` (`prompts.tweak` not loaded; the test command `prompts off`); chosen: `native_prompts = off` | prompts on players and vendors drawn by tandem |
@@ -204,7 +205,7 @@ defaults of the party HUD (a field of view of 0, a health below 0).
   `tools/game.sh degraded` asks the game (`cmd degraded`) for its registry,
   which must hold no state and no fallback the scenario did not declare, and
   the mock player's log must hold no `degraded: player N's game runs
-  without: ID` for an undeclared id. `test reset` forgets the fallbacks
+without: ID` for an undeclared id. `test reset` forgets the fallbacks
   counted before the scenario (`TandemDegraded.ResetFallbacks`); states
   hold. A failure reads `degraded: unexpected: ID (…)` and is classed
   `degraded` by `tools/sweep.sh`.
@@ -216,11 +217,11 @@ defaults of the party HUD (a field of view of 0, a health below 0).
 - Declared today: `prompts-drawn` (`expect_degraded "drawn prompts"`);
   `prompts-game` (drawn for a while), `takedowns-host` (`grapple held`),
   `regions-meet` (`proxy respawned`), `scene-ride-full` (`carried by
-  placement`), `puppet-attitude-fresh` (`attitude relations`),
+placement`), `puppet-attitude-fresh` (`attitude relations`),
   `nameplate-projection` (`nameplate projection`, asked for by command),
   `combat-melee-guest`, `npcs-hurt-guest`, `mods-unknown-held`,
   `mods-unknown-look`, `mods-unknown-vehicle`, `presence-status` (`record
-  substituted`).
+substituted`).
 - `tools/game.sh degraded [--expect ID]… [--allow ID]…`: the registry of a
   running game, printed; exit 1 on an entry that is neither, or on an
   expected one that is missing. `tools/game.sh engine` stays (the engine
