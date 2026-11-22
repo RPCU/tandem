@@ -4,6 +4,7 @@
 #   nix-build -A relayImage        (this machine's architecture)
 #   nix-build -A relayImageArm64   (arm64, cross-built: the Go binary is static)
 #   nix-build -A redscript
+#   nix-build -A redscriptCli      (its decompiler: tools/scripts-decompile.sh)
 let
   sources = import ./npins;
 in
@@ -20,4 +21,14 @@ rec {
     relay = relayArm64;
   };
   redscript = pkgs.callPackage ./nix/redscript.nix { };
+  # Its decompiler, to read the game's own scripts at the game's version
+  # (tools/scripts-decompile.sh).
+  redscriptCli = redscript.overrideAttrs (_: {
+    pname = "redscript-cli";
+    cargoBuildFlags = [
+      "-p"
+      "redscript-cli"
+    ];
+    postInstall = "";
+  });
 }

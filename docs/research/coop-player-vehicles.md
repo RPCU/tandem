@@ -22,7 +22,10 @@ and [`pose-streaming.md`](pose-streaming.md); it does not repeat them.
   proposal until tried in game. `(inferred)` marks what the sources do not
   state.
 - **The script reference is older than the game.** Where they differ the
-  RTTI is right for 2.50. Seen so far:
+  RTTI is right for 2.50 (and so is the game's own bundle decompiled,
+  `tools/scripts-decompile.sh`: `game/final.reds`, other line numbers; it
+  has the dual wielding scripts this dump lacks, engine-knowledge §13.151).
+  Seen so far:
   - `PlayerStateMachineDef` in the scripts has one `Weapon` field
     (final.reds:53697); 2.50 has `RightWeapon`, `LeftWeapon`,
     `EquipmentRight`, `EquipmentLeft`, `WeaponTriggerMode`,

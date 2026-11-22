@@ -152,8 +152,9 @@ build slots) and copies the DLL, `.pdb` and `tandem-peer` back; then
   machine into `~/.cache/tandem/redscript-base`, and prints errors as the
   game's log does. It also refuses the two traps below. Still check vanilla
   and Codeware names before using them (NCO's working 2.5 scripts and
-  Codeware's `scripts/` are good references): a name that compiles can
-  still be the wrong one.
+  Codeware's `scripts/` are good references; the game's own scripts as
+  text at its version: `tools/scripts-decompile.sh`): a name that compiles
+  can still be the wrong one.
 - **Delete a body Codeware spawned with `TandemEntities.Delete`**
   (`Entities.reds`), never `DynamicEntitySystem.DeleteEntity`: deleted
   before its stub exists, it is freed under the population system
