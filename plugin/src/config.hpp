@@ -101,6 +101,9 @@
 //                        ; stay alive in our game (ini only)
 //   death_bodies = on    ; off: no body where a placed NPC another player
 //                        ; killed in the last ten minutes fell (ini only)
+//   native_prompts = on  ; off: the prompts on another player and on a partner's
+//                        ; vendor are drawn by us, none is the game's own
+//                        ; interaction (scripts/tandem/Prompts.reds) (ini only)
 // The settings page (scripts/tandem/Coop.reds) changes some of them while the
 // game runs and saves them here (TandemNative.SetSetting, tandem/settings.hpp).
 //   leave = stay         ; a guest out of a session, once its own world is back
@@ -244,6 +247,10 @@ struct Config {
   // are asked to despawn (a probe, untested).
   std::string overlap{"density"};
   bool overlapDespawn{false};
+  // The prompts on another player's body (Trade, Revive) and on a partner's
+  // vendor are the game's own interactions (scripts/tandem/Prompts.reds);
+  // off: all drawn by us, as before.
+  bool nativePrompts{true};
   // Where it was read from (the settings page writes there).
   std::filesystem::path file;
   // What a guest's game does once it is out of a session (Saves.reds).
