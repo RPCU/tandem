@@ -514,6 +514,9 @@ role_file() {
   # log = debug, as tools/game.sh role writes: scenarios read per-puppet,
   # per-hit lines (plugin/src/log.hpp); a KEY=VALUE below can change it.
   text+="log = debug"$'\n'
+  # A test game never saves: one that hosted autosaved in the fight that
+  # killed its V, and loaded that save at every start after (2026-11-22).
+  text+="saves = off"$'\n'
   for extra in "$@"; do
     [[ $extra == *=* ]] || die "not KEY=VALUE: $extra"
     text+="${extra%%=*} = ${extra#*=}"$'\n'
@@ -1018,7 +1021,16 @@ load() {
     tries=$((tries + 1))
     [ "$tries" -le 30 ] || die "$name: the save did not finish loading in 4 minutes"
   done
-  note "$name: playing"
+  # A save that loads a dead V (the death screen) is no game to test on.
+  command_file test query health >/dev/null 2>&1 || true
+  sleep 2
+  local health
+  health=$(log 200 2>/dev/null | sed -n 's/.*test query: health = \([0-9.]*\).*/\1/p' | tail -1)
+  case ${health:-} in
+  "") die "$name: loaded, but the game answers no command (paused on the death screen?)" ;;
+  0 | 0.0*) die "$name: the save loads a dead V (health $health): move its newest save aside" ;;
+  esac
+  note "$name: playing (health $health)"
 }
 
 # The X server gamescope started for this instance (its launch log names it).

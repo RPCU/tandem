@@ -131,6 +131,7 @@ public class TandemSystem extends ScriptableSystem {
   // How the vehicles other games run are moved here (MoveBody): the path
   // of this run, the players' cars by body, and the counters of the report.
   private let m_moveRead: Bool;
+  private let m_savesRead: Bool;
   private let m_moveKinematic: Bool;
   private let m_movers: array<ref<TandemMoved>>;
   private let m_movedKinematic: Int32;
@@ -1101,7 +1102,25 @@ public class TandemSystem extends ScriptableSystem {
     }
   }
 
+  // A test game never saves (`saves = off`, which tools/instance.sh and
+  // tools/game.sh write for their roles): locked from its first tick, as
+  // the pilot locks it. A hosting test game autosaved in the fight that
+  // killed its V, and every start after loaded that save (2026-11-22).
+  private func LockTestSaves() -> Void {
+    if this.m_savesRead {
+      return;
+    }
+    this.m_savesRead = true;
+    if Equals(TandemNative.Setting("saves"), "off") {
+      TandemPilotNative.LockSaves();
+      SaveLocksManager.RequestSaveLockAdd(this.GetGameInstance(), n"TandemTest");
+      GameInstance.GetAutoSaveSystem(this.GetGameInstance()).InvalidateAutoSaveRequests();
+      TandemNative.Log("saves: off (a test game: saving is locked until it ends)");
+    }
+  }
+
   private func TickOnce() -> Void {
+    this.LockTestSaves();
     // What the world streamed in and out since, session or not (queued by
     // wraps that may run on job threads: StreamingNatives.reds).
     this.DrainStreamed();
@@ -1630,7 +1649,7 @@ public class TandemSystem extends ScriptableSystem {
       if IsDefined(this.m_traffic) {
         this.m_traffic.LanesReport();
       }
-    } else if Equals(command, "npc parity") || StrBeginsWith(command, "npc sense ") || StrBeginsWith(command, "npc seats ") {
+    } else if Equals(command, "npc parity") || StrBeginsWith(command, "npc sense ") || StrBeginsWith(command, "npc seats ") || StrBeginsWith(command, "npc hide ") {
       // (test) "npc parity": how far each NPC we run is in detecting each V
       // (ours against the puppets'); "npc sense player|npc": the puppets'
       // visible object as a player's, or as the NPC body's (the default).

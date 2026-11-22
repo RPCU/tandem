@@ -153,7 +153,7 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
              key == "recorder" || key == "recorder_pose" || key == "friendly_fire" ||
              key == "markers" || key == "party_hud" || key == "enemy_scaling" ||
              key == "death_ledger" || key == "death_bodies" || key == "overlap_despawn" ||
-             key == "native_prompts" || key == "kinematic_ride") {
+             key == "native_prompts" || key == "kinematic_ride" || key == "saves") {
     auto &flag = key == "story"             ? config.story
                  : key == "quest_freeze"    ? config.questFreeze
                  : key == "quest_interact"  ? config.questInteract
@@ -167,6 +167,7 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
                  : key == "overlap_despawn" ? config.overlapDespawn
                  : key == "native_prompts"  ? config.nativePrompts
                  : key == "kinematic_ride"  ? config.kinematicRide
+                 : key == "saves"           ? config.saves
                                             : config.recorderPose;
     if (value == "on" || value == "true")
       flag = true;
@@ -426,6 +427,8 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return OnOff(config.nativePrompts);
   if (key == "kinematic_ride")
     return OnOff(config.kinematicRide);
+  if (key == "saves")
+    return OnOff(config.saves);
   if (key == "nameplates")
     return config.nameplates == presence::Nameplates::Always ? "always"
            : config.nameplates == presence::Nameplates::Off  ? "off"
