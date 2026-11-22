@@ -362,12 +362,14 @@ public class TandemHitsTaken {
       TandemReactionsSync.Twitch(body, data.hitDirection, data.hitIntensity, data.hitBodyPart);
       this.m_byTwitch += 1;
       TandemNative.LogDebug(s"hit taken: player \(queued.player)'s puppet twitches (direction \(data.hitDirection), part \(data.hitBodyPart)): the game's pipeline chose reaction \(data.hitType), an AI task a puppet does not run; by \(queued.by)");
+      TandemDegraded.Fallback("hit shown by twitch", s"player \(queued.player)'s puppet: the game's pipeline chose reaction \(data.hitType), an AI task a puppet does not run");
       return;
     }
     TandemReactionsSync.Twitch(body, queued.direction, queued.intensity, queued.part);
     this.m_byTwitch += 1;
     this.Once(n"nothing", s"hit taken: player \(queued.player)'s puppet twitches (direction \(queued.direction), part \(queued.part)): the game's pipeline played nothing for its hit by \(queued.by) (said once)");
     TandemNative.LogDebug(s"hit taken: player \(queued.player)'s puppet twitches (direction \(queued.direction), part \(queued.part)): the game's pipeline played nothing; by \(queued.by)");
+    TandemDegraded.Fallback("hit shown by twitch", s"player \(queued.player)'s puppet: the game's pipeline played nothing for its hit by \(queued.by)");
   }
 
   // The hit on the puppet as the game runs one (DamageSystem.QueueHitEvent:

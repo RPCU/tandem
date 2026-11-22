@@ -671,6 +671,12 @@ public class TandemPartyHud {
     if NotEquals(path, this.m_path) {
       this.m_path = path;
       TandemNative.Log(s"hud: nameplates placed by \(path)");
+      // Our own projection is the lesser path (degradations.md).
+      if Equals(why, "") {
+        TandemDegraded.Over("nameplate projection");
+      } else {
+        TandemDegraded.State("nameplate projection", why);
+      }
     }
     if NotEquals(why, "") {
       this.Unproject();
