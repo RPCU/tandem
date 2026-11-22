@@ -24,27 +24,40 @@ public class TandemDegradedSay {
   // last one, on screen. A core feature that goes off while we play ends the
   // session, with the reason (co-op cannot be right without it).
   public static func Tick(game: GameInstance, system: ref<TandemSystem>) -> Void {
+    // One notice's worth: entries of one kind about one game (the plugin
+    // hands out the next ones a few seconds later: the HUD's line shows one
+    // message at a time).
     let news = TandemDegraded.TakeNews();
+    if ArraySize(news) == 0 {
+      return;
+    }
+    let first = news[0];
+    let what = "";
+    let english = "";
     let leave = "";
     for entry in news {
-      let what = TandemDegradedSay.Name(entry.id);
-      let english = TandemDegradedSay.Name(entry.id, true);
-      if entry.player != 0u {
-        let who = TandemCoop.NameOf(entry.player);
-        let key = entry.over ? "Degraded-OtherBack" : "Degraded-Other";
-        TandemText.Say(game, SimpleMessageType.Negative, 10.0, key, TandemText.F(key, who, what), TandemText.FE(true, key, who, english));
-      } else if entry.over {
-        TandemText.Say(game, SimpleMessageType.Neutral, 6.0, "Degraded-Back", TandemText.F("Degraded-Back", what), TandemText.FE(true, "Degraded-Back", english));
-      } else if entry.fallback {
-        TandemText.Say(game, SimpleMessageType.Negative, 10.0, "Degraded-Fallback", TandemText.F("Degraded-Fallback", what), TandemText.FE(true, "Degraded-Fallback", english));
-      } else if entry.chosen {
-        TandemText.Say(game, SimpleMessageType.Neutral, 8.0, "Degraded-Chosen", TandemText.F("Degraded-Chosen", what), TandemText.FE(true, "Degraded-Chosen", english));
-      } else {
-        TandemText.Say(game, SimpleMessageType.Negative, 12.0, "Degraded-Off", TandemText.F("Degraded-Off", what), TandemText.FE(true, "Degraded-Off", english));
-        if entry.core {
-          leave = entry.id;
-        }
+      if StrLen(what) > 0 {
+        what += "; ";
+        english += "; ";
       }
+      what += TandemDegradedSay.Name(entry.id);
+      english += TandemDegradedSay.Name(entry.id, true);
+      if entry.core && !entry.chosen && !entry.over && !entry.fallback && entry.player == 0u {
+        leave = entry.id;
+      }
+    }
+    if first.player != 0u {
+      let who = TandemCoop.NameOf(first.player);
+      let key = first.over ? "Degraded-OtherBack" : "Degraded-Other";
+      TandemText.Say(game, SimpleMessageType.Negative, 10.0, key, TandemText.F(key, who, what), TandemText.FE(true, key, who, english));
+    } else if first.over {
+      TandemText.Say(game, SimpleMessageType.Neutral, 6.0, "Degraded-Back", TandemText.F("Degraded-Back", what), TandemText.FE(true, "Degraded-Back", english));
+    } else if first.fallback {
+      TandemText.Say(game, SimpleMessageType.Negative, 10.0, "Degraded-Fallback", TandemText.F("Degraded-Fallback", what), TandemText.FE(true, "Degraded-Fallback", english));
+    } else if first.chosen {
+      TandemText.Say(game, SimpleMessageType.Neutral, 8.0, "Degraded-Chosen", TandemText.F("Degraded-Chosen", what), TandemText.FE(true, "Degraded-Chosen", english));
+    } else {
+      TandemText.Say(game, SimpleMessageType.Negative, 12.0, "Degraded-Off", TandemText.F("Degraded-Off", what), TandemText.FE(true, "Degraded-Off", english));
     }
     // (Not with compat = off: a developer's game runs on, and says so to
     // the others.)

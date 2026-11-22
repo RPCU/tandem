@@ -100,7 +100,9 @@ still listed, as `unknown id` (and fails every scenario).
   own word, passed on, never back" (`referee_test.cpp`).
 - **On screen** (`Degraded.reds`): `TandemDegradedSay.Tick` every tick of a
   session shows what `TandemDegraded.TakeNews` queued (a state that started
-  or ended, the first fallback of an id, another player's game); the states
+  or ended, the first fallback of an id, another player's game), one
+  notice at a time: entries of one kind about one game in one sentence, the
+  next 6 s later (the HUD's line shows one message); the states
   that hold are queued again when a session is entered. Its notices are
   always shown (`TandemText.Importance` 2, whatever `notices` says). The
   status panel (`TandemCoop.StatusLines`, the pause menu's Co-op page and

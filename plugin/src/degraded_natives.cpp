@@ -18,6 +18,8 @@
 
 #include <RedLib.hpp>
 
+#include <chrono>
+
 namespace tandem::plugin {
 // One entry of the registry, or one thing to tell the player. Plain fields
 // only: the script VM aligns struct locals to 8.
@@ -86,12 +88,17 @@ struct TandemDegraded : Red::IScriptable {
       out.EmplaceBack(ForScripts(entry, 0, false));
     return out;
   }
-  // Every tick of a session: what to tell the player since the last call (a
-  // state that started or ended, the first fallback of an id, another
-  // player's game).
+  // Every tick of a session: the next notice's worth of what to tell the
+  // player (states that started, or ended, first fallbacks of an id, or
+  // another player's game: one kind about one game at a time, a few seconds
+  // apart).
   static Red::DynArray<TandemDegradedEntry> TakeNews() {
     Red::DynArray<TandemDegradedEntry> out;
-    for (const auto &news : Degradations::Get().TakeNews())
+    const auto now =
+        static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                       std::chrono::steady_clock::now().time_since_epoch())
+                                       .count());
+    for (const auto &news : Degradations::Get().TakeNews(now))
       out.EmplaceBack(ForScripts(news.entry, news.player, news.over));
     return out;
   }

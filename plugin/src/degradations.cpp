@@ -121,8 +121,11 @@ void Degradations::BeginSession() {
   std::lock_guard _(m_lock);
   m_remote.clear();
   m_news.clear();
+  m_nextNewsUs = 0;
+  // The states only: a fallback taken before this session was said then.
   for (const auto &entry : entries)
-    m_news.push_back({.entry = entry});
+    if (entry.kind == degraded::Kind::State)
+      m_news.push_back({.entry = entry});
 }
 
 void Degradations::EndSession() {
@@ -131,8 +134,24 @@ void Degradations::EndSession() {
   std::erase_if(m_news, [](const News &news) { return news.player != 0; });
 }
 
-std::vector<Degradations::News> Degradations::TakeNews() {
+std::vector<Degradations::News> Degradations::TakeNews(std::uint64_t nowUs) {
   std::lock_guard _(m_lock);
-  return std::exchange(m_news, {});
+  if (m_news.empty() || nowUs < m_nextNewsUs)
+    return {};
+  // One notice: what reads as one sentence with the first queued.
+  const auto sort = [](const News &news) {
+    return news.over                                     ? 0
+           : news.entry.kind == degraded::Kind::Fallback ? 1
+           : news.entry.chosen                           ? 2
+                                                         : 3;
+  };
+  const auto player = m_news.front().player;
+  const auto kind = sort(m_news.front());
+  std::vector<News> out, rest;
+  for (auto &news : m_news)
+    (news.player == player && sort(news) == kind ? out : rest).push_back(std::move(news));
+  m_news = std::move(rest);
+  m_nextNewsUs = nowUs + kNewsGapUs;
+  return out;
 }
 } // namespace tandem::plugin
