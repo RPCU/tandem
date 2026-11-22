@@ -7,6 +7,7 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "config.hpp"
+#include "degradations.hpp"
 #include "engine/casts.hpp"
 #include "engine/posestream.hpp"
 #include "engine/prefabs.hpp"
@@ -1413,9 +1414,13 @@ struct TandemStory : Red::IScriptable {
     const auto *field = dataType ? dataType->GetProperty("gender") : nullptr;
     if (!field || !field->type || field->type->GetName() != Red::CName("Int32") ||
         field->valueOffset + sizeof(std::int32_t) > dataType->GetSize()) {
-      if (!std::exchange(warned, true))
+      if (!std::exchange(warned, true)) {
         log::Warn("scene: {} has no Int32 data.gender (Codeware's): V's voice is the game's pick",
                   event->GetType()->GetName().ToString());
+        Degradations::Get().Start("scene voice",
+                                  "the scene event has no Int32 data.gender (Codeware's): V's "
+                                  "voice in a replayed scene is the game's pick");
+      }
       return false;
     }
     // locVoiceTagGender: Male 1, Female 2 [inferred]; swapped: the other way.

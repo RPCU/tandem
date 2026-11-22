@@ -45,6 +45,8 @@ add_library(tandem SHARED
   src/mods_natives.cpp
   src/streaming_natives.cpp
   src/objects_natives.cpp
+  src/degradations.cpp
+  src/degraded_natives.cpp
   src/threads.cpp
   src/stall.cpp
   src/engine/access.cpp

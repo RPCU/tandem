@@ -3,6 +3,7 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "../degradations.hpp"
 #include "../log.hpp"
 #include "access.hpp"
 #include "animation.hpp"
@@ -128,12 +129,28 @@ void FeatureOff(std::string_view feature, std::string_view reason) {
       g_features.push_back({std::string(feature), State::Off, std::string(reason)});
   }
   log::Error("engine: {} is off: {}", feature, reason);
+  // Never silently (degradations.hpp): the player and the others are told,
+  // and a core feature off means no session.
+  Degradations::Get().Start(feature, reason);
 }
 
 void FeatureNotAsked(std::string_view feature, std::string_view why) {
   std::lock_guard _(g_lock);
   if (!EntryOf(feature))
     g_features.push_back({std::string(feature), State::NotAsked, std::string(why)});
+}
+
+void FeatureSwitchedOff(std::string_view feature, std::string_view why) {
+  FeatureNotAsked(feature, why);
+  // Unless it is off for a reason nobody chose (kept: Registry::Start).
+  if (!FeatureIsOff(feature))
+    Degradations::Get().Start(feature, why, true);
+}
+
+bool FeatureIsOff(std::string_view feature) {
+  std::lock_guard _(g_lock);
+  const auto *entry = EntryOf(feature);
+  return entry && entry->state == State::Off;
 }
 
 bool FeatureIsOn(std::string_view feature) {

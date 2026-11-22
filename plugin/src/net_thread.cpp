@@ -3,6 +3,7 @@
 #include "activity.hpp"
 #include "combat.hpp"
 #include "comms.hpp"
+#include "degradations.hpp"
 #include "log.hpp"
 #include "mods.hpp"
 #include "perf.hpp"
@@ -338,6 +339,11 @@ struct NetThread::Impl {
       endpoint->SendCombat(*lastLend);
     if (lastPaint)
       endpoint->SendCombat(*lastPaint);
+    // What this game runs without (degradations.hpp): said to the session
+    // from its start and at every change.
+    auto degradedSeen = Degradations::Get().Local().Changes();
+    auto degradedSaid = Degradations::Get().Local().Wire();
+    endpoint->SendCombat(degradedSaid);
     if (lastSeat)
       endpoint->SetLocalSeat(*lastSeat);
     if (lastRadio)
@@ -430,6 +436,14 @@ struct NetThread::Impl {
                     relayAt = relay->at;
                 }
                 wasIn = true;
+                // Nothing silent: one line at the session's start and end,
+                // and the player is told again what holds.
+                Degradations::Get().BeginSession();
+                if (const auto line = Degradations::Get().Local().Summary();
+                    line == "degraded: none")
+                  log::Info("session start: {}", line);
+                else
+                  log::Warn("session start: {}", line);
                 runtime.NotePlayerName(e.you, config.name);
                 runtime.SetYou(e.you);
                 Recording::Get().Joined(endpoint->IsHost(), e.you, e.host);
@@ -463,6 +477,8 @@ struct NetThread::Impl {
                 runtime.PushEvent({ScriptEvent::Kind::PlayerLeft, e.player, {}, {}});
                 // Its car's paint goes with it (a namesake's car is stock).
                 Combat::Get().PushInbound(proto::CarPaint{.player = e.player});
+                // And what its game ran without.
+                Combat::Get().PushInbound(proto::Degraded{.player = e.player});
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Left, .player = e.player});
                 Comms::Get().PushInbound({.kind = CommsInbound::Kind::Left, .player = e.player});
               } else if constexpr (std::is_same_v<E, events::NamedAs>) {
@@ -1472,6 +1488,15 @@ struct NetThread::Impl {
             log::Info("hit on player {} dropped: not in the session, or friendly fire is off",
                       area->player);
       }
+      // A state of ours started or ended: the session is told (a fallback
+      // counted changes nothing of what it is told).
+      if (const auto changes = Degradations::Get().Local().Changes(); changes != degradedSeen) {
+        degradedSeen = changes;
+        if (auto wire = Degradations::Get().Local().Wire(); !(wire == degradedSaid)) {
+          degradedSaid = std::move(wire);
+          endpoint->SendCombat(degradedSaid);
+        }
+      }
       Combat::Get().SetRules(endpoint->Rules());
 
       stall::NetBeat(stall::kReport);
@@ -1557,6 +1582,16 @@ struct NetThread::Impl {
                                             : "the session ended";
     summary.mismatches = endpoint->Checks().Mismatches();
     summary.resyncs = endpoint->Checks().Requests();
+    if (wasIn) {
+      const auto line = Degradations::Get().Local().Summary();
+      if (line == "degraded: none") {
+        log::Info("session end: {}", line);
+      } else {
+        log::Warn("session end: {}", line);
+        summary.notes.push_back(line);
+      }
+    }
+    Degradations::Get().EndSession();
     // For the bug report (tandem/report.hpp): the last session only. Not a
     // guest's tries at a host that is gone: they would write over the
     // session that mattered every 5 s.

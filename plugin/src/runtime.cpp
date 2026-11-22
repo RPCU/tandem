@@ -2,6 +2,7 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "comms.hpp"
+#include "degradations.hpp"
 #include "installed.hpp"
 #include "log.hpp"
 #include "net_thread.hpp"
@@ -72,6 +73,8 @@ void Runtime::Choose(SessionChoice choice) {
   // says why (CompatProblems), and the game stays the single-player one.
   if (choice.role != Config::Role::Off && Blocked()) {
     log::Warn("session: {} not chosen, co-op is off: {}", NameOf(choice.role), Problems().front());
+    if (!Degradations::Get().Local().CoreOff().empty())
+      m_coreRefused = true;
     choice = {.fromMenu = choice.fromMenu};
   }
   std::lock_guard _(m_lock);
@@ -91,7 +94,18 @@ std::vector<std::string> Runtime::Problems() const {
   auto problems = installation.startup.problems;
   if (auto expansion = compat::ExpansionProblem(Expansion()); !expansion.empty())
     problems.push_back(std::move(expansion));
+  // A core feature this game turned off: co-op would not be right.
+  for (const auto &entry : Degradations::Get().Local().CoreOff())
+    problems.push_back(degraded::CoreProblem(entry));
   return problems;
+}
+
+void Runtime::RecheckChoice() {
+  if (Started())
+    return;
+  const auto choice = Choice();
+  if (choice.role != Config::Role::Off && Blocked())
+    Choose(choice);
 }
 
 void Runtime::SetExpansion(compat::Expansion state) {
@@ -2176,6 +2190,7 @@ void Runtime::RegisterPuppet(proto::PlayerId player, std::uint64_t entityHash) {
     }
   }
   log::Warn("no room for another puppet (player {})", player);
+  Degradations::Get().Fallback("no room", std::format("no puppet slot for player {}", player));
 }
 
 void Runtime::UnregisterPuppet(proto::PlayerId player) {

@@ -3,6 +3,7 @@
 
 #include "mods.hpp"
 
+#include "degradations.hpp"
 #include "log.hpp"
 #include "runtime.hpp"
 
@@ -99,8 +100,12 @@ std::uint64_t ModRecords::Resolve(mods::Kind kind, std::uint64_t record,
                    : m_resolver.Resolve(kind, record, hint, player, who, net::NowUs(), decided);
     lines = m_resolver.TakeLog();
   }
-  for (const auto &line : lines)
+  // A record of theirs shown otherwise here: never only in the log
+  // (degradations.hpp; the notice is Mods.reds').
+  for (const auto &line : lines) {
     log::Info("{}", line);
+    Degradations::Get().Fallback("record substituted", line);
+  }
   return resolved.record;
 }
 
@@ -115,8 +120,10 @@ void ModRecords::Note(mods::Kind kind, std::uint64_t record, std::uint64_t shown
                     who, net::NowUs());
     lines = m_resolver.TakeLog();
   }
-  for (const auto &line : lines)
+  for (const auto &line : lines) {
     log::Info("{}", line);
+    Degradations::Get().Fallback("record substituted", line);
+  }
 }
 
 void ModRecords::OnCompared(const events::RemoteMods &mods) {
