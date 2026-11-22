@@ -18,6 +18,22 @@
 // its sound) and that a melee swing landed. The status effects that show
 // on our V travel as a set (StatusVisuals.reds).
 
+// What the weapon in one hand of a puppet was last heard doing. One per
+// hand: a dual wielding V fires, bounces and charges each weapon on its own.
+public class TandemHeardHand {
+  // Automatic fire: the weapon's loop is ended when the shots stop.
+  public let shotAt: Float;
+  public let firing: Bool;
+  // Its last shot's end and when it came (a ricochet's leg starts there).
+  public let traceEnd: Vector4;
+  public let traceAt: Float;
+  // A tech weapon's charge shown on it (proto::kCharge*), and when it was
+  // last said.
+  public let charge: Int32;
+  public let chargeAt: Float;
+  public let chargeBoard: ref<worldEffectBlackboard>;
+}
+
 public class TandemHeardPuppet {
   public let player: Uint32;
   // Footsteps: the body's own locomotion clip may raise them already (the
@@ -28,32 +44,29 @@ public class TandemHeardPuppet {
   public let steps: Int32;
   public let graphSteps: Int32;
   public let sounds: Int32;
-  // Automatic fire: the weapon's loop is ended when the shots stop.
-  public let shotAt: Float;
-  public let firing: Bool;
-  public let firingLeft: Bool;
+  // Each hand's weapon: its fire loop, its last shot's end, its charge.
+  public let rightHand: ref<TandemHeardHand>;
+  public let leftHand: ref<TandemHeardHand>;
   // What it held last frame (the holster sound names the item put away).
   public let right: TweakDBID;
   // Ability sounds playing on it (stopped when the ability ends).
   public let sfx: array<CName>;
+  // The bullets drawn (those of its left hand's weapon among them), the
+  // trails and the ricochets (Tracers.reds), the charges shown.
   public let traces: Int32;
-  // The last shot's end and when it came (a ricochet's leg starts there),
-  // the trails drawn and the ricochets (Tracers.reds).
-  public let traceEnd: Vector4;
-  public let traceAt: Float;
+  public let leftTraces: Int32;
   public let trails: Int32;
   public let ricochets: Int32;
-  // A tech weapon's charge shown on it (proto::kCharge*), when it was last
-  // said, and the charges shown.
-  public let charge: Int32;
-  public let chargeAt: Float;
-  public let chargeBoard: ref<worldEffectBlackboard>;
   public let charges: Int32;
   public let flinches: Int32;
   // Water: the swimming loop effect started on it (0 none, 1 the surface's,
   // 2 the dive's), its strokes so far.
   public let water: Int32;
   public let strokes: Int32;
+
+  public func Hand(left: Bool) -> ref<TandemHeardHand> {
+    return left ? this.leftHand : this.rightHand;
+  }
 }
 
 // The menu and photo mode are heard through the UI's blackboards: our tick
@@ -103,9 +116,12 @@ public class TandemPresenceSync {
   // bullet alone, 2 the trail alone (cmd presence tracer both|bullet|trail:
   // whichever shows one tracer, not two or none).
   private let m_tracerMode: Int32;
-  // Our V's charge as last said (proto::kCharge*), and when.
+  // Our V's charge as last said (proto::kCharge*), and when; its left
+  // hand's weapon's (dual wielding).
   private let m_chargeSent: Int32;
   private let m_chargeSentAt: Float;
+  private let m_leftChargeSent: Int32;
+  private let m_leftChargeSentAt: Float;
   // Our ricochets said in the current second (a shotgun's pellets: 8 at most).
   private let m_ricochetSecond: Float;
   private let m_ricochetsSaid: Int32;
@@ -174,6 +190,8 @@ public class TandemPresenceSync {
     ArrayClear(this.m_cosmeticAt);
     this.m_chargeSent = 0;
     this.m_chargeSentAt = 0.0;
+    this.m_leftChargeSent = 0;
+    this.m_leftChargeSentAt = 0.0;
     if IsDefined(this.m_hud) {
       this.m_hud.Clear();
     }
@@ -229,7 +247,10 @@ public class TandemPresenceSync {
       heard.player = player;
       heard.graphStepAt = -10.0;
       heard.ourStepAt = -10.0;
-      heard.traceAt = -10.0;
+      heard.rightHand = new TandemHeardHand();
+      heard.rightHand.traceAt = -10.0;
+      heard.leftHand = new TandemHeardHand();
+      heard.leftHand.traceAt = -10.0;
       heard.right = TandemNative.RemoteHeld(player, false);
       ArrayPush(this.m_heard, heard);
     }
@@ -341,10 +362,12 @@ public class TandemPresenceSync {
     if !IsDefined(player) || !IsDefined(presence) || instigator != player {
       return;
     }
-    presence.SayRicochet(hitEvent.hitPosition, IsDefined(hitEvent.target as ScriptedPuppet));
+    presence.SayRicochet(hitEvent.hitPosition, IsDefined(hitEvent.target as ScriptedPuppet), TandemWeapons.ByLeftHand(player, hitEvent));
   }
 
-  private func SayRicochet(at: Vector4, character: Bool) -> Void {
+  // `left`: the bullet was the left hand's weapon's (its leg goes on from
+  // that hand's last shot).
+  private func SayRicochet(at: Vector4, character: Bool, left: Bool) -> Void {
     let now = EngineTime.ToFloat(GameInstance.GetEngineTime(this.m_game));
     if now - this.m_ricochetSecond >= 1.0 || now < this.m_ricochetSecond {
       this.m_ricochetSecond = now;
@@ -354,30 +377,48 @@ public class TandemPresenceSync {
       return;
     }
     this.m_ricochetsSaid += 1;
-    TandemPresence.SendCue(3, character ? 2 : 0, at);
+    TandemPresence.SendCue(3, (character ? 2 : 0) + (left ? 1 : 0), at);
     this.Once(n"ricochetSaid", s"bullet: our ricochet said, to (\(at.X) \(at.Y) \(at.Z))");
   }
 
   // A tech weapon's charge, for the others' puppet of our V: each change,
   // and again every 0.25 s while it lasts, with how charged it is (its glow
-  // follows; a lost end ends on its own there).
+  // follows; a lost end ends on its own there). Each hand's weapon has its
+  // own (the weapon's own state machine and blackboard).
   private func SendOurCharge(now: Float) -> Void {
     if !TandemNative.IsStarted() {
       return;
     }
     let player = GetPlayer(this.m_game);
-    let weapon = IsDefined(player) ? TandemPresenceSync.WeaponOf(player, false) : null;
+    this.SendHandCharge(player, false, now);
+    this.SendHandCharge(player, true, now);
+  }
+
+  private func SendHandCharge(player: ref<GameObject>, left: Bool, now: Float) -> Void {
+    let weapon = IsDefined(player) ? TandemPresenceSync.WeaponOf(player, left) : null;
     let step = TandemTracers.OurStep(weapon);
-    if step == this.m_chargeSent && (step == 0 || now - this.m_chargeSentAt < 0.25) {
+    let sent = left ? this.m_leftChargeSent : this.m_chargeSent;
+    let sentAt = left ? this.m_leftChargeSentAt : this.m_chargeSentAt;
+    if step == sent && (step == 0 || now - sentAt < 0.25) {
       return;
     }
-    if step != this.m_chargeSent {
-      this.Once(n"chargeSaid", s"charge: our V's weapon charges (step \(step)), said to the others");
+    if step != sent {
+      if left {
+        this.Once(n"chargeSaidLeft", s"charge: our V's left hand's weapon charges (step \(step)), said to the others");
+      } else {
+        this.Once(n"chargeSaid", s"charge: our V's weapon charges (step \(step)), said to the others");
+      }
     }
-    this.m_chargeSent = step;
-    this.m_chargeSentAt = now;
-    // proto::Cue Charge: `at.x` how charged it is.
-    TandemPresence.SendCue(4, step, new Vector4(TandemTracers.OurCharge(weapon), 0.0, 0.0, 0.0));
+    if left {
+      this.m_leftChargeSent = step;
+      this.m_leftChargeSentAt = now;
+    } else {
+      this.m_chargeSent = step;
+      this.m_chargeSentAt = now;
+    }
+    // proto::Cue Charge: `at.x` how charged it is, `at.y` the hand
+    // (kChargeLeftHand).
+    TandemPresence.SendCue(4, step, new Vector4(TandemTracers.OurCharge(weapon), left ? 1.0 : 0.0, 0.0, 0.0));
   }
 
   // ---- the others, every frame of the session ----
@@ -411,21 +452,8 @@ public class TandemPresenceSync {
           }
         }
         heard.right = TandemNative.RemoteHeld(player, false);
-        // A charge no longer said (its end lost, or the player gone quiet).
-        if heard.charge >= 1 && heard.charge <= 3 && now - heard.chargeAt > 1.2 {
-          TandemTracers.ShowCharge(heard, TandemPresenceSync.WeaponOf(body, false), 0, 0.0);
-          TandemNative.Log(s"charge: player \(player)'s charge no longer said: ended on its puppet");
-        }
-        // A burst or a magazine emptied on automatic: the weapon's fire
-        // loop ends with the last shot, as the game ends an NPC's
-        // (AIWeapon.OnStopShooting).
-        if heard.firing && now - heard.shotAt > 0.3 {
-          heard.firing = false;
-          let weapon = TandemPresenceSync.WeaponOf(body, heard.firingLeft);
-          if IsDefined(weapon) {
-            WeaponObject.TriggerWeaponEffects(weapon, gamedataFxAction.ExitShoot);
-          }
-        }
+        this.HandTick(heard, body, false, now);
+        this.HandTick(heard, body, true, now);
       }
     }
     this.DrawCues(system, now);
@@ -445,6 +473,26 @@ public class TandemPresenceSync {
     }
   }
 
+  // One hand's weapon of a puppet, every frame.
+  private func HandTick(heard: ref<TandemHeardPuppet>, body: ref<GameObject>, left: Bool, now: Float) -> Void {
+    let hand = heard.Hand(left);
+    // A charge no longer said (its end lost, or the player gone quiet).
+    if hand.charge >= 1 && hand.charge <= 3 && now - hand.chargeAt > 1.2 {
+      TandemTracers.ShowCharge(hand, TandemPresenceSync.WeaponOf(body, left), 0, 0.0);
+      TandemNative.Log(s"charge: player \(heard.player)'s charge no longer said: ended on its puppet\(left ? ", left hand" : "")");
+    }
+    // A burst or a magazine emptied on automatic: the weapon's fire
+    // loop ends with the last shot, as the game ends an NPC's
+    // (AIWeapon.OnStopShooting).
+    if hand.firing && now - hand.shotAt > 0.3 {
+      hand.firing = false;
+      let weapon = TandemPresenceSync.WeaponOf(body, left);
+      if IsDefined(weapon) {
+        WeaponObject.TriggerWeaponEffects(weapon, gamedataFxAction.ExitShoot);
+      }
+    }
+  }
+
   public static func WeaponOf(body: ref<GameObject>, left: Bool) -> ref<WeaponObject> {
     let slot = left ? t"AttachmentSlots.WeaponLeft" : t"AttachmentSlots.WeaponRight";
     return GameInstance.GetTransactionSystem(body.GetGame()).GetItemInSlot(body, slot) as WeaponObject;
@@ -460,11 +508,14 @@ public class TandemPresenceSync {
       return;
     }
     if effect == 15 || effect == 16 || effect == 17 {
-      heard.shotAt = now;
-      heard.firing = true;
-      heard.firingLeft = left;
+      let hand = heard.Hand(left);
+      hand.shotAt = now;
+      hand.firing = true;
       heard.sounds += 1;
       this.Once(n"shot", s"audio: player \(player) shot (the weapon's own shoot effects and its Shoot event)");
+      if left {
+        this.Once(n"shotLeft", s"audio: player \(player) shot with its left hand's weapon (its own shoot effects and its Shoot event)");
+      }
     } else if effect == 200 || effect == 201 {
       // The swing's effort, as the game voices V's own (MeleeAttackGenericEvents).
       this.Voice(heard, body, n"meleeAttack", "swing");
@@ -775,16 +826,25 @@ public class TandemPresenceSync {
       if IsDefined(body) && !TandemVisibility.IsHidden(this.m_game, cue.player) {
         let heard = this.Known(cue.player);
         let at = new Vector4(cue.x, cue.y, cue.z, 1.0);
-        // A charge's arg is its step, every other's kTrace* (1: the left hand).
-        let weapon = TandemPresenceSync.WeaponOf(body, cue.kind != 4 && (cue.arg & 1) != 0);
+        // The hand: a charge's is its `y` (its arg is its step:
+        // proto::kChargeLeftHand), every other's in its kTrace* (1).
+        let left = cue.kind == 4 ? cue.y > 0.5 : (cue.arg & 1) != 0;
+        let hand = heard.Hand(left);
+        let weapon = TandemPresenceSync.WeaponOf(body, left);
         if cue.kind == 1 {
           if IsDefined(weapon) && weapon.IsAttached() {
             let drawn = this.m_tracerMode != 2 && this.Bullet(body, weapon, at, now);
             let trail = this.m_tracerMode != 1 && TandemTracers.Trail(weapon, TandemTracers.Muzzle(weapon), at, false);
-            heard.traceEnd = at;
-            heard.traceAt = now;
+            hand.traceEnd = at;
+            hand.traceAt = now;
             if trail {
               heard.trails += 1;
+            }
+            if (drawn || trail) && left {
+              heard.leftTraces += 1;
+              if heard.leftTraces == 1 || heard.leftTraces % 20 == 0 {
+                TandemNative.Log(s"bullet: player \(cue.player)'s left hand's shot \(heard.leftTraces) drawn from its puppet's left weapon (\(TDBID.ToStringDEBUG(ItemID.GetTDBID(weapon.GetItemID()))))");
+              }
             }
             if drawn || trail {
               heard.traces += 1;
@@ -794,10 +854,11 @@ public class TandemPresenceSync {
             }
           }
         } else if cue.kind == 3 {
-          // A ricochet: on from the last shot's end, if it is that shot's.
-          if IsDefined(weapon) && now - heard.traceAt < 1.0 && now >= heard.traceAt {
-            let trail = TandemTracers.Trail(weapon, heard.traceEnd, at, true);
-            heard.traceEnd = at;
+          // A ricochet: on from that hand's last shot's end, if it is that
+          // shot's.
+          if IsDefined(weapon) && now - hand.traceAt < 1.0 && now >= hand.traceAt {
+            let trail = TandemTracers.Trail(weapon, hand.traceEnd, at, true);
+            hand.traceEnd = at;
             if trail {
               heard.ricochets += 1;
               if heard.ricochets == 1 || heard.ricochets % 20 == 0 {
@@ -812,20 +873,21 @@ public class TandemPresenceSync {
             this.Once(n"lateRicochet", s"bullet: player \(cue.player)'s ricochet came with no shot of theirs just before: not drawn");
           }
         } else if cue.kind == 4 {
-          let was = heard.charge;
-          TandemTracers.ShowCharge(heard, weapon, cue.arg, cue.x);
+          let was = hand.charge;
+          let side = left ? ", left hand" : "";
+          TandemTracers.ShowCharge(hand, weapon, cue.arg, cue.x);
           if cue.arg != was {
             if cue.arg >= 1 && cue.arg <= 3 && (was < 1 || was > 3) {
               heard.charges += 1;
-              TandemNative.Log(s"charge: player \(cue.player)'s puppet charges its weapon (\(heard.charges) so far; the weapon's charge effects: \(IsDefined(weapon)))");
+              TandemNative.Log(s"charge: player \(cue.player)'s puppet charges its weapon (\(heard.charges) so far; the weapon's charge effects: \(IsDefined(weapon)))\(side)");
             } else if cue.arg == 3 {
-              TandemNative.Log(s"charge: player \(cue.player)'s weapon fully charged");
+              TandemNative.Log(s"charge: player \(cue.player)'s weapon fully charged\(side)");
             } else if cue.arg == 0 || cue.arg == 4 {
               let how = cue.arg == 4 ? "discharged" : "released";
-              TandemNative.Log(s"charge: player \(cue.player)'s charge ended (\(how))");
+              TandemNative.Log(s"charge: player \(cue.player)'s charge ended (\(how))\(side)");
             }
           }
-          heard.chargeAt = now;
+          hand.chargeAt = now;
         } else if cue.kind == 2 {
           if IsDefined(weapon) {
             // The weapon's own impact effects, as its hit handler plays
@@ -983,30 +1045,33 @@ public class TandemPresenceSync {
         let drawn = IsDefined(weapon) && TandemTracers.Trail(weapon, TandemTracers.Muzzle(weapon), at, false);
         TandemNative.Log(s"presence: trail from player \(player)'s puppet to (\(at.X) \(at.Y) \(at.Z)): \(drawn)");
       }
-    } else if Equals(command, "charge on") || Equals(command, "charge full") || Equals(command, "charge off") {
+    } else if StrBeginsWith(command, "charge on") || StrBeginsWith(command, "charge full") || StrBeginsWith(command, "charge off") {
       // Every puppet's weapon charging, fully charged, or let go (held an
-      // hour: no cue ends it).
+      // hour: no cue ends it); "... left": its left hand's.
       let step = 0;
-      if Equals(command, "charge on") {
+      if StrBeginsWith(command, "charge on") {
         step = 1;
-      } else if Equals(command, "charge full") {
+      } else if StrBeginsWith(command, "charge full") {
         step = 3;
       }
+      let left = StrContains(command, " left");
       for player in system.PuppetPlayers() {
         let body = system.PuppetOf(player);
         let heard = this.Known(player);
-        let weapon = IsDefined(body) ? TandemPresenceSync.WeaponOf(body, false) : null;
-        TandemTracers.ShowCharge(heard, weapon, step, step == 3 ? 1.0 : 0.4);
-        heard.chargeAt = this.m_last + 3600.0;
+        let hand = heard.Hand(left);
+        let weapon = IsDefined(body) ? TandemPresenceSync.WeaponOf(body, left) : null;
+        TandemTracers.ShowCharge(hand, weapon, step, step == 3 ? 1.0 : 0.4);
+        hand.chargeAt = this.m_last + 3600.0;
         TandemNative.Log(s"presence: \(command) on player \(player)'s puppet (a weapon: \(IsDefined(weapon)))");
       }
-    } else if Equals(command, "bullet") {
-      // A drawn bullet from every puppet at what we look at.
+    } else if Equals(command, "bullet") || Equals(command, "bullet left") {
+      // A drawn bullet from every puppet (its left hand's weapon: "bullet
+      // left") at what we look at.
       let ours = GetPlayer(this.m_game);
       let at = GameInstance.GetTargetingSystem(this.m_game).GetLookAtPosition(ours, true, true);
       for player in system.PuppetPlayers() {
         let body = system.PuppetOf(player);
-        let weapon = IsDefined(body) ? TandemPresenceSync.WeaponOf(body, false) : null;
+        let weapon = IsDefined(body) ? TandemPresenceSync.WeaponOf(body, Equals(command, "bullet left")) : null;
         let drawn = IsDefined(weapon) && this.Bullet(body, weapon, at, this.m_last);
         TandemNative.Log(s"presence: bullet from player \(player)'s puppet to (\(at.X) \(at.Y) \(at.Z)): \(drawn)");
       }
@@ -1023,14 +1088,14 @@ public class TandemPresenceSync {
         this.m_status.Command(StrAfterFirst(command, "status "));
       }
     } else {
-      TandemNative.Log(s"presence: unknown command '\(command)' (report, steps auto|on|off, swim both|fx|sound, vo NAME, sound NAME, fx NAME, flinch, bullet, trail, tracer both|bullet|trail, charge on|full|off, hud ..., react ..., status ...)");
+      TandemNative.Log(s"presence: unknown command '\(command)' (report, steps auto|on|off, swim both|fx|sound, vo NAME, sound NAME, fx NAME, flinch, bullet [left], trail, tracer both|bullet|trail, charge on|full|off [left], hud ..., react ..., status ...)");
     }
   }
 
   private func Report(system: ref<TandemSystem>) -> Void {
     TandemNative.Log(s"presence: our health \(Cast<Int32>(this.m_health * 100.0)) %, menu \(this.m_menu), photo mode \(this.m_photo); steps mode \(this.m_stepsMode), swim mode \(this.m_swimMode), tracer mode \(this.m_tracerMode); drawn bullets' hits dropped \(this.m_dropped)");
     for heard in this.m_heard {
-      TandemNative.Log(s"presence: player \(heard.player): health \(Cast<Int32>(TandemPresence.Health(heard.player) * 100.0)) %, flags \(TandemPresence.Flags(heard.player)); footsteps ours \(heard.steps), its animation's \(heard.graphSteps); other sounds \(heard.sounds); bullets drawn \(heard.traces) (trails \(heard.trails), ricochets \(heard.ricochets)); charges \(heard.charges); flinches \(heard.flinches); water \(heard.water), strokes \(heard.strokes)");
+      TandemNative.Log(s"presence: player \(heard.player): health \(Cast<Int32>(TandemPresence.Health(heard.player) * 100.0)) %, flags \(TandemPresence.Flags(heard.player)); footsteps ours \(heard.steps), its animation's \(heard.graphSteps); other sounds \(heard.sounds); bullets drawn \(heard.traces) (trails \(heard.trails), ricochets \(heard.ricochets)); charges \(heard.charges); left hand's bullets \(heard.leftTraces); flinches \(heard.flinches); water \(heard.water), strokes \(heard.strokes)");
     }
     if IsDefined(this.m_hud) {
       this.m_hud.Report();

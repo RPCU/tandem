@@ -298,7 +298,7 @@ plugin") and its open problems.
 - `smoothing.md`: the host clock, interpolation delay, extrapolation, teleports, movement flags and puppet placement, rates. For anything that draws a remote V, NPC or vehicle.
 - `netcode.md`: bandwidth (traffic counters, the 64 kbit/s budget and its table, compact wire forms, relevance and still rates, coalescing), smoothness metrics on shaped links, lag-compensated reach, frame-cost profiling (`cmd perf`), log levels, large reliable messages and outages. For anything that sends at a rate, draws remote motion, or logs.
 - `consistency.md`: digests, resync, idempotent application, epochs, the audit of every synced state with its guard, unplanned disconnects. For any new or changed state message.
-- `players.md`: body poses, weapons, looks, player markers; open: linking up, every way a V moves, cyberware and perks.
+- `players.md`: body poses, weapons, dual wielding, looks, player markers; open: linking up, every way a V moves, cyberware and perks.
 - `vehicles.md`: driven vehicles, seats, the radio, a car's custom paint; open: getting in and out, combat in vehicles.
 - `transit.md`: rides a game runs (cabs, AVs, quest vehicles), the NCART metro.
 - `traffic.md`: traffic, parked cars and wrecks shared by the owner of their area (untested in game): the budget, collisions, a car a player takes, occupants, explosions; who owns an area (`AreaOwner`); several owners (a guest's street), hand-overs when players meet and part.

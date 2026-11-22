@@ -28,6 +28,8 @@ public class TandemPuppet {
   public let askedRight: TweakDBID;
   public let askedLeft: TweakDBID;
   public let armCheckAt: Float;
+  // The two make a pair the game dual wields (TandemWeapons.IsPair).
+  public let dual: Bool;
   // Asks refused in a row (the body not there yet): asked again sooner.
   public let armRefused: Int32;
   // Vehicles: the seats received for this player that the puppet sits in;
@@ -3599,6 +3601,15 @@ public class TandemSystem extends ScriptableSystem {
     puppet.armRefused = ok ? 0 : puppet.armRefused + 1;
     puppet.armCheckAt = this.Now() + (ok ? 3.0 : 0.5);
     TandemNative.Log(s"player \(puppet.player): holds \(TDBID.ToStringDEBUG(right)) / \(TDBID.ToStringDEBUG(left)) (\(ok))");
+    // Two weapons the game pairs: the body and the weapons animate as a
+    // dual wielding V's (Weapons.reds), from the Held alone, so a late
+    // joiner's puppet and one built again get it with their items.
+    let dual = TandemWeapons.IsPair(right, left);
+    if NotEquals(dual, puppet.dual) {
+      TandemNative.Log(s"player \(puppet.player): \(dual ? "dual wields" : "no longer dual wields") (the body's and the weapons' animation wrappers set)");
+    }
+    puppet.dual = dual;
+    TandemWeapons.DualWield(entity, dual);
   }
 
   // 3 s after an ask: a hand without what it was asked for is asked again.
@@ -3620,6 +3631,11 @@ public class TandemSystem extends ScriptableSystem {
         puppet.armCheckAt = 0.0;
         puppet.armRefused = 0;
       }
+    } else if puppet.dual {
+      // Both are in its hands: the weapons' wrappers once more, for the one
+      // that landed last (the game's own refresh came with each).
+      TandemWeapons.DualWield(entity, true);
+      TandemNative.Log(s"player \(puppet.player): dual wielding, a weapon in each hand (\(TDBID.ToStringDEBUG(right)) / \(TDBID.ToStringDEBUG(left)))");
     }
   }
 

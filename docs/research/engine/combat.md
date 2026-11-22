@@ -757,3 +757,96 @@ owner)`, `:53063`), set `EffectSharedData.enable` and `.entity`, and
   scripts (its camera curve `Sandevistan` and a Razer Chroma animation,
   `:524139-524146`; its look is `SandevistanPlayerBuff`'s, applied by the
   cyberware); Berserk plays `slow` (`:224030`). [2.5-untested]
+
+### 13.151 Dual wielding (akimbo): two weapons, two state machines, what tells them apart (2026-11-22, 2.50 scripts read, not run in game)
+
+Source: the game's own 2.50 bundle decompiled (`tools/scripts-decompile.sh`,
+`~/.cache/tandem/ref/gamescripts/game/final.reds`; lines below are that
+file's, `:N`). The public dump (`vanilla/final.reds`) predates patch 2.4
+and has none of it but the NPC record field `DualWieldShootingStyle`.
+Everything here is [2.5-untested]: read, compiled against (`task
+scripts:check`), never run.
+
+- **What can be paired.** `gameItemData.CanDualWield(owner)` (`:38607`):
+  the item has the tag `DualWield` and the owner bought the perk
+  `gamedataNewPerkType.Cool_Central_Milestone_2`; an item also tagged
+  `QuestPreventDualWield` needs its record's `QuestFactPreventDualWield`
+  fact above 0. The tags have names in scripts
+  (`RPGManager.GetDualWieldWeaponTag`, `GetQuestPreventDualWieldWeaponTag`,
+  `:59435`); `WeaponObject.WeaponHasTag` reads the weapon record's tags
+  (`:59084`). Which records carry `DualWield` is TweakDB's (not read here:
+  the patch notes say pistols and revolvers).
+- **Where the second weapon lives.** The weapon equipment area has six
+  slots: 0-2 the right hand's, 3-5 the left's, paired by
+  `EquipmentSystemPlayerData.GetOppositeWeaponSlotIndex` (0↔3, 1↔4, 2↔5;
+  `IsLeftWeaponSlotIndex`, `:87204-87229`). `EquipWeapon` puts a pairable
+  weapon in the slot opposite an active pairable one (`:84646`). In the
+  hands: `AttachmentSlots.WeaponRight` and `AttachmentSlots.WeaponLeft`
+  (`GameObject.GetRightActiveWeapon`, `GetLeftActiveWeapon`, `:12210`); the
+  left placement is the item record's second `PlacementSlots` entry
+  (`EquipmentSystem.GetPlacementSlot(item, isLeftHandWeapon)`, `:55756`).
+  The arm launcher also sits in `WeaponLeft` (`LeftHandCyberware`
+  transitions' `GetLeftHandWeaponObject`, `:282676`): a left item is not
+  always a second gun.
+- **The game's own test of "two weapons in hand".**
+  `GameObject.GetDualWieldWeaponNames` (`:12217`, telemetry): both slots
+  hold a `WeaponObject`, not the same one, both `WeaponHasTag(n"DualWield")`.
+  `DefaultTransition.HasDualWeaponEquipped` (`:235131`): right and left both
+  equipped. `GameObject.IsDualWielding(object)` (`:12230`) reads the
+  `PlayerStateMachine` blackboard's `IsDualWielding` (a Bool, 2.50 only),
+  which the left hand's equipment states write (`EquipCycleInitEvents`,
+  `:539003`; `UnequippedEvents`, `:537813`, `:537825`): a player's state machine only, nothing a
+  puppet NPC has.
+- **Equipping.** `EquipmentSystemPlayerData.RefreshCurrentItems`
+  (`:84919`) sends the equipment state machine a request per hand
+  (`SendPSMWeaponManipulationRequest`, instances `RightHand` and
+  `LeftHand`, `:87484`), of type `EquipmentManipulationRequestType.DualEquip`
+  (3) when both are valid. The upper body state machine has a `dualWield`
+  state (`DualWieldDecisions` / `DualWieldEvents`, `:542103-542161`:
+  `PlayerStateMachine.UpperBody` = 7, `gamePSMUpperBodyStates.DualWield`).
+- **Animation switches.** On the body: the animation wrapper `dual_wield`
+  (`AnimationControllerComponent.SetAnimWrapperWeight(owner, n"dual_wield",
+  1.0)`, with the blackboard flag, `:539004`; 0 on unequip, `:537814`), the
+  equip event's `weaponEquipAnimFeature.dualWield` and
+  `AnimFeature_LeftHandAnimation.lockLeftHandAnimation = true` (`:528411-528425`).
+  On the weapons: `AnimationControllerComponent.RefreshDualWieldAnimWrapperWeight(owner)`
+  (`:57750`) sets `RightHand` 1 / `LeftHand` 0 / `dualWield` 1 on the right
+  weapon and `LeftHand` 1 / `RightHand` 0 / `dualWield` 1 on the left when
+  both are held, all 0 otherwise; **`ScriptedPuppet` calls it from
+  `OnItemAddedToSlot`, `OnItemRemovedFromSlot` and
+  `OnItemVisualsAddedToSlot`** (`:23422-23464`), so an NPC body given two
+  weapons gets the weapons' wrappers without us. While dual wielding the
+  aim feature is not pushed to the weapon (`:543920`) and the zoom is the
+  stat `DualWieldZoomLevel` (`:50191`).
+- **One weapon state machine per weapon.** A `WeaponTransition`'s
+  `scriptInterface.owner` is its weapon (`GetWeaponObject`, `:285729`); its
+  instance is named `WeaponRight` or `WeaponLeft`
+  (`IsRightWeaponLogic` / `IsLeftWeaponLogic`:
+  `stateMachineInstanceData.referenceName`, `:285910`). So
+  `ShootEvents.OnEnter`, `ReloadEvents.OnEnter/OnExit`, `QuickMeleeEvents`,
+  the charge states and their parameters (`RightShootingSequence.*` /
+  `LeftShootingSequence.*`, `:285429`…) all run per hand, and each weapon
+  has its own shared blackboard (`ChargeStep`). The animation events are
+  the hand's: `RightShoot` / `LeftShoot` (`:549525`), `RightReload` /
+  `LeftReload`, `EndRightReload` / `EndLeftReload`, `reload_mask` 0 / 1
+  (`:548804-548809`), `RightCycleRound` / `LeftCycleRound`.
+- **Which hand fires.** A `Shoot` state machine writes
+  `PlayerStateMachine.ShootState` (`gamePSMShootStates`: Idle 0,
+  RightWeapon 1, LeftWeapon 2, BothWeapons 3, the Valentinos' frenzy 4-6;
+  `RightWeaponEvents`, `LeftWeaponEvents`, `:522592`, `:522720`); a weapon's
+  machine fires only when the state names it (`WeaponTransition.ShouldShoot`,
+  `:285644`). Both read the one `RangedAttack` input.
+- **Per-hand events elsewhere.** `ForceResetAmmoEvent.SetIsLeftHandWeapon`
+  (`ReloadWeaponEffector` queues one per hand, `:305051`);
+  `WeaponEquipEvent.isLeftWeapon` (`:528420`); telemetry's
+  `LogWeaponAttackPerformed(weapon, leftHandWeapon, rightHandWeapon)`.
+- **NPCs had two weapons before.** `AISubActionShootWithWeapon_Record.DualWieldShootingStyle`
+  (`Sequence`: the weapons fire in turn, `:417661`) is in the older dump
+  too; `ScriptedPuppet.GetWeaponLeft` exists for it.
+
+What tandem does with it: `docs/architecture/players.md`, "Dual wielding".
+To check in game: that `AddItemToSlot(puppet, WeaponLeft, …)` takes a
+pistol on the puppet's body (its record's slots are Panam's), that the left
+weapon sits right in the hand, that the `dual_wield` wrapper changes
+anything on a body whose pose is streamed, and which records carry
+`DualWield`.

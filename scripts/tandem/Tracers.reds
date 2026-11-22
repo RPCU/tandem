@@ -103,7 +103,9 @@ public abstract class TandemTracers {
   // charged when full; their end, discharge_tpp when let go too early) and
   // the weapon's own glow, its "charge" effect at chargeValue
   // (WeaponObject.OnUpdateWeaponCharge, final.reds:55087).
-  public static func ShowCharge(heard: ref<TandemHeardPuppet>, weapon: ref<WeaponObject>, step: Int32, level: Float) -> Void {
+  // `heard`: that hand of the puppet (each weapon of a dual wielding V
+  // charges on its own).
+  public static func ShowCharge(heard: ref<TandemHeardHand>, weapon: ref<WeaponObject>, step: Int32, level: Float) -> Void {
     let was = heard.charge;
     heard.charge = step;
     if !IsDefined(weapon) {
