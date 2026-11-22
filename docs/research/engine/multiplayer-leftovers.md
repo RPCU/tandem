@@ -37,6 +37,33 @@ vtables from the exe, values read live with `tools/re/mem.py` on anya.
   `SetInput…ToReplicate`, `PushEventToReplicate` apply locally, then
   call these no-op natives, so their call sites remain the catalogue of
   animation-relevant state (`coop-npcs-combat.md` §1.4). [2.5-verified]
+- **What those call sites carry, and what they do not** (2.50 scripts
+  read 2026-11-22, `final.reds` line numbers; 130 call sites in 43
+  classes). On an NPC: each AI action's own animation feature
+  (`TweakAIActionAbstract.SendAnimData` 302068, on the owner and its
+  weapons; `weaponOverride` 302365), `CoverStance`
+  (`AISubActionCover_Record_Implementation` 505058), `NonCombatAim`
+  (`AIAlertedStateDelegate` 451751), item handling (`AIActionHelper`
+  170160), equip, unequip and reload sub-actions, the shot events
+  (`AIWeapon` 173342–173345: `Shoot`, `Overheat`), hit, pain and death
+  reactions (`HitReactionComponent`, `AIHitReactionTask`,
+  `AIDeathReactionsTask`, `PainReactionTask`), `FacialReaction`,
+  `CrowdRunningAway` and `Undead` (`ReactionManagerComponent`
+  144649–147529). The rest is devices and vehicles (`VehicleComponent`
+  20, `SensorDevice` 16, `SecurityTurret` 7). **None is in
+  `NPCStatesComponent`**: the high-level, upper-body and stance states
+  go through the plain `AnimationControllerComponent.ApplyFeature`
+  (`UpdateHighLevelState` 168179, `UpdateUpperBodyState` 168458,
+  `UpdateStanceState` 168843) and the anim wrappers through
+  `SetAnimWrapperWeightOnOwnerAndItems` (168205). So wrapping the
+  helpers sees none of what `NpcAnims.reds` polls (those three states,
+  the weapon in hand, the top hostile target, the workspot: the last
+  three are no animation input at all) and cannot replace that poll; it
+  would add streams the poll cannot see (an action's animation, cover,
+  reload), each an `AnimFeature` subclass to serialise in a new message.
+  The states' own event is `NPCStatesComponent.ChangeHighLevelState` /
+  `ChangeUpperBodyState` / `ChangeStanceState` (168077–168123, private
+  final, a per-entity component: a wrap may only queue). [2.5-untested]
 - Stubs: `gameCpoPickableItem.EquipItem` (`0x142e21fd4`) reads its
   argument and returns. `cpPlayerSystem.IsCPOControlSchemeForced`
   (`0x14101b820`) returns a global byte (`0x143bc43a0`).
@@ -187,19 +214,20 @@ Physics/InputHandler/Inventory/Stats/…Component`. [2.5-untested]
 
 ## What the leftovers could solve (ranked, 2026-11-21)
 
-| #   | Leftover                                                                                                  | Could solve                                                                                                                                                   | Feasibility                                                                                                                                                                                     | Risk                                                                        | First experiment in game                                                                                                                                    |
-| --- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Threat weights keyed on `IsPlayerControlled()` (§13.123)                                                  | Host NPCs pick a guest's puppet as a player: 1.0/2.0 instead of 0.01; `BlockTargetingPlayer` applies to it                                                    | high (script `@wrapMethod` of `AIActionTarget.RegularThreatCalculation`, `UpdateThreatsValue`, Madness/Boss: raise `threatValue` when `threat` is a tandem puppet; reads only, job-thread safe) | low                                                                         | host + mock guest, two hostiles nearer the puppet than V: log each NPC's top hostile threat before/after the wrap                                           |
-| 2   | The player-controlled flag itself, `+0x1fc` bit 4 (§13.121), set on guest puppets                         | All 11 script readers at once (security areas, breach detection, kill attribution) and the native `NoInstigatorIfPlayerControlled` filter                     | medium (plugin byte write behind a layout check: V's bit set, NPCs' clear)                                                                                                                      | medium-high: natives may expect `playerSocket` (`+0x1f0`) set with the flag | read-only first: `tools/re` the readers of `+0x1fc`; then one puppet, `game.sh launches 6`, a combat and a security-area scenario, `game.sh bt` on a freeze |
-| 3   | Script side of the replication helpers (§13.120: natives dead, scripts alive)                             | Animations of NPCs: the call sites of `ApplyFeatureToReplicate` / `SetInput…ToReplicate` / `PushEventToReplicate` are the exact animation state a proxy needs | high (already used for `PushEventToReplicate`)                                                                                                                                                  | low                                                                         | count call sites per class; wrap the globals on the host, log name/value per NPC for 60 s of a fight                                                        |
-| 4   | `RegisterRemotePlayerMappin` / `CPO_RemotePlayerVariant`                                                  | Player markers                                                                                                                                                | done                                                                                                                                                                                            | -                                                                           | -                                                                                                                                                           |
-| 5   | Per-owner scriptable systems (`EquipmentSystem`, `PlayerDevelopmentSystem`, §13.123)                      | Vanilla equipment visuals / stats keyed by owner for a guest body                                                                                             | low                                                                                                                                                                                             | high: both persistent (save pollution); needs a `PlayerPuppet`              | none until a PlayerPuppet body is wanted                                                                                                                    |
-| 6   | `PlayerPuppet`-class guest body (`IsPlayer()` true)                                                       | Every `IsPlayer()` check (targeting, aggro, devices)                                                                                                          | low: NCO froze it on 2.31 (`puppets.md`); UI systems retarget to the last attached player                                                                                                       | high                                                                        | read-only: list `IsPlayer()` sites that matter; no spawn yet                                                                                                |
-| 7   | `Muppet` class (§13.124)                                                                                  | `IsPlayer()` true without `PlayerPuppet`'s systems; device triggers                                                                                           | low: no template known                                                                                                                                                                          | medium                                                                      | list the archives for an `.ent` with `gameMuppet*` components                                                                                               |
-| 8   | cpPlayerSystem slot `0x1c0` add player, peer 1 (§13.122)                                                  | A real second player                                                                                                                                          | very low: the SP manager maps every peer to V's `gamePlayer`                                                                                                                                    | very high (control taken from V)                                            | none; stays read-only                                                                                                                                       |
-| 9   | `entEntity+0x155` peer id = 1 on puppets                                                                  | `IsControlledByAnyPeer` (2 script users)                                                                                                                      | medium                                                                                                                                                                                          | low                                                                         | not worth it alone                                                                                                                                          |
-| 10  | Device `GetServerState`/`GetClientState`, `questMultiplayer*` nodes, `SelectedForMultiplayerChoiceDialog` | Devices, quests, scene choices                                                                                                                                | none: null / unused in mode 1                                                                                                                                                                   | -                                                                           | -                                                                                                                                                           |
-| 11  | Runtime mode byte to 2/3 (§13.120)                                                                        | Every MP branch                                                                                                                                               | no (the `IsMultiplayer()` warning stands; also feeds every native gate and device state)                                                                                                        | very high                                                                   | never                                                                                                                                                       |
+<!-- prettier-ignore -->
+| # | Leftover | Could solve | Feasibility | Risk | First experiment in game |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Threat weights keyed on `IsPlayerControlled()` (§13.123) | Host NPCs pick a guest's puppet as a player: 1.0/2.0 instead of 0.01; `BlockTargetingPlayer` applies to it | high (script `@wrapMethod` of `AIActionTarget.RegularThreatCalculation`, `UpdateThreatsValue`, Madness/Boss: raise `threatValue` when `threat` is a tandem puppet; reads only, job-thread safe) | low | host + mock guest, two hostiles nearer the puppet than V: log each NPC's top hostile threat before/after the wrap |
+| 2 | The player-controlled flag itself, `+0x1fc` bit 4 (§13.121), set on guest puppets | All 11 script readers at once (security areas, breach detection, kill attribution) and the native `NoInstigatorIfPlayerControlled` filter | medium (plugin byte write behind a layout check: V's bit set, NPCs' clear) | medium-high: natives may expect `playerSocket` (`+0x1f0`) set with the flag | read-only first: `tools/re` the readers of `+0x1fc`; then one puppet, `game.sh launches 6`, a combat and a security-area scenario, `game.sh bt` on a freeze |
+| 3 | Script side of the replication helpers (§13.120: natives dead, scripts alive) | Animations of NPCs the state poll cannot see (an AI action's animation feature, cover, reload, reactions: §13.120); not the high-level, upper-body and stance states `NpcAnims.reds` polls, which never go through the helpers | high (already used for `PushEventToReplicate`) | low | count call sites per class; wrap the globals on the host, log name/value per NPC for 60 s of a fight |
+| 4 | `RegisterRemotePlayerMappin` / `CPO_RemotePlayerVariant` | Player markers | done | - | - |
+| 5 | Per-owner scriptable systems (`EquipmentSystem`, `PlayerDevelopmentSystem`, §13.123) | Vanilla equipment visuals / stats keyed by owner for a guest body | low | high: both persistent (save pollution); needs a `PlayerPuppet` | none until a PlayerPuppet body is wanted |
+| 6 | `PlayerPuppet`-class guest body (`IsPlayer()` true) | Every `IsPlayer()` check (targeting, aggro, devices) | low: NCO froze it on 2.31 (`puppets.md`); UI systems retarget to the last attached player | high | read-only: list `IsPlayer()` sites that matter; no spawn yet |
+| 7 | `Muppet` class (§13.124) | `IsPlayer()` true without `PlayerPuppet`'s systems; device triggers | low: no template known | medium | list the archives for an `.ent` with `gameMuppet*` components |
+| 8 | cpPlayerSystem slot `0x1c0` add player, peer 1 (§13.122) | A real second player | very low: the SP manager maps every peer to V's `gamePlayer` | very high (control taken from V) | none; stays read-only |
+| 9 | `entEntity+0x155` peer id = 1 on puppets | `IsControlledByAnyPeer` (2 script users) | medium | low | not worth it alone |
+| 10 | Device `GetServerState`/`GetClientState`, `questMultiplayer*` nodes, `SelectedForMultiplayerChoiceDialog` | Devices, quests, scene choices | none: null / unused in mode 1 | - | - |
+| 11 | Runtime mode byte to 2/3 (§13.120) | Every MP branch | no (the `IsMultiplayer()` warning stands; also feeds every native gate and device state) | very high | never |
 
 ### Top three, next steps
 
@@ -217,10 +245,14 @@ Physics/InputHandler/Inventory/Stats/…Component`. [2.5-untested]
    pass: `tools/re/xref` the functions that test `+0x1fc & 4` and check
    which also read `+0x1f0`. Only then a plugin setter behind a startup
    check (V has the bit, a sample NPC does not; disable on mismatch).
-3. **Animation catalogue (row 3).** Count and classify the
-   `…ToReplicate` call sites (`final.reds`), wrap the five globals on the
-   host, stream name→value changes per owned NPC; feeds the NPC proxy
-   animation work without polling.
+3. **Animation catalogue (row 3).** Counted and classified
+   (§13.120, 2026-11-22): the helpers do not carry the states the 4 Hz
+   poll samples, so wrapping them does not remove it. Left: wrap
+   `NPCStatesComponent`'s three `Change…State` to queue the NPC and
+   sample it on the next tick (the poll kept, slower, under it); and, as
+   new streams with their own messages, the AI actions' animation
+   features, if a two-game fight shows proxies standing still while
+   their NPC strikes or takes cover.
 
 ### Verdict: the second player object
 
