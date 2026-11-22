@@ -32,6 +32,8 @@ public class TandemPuppet {
   public let dual: Bool;
   // Asks refused in a row (the body not there yet): asked again sooner.
   public let armRefused: Int32;
+  // (a puppet) how many times a taken ask was looked at again since.
+  public let armRechecks: Int32;
   // Vehicles: the seats received for this player that the puppet sits in;
   // the copy of their car while they drive it; where the puppet is mounted;
   // a seat waiting for its vehicle to exist.
@@ -3764,11 +3766,17 @@ public class TandemSystem extends ScriptableSystem {
       this.Rearm(puppet, true);
       // Once for an ask that was taken: a hand that cannot hold it waits
       // for the next change. A refused one is asked again, 8 times at most.
-      if refused == 0 || puppet.armRefused == 0 || puppet.armRefused > 8 {
+      // A taken ask is checked again after it, three times at most (the
+      // hands were still empty 3 s after the first: outcomes-offhand,
+      // 2026-11-22, and nothing looked again).
+      puppet.armRechecks += 1;
+      if puppet.armRefused > 8 || ((refused == 0 || puppet.armRefused == 0) && puppet.armRechecks > 3) {
         puppet.armCheckAt = 0.0;
         puppet.armRefused = 0;
+        puppet.armRechecks = 0;
       }
     } else if puppet.dual {
+      puppet.armRechecks = 0;
       // Both are in its hands: the weapons' wrappers once more, for the one
       // that landed last (the game's own refresh came with each).
       TandemWeapons.DualWield(entity, true);
