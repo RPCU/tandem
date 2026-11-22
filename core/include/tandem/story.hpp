@@ -37,8 +37,9 @@ public:
   // told of (the host's digest for one guest: its cast and props name only
   // those, as Endpoint::SceneFor sends them); empty: every one.
   std::uint32_t Digest(const std::function<bool(proto::NpcId)> &shown = {}) const;
-  // A player left: its StoryState and StoryGates go.
-  void Forget(proto::PlayerId player);
+  // A player left: its StoryState and StoryGates go; a call it answered is
+  // the host's (`host`) from now on, for a newcomer never heard of it.
+  void Forget(proto::PlayerId player, proto::PlayerId host);
   // What to send a newcomer, in order: the journal snapshot first. With the
   // host's clock, not the lines that are over (a bark of minutes ago names
   // an NPC the newcomer may never be told of).
@@ -118,6 +119,9 @@ public:
   // ringing, from that contact, and nobody answered yet.
   bool TryAnswer(proto::PlayerId player, std::uint8_t action, std::uint64_t contact);
   const std::optional<proto::PhoneCall> &Call() const { return m_call; }
+  // The player who answered left: the call is the host's (`host`) from now
+  // on (a joiner never heard of that player; nobody else may answer it).
+  void Forget(proto::PlayerId player, proto::PlayerId host);
 
 private:
   std::optional<proto::PhoneCall> m_call;

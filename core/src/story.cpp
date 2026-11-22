@@ -193,9 +193,11 @@ std::vector<proto::Message> Record::SceneCastNow() const {
   return out;
 }
 
-void Record::Forget(proto::PlayerId player) {
+void Record::Forget(proto::PlayerId player, proto::PlayerId host) {
   m_states.erase(player);
   m_gates.erase(player);
+  if (m_call && m_call->answeredBy == player)
+    m_call->answeredBy = host;
 }
 
 std::optional<proto::StoryGates> Record::GatesOf(proto::PlayerId player) const {
@@ -480,6 +482,11 @@ void CallArbiter::Update(const proto::PhoneCall &call) {
     m_call = call;
   if (call.answeredBy != proto::kNoPlayer)
     m_call->answeredBy = call.answeredBy;
+}
+
+void CallArbiter::Forget(proto::PlayerId player, proto::PlayerId host) {
+  if (m_call && m_call->answeredBy == player)
+    m_call->answeredBy = host;
 }
 
 bool CallArbiter::TryAnswer(proto::PlayerId player, std::uint8_t action, std::uint64_t contact) {

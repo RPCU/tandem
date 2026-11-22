@@ -743,6 +743,58 @@ TEST_CASE("a dropped bag is numbered by the host and lies in every game, late jo
   }));
 }
 
+// The soak's chaos guest, 2026-11-22: a joiner heard a bag of a player who
+// left before it came (ids.unknown-player; the referee watches this test).
+TEST_CASE("a bag outlives its dropper and its taker, and names neither to a later joiner") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+  a->DropWorldItem(
+      {.token = 3, .stacks = {{.record = 0xaa, .quantity = 1}, {.record = 0xbb, .quantity = 2}}});
+  LootSeen seen[3];
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    seen[i].Add(events);
+    return !seen[2].items.empty();
+  }));
+  const auto id = seen[2].items[0].id;
+  b->TakeWorldItem(id, 0);
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    seen[i].Add(events);
+    return !seen[0].taken.empty();
+  }));
+  // Both leave: the bag stays, its last stack still lying there.
+  a->Leave();
+  b->Leave();
+  REQUIRE(Pump({host.get(), a.get(), b.get()},
+               [&](std::size_t, const auto &) { return host->Players().size() == 1; }));
+  REQUIRE(host->WorldItems().contains(id));
+  CHECK(host->WorldItems().at(id).dropper == proto::kNoPlayer);
+
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  LootSeen atLate;
+  REQUIRE(Pump({host.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1)
+      atLate.Add(events);
+    return !atLate.items.empty();
+  }));
+  CHECK(atLate.items[0].dropper == proto::kNoPlayer);
+  // Its claim on the stack b took hears it was gone, not b's name.
+  late->TakeWorldItem(id, 0);
+  REQUIRE(Pump({host.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1)
+      atLate.Add(events);
+    return !atLate.taken.empty();
+  }));
+  CHECK(atLate.taken[0] == proto::WorldItemTaken{id, 0, proto::kNoPlayer});
+}
+
 TEST_CASE("the first to pick a stack up keeps it; a later claim hears who has it") {
   const auto port = NextPort();
   std::string error;

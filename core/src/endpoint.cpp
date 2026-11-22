@@ -934,6 +934,19 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
     return;
   const auto player = it->second;
   m_playerOfPeer.erase(it);
+  // What it held is free again for the others (the host's game lets go of
+  // the real NPC itself when the puppet goes); first, so that an NPC it ran
+  // goes to its heir unheld, and one that goes with it is released on the
+  // wire (sim-fuzz: an NPC it held and ran, dropped with it in silence, was
+  // still held by it in what the host had said: stuck.after-leave).
+  for (auto it = m_npcHolds.begin(); it != m_npcHolds.end();) {
+    if (it->second.player == player) {
+      Broadcast(proto::NpcHold{.npc = it->first});
+      it = m_npcHolds.erase(it);
+    } else {
+      ++it;
+    }
+  }
   // The NPCs it ran: to the players near them, or gone (regions).
   InheritTrafficOf(player, true, out);
   InheritNpcsOf(player, true, out);
@@ -948,16 +961,11 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   m_appearances.erase(player);
   m_held.erase(player);
   m_seats.erase(player);
-  // What it held is free again for the others (the host's game lets go of
-  // the real NPC itself when the puppet goes).
-  for (auto it = m_npcHolds.begin(); it != m_npcHolds.end();) {
-    if (it->second.player == player) {
-      Broadcast(proto::NpcHold{.npc = it->first});
-      it = m_npcHolds.erase(it);
-    } else {
-      ++it;
-    }
-  }
+  // Its bags stay in the world, nobody's: a joiner never heard of it
+  // (ids.unknown-player), and a player back under its id is a fresh game.
+  for (auto &[id, item] : m_worldItems)
+    if (item.dropper == player)
+      item.dropper = proto::kNoPlayer;
   m_radios.erase(player);
   m_stealth.erase(player);
   m_presences.erase(player);
@@ -972,7 +980,8 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
     Broadcast(proto::NpcSeat{.npc = it->first});
     it = m_npcSeats.erase(it);
   }
-  m_story.Forget(player);
+  m_story.Forget(player, m_you);
+  m_calls.Forget(player, m_you);
   // Its quest interactions with our game are void (what our game already
   // did stays done, as for a device); the objects are free for the others.
   m_interactReferee.Forget(player);
@@ -1709,7 +1718,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 m_holders.erase(id);
                 m_places.erase(id);
                 m_areaOwners.erase(id);
-                m_story.Forget(id);
+                m_story.Forget(id, m_host);
                 m_commsLinks.erase(id);
                 m_waypoints.erase(id);
                 ForgetStreams(id);
@@ -3808,7 +3817,9 @@ void Endpoint::ClaimWorldItem(proto::PlayerId player, proto::WorldItemId id, std
   }
   auto &takers = m_worldTakers[id];
   if (takers[stack] != proto::kNoPlayer) {
-    answer(takers[stack]); // someone was first
+    // Someone was first; one that left since is no name to a claimer who
+    // may never have heard of it: the stack was gone.
+    answer(m_players.contains(takers[stack]) ? takers[stack] : proto::kNoPlayer);
     // ...and the bag as it really is: the claimer's copy may have missed
     // more than this stack (a lost WorldItemTaken: a ghost bag).
     if (peer)

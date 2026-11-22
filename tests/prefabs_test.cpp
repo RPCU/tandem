@@ -174,7 +174,7 @@ TEST_CASE("the story record keeps the host's prefabs and every player's gates fo
   REQUIRE(joiner.size() == 2);
   CHECK(std::get<proto::WorldPrefabs>(joiner[0]).prefabs == std::vector<std::uint64_t>{kKonpeki});
   CHECK(std::get<proto::StoryGates>(joiner[1]).player == 2);
-  record.Forget(2);
+  record.Forget(2, 1);
   CHECK_FALSE(record.GatesOf(2).has_value());
   CHECK(record.Note(proto::WorldPrefabs{.player = 1}));
   CHECK_FALSE(record.PrefabsOn());

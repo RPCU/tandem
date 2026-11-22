@@ -83,7 +83,7 @@ TEST_CASE("the story record gives a joiner the journal as it is now") {
   // The call ends and the hub closes: nothing of them for the next joiner.
   record.Note(proto::PhoneCall{.contact = 9, .phase = 3});
   record.Note(proto::ChoiceHub{.hub = 5});
-  record.Forget(2);
+  record.Forget(2, 1);
   joiner = record.ForJoiner();
   CHECK(joiner.size() == 2);
 }
@@ -126,6 +126,22 @@ TEST_CASE("the first answer to a call wins") {
   calls.Update({.contact = 7, .phase = 1});
   CHECK(calls.TryAnswer(3, proto::kPhoneReject, 7));
   CHECK((calls.Call()->flags & proto::kCallRejected) != 0);
+  // Its answerer leaves: the call is the host's, answered still (a joiner
+  // never heard of player 3: sim-fuzz, ids.unknown-player).
+  calls.Forget(2, 1);
+  CHECK(calls.Call()->answeredBy == 3);
+  calls.Forget(3, 1);
+  CHECK(calls.Call()->answeredBy == 1);
+  CHECK_FALSE(calls.TryAnswer(4, proto::kPhoneAnswer, 7));
+}
+
+TEST_CASE("a joiner hears a call answered by one who left as the host's") {
+  story::Record record;
+  record.Note(proto::PhoneCall{.contact = 9, .phase = 2, .answeredBy = 2});
+  record.Forget(3, 1);
+  CHECK(std::get<proto::PhoneCall>(record.ForJoiner().at(0)).answeredBy == 2);
+  record.Forget(2, 1);
+  CHECK(std::get<proto::PhoneCall>(record.ForJoiner().at(0)).answeredBy == 1);
 }
 
 TEST_CASE("the story goes through the endpoints: journal, calls, cursors, rewards") {
