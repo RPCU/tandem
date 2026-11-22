@@ -12,6 +12,7 @@
 #include "posestream.hpp"
 #include "prefabs.hpp"
 #include "quests.hpp"
+#include "vehiclemove.hpp"
 #include "workspots.hpp"
 
 #include <RED4ext/RTTISystem.hpp>
@@ -197,6 +198,7 @@ void CheckAccess() {
   CheckQuests();
   CheckPrefabs();
   CheckWorkspots();
+  CheckVehicleMove();
   CheckPhysics();
   g_checked = true;
   const auto summary = AccessSummary();
