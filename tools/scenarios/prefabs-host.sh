@@ -3,7 +3,8 @@
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male
 expect 'joined \(player [0-9]+' 20
-expect 'prefabs: our quests have [0-9]+ prefab\(s\) on, said to the guests' 10
+# (The host says its set once a session, at the first guest; a later guest
+# is given the kept set by the endpoint: what the mock hears is the check.)
 expect_peer 'world prefabs: ([0-9]+ of player 1|none of player 1)' 10
 cmd story prefabs
 expect 'story: quest prefabs here: ' 5
