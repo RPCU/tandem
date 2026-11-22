@@ -14,5 +14,18 @@ namespace tandem::plugin::engine {
 // against an expired entity (docs/research/engine/re.md §13.98). Its state
 // for the startup line: "on", or "off (why)", the reason also logged.
 std::string InstallCrashGuards(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle);
+// At plugin load, on every platform: the guard of a dismemberment component
+// told of its entity's mask change after its own detach (re.md §13.142).
+// Only installed when the function's start is the one measured on 2.50; it
+// passes through until CheckDismembermentGuard (CheckAccess, the first
+// frame) has found the class's size. For the startup line: "hooked (…)" or
+// "off (why)".
+std::string InstallDismembermentGuard(const RED4ext::v1::Sdk *sdk,
+                                      RED4ext::v1::PluginHandle handle);
+void CheckDismembermentGuard();
+// Game thread, every frame: what the guards skipped on job threads, said
+// when it changed and at most every 600 frames
+// (`dismemberment guard: N detached notifications skipped`).
+void ReportCrashGuards();
 void RemoveCrashGuards(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle);
 } // namespace tandem::plugin::engine

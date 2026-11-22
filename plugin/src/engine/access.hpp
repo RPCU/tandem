@@ -36,6 +36,7 @@ inline constexpr std::string_view kPrefabs = "quest prefabs";
 inline constexpr std::string_view kWorkspots = "workspots";
 inline constexpr std::string_view kPhysics = "physics watch";
 inline constexpr std::string_view kTransformGuard = "transform guard";
+inline constexpr std::string_view kDismembermentGuard = "dismemberment guard";
 inline constexpr std::string_view kTrace = "anim trace";
 inline constexpr std::string_view kVehicleMove = "vehicle move";
 } // namespace feature

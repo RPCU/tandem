@@ -7,6 +7,12 @@
 // Raw code, so it is behind a byte check of the caller and the callee as
 // measured on 2.50: any difference (another patch, another mod's hook on the
 // same function) leaves it off, with the reason in the log.
+//
+// A second one, on every platform (§13.142): an entity being detached tells
+// its components that its mask changed, the dismemberment component among
+// them after its own detach, and that component reads through the pointer
+// its detach zeroed. The guard skips the notification of a detached
+// dismemberment component: there is no entry left for it to mark.
 
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
@@ -75,14 +81,59 @@ std::uintptr_t Detour(void *self, void *a2, void *a3, void *a4) {
   return g_original(self, a2, a3, a4);
 }
 
+// gameDismembermentComponent's slot +0x198 (0x14025302C on 2.50), "the
+// entity's mask changed": called by the entity for every component
+// (0x1403D1BF8), its return value unused. The component is 0xB0 bytes; +0xA8
+// is the dismemberment system's data, set when the component is initialized
+// (slot +0x170) and zeroed by its detach (slot +0x190, which gives the
+// component's entry back first) and by slot +0x178.
+constexpr std::uint32_t kDismembermentNotify = 2784304484;
+constexpr const char *kDismembermentClass = "gameDismembermentComponent";
+constexpr std::uint32_t kDismembermentSize = 0xB0;
+constexpr std::size_t kDismembermentData = 0xA8;
+// The function's start on 2.50, up to the read that faults: nothing in it
+// depends on where the game is loaded.
+constexpr std::array<std::uint8_t, 0x20> kNotifyStart{
+    0x48, 0x89, 0x5C, 0x24, 0x10,             // mov [rsp+0x10], rbx
+    0x57,                                     // push rdi
+    0x48, 0x83, 0xEC, 0x20,                   // sub rsp, 0x20
+    0x48, 0x8B, 0xB9, 0xA8, 0x00, 0x00, 0x00, // mov rdi, [rcx+0xA8]
+    0x8B, 0x99, 0x90, 0x00, 0x00, 0x00,       // mov ebx, [rcx+0x90]
+    0x48, 0x8D, 0x4C, 0x24, 0x30,             // lea rcx, [rsp+0x30]
+    0x48, 0x8B, 0x57, 0x68,                   // mov rdx, [rdi+0x68]: the fault
+};
+// Skips are said at most once per kReportFrames frames (game thread).
+constexpr std::uint32_t kReportFrames = 600;
+
+using Notify = void (*)(void *, std::uint16_t);
+Notify g_notifyOriginal = nullptr;
+void *g_notifyTarget = nullptr;
+// Set by the first frame's check (the class's size): until then the detour
+// only calls the engine.
+std::atomic_bool g_notifyArmed{false};
+std::atomic<std::uint64_t> g_notifySkipped{0};
+
+// On engine job threads, for every dismemberment component of an entity
+// whose mask changes: one read, one count. No lock, no allocation, no log.
+void NotifyDetour(void *self, std::uint16_t mask) {
+  if (g_notifyArmed.load(std::memory_order_relaxed) &&
+      !*reinterpret_cast<void *const *>(reinterpret_cast<const std::uint8_t *>(self) +
+                                        kDismembermentData)) {
+    g_notifySkipped.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  g_notifyOriginal(self, mask);
+}
+
 template <std::size_t N>
-bool Matches(const char *what, std::uintptr_t at, const std::array<std::uint8_t, N> &expected) {
+bool Matches(const char *guard, const char *what, std::uintptr_t at,
+             const std::array<std::uint8_t, N> &expected) {
   if (std::memcmp(reinterpret_cast<const void *>(at), expected.data(), N) == 0)
     return true;
   std::string seen;
   for (std::size_t i = 0; i < N; ++i)
     seen += std::format("{:02x}", reinterpret_cast<const std::uint8_t *>(at)[i]);
-  log::Error("transform guard: {} differs from 2.50 (exe+0x{:X}: {})", what,
+  log::Error("{}: {} differs from 2.50 (exe+0x{:X}: {})", guard, what,
              at - reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr)), seen);
   return false;
 }
@@ -112,9 +163,10 @@ std::string InstallCrashGuards(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginH
   if (!update || !job)
     return "off (not found)";
   // Every check, so the log names each difference at once.
-  bool ok = Matches("the update's start", update, kUpdateStart);
-  ok = Matches("the job's handle", job + kZeroAt, kZero) && ok;
-  ok = Matches("the job's call", job + kCallAt, kCall) && ok;
+  constexpr const char *guard = "transform guard";
+  bool ok = Matches(guard, "the update's start", update, kUpdateStart);
+  ok = Matches(guard, "the job's handle", job + kZeroAt, kZero) && ok;
+  ok = Matches(guard, "the job's call", job + kCallAt, kCall) && ok;
   if (ok) {
     std::int32_t rel = 0;
     std::memcpy(&rel, reinterpret_cast<const void *>(job + kCallAt + kCall.size()), sizeof rel);
@@ -140,7 +192,62 @@ std::string InstallCrashGuards(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginH
   return "on";
 }
 
+std::string InstallDismembermentGuard(const RED4ext::v1::Sdk *sdk,
+                                      RED4ext::v1::PluginHandle handle) {
+  const auto f = feature::kDismembermentGuard;
+  const auto notify =
+      FindAddress(f, "the dismemberment component's mask notification", kDismembermentNotify);
+  if (!notify)
+    return "off (not found)";
+  // Another game version, another patch or another mod's hook on it: off,
+  // rather than a hook on something else.
+  if (!Matches("dismemberment guard", "the notification's start", notify, kNotifyStart)) {
+    FeatureOff(f, "the dismemberment component's mask notification differs from 2.50");
+    return "off (code differs from 2.50)";
+  }
+  g_notifyTarget = reinterpret_cast<void *>(notify);
+  if (!sdk->hooking->Attach(handle, g_notifyTarget, reinterpret_cast<void *>(&NotifyDetour),
+                            reinterpret_cast<void **>(&g_notifyOriginal))) {
+    FeatureOff(f, "could not hook the dismemberment component's mask notification");
+    g_notifyTarget = nullptr;
+    return "off (hook refused)";
+  }
+  return "hooked (armed by the first frame's check)";
+}
+
+void CheckDismembermentGuard() {
+  // Off already, with its reason (the hash, the bytes, the hook).
+  if (!g_notifyTarget)
+    return;
+  if (!ClassSizeIs(feature::kDismembermentGuard, kDismembermentClass, kDismembermentSize))
+    return; // the detour stays a pass-through
+  g_notifyArmed.store(true, std::memory_order_relaxed);
+  FeatureOn(feature::kDismembermentGuard);
+  log::Info("dismemberment guard: on: a detached dismemberment component's mask notification "
+            "is skipped");
+}
+
+void ReportCrashGuards() {
+  static std::uint64_t s_said = 0;
+  static std::uint32_t s_frames = kReportFrames;
+  if (s_frames < kReportFrames)
+    ++s_frames;
+  const auto n = g_notifySkipped.load(std::memory_order_relaxed);
+  if (n == s_said || s_frames < kReportFrames)
+    return;
+  s_said = n;
+  s_frames = 0;
+  log::Warn("dismemberment guard: {} detached notifications skipped", n);
+}
+
 void RemoveCrashGuards(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle) {
+  if (g_notifyTarget) {
+    g_notifyArmed.store(false, std::memory_order_relaxed);
+    sdk->hooking->Detach(handle, g_notifyTarget);
+    g_notifyTarget = nullptr;
+    if (const auto n = g_notifySkipped.load())
+      log::Info("dismemberment guard: {} detached notifications skipped this run", n);
+  }
   if (!g_target)
     return;
   sdk->hooking->Detach(handle, g_target);
