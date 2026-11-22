@@ -19,3 +19,4 @@ expect_peer 'npc [0-9]+ animates: .*workspot 0x[0-9a-f]{6,}' 30
 cmd npc anims
 expect 'npc anims: [1-9][0-9]* sent, 0 followed'
 reject 'watchdog: game thread silent'
+reject 'poll caught a change the events missed: npc [0-9]+.* (high|upper|stance) [0-9]+ -> '
