@@ -13,6 +13,13 @@
 // them after its own detach, and that component reads through the pointer
 // its detach zeroed. The guard skips the notification of a detached
 // dismemberment component: there is no entry left for it to mark.
+//
+// A third, on every platform (§13.154): the SlideToSimple action's move
+// controller casts the entity its move component refers to into a gamePuppet
+// and asks whether that is the local player without checking the cast; an
+// entity that is not a puppet (an NPC proxy mounted in a vehicle copy) makes
+// it read through null. The guard answers "not the local player" for it, as
+// the original does for any other puppet, through the controller's base.
 
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
@@ -102,6 +109,59 @@ constexpr std::array<std::uint8_t, 0x20> kNotifyStart{
     0x48, 0x8D, 0x4C, 0x24, 0x30,             // lea rcx, [rsp+0x30]
     0x48, 0x8B, 0x57, 0x68,                   // mov rdx, [rdi+0x68]: the fault
 };
+// The SlideToSimple move controller's slot 15 (0x142C46940 on 2.50), "the
+// move component's reference entity is set": its base (0x1408AAD70) keeps the
+// entity's id; then the gamePuppet cast (0x1401BCA1C), unchecked, into "is it
+// the local player" (0x142AE4A04), whose read of +0xC0 faults on null.
+constexpr std::uint32_t kSlideSet = 2938119384;
+constexpr std::uint32_t kSlideBase = 1165500739;
+constexpr std::uint32_t kPuppetCast = 2632196524;
+// Its start on 2.50, the three calls included (relative: independent of
+// where the game is loaded); the first two must land on the two hashes'.
+constexpr std::array<std::uint8_t, 0x36> kSlideStart{
+    0x48, 0x89, 0x5C, 0x24, 0x08, // mov [rsp+8], rbx
+    0x48, 0x89, 0x74, 0x24, 0x10, // mov [rsp+0x10], rsi
+    0x57,                         // push rdi
+    0x48, 0x83, 0xEC, 0x30,       // sub rsp, 0x30
+    0x49, 0x8B, 0xD8,             // mov rbx, r8
+    0x48, 0x8B, 0xF1,             // mov rsi, rcx
+    0xE8, 0x16, 0x44, 0xC6, 0xFD, // call the base
+    0x40, 0x8A, 0xF8,             // mov dil, al
+    0x84, 0xC0,                   // test al, al
+    0x74, 0x29,                   // je
+    0x48, 0x8B, 0xD3,             // mov rdx, rbx
+    0x48, 0x8D, 0x4C, 0x24, 0x20, // lea rcx, [rsp+0x20]
+    0xE8, 0xAE, 0x60, 0x57, 0xFD, // call the gamePuppet cast
+    0x48, 0x8B, 0xC8,             // mov rcx, rax
+    0xE8, 0x8E, 0xE0, 0xE9, 0xFF, // call "is the local player"
+};
+constexpr std::size_t kSlideBaseCall = 0x15;
+constexpr std::size_t kSlideCastCall = 0x29;
+
+// A handle as the engine passes it: the instance first.
+struct AnyHandle {
+  RED4ext::ISerializable *instance;
+  void *refCount;
+};
+using SlideSet = bool (*)(void *, void *, AnyHandle *);
+SlideSet g_slideOriginal = nullptr;
+SlideSet g_slideBase = nullptr;
+void *g_slideTarget = nullptr;
+// Set by the first frame's check (gamePuppet's class): until then the
+// detour only calls the engine.
+std::atomic<const RED4ext::CClass *> g_puppetClass{nullptr};
+std::atomic<std::uint64_t> g_slideSkipped{0};
+
+// On engine job threads: two reads (the instance, its class), one count.
+bool SlideDetour(void *controller, void *moves, AnyHandle *entity) {
+  const auto *puppet = g_puppetClass.load(std::memory_order_relaxed);
+  if (puppet && (!entity || !entity->instance || !entity->instance->GetType()->IsA(puppet))) {
+    g_slideSkipped.fetch_add(1, std::memory_order_relaxed);
+    return g_slideBase(controller, moves, entity);
+  }
+  return g_slideOriginal(controller, moves, entity);
+}
+
 // Skips are said at most once per kReportFrames frames (game thread).
 constexpr std::uint32_t kReportFrames = 600;
 
@@ -215,6 +275,52 @@ std::string InstallDismembermentGuard(const RED4ext::v1::Sdk *sdk,
   return "hooked (armed by the first frame's check)";
 }
 
+std::string InstallSlideGuard(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle) {
+  const auto f = feature::kSlideGuard;
+  const auto set = FindAddress(f, "the slide controller's reference", kSlideSet);
+  const auto base = FindAddress(f, "the slide controller's base", kSlideBase);
+  const auto cast = FindAddress(f, "the gamePuppet cast", kPuppetCast);
+  if (!set || !base || !cast)
+    return "off (not found)";
+  bool ok = Matches("slide guard", "the slide controller's reference", set, kSlideStart);
+  const auto target = [&](std::size_t at) {
+    std::int32_t rel = 0;
+    std::memcpy(&rel, reinterpret_cast<const void *>(set + at + 1), sizeof rel);
+    return set + at + 5 + static_cast<std::uintptr_t>(static_cast<std::intptr_t>(rel));
+  };
+  if (ok && (target(kSlideBaseCall) != base || target(kSlideCastCall) != cast)) {
+    log::Error("slide guard: the slide controller's calls go elsewhere than 2.50's");
+    ok = false;
+  }
+  if (!ok) {
+    FeatureOff(f, "the slide controller's reference differs from 2.50");
+    return "off (code differs from 2.50)";
+  }
+  g_slideBase = reinterpret_cast<SlideSet>(base);
+  g_slideTarget = reinterpret_cast<void *>(set);
+  if (!sdk->hooking->Attach(handle, g_slideTarget, reinterpret_cast<void *>(&SlideDetour),
+                            reinterpret_cast<void **>(&g_slideOriginal))) {
+    FeatureOff(f, "could not hook the slide controller's reference");
+    g_slideTarget = nullptr;
+    return "off (hook refused)";
+  }
+  return "hooked (armed by the first frame's check)";
+}
+
+void CheckSlideGuard() {
+  if (!g_slideTarget)
+    return;
+  const auto *puppet = RED4ext::CRTTISystem::Get()->GetClass("gamePuppet");
+  if (!puppet) {
+    FeatureOff(feature::kSlideGuard, "no gamePuppet class");
+    return; // the detour stays a pass-through
+  }
+  g_puppetClass.store(puppet, std::memory_order_relaxed);
+  FeatureOn(feature::kSlideGuard);
+  log::Info("slide guard: on: a slide whose reference entity is not a puppet is not asked "
+            "whether it is the local player");
+}
+
 void CheckDismembermentGuard() {
   // Off already, with its reason (the hash, the bytes, the hook).
   if (!g_notifyTarget)
@@ -232,15 +338,28 @@ void ReportCrashGuards() {
   static std::uint32_t s_frames = kReportFrames;
   if (s_frames < kReportFrames)
     ++s_frames;
+  static std::uint64_t s_slideSaid = 0;
   const auto n = g_notifySkipped.load(std::memory_order_relaxed);
-  if (n == s_said || s_frames < kReportFrames)
+  const auto slides = g_slideSkipped.load(std::memory_order_relaxed);
+  if ((n == s_said && slides == s_slideSaid) || s_frames < kReportFrames)
     return;
-  s_said = n;
   s_frames = 0;
-  log::Warn("dismemberment guard: {} detached notifications skipped", n);
+  if (n != s_said)
+    log::Warn("dismemberment guard: {} detached notifications skipped", n);
+  if (slides != s_slideSaid)
+    log::Warn("slide guard: {} slides of a non-puppet reference answered by the base", slides);
+  s_said = n;
+  s_slideSaid = slides;
 }
 
 void RemoveCrashGuards(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle) {
+  if (g_slideTarget) {
+    g_puppetClass.store(nullptr, std::memory_order_relaxed);
+    sdk->hooking->Detach(handle, g_slideTarget);
+    g_slideTarget = nullptr;
+    if (const auto n = g_slideSkipped.load())
+      log::Info("slide guard: {} slides answered by the base this run", n);
+  }
   if (g_notifyTarget) {
     g_notifyArmed.store(false, std::memory_order_relaxed);
     sdk->hooking->Detach(handle, g_notifyTarget);

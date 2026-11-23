@@ -46,8 +46,8 @@ constexpr std::string_view kOrder[] = {
     feature::kLookKeys,           feature::kThirdPerson, feature::kPoseStream,
     feature::kQuestNodes,         feature::kQuestFreeze, feature::kPrefabs,
     feature::kWorkspots,          feature::kPhysics,     feature::kTransformGuard,
-    feature::kDismembermentGuard, feature::kTrace,       feature::kVehicleMove,
-    feature::kBodySlots,
+    feature::kDismembermentGuard, feature::kSlideGuard,  feature::kTrace,
+    feature::kVehicleMove,        feature::kBodySlots,
 };
 
 // Under g_lock: the entries in the summary's order.
@@ -222,6 +222,7 @@ void CheckAccess() {
   CheckVehicleMove();
   CheckPhysics();
   CheckDismembermentGuard();
+  CheckSlideGuard();
   CheckBodySlots();
   g_checked = true;
   const auto summary = AccessSummary();

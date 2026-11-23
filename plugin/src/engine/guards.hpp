@@ -23,6 +23,12 @@ std::string InstallCrashGuards(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginH
 std::string InstallDismembermentGuard(const RED4ext::v1::Sdk *sdk,
                                       RED4ext::v1::PluginHandle handle);
 void CheckDismembermentGuard();
+// At plugin load, on every platform: the guard of the SlideToSimple move
+// controller handed an entity that is not a puppet (engine/npcs.md
+// §13.154). A pass-through until CheckSlideGuard (the first frame) has
+// gamePuppet's class. For the startup line: "hooked (…)" or "off (why)".
+std::string InstallSlideGuard(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle);
+void CheckSlideGuard();
 // Game thread, every frame: what the guards skipped on job threads, said
 // when it changed and at most every 600 frames
 // (`dismemberment guard: N detached notifications skipped`).

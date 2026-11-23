@@ -122,6 +122,14 @@ public class TandemTraffic {
   private let m_popIn: Int32;
   private let m_popOut: Int32;
   private let m_popWaited: Int32;
+  // Our own removed this round (Remove: a few a round).
+  private let m_removedAt: Float;
+  private let m_removedNow: Int32;
+  // Proxy bodies asked for in this quarter second (MaySpawn).
+  private let m_spawnAt: Float;
+  private let m_spawnNow: Int32;
+  // (test: vehicle lamps sync off) no headlight read or set.
+  private let m_lampsOff: Bool;
   private let m_you: Uint32;
   // Vehicles that are a player's car now (ours too): never shared again.
   private let m_taken: array<EntityID>;
@@ -484,7 +492,7 @@ public class TandemTraffic {
       // wreck in both worlds): ours goes first, out of sight, and the
       // check below spawns the proxy then (two bodies in one place collide
       // and burn).
-      if !EntityID.IsDefined(car.body) && !this.OwnNear(at) {
+      if !EntityID.IsDefined(car.body) && !this.OwnNear(at) && this.MaySpawn() {
         car.body = TandemTraffic.SpawnProxy(car.record, car.appearance, at, turn);
       }
       TandemNative.Log(s"street: vehicle \(car.id) \(TDBID.ToStringDEBUG(car.record)) of player \(TandemStreet.RunBy(car.id)) (flags \(car.flags)) spawning at (\(event.x), \(event.y), \(event.z))");
@@ -507,6 +515,22 @@ public class TandemTraffic {
     spec.active = true;
     ArrayPush(spec.tags, n"Tandem.Traffic");
     return TandemEntities.Create(spec);
+  }
+
+  // A few proxy bodies asked for at a time: some seventy asked for in one
+  // tick (our V come into an area another game shares 96 vehicles of) took
+  // the game down there, twice (2026-11-23, 0xc0000005 at +0x22CA324, a lock
+  // taken through null under the spawns). Four a quarter second.
+  private func MaySpawn() -> Bool {
+    if this.m_now - this.m_spawnAt >= 0.25 || this.m_now < this.m_spawnAt {
+      this.m_spawnAt = this.m_now;
+      this.m_spawnNow = 0;
+    }
+    if this.m_spawnNow >= 4 {
+      return false;
+    }
+    this.m_spawnNow += 1;
+    return true;
   }
 
   // A vehicle of our own world we do not share stands within 5 m.
@@ -724,7 +748,7 @@ public class TandemTraffic {
       body.ToggleSiren(siren);
     }
     let lamps = (car.flags & 32) != 0 ? 2 : 1;
-    if lamps != car.lamps && !destroyed {
+    if lamps != car.lamps && !destroyed && !this.m_lampsOff {
       car.lamps = lamps;
       TandemTraffic.SetHeadlights(body, lamps == 2);
     }
@@ -949,8 +973,9 @@ public class TandemTraffic {
           car.goneSince = 0.0;
         } else if car.goneSince == 0.0 {
           car.goneSince = this.m_now;
-        } else if this.OwnNear(new Vector4(car.x, car.y, car.z, 1.0)) {
-          // Ours still stands there (see OnSpawn): after it.
+        } else if this.OwnNear(new Vector4(car.x, car.y, car.z, 1.0)) || !EntityID.IsDefined(car.body) && !this.MaySpawn() {
+          // Ours still stands there (see OnSpawn), or this moment's spawns
+          // are spent: after it.
           car.goneSince = this.m_now;
         } else if this.m_now - car.goneSince > wait {
           TandemEntities.Delete(car.body);
@@ -1300,7 +1325,7 @@ public class TandemTraffic {
           }
         }
         let velocity = body.GetLinearVelocity();
-        TandemNative.Log(s"street list: \(car.id) \(car.mine ? "ours" : "proxy") \(TDBID.ToStringDEBUG(car.record)) \(NameToString(body.GetCurrentAppearanceName())) at \(at.X) \(at.Y) \(at.Z) yaw \(body.GetWorldYaw()) flags \(car.flags) off \(off) v \(velocity.X) \(velocity.Y) lamps \(TandemTraffic.HeadlightsOn(body) ? 1 : 0) wreck \(body.IsDestroyed() ? 1 : 0)");
+        TandemNative.Log(s"street list: \(car.id) \(car.mine ? "ours" : "proxy") \(TDBID.ToStringDEBUG(car.record)) \(NameToString(body.GetCurrentAppearanceName())) at \(at.X) \(at.Y) \(at.Z) yaw \(body.GetWorldYaw()) flags \(car.flags) off \(off) v \(velocity.X) \(velocity.Y) lamps \((!this.m_lampsOff && TandemTraffic.HeadlightsOn(body)) ? 1 : 0) wreck \(body.IsDestroyed() ? 1 : 0)");
       } else {
         TandemNative.Log(s"street list: \(car.id) \(car.mine ? "ours" : "proxy") \(TDBID.ToStringDEBUG(car.record)) no body");
       }
@@ -1363,13 +1388,14 @@ public class TandemTraffic {
   }
 
   // A car of our own making where another game runs the street, beside
-  // the crowd's (HeldBack): a parked crowd car of ours, a wreck, a parked
-  // police car; that game's world has its own there (a wreck one colour
-  // here and another there, 2026-11-23). Not a placed one (the same in
-  // every game: shared by its own id), nor a quest's, nor a police car
-  // with its crew aboard (a unit on the move: Police.reds).
+  // the crowd's (HeldBack): a parked crowd car of ours, a parked police
+  // car; that game's world has its own there. Not a placed one (the same
+  // in every game: shared by its own id), nor a quest's, nor a police car
+  // with its crew aboard (a unit on the move: Police.reds), nor a wreck
+  // (27 disposed in one tick with a burning wreck among them, and the game
+  // died: no proxy is spawned onto it instead, OwnNear).
   private func OneSided(vehicle: ref<VehicleObject>, body: EntityID, entities: ref<DynamicEntitySystem>) -> Bool {
-    return !EntityID.IsStatic(body) && this.Eligible(vehicle, body, entities) && !vehicle.IsQuest() && (!vehicle.IsPrevention() || !VehicleComponent.HasActiveDriverMounted(this.m_game, body));
+    return !EntityID.IsStatic(body) && this.Eligible(vehicle, body, entities) && !vehicle.IsQuest() && !vehicle.IsDestroyed() && (!vehicle.IsPrevention() || !VehicleComponent.HasActiveDriverMounted(this.m_game, body));
   }
 
   // (overlap_despawn = remove, the default) Out of our world at once: the
@@ -1385,6 +1411,17 @@ public class TandemTraffic {
       this.m_popWaited += 1;
       return false;
     }
+    // A few a round: 27 parked cars disposed in one tick (our V just come
+    // into another game's area) and the game died in that tick (2026-11-23,
+    // 0xc0000005 at +0x22CA324; a burning wreck among them).
+    if this.m_removedAt == this.m_now && this.m_removedNow >= 3 {
+      return false;
+    }
+    if this.m_removedAt != this.m_now {
+      this.m_removedAt = this.m_now;
+      this.m_removedNow = 0;
+    }
+    this.m_removedNow += 1;
     let system = TandemSystem.Of(this.m_game);
     let mounting = GameInstance.GetMountingFacility(this.m_game);
     let seats: array<wref<VehicleSeat_Record>>;
@@ -1482,7 +1519,7 @@ public class TandemTraffic {
     if IsDefined(state) && state.GetSirenState() {
       flags += 16;
     }
-    if TandemTraffic.HeadlightsOn(vehicle) {
+    if !this.m_lampsOff && TandemTraffic.HeadlightsOn(vehicle) {
       flags += 32;
     }
     if vehicle.IsPerformingPanicDriving() {
@@ -1508,7 +1545,8 @@ public class TandemTraffic {
     return GameInstance.GetPersistencySystem(vehicle.GetGame()).GetConstAccessToPSObject(id, n"gamevehicleControllerPS") as vehicleControllerPS;
   }
 
-  // The owner's headlights on our body: the controller's mode, and its lamps.
+  // The owner's headlights on our body: the controller's mode, and its lamps
+  // (the quests' own toggle, VehicleLightQuestToggleEvent).
   private static func SetHeadlights(vehicle: ref<VehicleObject>, on: Bool) -> Void {
     let state = TandemTraffic.ControllerOf(vehicle);
     if IsDefined(state) {
@@ -1517,6 +1555,59 @@ public class TandemTraffic {
     let lamps = vehicle.GetAccessoryController();
     if IsDefined(lamps) {
       lamps.ToggleLights(on, vehicleELightType.Head);
+    }
+    TandemNative.LogDebug(s"street: vehicle \(EntityID.ToDebugString(vehicle.GetEntityID())) headlights \(on ? "on" : "off") (controller state \(IsDefined(state)), lamps \(IsDefined(lamps)))");
+  }
+
+  // (test: vehicle lamps [on|off|engine|mode]) the three vehicles nearest
+  // our V: who runs it, its controller's light mode and state; on/off: the
+  // quests' toggle of its headlights; engine: its controller's state On;
+  // mode: its light mode On.
+  public func LampsCommand(command: String) -> Void {
+    let player = GetPlayer(this.m_game);
+    if !IsDefined(player) {
+      return;
+    }
+    let here = player.GetWorldPosition();
+    let words = StrSplit(command, " ");
+    let what = ArraySize(words) >= 3 ? words[2] : "";
+    if Equals(what, "sync") {
+      this.m_lampsOff = ArraySize(words) >= 4 && Equals(words[3], "off");
+      TandemNative.Log(s"vehicle lamps: headlights followed \(!this.m_lampsOff)");
+      return;
+    }
+    let said = 0;
+    let used: array<Uint32>;
+    while said < 3 {
+      let best: ref<TandemCar>;
+      let bestAt = 30.0;
+      for car in this.m_cars {
+        let body = TandemTraffic.Body(this.m_game, car.body);
+        if IsDefined(body) && !ArrayContains(used, car.id) && Vector4.Distance(body.GetWorldPosition(), here) < bestAt {
+          best = car;
+          bestAt = Vector4.Distance(body.GetWorldPosition(), here);
+        }
+      }
+      if !IsDefined(best) {
+        break;
+      }
+      ArrayPush(used, best.id);
+      let body = TandemTraffic.Body(this.m_game, best.body);
+      let state = TandemTraffic.ControllerOf(body);
+      if Equals(what, "on") || Equals(what, "off") {
+        let lamps = body.GetAccessoryController();
+        if IsDefined(lamps) {
+          lamps.ToggleLights(Equals(what, "on"), vehicleELightType.Head);
+        }
+      } else if Equals(what, "engine") && IsDefined(state) {
+        state.SetState(vehicleEState.On);
+      } else if Equals(what, "mode") && IsDefined(state) {
+        state.SetHeadLightMode(vehicleELightMode.On);
+      }
+      let mode = IsDefined(state) ? EnumInt(state.GetHeadLightMode()) : -1;
+      let run = IsDefined(state) ? EnumInt(state.GetState()) : -1;
+      TandemNative.Log(s"vehicle lamps: \(best.id) \(best.mine ? "ours" : "proxy") \(TDBID.ToStringDEBUG(best.record)) \(Cast<Int32>(bestAt)) m, flags \(best.flags), mode \(mode), state \(run), accessory \(IsDefined(body.GetAccessoryController()))\(StrLen(what) > 0 ? s": \(what)" : "")");
+      said += 1;
     }
   }
 
