@@ -689,9 +689,11 @@ See the tags in [`../research/engine/regions.md`](../research/engine/regions.md)
    by that guest because it no longer owns the NPC.
 7. **Bandwidth**: an owner with 64 NPCs sends about 13 kB/s of states to
    the host while linked with anyone; the host relays it to each linked
-   guest. One message carries 128 (`proto::kMaxNpcsPerState`, 64 before
-   the 100 m share: a Kabuki crossing had 78 within it); measured at 64
-   walking NPCs, `NpcMotion` was 42 kbit/s up (2026-11-23).
+   guest. One message carries 64 (`proto::kMaxNpcsPerState`: one datagram,
+   tested); with more within the 100 m share (a Kabuki crossing had 78) the
+   ones we run and those within 60 m go first, the farthest new ones wait.
+   Measured at 64 walking NPCs, `NpcMotion` was 24 to 42 kbit/s up
+   (2026-11-23).
 
 ## 14. The death ledger
 

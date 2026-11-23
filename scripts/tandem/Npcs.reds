@@ -292,9 +292,11 @@ public class TandemNpcs {
     return TandemRegionRules.Share();
   }
 
-  // What one NpcStates carries (protocol.hpp kMaxNpcsPerState).
+  // What one NpcStates carries (protocol.hpp kMaxNpcsPerState: one
+  // datagram). The nearest first (Share): a busy street had 78 within the
+  // 100 m share (a Kabuki crossing, 2026-11-23).
   public static func MaxShared() -> Int32 {
-    return 128;
+    return 64;
   }
 
   public func Start(game: GameInstance) -> Void {
@@ -963,11 +965,26 @@ public class TandemNpcs {
     // around it are that world's, none is shared, and the shared ones go.
     // Out to where an NPC leaves the shared world: one we run stays ours
     // until then (a hand-over is asked before, regions.hpp kLose).
-    let around = player.GetNPCsAroundObject(TandemRegionRules.Lose());
+    let found = player.GetNPCsAroundObject(TandemRegionRules.Lose());
     if TandemElsewhere.AwayFromBody(this.m_game) {
-      ArrayClear(around);
+      ArrayClear(found);
     }
     let here = player.GetWorldPosition();
+    // The ones we run first, then the nearest: with more than one message
+    // carries, the farthest new ones wait (the region's 60 m before the
+    // rest of the share's 100 m).
+    let around: array<ref<NPCPuppet>>;
+    let later: array<ref<NPCPuppet>>;
+    for npc in found {
+      if IsDefined(this.Find(npc.GetEntityID())) || Vector4.Distance(npc.GetWorldPosition(), here) <= TandemRegionRules.Radius() {
+        ArrayPush(around, npc);
+      } else {
+        ArrayPush(later, npc);
+      }
+    }
+    for npc in later {
+      ArrayPush(around, npc);
+    }
     // Inside another world (cyberspace, a braindance) the NPCs are that
     // world's: none is hidden, as before.
     let hides = !riding && !TandemElsewhere.Inside(this.m_game);
