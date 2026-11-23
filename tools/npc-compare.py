@@ -99,6 +99,9 @@ def main():
     args = ap.parse_args()
     names = args.names.split(",")
     totals = []
+    # Per NPC over the lists: whether its proxy played its owner's workspot
+    # (True), another or none (False), while the owner was in one.
+    history = {}
     for a, b in zip(blocks(args.a), blocks(args.b)):
         vs = [x["v"] for x in (a, b) if x["v"]]
         print(f"== {a['t']:.3f} / {b['t']:.3f} ({abs(a['t'] - b['t']):.2f} s apart), Vs {flat(a['v'], b['v']):.0f} m apart: "
@@ -131,6 +134,8 @@ def main():
                 both += 1
                 own, prx = (x, y) if x["kind"] == "ours" else (y, x)
                 if own["kind"] == "ours" and prx["kind"] == "proxy" and own.get("spot") and prx.get("spot"):
+                    if own["spot"] not in ("none", "unread"):
+                        history.setdefault(i, []).append(prx["spot"] in (own["spot"], "entering"))
                     if own["spot"] != "none" or prx["spot"] not in ("none", "seated"):
                         acts += 1
                         if own["spot"] != prx["spot"] and not (prx["spot"] == "entering" and prx["said"] == own["spot"]):
@@ -174,6 +179,16 @@ def main():
         totals.append((both, total))
     if len(totals) > 1:
         print(f"== all: {sum(t[0] for t in totals)} of {sum(t[1] for t in totals)} on both games over {len(totals)} lists")
+    # A proxy that went out of its owner's workspot and back in between
+    # lists while the owner stayed: the seated NPC that stood up and sat again.
+    if any(len(h) > 1 for h in history.values()):
+        flicker = {i: sum(1 for x, y in zip(h, h[1:]) if x != y) for i, h in history.items() if len(h) > 1}
+        steady = sum(1 for i, h in history.items() if len(h) > 1 and all(h))
+        print(f"== activity over the lists: {len(flicker)} NPCs in a workspot, {steady} shown in it every time, "
+              f"{sum(1 for n in flicker.values() if n)} flickered ({sum(flicker.values())} changes)")
+        for i, n in sorted(flicker.items()):
+            if n:
+                print(f"  flicker: {i}: {n} changes in {len(history[i])} lists")
 
 
 if __name__ == "__main__":
