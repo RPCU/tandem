@@ -7,6 +7,7 @@
 #include "../log.hpp"
 #include "access.hpp"
 #include "animation.hpp"
+#include "crowd.hpp"
 #include "guards.hpp"
 #include "hooks.hpp"
 #include "look.hpp"
@@ -60,6 +61,7 @@ constexpr std::string_view kOrder[] = {
     feature::kTrace,
     feature::kVehicleMove,
     feature::kBodySlots,
+    feature::kCrowdSpawners,
 };
 
 // Under g_lock: the entries in the summary's order.
@@ -237,6 +239,7 @@ void CheckAccess() {
   CheckSlideGuard();
   CheckDisposeGate();
   CheckBodySlots();
+  CheckCrowdSpawners();
   g_checked = true;
   const auto summary = AccessSummary();
   if (FeaturesOff().empty())

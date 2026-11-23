@@ -81,6 +81,10 @@ public native class TandemStreet extends IScriptable {
   // light's hook asks (any thread).
   public static native func FollowLights(entities: array<EntityID>)
   public static native func FollowsLight(entity: EntityID) -> Bool
+  // Our crowd's own spawners (pedestrians, traffic, parked cars) off while
+  // another game runs our street, on again after (any thread).
+  public static native func SpawnersOff(off: Bool)
+  public static native func SpawnersReport() -> String
   // A shared vehicle's id: its announcer's player id and its counter.
   public static native func MakeId(owner: Uint32, counter: Uint32) -> Uint32
   // Who announced it (the id says), and who runs it now (a hand-over moves
