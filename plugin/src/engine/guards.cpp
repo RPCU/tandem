@@ -421,12 +421,20 @@ int RemoveIfStubbed(void *entity) {
   if (g_stubPath.load(std::memory_order_relaxed) == 0) {
     const auto f = feature::kDisposeGate;
     const auto base = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
-    g_removeEntity = FindAddress(f, "the population system's RemoveEntity", kRemoveEntity);
+    // The library's address is a jump to the function (`jmp rel32`).
+    const auto entry = FindAddress(f, "the population system's RemoveEntity", kRemoveEntity);
+    g_removeEntity = entry;
+    if (entry && *reinterpret_cast<const std::uint8_t *>(entry) == 0xE9) {
+      std::int32_t rel = 0;
+      std::memcpy(&rel, reinterpret_cast<const void *>(entry + 1), sizeof rel);
+      g_removeEntity = entry + 5 + static_cast<std::uintptr_t>(static_cast<std::intptr_t>(rel));
+    }
     bool ok = g_removeEntity != 0;
     ok = ok && Matches("dispose gate", "RemoveEntity's start", g_removeEntity, kRemoveStart);
     ok = ok && Matches("dispose gate", "FindStub's start", base + kFindStubOffset, kFindStart);
+    const auto slot = ok ? Slot(population, kRemoveEntitySlot) : 0;
     if (ok && (Slot(stubs, kFindStubSlot) != base + kFindStubOffset ||
-               Slot(population, kRemoveEntitySlot) != g_removeEntity)) {
+               (slot != g_removeEntity && slot != entry))) {
       log::Error("dispose gate: the stub or population system's slots differ from 2.50");
       ok = false;
     }
