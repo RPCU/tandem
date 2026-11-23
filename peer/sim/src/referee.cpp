@@ -62,7 +62,6 @@ TANDEM_SAID_BY(Host, TimeSkipResult)
 TANDEM_SAID_BY(Host, VehicleUnlock)
 TANDEM_SAID_BY(Host, StoryRestrictions)
 TANDEM_SAID_BY(Host, WorldPrefabs)
-TANDEM_SAID_BY(Host, NpcMotion)
 TANDEM_SAID_BY(Host, BreachResult)
 // Who holds a turret is the host's to say (devices::TurretHolds).
 TANDEM_SAID_BY(Host, TurretBusy)
@@ -92,6 +91,7 @@ TANDEM_SAID_BY(Either, Seat)
 TANDEM_SAID_BY(Either, VehicleState)
 TANDEM_SAID_BY(Either, NpcSpawn)
 TANDEM_SAID_BY(Either, NpcStates)
+TANDEM_SAID_BY(Either, NpcMotion)
 TANDEM_SAID_BY(Either, NpcGone)
 TANDEM_SAID_BY(Either, NpcHit)
 TANDEM_SAID_BY(Either, NpcHealth)
@@ -969,7 +969,8 @@ void Referee::CheckRate(p::PlayerId from, const p::Message &message, std::size_t
     budget = limits.vehicleHz;
   else if (std::holds_alternative<p::Shot>(message))
     budget = limits.shotHz;
-  else if (std::holds_alternative<p::NpcStates>(message))
+  else if (std::holds_alternative<p::NpcStates>(message) ||
+           std::holds_alternative<p::NpcMotion>(message))
     budget = limits.npcStatesHz;
   else if (std::holds_alternative<p::NpcAwareness>(message))
     budget = limits.awarenessHz;
@@ -1035,6 +1036,8 @@ void Referee::CheckSequence(p::PlayerId from, const p::Message &message) {
   else if (const auto *cars = std::get_if<p::TrafficStates>(&message))
     seq = {from, cars->seq};
   // Each owner numbers its NPCs' states (a host its own and those it relays).
+  else if (const auto *motion = std::get_if<p::NpcMotion>(&message))
+    seq = {from, motion->seq};
   else if (const auto *npcs = std::get_if<p::NpcStates>(&message))
     seq = {from, npcs->seq};
   else if (const auto *awareness = std::get_if<p::NpcAwareness>(&message))

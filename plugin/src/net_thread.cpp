@@ -1320,8 +1320,8 @@ struct NetThread::Impl {
         Regions::Get().SetGroup(endpoint->RegionLeader(), endpoint->RegionHolders());
         Regions::Get().SetAreas(endpoint->AreaOwners());
       }
-      if (auto npcs = runtime.TakeNpcStates())
-        endpoint->SendNpcStates(*npcs);
+      for (auto &npcs : runtime.TakeNpcStates())
+        endpoint->SendNpcStates(std::move(npcs.states), npcs.partial);
       // The street: what its owner says of its vehicles, then where they are.
       bool streetSaid = false;
       for (const auto &message : runtime.TakeStreetOutbox()) {

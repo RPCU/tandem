@@ -14,6 +14,8 @@
 #include <doctest/doctest.h>
 
 #include <functional>
+#include <map>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -171,14 +173,12 @@ TEST_CASE("a pose stream is delta coded: keys whole, frames with the bones that 
   }
 }
 
-TEST_CASE("NPC states go as their changes, quantized, and come back whole") {
+TEST_CASE("NPC states go as their changes, quantized, with their pace") {
   netcode::NpcCoder coder;
-  netcode::NpcBook book;
-  std::map<proto::NpcId, proto::NpcSpawn> known;
-  for (proto::NpcId npc = 1; npc <= 20; ++npc)
-    known[npc] = {.npc = npc};
+  netcode::NpcVelocities velocities;
+  std::map<proto::NpcId, proto::NpcEntry> book; // what the receiver last read of each
   std::size_t sent = 0;
-  float worst = 0.f;
+  float worst = 0.f, worstSpeed = 0.f;
   for (std::uint32_t seq = 1; seq <= 50; ++seq) {
     proto::NpcStates states{.seq = seq, .timeUs = test::kEpoch + seq * 100'000ull};
     for (proto::NpcId npc = 1; npc <= 20; ++npc) {
@@ -189,38 +189,89 @@ TEST_CASE("NPC states go as their changes, quantized, and come back whole") {
                              .yaw = 0.3f * static_cast<float>(npc) - 3.f,
                              .detected = static_cast<std::uint8_t>(seq > 40 && npc == 4 ? 2 : 0)});
     }
+    velocities.Fill(states);
     const auto motion = coder.Encode(states);
     REQUIRE(motion);
     if (seq > 1)
       sent += motion->npcs.size();
-    const auto whole = book.Apply(*motion, known);
-    REQUIRE(whole.npcs.size() == 20);
-    for (std::size_t i = 0; i < 20; ++i) {
-      const auto &a = whole.npcs[i], &b = states.npcs[i];
-      CHECK(a.npc == b.npc);
+    for (const auto &entry : netcode::Read(*motion).npcs)
+      book[entry.npc] = entry;
+    REQUIRE(book.size() == 20);
+    for (const auto &b : states.npcs) {
+      const auto &a = book.at(b.npc);
       CHECK(a.detected == b.detected); // a change of what it sees always goes at once
       worst = std::max(worst, std::hypot(a.position.x - b.position.x, a.position.y - b.position.y,
                                          a.position.z - b.position.z));
+      if (seq > 1)
+        worstSpeed = std::max(worstSpeed, std::abs(a.velocity.x - (b.npc % 2 ? 1.5f : 0.f)));
     }
   }
-  MESSAGE("npcs: ", sent / 49.0, " of 20 sent a frame, worst ", worst, " m");
+  MESSAGE("npcs: ", sent / 49.0, " of 20 sent a frame, worst ", worst, " m, ", worstSpeed, " m/s");
   // The 10 walking every frame; the standing ones once in kRefreshFrames.
   CHECK(sent / 49.0 < 10 + 10.0 / netcode::NpcCoder::kRefreshFrames + 1);
   CHECK(worst <= netcode::NpcCoder::kMoveM + netcode::NpcCoder::kStep);
+  CHECK(worstSpeed <= 0.01f); // the owner's own pace, to the centimetre a second
 
-  SUBCASE("an NPC left out of the list is said once, and drops out") {
+  SUBCASE("one that stops is said at once, not carried on") {
     proto::NpcStates states{.seq = 51, .timeUs = test::kEpoch + 5'100'000};
-    states.npcs.push_back({.npc = 1, .position = {-899.f + 7.65f, 1880.f, 36.2f}});
-    const auto motion = coder.Encode(states);
+    states.npcs.push_back({.npc = 1, .position = {-899.f + 7.5f, 1880.f, 36.2f}, .yaw = -2.7f});
+    velocities.Fill(states);
+    const auto motion = coder.Encode(states, true);
     REQUIRE(motion);
-    CHECK(motion->npcs.size() == 20); // 19 unlisted + npc 1 (moved)
-    CHECK(book.Apply(*motion, known).npcs.size() == 1);
+    REQUIRE(motion->npcs.size() == 1);
+    CHECK(netcode::Read(*motion).npcs[0].velocity == proto::Vec3{});
+  }
+  SUBCASE("a partial list leaves the others as they were; a whole one forgets them") {
+    proto::NpcStates near{.seq = 51, .timeUs = test::kEpoch + 5'100'000};
+    near.npcs.push_back({.npc = 1, .position = {-899.f + 7.65f, 1880.f, 36.2f}});
+    REQUIRE(coder.Encode(near, true));
+    // Npc 2 was not in it: still known, so not sent again while it stands.
+    proto::NpcStates whole{.seq = 52, .timeUs = test::kEpoch + 5'200'000};
+    whole.npcs.push_back(
+        {.npc = 2, .position = {-898.f, 1880.f, 36.2f}, .yaw = 0.3f * 2 - 3.f}); // as it stood
+    const auto motion = coder.Encode(whole);
+    REQUIRE(motion);
+    CHECK(motion->npcs.size() <= 1); // a refresh at most
+    // Npc 1 was not in the whole list: forgotten, sent whole when it is back.
+    proto::NpcStates back{.seq = 53, .timeUs = test::kEpoch + 5'300'000};
+    back.npcs.push_back({.npc = 1, .position = {-899.f + 7.65f, 1880.f, 36.2f}});
+    const auto again = coder.Encode(back);
+    REQUIRE(again);
+    CHECK(again->npcs.size() == 1);
   }
   SUBCASE("too far apart to quantize: sent whole") {
     proto::NpcStates states{.seq = 51};
     states.npcs.push_back({.npc = 1, .position = {0.f, 0.f, 0.f}});
     states.npcs.push_back({.npc = 2, .position = {600.f, 0.f, 0.f}});
     CHECK_FALSE(coder.Encode(states));
+  }
+}
+
+TEST_CASE("a dense crowd goes whole, a datagram a message") {
+  proto::NpcStates crowd{.seq = 1, .timeUs = test::kEpoch};
+  for (proto::NpcId npc = 1; npc <= proto::kMaxNpcsShared; ++npc)
+    crowd.npcs.push_back(
+        {.npc = npc,
+         .position = {static_cast<float>(npc % 13), static_cast<float>(npc / 13), 0},
+         .velocity = {1.f, 0.f, 0.f}});
+  netcode::NpcCoder coder;
+  const auto motion = coder.Encode(crowd);
+  REQUIRE(motion);
+  CHECK(motion->npcs.size() == proto::kMaxNpcsShared);
+  const auto parts = netcode::Split(*motion);
+  CHECK(parts.size() ==
+        (proto::kMaxNpcsShared + netcode::kNpcsPerMotion - 1) / netcode::kNpcsPerMotion);
+  std::set<proto::NpcId> seen;
+  for (const auto &part : parts) {
+    CHECK(part.npcs.size() <= netcode::kNpcsPerMotion);
+    CHECK(proto::Encode(part).size() < 1200);
+    for (const auto &entry : netcode::Read(part).npcs)
+      seen.insert(entry.npc);
+  }
+  CHECK(seen.size() == proto::kMaxNpcsShared);
+  for (const auto &part : netcode::Split(crowd)) {
+    CHECK(part.npcs.size() <= netcode::kNpcsPerStates);
+    CHECK(proto::Encode(part).size() < 1200);
   }
 }
 

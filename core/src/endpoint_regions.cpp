@@ -751,6 +751,24 @@ bool Endpoint::OnOwnerMessage(net::PeerId peer, proto::PlayerId player,
               out.push_back(events::HostNpcStates{std::move(live)});
             return true;
           },
+          [&](const proto::NpcMotion &motion) {
+            // As its states, compact: relayed as they came, renumbered.
+            auto live = motion;
+            std::erase_if(live.npcs, [&](const proto::NpcMove &move) { return !owns(move.npc); });
+            if (live.npcs.empty())
+              return true;
+            for (const auto &move : live.npcs) {
+              const auto entry = netcode::Dequantize(live, move);
+              auto &kept = m_npcs.at(move.npc);
+              kept.position = entry.position;
+              kept.yaw = entry.yaw;
+            }
+            live.seq = ++m_npcSeq;
+            ShareNpc(live, player, peer);
+            if (here)
+              out.push_back(events::HostNpcStates{netcode::Read(live)});
+            return true;
+          },
           [&](const proto::NpcGone &gone) {
             if (!ownsBody(gone.npc))
               return true;

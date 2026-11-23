@@ -1784,26 +1784,19 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             if (known)
               return;
             m_corpses.erase(spawn.npc);
-            m_npcBook.Seed(spawn);
             out.push_back(events::HostNpcSpawn{spawn});
           },
           [&](const proto::NpcStates &states) {
             // The old world's states (before the host's last epoch) are void.
             if (m_firstNpcSeq != 0 && static_cast<std::int32_t>(states.seq - m_firstNpcSeq) < 0)
               return;
-            m_npcBook.Note(states);
             OnHostNpcStates(states, out);
           },
           [&](const proto::NpcMotion &motion) {
             if (m_firstNpcSeq != 0 && static_cast<std::int32_t>(motion.seq - m_firstNpcSeq) < 0)
               return;
-            // The host compacts only its own NPCs' states (regions: another
-            // owner's come whole): the book fills in the host's alone.
-            std::map<proto::NpcId, proto::NpcSpawn> hosts;
-            for (const auto &[npc, spawn] : m_npcs)
-              if (NpcOwner(npc) == m_host)
-                hosts.emplace(npc, spawn);
-            OnHostNpcStates(m_npcBook.Apply(motion, hosts), out);
+            // Each move on its own: one not listed stands where it was.
+            OnHostNpcStates(netcode::Read(motion), out);
           },
           [&](const proto::ActorPose &pose) {
             // As NPC states: none of the host's old world, none for an NPC
@@ -1859,7 +1852,6 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             m_npcHolds.erase(gone.npc);
             m_npcOwner.erase(gone.npc);
             m_given.erase(gone.npc);
-            m_npcBook.Forget(gone.npc);
             m_npcVendors.erase(gone.npc);
             m_npcPlaced.erase(gone.npc);
             if (m_npcs.erase(gone.npc) > 0) {
@@ -1897,7 +1889,6 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               m_npcPlaced.erase(it->first);
               m_npcHolds.erase(it->first);
               m_npcOwner.erase(it->first);
-              m_npcBook.Forget(it->first);
               out.push_back(events::HostNpcGone{{.npc = it->first, .reason = 0}});
               it = m_npcs.erase(it);
             }
@@ -2384,13 +2375,17 @@ void Endpoint::SendNpcSpawn(const proto::NpcSpawn &spawn) {
   }
 }
 
-void Endpoint::SendNpcStates(proto::NpcStates states) {
+void Endpoint::SendNpcStates(proto::NpcStates states, bool partial) {
+  if (states.timeUs == 0)
+    states.timeUs = HostNowUs();
+  // Our own read of their pace (the recording keeps it: a replay sends it).
+  m_npcVelocities.Fill(states);
   Record(states);
   if (!IsJoined() || m_ended)
     return;
   std::erase_if(states.npcs, [&](const proto::NpcEntry &entry) { return !OwnsNpc(entry.npc); });
-  states.seq = ++m_npcSeq;
-  states.timeUs = HostNowUs();
+  if (states.npcs.size() > proto::kMaxNpcsShared)
+    states.npcs.resize(proto::kMaxNpcsShared);
   // The latest position also goes to the kept spawn, for late joiners.
   for (const auto &entry : states.npcs)
     if (const auto it = m_npcs.find(entry.npc); it != m_npcs.end()) {
@@ -2404,23 +2399,41 @@ void Endpoint::SendNpcStates(proto::NpcStates states) {
     // (Npcs.reds ignores one beyond 250 m: the consistency check spawned
     // them seconds later, regions-meet).
     if (Linked().empty()) {
+      if (partial)
+        return;
       const auto now = net::NowUs();
       if (now - m_apartNpcStatesUs < regions::kApartStatesUs)
         return;
       m_apartNpcStatesUs = now;
+      // Every one of them: the host keeps where each is.
+      m_npcCoder.Reset();
     }
-    SayNpc(states);
-    return;
   }
-  // Ours, as the host: only what changed, quantized (netcode.md); whole when
-  // out of range. The owners' own (regions) are relayed whole.
-  if (const auto motion = m_compact ? m_npcCoder.Encode(states) : std::nullopt) {
+  ShareNpcStates(states, partial);
+}
+
+void Endpoint::ShareNpcStates(const proto::NpcStates &states, bool partial) {
+  // Only what changed, quantized (netcode.md), from every owner; whole when
+  // out of range. In messages of a datagram each, each numbered.
+  const auto say = [&](proto::Message message) {
+    if (IsHost())
+      ShareNpc(message, m_you);
+    else
+      Send(m_hostPeer, message);
+  };
+  if (const auto motion = m_compact ? m_npcCoder.Encode(states, partial) : std::nullopt) {
     ++m_npcMotions;
-    ShareNpc(*motion, m_you);
+    for (auto &part : netcode::Split(*motion)) {
+      part.seq = ++m_npcSeq;
+      say(std::move(part));
+    }
   } else {
     ++m_npcWhole;
     m_npcCoder.Reset();
-    ShareNpc(states, m_you);
+    for (auto &part : netcode::Split(states)) {
+      part.seq = ++m_npcSeq;
+      say(std::move(part));
+    }
   }
 }
 
@@ -2556,6 +2569,7 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
   ForgetNpc(gone.npc);
   m_npcPlacedEarly.erase(gone.npc);
   m_npcCoder.Forget(gone.npc);
+  m_npcVelocities.Forget(gone.npc);
   m_npcLevels.erase(gone.npc);
   m_npcLevelsEarly.erase(gone.npc);
   m_npcScaleEarly.erase(gone.npc);

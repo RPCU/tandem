@@ -148,6 +148,12 @@ public class TandemNpcs {
   private let m_known: array<ref<TandemNpcKnown>>;
   private let m_next: Uint32;
   private let m_last: Float;
+  // The NPCs we share that stand near a V (Near): their places go 30 times
+  // a second between two whole lists (netcode.md, NPC motion).
+  private let m_lastNear: Float;
+  private let m_nearBodies: array<wref<NPCPuppet>>;
+  private let m_nearIds: array<Uint32>;
+  private let m_nearDetected: array<Int32>;
   private let m_proxies: array<ref<TandemNpcProxy>>;
   // Regions: our V is inside a higher-ranked linked player's region: that
   // game populates the streets we both see, so our crowd is turned off and
@@ -298,11 +304,21 @@ public class TandemNpcs {
     return TandemRegionRules.Share();
   }
 
-  // What one NpcStates carries (protocol.hpp kMaxNpcsPerState: one
-  // datagram). The nearest first (Share): a busy street had 78 within the
-  // 100 m share (a Kabuki crossing, 2026-11-23).
+  // What we share at most (protocol.hpp kMaxNpcsShared; the endpoint cuts
+  // the list into datagrams). The nearest first (Share): a busy street had
+  // 78 within the 100 m share (a Kabuki crossing, 2026-11-23).
   public static func MaxShared() -> Int32 {
-    return 64;
+    return 160;
+  }
+
+  // Within this of a V (ours or a partner's), an NPC's place goes 30 times a
+  // second, not 10: where a player looks closely (netcode.md, NPC motion).
+  public static func NearRange() -> Float {
+    return 35.0;
+  }
+
+  public static func NearInterval() -> Float {
+    return 0.03;
   }
 
   public func Start(game: GameInstance) -> Void {
@@ -344,8 +360,12 @@ public class TandemNpcs {
     this.m_anims.Events(now, you);
     if now - this.m_last >= 0.1 {
       this.m_last = now;
+      this.m_lastNear = now;
       this.UpdateQuiet();
       this.Share();
+    } else if now - this.m_lastNear >= TandemNpcs.NearInterval() {
+      this.m_lastNear = now;
+      this.ShareNear();
     }
     // The proxies' side: the NPCs the players linked with us run.
     this.Follow(now);
@@ -950,7 +970,44 @@ public class TandemNpcs {
 
   // ---- the owner's side ----
 
+  // Between two whole lists: where the NPCs near a V are now (the list Share
+  // made). Only reads them, and one native call.
+  private func ShareNear() -> Void {
+    let ids: array<Uint32>;
+    let positions: array<Vector4>;
+    let orientations: array<Quaternion>;
+    let detected: array<Int32>;
+    let n = ArraySize(this.m_nearIds);
+    let i = 0;
+    while i < n {
+      let npc = this.m_nearBodies[i];
+      if IsDefined(npc) && !npc.IsDead() {
+        ArrayPush(ids, this.m_nearIds[i]);
+        ArrayPush(positions, npc.GetWorldPosition());
+        ArrayPush(orientations, npc.GetWorldOrientation());
+        ArrayPush(detected, this.m_nearDetected[i]);
+      }
+      i += 1;
+    }
+    if ArraySize(ids) > 0 {
+      TandemNative.SendNearNpcStates(ids, positions, orientations, detected);
+    }
+  }
+
+  // Near one of these places (the Vs).
+  private static func NearAny(at: Vector4, vs: array<Vector4>) -> Bool {
+    for v in vs {
+      if Vector4.Distance(at, v) <= TandemNpcs.NearRange() {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private func Share() -> Void {
+    ArrayClear(this.m_nearBodies);
+    ArrayClear(this.m_nearIds);
+    ArrayClear(this.m_nearDetected);
     let player = GetPlayer(this.m_game);
     if !IsDefined(player) {
       return;
@@ -965,6 +1022,12 @@ public class TandemNpcs {
     let orientations: array<Quaternion>;
     let detected: array<Int32>;
     let watched = this.Watched(player);
+    let vs: array<Vector4>;
+    for v in watched {
+      if IsDefined(v) {
+        ArrayPush(vs, v.GetWorldPosition());
+      }
+    }
     let carrier = this.Carrier(player);
     ArrayClear(this.m_awareNpcs);
     ArrayClear(this.m_awarePlayers);
@@ -1082,11 +1145,17 @@ public class TandemNpcs {
             this.Respawn(known, npc);
           }
         }
+        let sharedAt = npc.GetWorldPosition();
         ArrayPush(ids, known.npc);
-        ArrayPush(positions, npc.GetWorldPosition());
+        ArrayPush(positions, sharedAt);
         ArrayPush(orientations, npc.GetWorldOrientation());
         let mask = this.Detected(npc, watched);
         ArrayPush(detected, mask);
+        if TandemNpcs.NearAny(sharedAt, vs) {
+          ArrayPush(this.m_nearBodies, npc);
+          ArrayPush(this.m_nearIds, known.npc);
+          ArrayPush(this.m_nearDetected, mask);
+        }
         if mask != known.detects {
           // Said when it changes: which NPC puts a guest in combat (a riding
           // guest went in and out of combat twice with the host out of it,

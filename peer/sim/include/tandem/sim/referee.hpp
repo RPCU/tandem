@@ -47,7 +47,9 @@ public:
     // Rates, per sender and message type, over `rateWindowUs`.
     std::uint64_t rateWindowUs{3'000'000};
     float playerStateHz{80.f}, poseHz{80.f}, vehicleHz{80.f}, shotHz{60.f};
-    float npcStatesHz{30.f}, awarenessHz{15.f}, digestHz{3.f}, pingHz{6.f};
+    // NPC states: 30 a second an owner, a dense list in up to 4 messages,
+    // three owners relayed by a host (netcode.md, NPC motion).
+    float npcStatesHz{240.f}, awarenessHz{15.f}, digestHz{3.f}, pingHz{6.f};
     // A V's noises (each kind gated by its game, footsteps to 4 a second)
     // and its thrown objects' paths (4 a second an object in flight).
     float noiseHz{40.f}, throwPathHz{24.f};

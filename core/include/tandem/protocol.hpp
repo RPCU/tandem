@@ -42,7 +42,10 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 19: Degraded appended, and required: every game says what it runs
 // without (a game of 18 would stay silent about it, which is the failure
 // the message exists to end).
-inline constexpr std::uint16_t kProtocolVersion = 20;
+// 21: an NPC's velocity in NpcEntry and NpcMove (cm/s: the receiver
+// carries a late state on), NpcMotion from every owner, read on its own
+// (no book), and a list longer than a datagram in several (netcode.md).
+inline constexpr std::uint16_t kProtocolVersion = 21;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -304,12 +307,20 @@ struct NpcEntry {
   Vec3 position;
   float yaw{};
   std::uint8_t detected{}; // bit (player - 1): the NPC has detected that player
+  Vec3 velocity;           // m/s, the owner's (v21; zero: the receiver's own guess)
   friend bool operator==(const NpcEntry &, const NpcEntry &) = default;
 };
 
+// What one NpcStates or NpcMotion may hold (decoding refuses more); an
+// owner's list is cut into messages of a datagram each (netcode.hpp
+// kNpcsPerMotion, kNpcsPerStates), however many NPCs it shares.
 inline constexpr std::size_t kMaxNpcsPerState = 64;
+// What an owner shares at most (Npcs.reds MaxShared): a dense street whole.
+inline constexpr std::size_t kMaxNpcsShared = 160;
 
-struct NpcStates { // State channel, ~10 Hz: every NPC the host shares, in one go
+// State channel: an owner's NPCs, every one 10 times a second, those near a
+// V 30 times (netcode.md, NPC motion); in several messages when they are many.
+struct NpcStates {
   std::uint32_t seq{};
   std::uint64_t timeUs{};
   std::vector<NpcEntry> npcs;
@@ -2551,21 +2562,22 @@ struct PoseFrame {
   friend bool operator==(const PoseFrame &, const PoseFrame &) = default;
 };
 
-// The host's NPC positions, quantized and only those that changed (NpcCoder
+// An owner's NPC positions, quantized and only those that changed (NpcCoder
 // in tandem/netcode.hpp): each NPC that moved, turned or changed what it
-// detects, and every NPC at least twice a second. The guest fills in the
-// rest from what it last heard, so NpcStates comes out whole as before.
-// Positions are 1/128 m steps from `origin` (±256 m), yaw 1/65536 turn.
+// detects, and every NPC at least every 5 messages. Each move is read on
+// its own (NpcStates of the NPCs listed): one not listed stands where it
+// was. Positions are 1/128 m steps from `origin` (±256 m), yaw 1/65536
+// turn, velocity cm/s.
 struct NpcMove {
   NpcId npc{};
   std::array<std::int16_t, 3> offset{};
   std::uint16_t yaw{};
   std::uint8_t detected{};
-  std::uint8_t flags{}; // netcode::kNpcUnlisted: no longer in the host's list
+  std::array<std::int16_t, 3> velocity{};
   friend bool operator==(const NpcMove &, const NpcMove &) = default;
 };
 
-struct NpcMotion { // State channel, ~10 Hz, host only
+struct NpcMotion { // State channel, as NpcStates; from every owner (v21)
   std::uint32_t seq{};
   std::uint64_t timeUs{};
   Vec3 origin;

@@ -109,7 +109,13 @@ Quality Measure(const net::LinkShape &shape, std::uint64_t seed, std::uint64_t i
   return q;
 }
 
-Quality Walker(const net::LinkShape &shape, std::uint64_t seed, std::uint64_t intervalUs) {
+// A V's state carries its game's velocity; an NPC's none before protocol 21
+// (the receiver's own guess between two states), its owner's read between
+// its last two samples since (netcode::NpcVelocities).
+enum class Pace { Game, None, Sampled };
+
+Quality Walker(const net::LinkShape &shape, std::uint64_t seed, std::uint64_t intervalUs,
+               Pace pace = Pace::Game) {
   test::Walker walker;
   sync::Track track(static_cast<std::uint32_t>(1'000'000 / intervalUs));
   return Measure(
@@ -117,6 +123,15 @@ Quality Walker(const net::LinkShape &shape, std::uint64_t seed, std::uint64_t in
       [&](std::uint32_t seq, std::uint64_t t, std::uint64_t arrival) {
         auto state = walker.State(t);
         state.seq = seq;
+        if (pace == Pace::None)
+          state.velocity = {};
+        if (pace == Pace::Sampled) {
+          const auto before = walker.At(test::Seconds(t - intervalUs));
+          const float span = static_cast<float>(intervalUs) / 1e6f;
+          state.velocity = {(state.position.x - before.x) / span,
+                            (state.position.y - before.y) / span,
+                            (state.position.z - before.z) / span};
+        }
         track.Push(state, arrival);
       },
       [&](std::uint64_t now, std::uint64_t &render, bool &extra) {
@@ -166,10 +181,16 @@ TEST_CASE("smoothness on real connections: numbers within bounds") {
     CAPTURE(link.name);
     const auto walk = Walker(link.shape, 11 + i, 33'333);
     const auto car = Car(link.shape, 23 + i);
-    const auto npc = Walker(link.shape, 37 + i, 100'000);
+    // An NPC far from every V (10 Hz) and one near one (30 Hz), with the
+    // owner's velocity; and as it was sent before protocol 21, for the record.
+    const auto npc = Walker(link.shape, 37 + i, 100'000, Pace::Sampled);
+    const auto near = Walker(link.shape, 41 + i, 33'333, Pace::Sampled);
+    const auto old = Walker(link.shape, 37 + i, 100'000, Pace::None);
     MESSAGE(walk.Line("V", link.name));
     MESSAGE(car.Line("car", link.name));
+    MESSAGE(old.Line("NPC v20", link.name));
     MESSAGE(npc.Line("NPC", link.name));
+    MESSAGE(near.Line("NPC 30", link.name));
     CHECK(walk.p95Error < bound.walkP95);
     CHECK(walk.maxPop < bound.walkPop);
     CHECK(walk.worstBack < 0.005f);
@@ -181,5 +202,9 @@ TEST_CASE("smoothness on real connections: numbers within bounds") {
     CHECK(npc.p95Error < bound.npcP95);
     CHECK(npc.worstBack < 0.005f);
     CHECK(npc.maxPop < bound.walkPop);
+    CHECK(near.p95Error < bound.walkP95);
+    CHECK(near.maxError < (i < 2 ? 0.5f : 0.8f)); // within half a metre near a V
+    CHECK(near.worstBack < 0.005f);
+    CHECK(near.maxPop < bound.walkPop);
   }
 }
