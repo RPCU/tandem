@@ -10,6 +10,8 @@
 // what happens to each puppet, proxy, hit and shot (the in-game scenarios
 // read those: tools/game.sh's test roles set it); `warn` only problems.
 
+#include "observing.hpp"
+
 #include <RED4ext/Api/v1/Logger.hpp>
 #include <RED4ext/Api/v1/PluginHandle.hpp>
 
@@ -29,6 +31,9 @@ inline bool Enabled(Level level) {
   return static_cast<int>(level) <= g_level.load(std::memory_order_relaxed);
 }
 
+// The observer (observer.hpp, observing.hpp) takes every line, debug ones
+// too, whatever the level: on, a line below the level is still formatted for it.
+
 // The log file of our own (started empty); false when it cannot be written.
 bool OpenFile(const std::filesystem::path &path);
 void CloseFile();
@@ -42,32 +47,49 @@ template <class... Args> void Always(std::format_string<Args...> format, Args &&
   const auto message = std::format(format, std::forward<Args>(args)...);
   g_logger->Info(g_handle, message.c_str());
   ToFile("info", message);
+  if (Observing())
+    Observe('I', message);
 }
 
 // Details, at `log = debug` only. Written as info lines: RED4ext's own level
 // filter must not hide them.
 template <class... Args> void Debug(std::format_string<Args...> format, Args &&...args) {
-  if (!g_logger || !Enabled(Level::Debug))
+  const bool logged = g_logger && Enabled(Level::Debug);
+  if (!logged && !Observing())
     return;
   const auto message = std::format(format, std::forward<Args>(args)...);
-  g_logger->Info(g_handle, message.c_str());
-  ToFile("debug", message);
+  if (logged) {
+    g_logger->Info(g_handle, message.c_str());
+    ToFile("debug", message);
+  }
+  if (Observing())
+    Observe('D', message);
 }
 
 template <class... Args> void Info(std::format_string<Args...> format, Args &&...args) {
-  if (!g_logger || !Enabled(Level::Info))
+  const bool logged = g_logger && Enabled(Level::Info);
+  if (!logged && !Observing())
     return;
   const auto message = std::format(format, std::forward<Args>(args)...);
-  g_logger->Info(g_handle, message.c_str());
-  ToFile("info", message);
+  if (logged) {
+    g_logger->Info(g_handle, message.c_str());
+    ToFile("info", message);
+  }
+  if (Observing())
+    Observe('I', message);
 }
 
 template <class... Args> void Warn(std::format_string<Args...> format, Args &&...args) {
-  if (!g_logger || !Enabled(Level::Warn))
+  const bool logged = g_logger && Enabled(Level::Warn);
+  if (!logged && !Observing())
     return;
   const auto message = std::format(format, std::forward<Args>(args)...);
-  g_logger->Warn(g_handle, message.c_str());
-  ToFile("warning", message);
+  if (logged) {
+    g_logger->Warn(g_handle, message.c_str());
+    ToFile("warning", message);
+  }
+  if (Observing())
+    Observe('W', message);
 }
 
 template <class... Args> void Error(std::format_string<Args...> format, Args &&...args) {
@@ -76,5 +98,7 @@ template <class... Args> void Error(std::format_string<Args...> format, Args &&.
   const auto message = std::format(format, std::forward<Args>(args)...);
   g_logger->Error(g_handle, message.c_str());
   ToFile("error", message);
+  if (Observing())
+    Observe('E', message);
 }
 } // namespace tandem::plugin::log

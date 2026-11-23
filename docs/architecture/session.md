@@ -124,7 +124,8 @@ idle: …); recorder on|off; transform guard on|off (why); dismemberment guard h
   `overlap_despawn` (`regions.md` §6); `vehicle_move` (`kinematic_ride`, its older form: `vehicles.md`); `saves` (off: a test game, which never saves: `two-instances.md`);
   `leave`, `checkpoint` (`progression.md`); `vehicle_rewards`, `lend` (`garage.md`);
   `trade` (`trade.md`); `native_prompts` (`prompts.md`); `race_car` (`activities.md`, "Races"); `recorder`, `recorder_max_mb`,
-  `recorder_segment_minutes`, `recorder_pose` (`recordings.md`);
+  `recorder_segment_minutes`, `recorder_pose` (`recordings.md`); `observer`, `observer_drift_m`,
+  `observer_frame_ms`, `observer_captures`, `observer_max_mb` (`observer.md`);
   `log = warn|info|debug` (`netcode.md`); `compat` (`release.md`). The
   co-op menu's Settings page changes many of them (`coop-menu.md`).
   Releases, startup and join-time compatibility checks, bug reports:

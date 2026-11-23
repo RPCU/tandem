@@ -66,6 +66,14 @@
 //   log = info           ; warn | info | debug (log.hpp): info is quiet (the
 //                        ; session's life, a minute's traffic and frame cost);
 //                        ; debug adds every puppet, proxy, hit and shot
+//   observer = off       ; on: each play session leaves a story trail, automatic
+//                        ; captures of the last 30 s of the detailed log and a
+//                        ; summary in observer/ (docs/architecture/observer.md)
+//   observer_drift_m = 5 ; a remote V's puppet this far from where its owner
+//                        ; says, for a second, is captured (1 to 1000)
+//   observer_frame_ms = 50  ; a frame longer than this is captured (10 to 2000)
+//   observer_captures = 30  ; captures a game run at most (1 to 1000)
+//   observer_max_mb = 1024  ; observer/ is kept under this (its oldest files go)
 //   time_host = full     ; host's Sandevistan (scripts/tandem/Time.reds): full keeps
 //                        ; the single-player slow motion whole on its own game (the
 //                        ; NPCs it shares follow the bubbles' rules); bubble puts its
@@ -186,6 +194,12 @@ struct Config {
   std::uint64_t recorderMaxMb{2048};
   std::uint32_t recorderSegmentMinutes{10};
   bool recorderPose{true};
+  // The observer (observer.hpp, docs/architecture/observer.md).
+  bool observer{false};
+  float observerDriftM{5.f};
+  std::uint32_t observerFrameMs{50};
+  std::uint32_t observerCaptures{30};
+  std::uint32_t observerMaxMb{1024};
   bool questFreeze{true};
   std::vector<std::string> questFreezeAllow;
   std::vector<std::string> questFreezeGigs; // gig phase resources (ours while apart)

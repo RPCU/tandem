@@ -1500,7 +1500,10 @@ public class TandemSystem extends ScriptableSystem {
       }
       return;
     }
-    if StrBeginsWith(command, "recorder") {
+    if StrBeginsWith(command, "observer") {
+      // observer [status] | observer capture [REASON] | observer summary
+      TandemNative.ObserverCommand(command);
+    } else if StrBeginsWith(command, "recorder") {
       // recorder status | recorder cut | recorder on | recorder off
       if Equals(command, "recorder cut") {
         TandemNative.RecorderCut();

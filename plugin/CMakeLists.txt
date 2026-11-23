@@ -50,6 +50,7 @@ add_library(tandem SHARED
   src/body_natives.cpp
   src/threads.cpp
   src/stall.cpp
+  src/observer.cpp
   src/engine/access.cpp
   src/engine/animation.cpp
   src/engine/controller.cpp

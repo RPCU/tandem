@@ -47,6 +47,7 @@
 
 #include "../degradations.hpp"
 #include "../log.hpp"
+#include "../observer.hpp"
 #include "access.hpp"
 #include "quests.hpp"
 #include "scenes.hpp"
@@ -393,9 +394,22 @@ void NotePhase(std::uintptr_t phase, std::uintptr_t context) {
     std::erase_if(g_phaseSeen, [&](const auto &seen) { return now - seen.second > 30'000; });
 }
 
+// The observer's story trail (observer.hpp): a phase resource the first
+// time it runs. The phase last told, per thread: one guarded read and the
+// observer's lock only when a thread moves to another phase.
+thread_local std::uintptr_t t_toldPhase = 0;
+void TellObserver(std::uintptr_t phase) {
+  if (phase == t_toldPhase)
+    return;
+  t_toldPhase = phase;
+  Observer::Get().Phase(ResourceOf(phase));
+}
+
 std::uint8_t Detour(void *phase, void *node, void *context, const void *socket, void *outputs) {
   // Scene privacy (scenes.cpp): which scene runs, on every game.
   ObserveSceneNode(node);
+  if (Observer::On())
+    TellObserver(reinterpret_cast<std::uintptr_t>(phase));
   if (g_phaseNotes.load(std::memory_order_relaxed))
     NotePhase(reinterpret_cast<std::uintptr_t>(phase), reinterpret_cast<std::uintptr_t>(context));
   const bool tracing = g_trace.load(std::memory_order_relaxed);

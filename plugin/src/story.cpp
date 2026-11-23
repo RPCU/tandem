@@ -1,4 +1,5 @@
 #include "story.hpp"
+#include "observer.hpp"
 #include "runtime.hpp"
 
 #include "tandem/session.hpp"
@@ -18,6 +19,8 @@ Story &Story::Get() {
 }
 
 void Story::PushInbound(StoryInbound inbound) {
+  if (inbound.kind == StoryInbound::Kind::Message)
+    Observer::Get().Story(inbound.message, true);
   std::lock_guard _(m_lock);
   if (m_inbound.size() < kMaxQueued)
     m_inbound.push_back(std::move(inbound));
@@ -76,6 +79,7 @@ std::vector<StoryInbound> Story::TakeInbound() {
 }
 
 void Story::Send(proto::Message message, proto::PlayerId to) {
+  Observer::Get().Story(message, false);
   std::lock_guard _(m_lock);
   if (m_outbound.size() < kMaxQueued)
     m_outbound.emplace_back(std::move(message), to);

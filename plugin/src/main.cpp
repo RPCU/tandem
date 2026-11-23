@@ -15,6 +15,7 @@
 #include "installed.hpp"
 #include "log.hpp"
 #include "mods.hpp"
+#include "observer.hpp"
 #include "recording.hpp"
 #include "runtime.hpp"
 #include "stall.hpp"
@@ -235,6 +236,14 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     std::filesystem::remove(runtime.config.pilotStateFile, ignored);
     // The stall report (stall.hpp): beside the command file, each instance its own.
     stall::Start(files.command.parent_path() / "stall.log");
+    // The observer (observer.hpp): its own key, whatever the role; beside the
+    // command file too, each instance its own.
+    Observer::Get().Configure({.enabled = runtime.config.observer,
+                               .dir = files.command.parent_path() / "observer",
+                               .driftMetres = runtime.config.observerDriftM,
+                               .frameMs = runtime.config.observerFrameMs,
+                               .maxCaptures = runtime.config.observerCaptures,
+                               .maxBytes = std::uint64_t{runtime.config.observerMaxMb} << 20});
     log::Info("role: {} (tandem.ini; the co-op menu can pick another)",
               NameOf(runtime.config.role));
 
@@ -310,6 +319,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     break;
   }
   case RED4ext::v1::EMainReason::Unload:
+    Observer::Get().Shutdown();
     stall::Stop();
     Runtime::Get().Stop();
     Recording::Get().Shutdown();

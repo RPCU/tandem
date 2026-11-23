@@ -18,6 +18,7 @@
 #include "engine/trace.hpp"
 #include "log.hpp"
 #include "mods.hpp"
+#include "observer.hpp"
 #include "perf.hpp"
 #include "recording.hpp"
 #include "runtime.hpp"
@@ -544,6 +545,27 @@ struct TandemNative : Red::IScriptable {
     return Red::CString(plugin::Recording::Get().Status().c_str());
   }
 
+  // ---- the observer (observer.hpp, docs/architecture/observer.md) ----
+  // tandem.ini observer = on.
+  static bool ObserverOn() { return Observer::On(); }
+  // Game thread, once a second in a session: the district our V is in.
+  static void ObserveDistrict(Red::CString name) { Observer::Get().District(name.c_str()); }
+  // cmd observer [status] | observer capture [REASON] | observer summary:
+  // the answer in the log.
+  static void ObserverCommand(Red::CString text) {
+    const std::string command = text.c_str();
+    if (command.starts_with("observer capture")) {
+      auto reason = command.substr(std::string_view("observer capture").size());
+      if (!reason.empty() && reason.front() == ' ')
+        reason.erase(0, 1);
+      Observer::Get().Capture(reason);
+      log::Always("observer: capture asked for{}", Observer::On() ? "" : " (observer off)");
+    } else if (command == "observer summary") {
+      Observer::Get().SummaryNow("asked for");
+    }
+    log::Always("{}", Observer::Get().Status());
+  }
+
   static void SendLocalState(Red::Vector4 position, Red::Quaternion orientation,
                              Red::Vector4 velocity, std::int32_t locomotion, std::int32_t flags) {
     proto::PlayerState state;
@@ -557,6 +579,7 @@ struct TandemNative : Red::IScriptable {
 
   static Red::DynArray<TandemEvent> TakeEvents() {
     Runtime::Get().NoteGameFrame();
+    Observer::Get().Frame();
     Red::DynArray<TandemEvent> out;
     for (auto &event : Runtime::Get().TakeEvents())
       out.EmplaceBack(TandemEvent{static_cast<std::int32_t>(event.kind), event.player,
@@ -2315,6 +2338,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(NameAsked);
   RTTI_METHOD(NameProblem);
   RTTI_METHOD(RecorderStatus);
+  RTTI_METHOD(ObserverOn);
+  RTTI_METHOD(ObserveDistrict);
+  RTTI_METHOD(ObserverCommand);
   RTTI_METHOD(SendLocalState);
   RTTI_METHOD(TakeEvents);
   RTTI_METHOD(RegisterPuppet);

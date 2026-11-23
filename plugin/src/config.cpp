@@ -139,6 +139,25 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
     else
       return Bad("level_gap is off or 0 to {} (levels above the lowest player), not {}",
                  progress::kMaxLevelGap, value);
+  } else if (key == "observer_drift_m") {
+    float metres{};
+    auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), metres);
+    if (ec != std::errc{} || end != value.data() + value.size() || !(metres >= 1.f) ||
+        metres > 1000.f)
+      return Bad("observer_drift_m is 1 to 1000 (metres), not {}", value);
+    config.observerDriftM = metres;
+  } else if (key == "observer_frame_ms" || key == "observer_captures" || key == "observer_max_mb") {
+    std::uint32_t number{};
+    auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), number);
+    const std::uint32_t low = key == "observer_frame_ms" ? 10 : 1;
+    const std::uint32_t high = key == "observer_frame_ms"   ? 2000
+                               : key == "observer_captures" ? 1000
+                                                            : 1'000'000;
+    if (ec != std::errc{} || end != value.data() + value.size() || number < low || number > high)
+      return Bad("{} is {} to {}, not {}", key, low, high, value);
+    (key == "observer_frame_ms"   ? config.observerFrameMs
+     : key == "observer_captures" ? config.observerCaptures
+                                  : config.observerMaxMb) = number;
   } else if (key == "recorder_max_mb" || key == "recorder_segment_minutes") {
     std::uint32_t number32{};
     auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), number32);
@@ -150,14 +169,15 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
     } else
       return Bad("bad {} {}", key, value);
   } else if (key == "story" || key == "quest_freeze" || key == "quest_interact" ||
-             key == "recorder" || key == "recorder_pose" || key == "friendly_fire" ||
-             key == "markers" || key == "party_hud" || key == "enemy_scaling" ||
-             key == "death_ledger" || key == "death_bodies" || key == "native_prompts" ||
-             key == "saves") {
+             key == "recorder" || key == "recorder_pose" || key == "observer" ||
+             key == "friendly_fire" || key == "markers" || key == "party_hud" ||
+             key == "enemy_scaling" || key == "death_ledger" || key == "death_bodies" ||
+             key == "native_prompts" || key == "saves") {
     auto &flag = key == "story"            ? config.story
                  : key == "quest_freeze"   ? config.questFreeze
                  : key == "quest_interact" ? config.questInteract
                  : key == "recorder"       ? config.recorder
+                 : key == "observer"       ? config.observer
                  : key == "friendly_fire"  ? config.friendlyFire
                  : key == "enemy_scaling"  ? config.enemyScaling
                  : key == "markers"        ? config.markers

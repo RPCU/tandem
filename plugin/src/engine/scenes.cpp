@@ -22,6 +22,7 @@
 
 #include "../degradations.hpp"
 #include "../log.hpp"
+#include "../observer.hpp"
 #include "scenes.hpp"
 
 #include "tandem/session.hpp"
@@ -316,11 +317,17 @@ SceneClass ClassifyRecentScene(std::uint32_t maxAgeMs, std::string &why) {
   else
     why = "unreadable";
   g_cache[path] = result;
-  log::Info("scenes: {:#x} is {} ({})", path,
-            result == SceneClass::Romance ? "private (romance)"
-            : result == SceneClass::Minor ? "private (minor)"
-                                          : "important",
-            why);
+  const char *kind = result == SceneClass::Romance ? "private (romance)"
+                     : result == SceneClass::Minor ? "private (minor)"
+                                                   : "important";
+  log::Info("scenes: {:#x} is {} ({})", path, kind, why);
+  if (Observer::On()) {
+    std::string actors;
+    for (std::uint32_t i = 0; i < facts.actors && i < kMaxActors && i < 8; ++i)
+      actors += std::format("{}{}", i ? ", " : "", facts.names[i]);
+    Observer::Get().Note("scene-kind", std::format("{:#x} {} ({}){}", path, kind, why,
+                                                   actors.empty() ? "" : ": " + actors));
+  }
   return result;
 }
 } // namespace tandem::plugin::engine

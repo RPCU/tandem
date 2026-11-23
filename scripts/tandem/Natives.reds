@@ -387,6 +387,11 @@ public native class TandemNative extends IScriptable {
   public static native func NameAsked(asked: Bool)
   public static native func NameProblem(typed: String) -> String
   public static native func RecorderStatus() -> String
+  // The observer (tandem.ini observer = on): the story trail's district
+  // (game thread), and cmd observer [status | capture [REASON] | summary].
+  public static native func ObserverOn() -> Bool
+  public static native func ObserveDistrict(name: String)
+  public static native func ObserverCommand(text: String)
   public static native func SendLocalState(position: Vector4, orientation: Quaternion, velocity: Vector4, locomotion: Int32, flags: Int32)
   public static native func TakeEvents() -> array<TandemEvent>
   public static native func RegisterPuppet(player: Uint32, id: EntityID)

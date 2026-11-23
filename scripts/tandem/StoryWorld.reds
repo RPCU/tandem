@@ -39,6 +39,8 @@ public class TandemStoryWorld {
   private let m_noted: array<Uint32>;
   // Host: the guests whose gates we heard (noted once ours are read).
   private let m_heard: array<Uint32>;
+  // The observer (tandem.ini observer = on): the district record last told.
+  private let m_district: String;
 
   public func Start(game: GameInstance, story: ref<TandemStorySystem>) -> Void {
     this.m_game = game;
@@ -54,6 +56,32 @@ public class TandemStoryWorld {
     this.m_lastCheck = now;
     this.Prefabs(isHost, grouped);
     this.Gates(isHost, grouped);
+    if TandemNative.ObserverOn() {
+      this.ObserveDistrict();
+    }
+  }
+
+  // ---- the observer's story trail ----
+
+  // The district record our V is in (the prevention system's district
+  // manager, as Where reads it), told to the observer when it changes.
+  private func ObserveDistrict() -> Void {
+    let name = "";
+    let prevention = GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"PreventionSystem") as PreventionSystem;
+    if IsDefined(prevention) {
+      let district = prevention.GetCurrentDistrict();
+      if IsDefined(district) {
+        let record: wref<District_Record> = district.GetDistrictRecord();
+        if IsDefined(record) {
+          let id = record.GetID();
+          name = TDBID.ToStringDEBUG(id);
+        }
+      }
+    }
+    if NotEquals(name, this.m_district) {
+      this.m_district = name;
+      TandemNative.ObserveDistrict(name);
+    }
   }
 
   // ---- quest prefabs ----

@@ -6,6 +6,7 @@
 #include "installed.hpp"
 #include "log.hpp"
 #include "net_thread.hpp"
+#include "observer.hpp"
 #include "perf.hpp"
 #include "recording.hpp"
 #include "runtime.hpp"
@@ -62,6 +63,7 @@ void Runtime::Start(proto::Body body) {
     what = std::format(" of {}:{}", session.address, session.port);
   log::Info("session: starting as {}{}", NameOf(session.role), what);
   m_net = std::make_unique<NetThread>(session, body);
+  Observer::Get().SessionStarted(std::format("{}{}", NameOf(session.role), what));
 }
 
 void Runtime::Choose(SessionChoice choice) {
@@ -465,8 +467,10 @@ void Runtime::Stop() {
   }
   const bool hadSession = net != nullptr;
   net.reset(); // joins outside the lock: the net thread takes it too
-  if (hadSession)
+  if (hadSession) {
     Recording::Get().SessionStopped();
+    Observer::Get().SessionEnded();
+  }
   m_you.store(0);
   {
     std::lock_guard _(m_heldLock);
@@ -494,6 +498,7 @@ bool Runtime::Started() const {
 }
 
 void Runtime::SubmitLocal(const proto::PlayerState &state) {
+  Observer::Get().Local(state.position);
   std::lock_guard _(m_lock);
   m_local = state;
 }
@@ -1549,6 +1554,11 @@ std::vector<proto::PlayerInfo> Runtime::RosterPlayers() {
 }
 
 void Runtime::RequestEpoch(std::uint8_t reason) {
+  if (Observer::On()) {
+    constexpr const char *kReasons[] = {"join", "loading screen", "fast travel", "time skip",
+                                        "frozen and back"};
+    Observer::Get().Note("epoch", reason < std::size(kReasons) ? kReasons[reason] : "?");
+  }
   std::lock_guard _(m_lock);
   m_epochRequest = reason;
 }
@@ -2126,6 +2136,7 @@ std::vector<ScriptEvent> Runtime::TakeEvents() {
 void Runtime::PushRemote(const proto::PlayerState &state) {
   const auto arrival = HostNowUs();
   if (state.player < kNpcPuppetBase) {
+    Observer::Get().Remote(state.player, state.position);
     std::lock_guard _(m_reachLock);
     m_reach.Push(state.player, state.timeUs, state.position);
   }

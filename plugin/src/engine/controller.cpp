@@ -2,6 +2,7 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "../log.hpp"
+#include "../observer.hpp"
 #include "../perf.hpp"
 #include "../runtime.hpp"
 #include "controller.hpp"
@@ -151,6 +152,22 @@ void PuppetController::GetDeltaTransform(RED4ext::Vector4 &position,
     log::Debug("puppet {}: moving, body ({:.1f}, {:.1f}, {:.1f}) -> ({:.1f}, {:.1f}, {:.1f})",
                player, current.X, current.Y, current.Z, view.position.x, view.position.y,
                view.position.z);
+
+  // The observer (observer.hpp): a body that stays far from where its
+  // owner says for a second (a snap brings a stray body back sooner).
+  if (Observer::On() && player < kNpcPuppetBase) {
+    const float gap = std::hypot(view.position.x - current.X, view.position.y - current.Y,
+                                 view.position.z - current.Z);
+    if (gap < Observer::Get().DriftMetres()) {
+      m_driftSinceUs = 0;
+      m_driftTold = false;
+    } else if (!m_driftSinceUs) {
+      m_driftSinceUs = now;
+    } else if (!m_driftTold && now - m_driftSinceUs >= 1'000'000) {
+      m_driftTold = true;
+      Observer::Get().Drift(player, gap, {current.X, current.Y, current.Z}, view.position);
+    }
+  }
 
   // Health line every ~5 s: is the body where the network says?
   ++m_frames;

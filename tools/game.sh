@@ -60,6 +60,11 @@
 #                              start NAME ... record stop) to recordings/play/NAME.tplay
 #   tools/game.sh fetch-recordings [--since YYYYMMDD]  the recorder's segments
 #                              (recorder = on) and their index to recordings/auto/
+#   tools/game.sh fetch-observer  the observer's files (observer = on: story
+#                              trails, captures, summaries) to .cache/observer/,
+#                              then tools/observer-report.py reads them. Only
+#                              reads: the Steam game's (the player's play)
+#                              unless TANDEM_INSTANCE names an instance
 #   tools/game.sh pilot ...    the test pilot plays our V without a human
 #                              (tools/pilot, docs/architecture/autopilot.md):
 #                              run ROUTINE [FLAGS] | record NAME ROUTINE |
@@ -137,8 +142,14 @@ dir=${GAME_DIR:-/data/Steam/steamapps/common/Cyberpunk 2077}
 # a quick save, 2026-11-21). The Steam game only when asked in so many
 # words: TANDEM_INSTANCE=main TANDEM_STEAM_GAME=1.
 instance=${TANDEM_INSTANCE:-${PILOT_INSTANCE:-a}}
+# fetch-observer only reads, and what it reads is the player's own play.
+readonly_verb=''
+if [ "${1:-}" = fetch-observer ]; then
+  readonly_verb=1
+  [ -n "${TANDEM_INSTANCE:-}${PILOT_INSTANCE:-}" ] || instance=main
+fi
 [ "$instance" != 0 ] || instance=main
-if [ "$instance" = main ] && [ "${TANDEM_STEAM_GAME:-}" != 1 ]; then
+if [ "$instance" = main ] && [ "${TANDEM_STEAM_GAME:-}" != 1 ] && [ -z "$readonly_verb" ]; then
   echo "tools/game.sh: the Steam game is the player's (its saves are theirs): tests run on an instance (TANDEM_INSTANCE=a); TANDEM_STEAM_GAME=1 with TANDEM_INSTANCE=main to use it anyway" >&2
   exit 2
 fi
@@ -609,6 +620,20 @@ fetch_recordings() {
   echo "recordings/auto: $copied segment(s) copied, $(find recordings/auto -maxdepth 1 -name '*.ts*' -o -name '*.tplay' | wc -l) here"
 }
 
+# The observer's files (plugin/src/observer.hpp): every session-*.tsv,
+# summary-*.txt and captures/ of this game's observer/ folder, copied here
+# (the game machine's side is only read).
+fetch_observer() {
+  local from="$dir/red4ext/plugins/tandem/observer" to=$cache/observer
+  if ! remote "test -d '$from'"; then
+    echo "no $from on $host (tandem.ini observer = on?)" >&2
+    exit 1
+  fi
+  mkdir -p "$to"
+  remote "cd '$from' && tar cf - ." | tar xf - -C "$to"
+  echo "$to: $(find "$to" -maxdepth 1 -name 'session-*.tsv' | wc -l) session(s), $(find "$to/captures" -type f 2>/dev/null | wc -l) capture(s); tools/observer-report.py $to"
+}
+
 # ---- the test pilot ----
 # tandem-pilot is built here (a static binary), copied with the routine to
 # the pilot's cache folder on the game machine and run there, next to the
@@ -1038,6 +1063,7 @@ fetch-recordings)
   shift
   fetch_recordings "$@"
   ;;
+fetch-observer) fetch_observer ;;
 peer)
   shift
   peer "$@"

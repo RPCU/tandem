@@ -118,5 +118,9 @@ private:
   bool m_loggedDelta{}, m_loggedSend{}, m_loggedNoPlacement{}, m_loggedCanary{};
   std::uint32_t m_frames{};
   std::uint64_t m_lastHealthUs{};
+  // The observer's drift watch: since when the body is far from its target
+  // (0: it is not), and whether this stretch was told.
+  std::uint64_t m_driftSinceUs{};
+  bool m_driftTold{};
 };
 } // namespace tandem::plugin::engine
