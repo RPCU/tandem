@@ -140,7 +140,8 @@ void Endpoint::SendTrafficStates(proto::TrafficStates states) {
   // One numbering with the NPC states: an epoch's firstNpcSeq fences both
   // (the host numbers a guest's again).
   states.seq = ++m_npcSeq;
-  states.timeUs = HostNowUs();
+  if (states.timeUs == 0) // when our game read them (Runtime), else now
+    states.timeUs = HostNowUs();
   SayTraffic(states);
 }
 

@@ -116,6 +116,22 @@ struct TandemStreet : Red::IScriptable {
                          Red::DynArray<Red::Quaternion> orientations,
                          Red::DynArray<Red::Vector4> velocities,
                          Red::DynArray<Red::Vector4> viewers) {
+    Submit(ids, positions, orientations, velocities, viewers, false);
+  }
+  // Between two rounds: the cars near a V (Traffic.reds ShareNear), the
+  // moving ones go (traffic::PickNear).
+  static void SendNearStates(Red::DynArray<std::uint32_t> ids,
+                             Red::DynArray<Red::Vector4> positions,
+                             Red::DynArray<Red::Quaternion> orientations,
+                             Red::DynArray<Red::Vector4> velocities,
+                             Red::DynArray<Red::Vector4> viewers) {
+    Submit(ids, positions, orientations, velocities, viewers, true);
+  }
+  static void Submit(const Red::DynArray<std::uint32_t> &ids,
+                     const Red::DynArray<Red::Vector4> &positions,
+                     const Red::DynArray<Red::Quaternion> &orientations,
+                     const Red::DynArray<Red::Vector4> &velocities,
+                     const Red::DynArray<Red::Vector4> &viewers, bool near) {
     std::vector<traffic::Car> cars;
     for (std::uint32_t n = 0; n < ids.Size() && n < positions.Size() && n < orientations.Size() &&
                               n < velocities.Size() && cars.size() < proto::kMaxTrafficSet;
@@ -128,7 +144,7 @@ struct TandemStreet : Red::IScriptable {
     std::vector<proto::Vec3> eyes;
     for (std::uint32_t n = 0; n < viewers.Size(); ++n)
       eyes.push_back({viewers[n].X, viewers[n].Y, viewers[n].Z});
-    Runtime::Get().SubmitTrafficCars(cars, eyes);
+    Runtime::Get().SubmitTrafficCars(cars, eyes, near);
   }
   // Area owner: it is no longer shared (0 out of range, 2 removed for good).
   static void SendGone(std::uint32_t id, std::int32_t reason) {
@@ -392,6 +408,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStreet, "TandemStreet", {
   RTTI_METHOD(CarOfSeat);
   RTTI_METHOD(SendSpawn);
   RTTI_METHOD(SendStates);
+  RTTI_METHOD(SendNearStates);
   RTTI_METHOD(SendGone);
   RTTI_METHOD(SendStatus);
   RTTI_METHOD(SendHit);

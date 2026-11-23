@@ -94,6 +94,7 @@ public native class TandemStreet extends IScriptable {
   // Area owner: its world vehicles.
   public static native func SendSpawn(id: Uint32, record: TweakDBID, appearance: CName, entity: EntityID, position: Vector4, orientation: Quaternion, flags: Int32)
   public static native func SendStates(ids: array<Uint32>, positions: array<Vector4>, orientations: array<Quaternion>, velocities: array<Vector4>, viewers: array<Vector4>)
+  public static native func SendNearStates(ids: array<Uint32>, positions: array<Vector4>, orientations: array<Quaternion>, velocities: array<Vector4>, viewers: array<Vector4>)
   public static native func SendGone(id: Uint32, reason: Int32)
   public static native func SendStatus(id: Uint32, health: Float, flags: Int32)
   // Anyone: we hit a vehicle another game owns; our V gets into one.

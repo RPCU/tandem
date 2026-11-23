@@ -74,6 +74,15 @@ private:
   std::uint32_t m_round{};
 };
 
+// Between two rounds (30 times a second): the moving cars within kNearRange
+// of a player, nearest first, at most `max` (traffic.md, Near either V: the
+// kinematic path follows them closely where a V could touch them).
+inline constexpr float kNearRange = 50.f;
+inline constexpr std::size_t kNearMax = 16;
+std::vector<proto::TrafficEntry> PickNear(std::span<const Car> cars,
+                                          std::span<const proto::Vec3> viewers,
+                                          std::size_t max = kNearMax);
+
 // Whether a world vehicle at `distance` metres from the nearest player is
 // shared, given whether it is now.
 constexpr bool InRange(float distance, bool shared) {

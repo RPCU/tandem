@@ -117,6 +117,12 @@ public class TandemTraffic {
   private let m_cars: array<ref<TandemCar>>;
   private let m_next: Uint32;
   private let m_last: Float;
+  // The moving vehicles of ours near a V (Share): where they are goes 30
+  // times a second between two rounds (ShareNear; traffic.md, Near either V).
+  private let m_lastNear: Float;
+  private let m_nearBodies: array<wref<VehicleObject>>;
+  private let m_nearIds: array<Uint32>;
+  private let m_nearViewers: array<Vector4>;
   private let m_lastCheck: Float;
   private let m_now: Float;
   // (street list) proxies whose body came or went in sight within 50 m,
@@ -163,6 +169,16 @@ public class TandemTraffic {
 
   public static func ShareRange() -> Float {
     return 120.0;
+  }
+
+  // traffic.hpp kNearRange: within this of a V a car of ours goes 30 times
+  // a second (the native keeps the moving ones, nearest first).
+  public static func NearRange() -> Float {
+    return 50.0;
+  }
+
+  public static func NearInterval() -> Float {
+    return 0.03;
   }
 
   public static func DropRange() -> Float {
@@ -241,7 +257,11 @@ public class TandemTraffic {
     // Ours: announced while we own our area, said for as long as we run them.
     if now - this.m_last >= 0.1 {
       this.m_last = now;
+      this.m_lastNear = now;
       this.Share(system);
+    } else if now - this.m_lastNear >= TandemTraffic.NearInterval() {
+      this.m_lastNear = now;
+      this.ShareNear();
     }
     // Theirs: the proxies follow.
     this.Drive();
@@ -1063,7 +1083,33 @@ public class TandemTraffic {
 
   // ---- ours: share the vehicles around the players ----
 
+  // Between two rounds: where the cars of ours near a V are now (the list
+  // Share made). Only reads them, and one native call.
+  private func ShareNear() -> Void {
+    let ids: array<Uint32>;
+    let positions: array<Vector4>;
+    let orientations: array<Quaternion>;
+    let velocities: array<Vector4>;
+    let n = ArraySize(this.m_nearIds);
+    let i = 0;
+    while i < n {
+      let body = this.m_nearBodies[i];
+      if IsDefined(body) {
+        ArrayPush(ids, this.m_nearIds[i]);
+        ArrayPush(positions, body.GetWorldPosition());
+        ArrayPush(orientations, body.GetWorldOrientation());
+        ArrayPush(velocities, body.GetLinearVelocity());
+      }
+      i += 1;
+    }
+    if ArraySize(ids) > 0 {
+      TandemStreet.SendNearStates(ids, positions, orientations, velocities, this.m_nearViewers);
+    }
+  }
+
   private func Share(system: ref<TandemSystem>) -> Void {
+    ArrayClear(this.m_nearBodies);
+    ArrayClear(this.m_nearIds);
     let player = GetPlayer(this.m_game);
     if !IsDefined(player) {
       return;
@@ -1119,7 +1165,8 @@ public class TandemTraffic {
         if !away && !owns && IsDefined(body) && !car.seated && !ArrayContains(this.m_taken, car.body) && (this.FlagsOf(body) & 1) != 0 && this.OneSided(body, car.body, entities) && this.Remove(body, car.body) {
           body = null;
         }
-        if !away && IsDefined(body) && !ArrayContains(this.m_taken, car.body) && TandemTraffic.Nearest(body.GetWorldPosition(), viewers) <= range {
+        let nearest = IsDefined(body) ? TandemTraffic.Nearest(body.GetWorldPosition(), viewers) : 1000000.0;
+        if !away && IsDefined(body) && !ArrayContains(this.m_taken, car.body) && nearest <= range {
           car.seen = true;
           this.Say(car, body, pools);
           this.Yield(car, body, afoot);
@@ -1127,6 +1174,10 @@ public class TandemTraffic {
           ArrayPush(positions, body.GetWorldPosition());
           ArrayPush(orientations, body.GetWorldOrientation());
           ArrayPush(velocities, body.GetLinearVelocity());
+          if nearest <= TandemTraffic.NearRange() {
+            ArrayPush(this.m_nearBodies, body);
+            ArrayPush(this.m_nearIds, car.id);
+          }
         }
       }
     }
@@ -1241,6 +1292,7 @@ public class TandemTraffic {
       }
     }
     this.m_cars = kept;
+    this.m_nearViewers = viewers;
     if ArraySize(ids) > 0 {
       TandemStreet.SendStates(ids, positions, orientations, velocities, viewers);
     }

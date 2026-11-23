@@ -129,6 +129,26 @@ Budget::Pick(std::span<const Car> cars, std::span<const proto::Vec3> viewers, st
   return out;
 }
 
+std::vector<proto::TrafficEntry> PickNear(std::span<const Car> cars,
+                                          std::span<const proto::Vec3> viewers, std::size_t max) {
+  std::vector<std::pair<float, const Car *>> near;
+  for (const auto &car : cars) {
+    const float speed =
+        std::sqrt(car.velocity.x * car.velocity.x + car.velocity.y * car.velocity.y +
+                  car.velocity.z * car.velocity.z);
+    // One at rest is the rounds' to say (once when it stops).
+    if (speed < kRestSpeed)
+      continue;
+    if (const float d = Nearest(car.position, viewers); d <= kNearRange)
+      near.emplace_back(d, &car);
+  }
+  std::ranges::sort(near, {}, &std::pair<float, const Car *>::first);
+  std::vector<proto::TrafficEntry> out;
+  for (std::size_t i = 0; i < near.size() && i < max; ++i)
+    out.push_back(Pack(*near[i].second));
+  return out;
+}
+
 void Budget::Forget(proto::TrafficId id) { m_said.erase(id); }
 
 void Budget::Clear() {

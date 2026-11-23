@@ -1354,8 +1354,8 @@ struct NetThread::Impl {
       }
       if (streetSaid)
         ShareStreet(runtime, *endpoint);
-      if (auto cars = runtime.TakeTrafficStates())
-        endpoint->SendTrafficStates(std::move(*cars));
+      for (auto &cars : runtime.TakeTrafficStates())
+        endpoint->SendTrafficStates(std::move(cars));
       // Vehicle combat: what our game says of its vehicles and our V in them.
       for (auto &message : runtime.TakeWheelsOutbox())
         std::visit(

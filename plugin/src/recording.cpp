@@ -229,15 +229,15 @@ void Recording::DrainSolo() {
     add(std::move(message));
   for (auto &[player, reply] : runtime.TakeNpcReplies())
     add(reply);
-  if (auto npcs = runtime.TakeNpcStates())
-    add(std::move(*npcs));
+  for (auto &npcs : runtime.TakeNpcStates())
+    add(std::move(npcs.states));
   if (auto awareness = runtime.TakeNpcAwareness())
     add(std::move(*awareness));
   // The street (no session: every vehicle is ours), and our wanted level.
   for (auto &message : runtime.TakeStreetOutbox())
     add(std::move(message));
-  if (auto cars = runtime.TakeTrafficStates())
-    add(std::move(*cars));
+  for (auto &cars : runtime.TakeTrafficStates())
+    add(std::move(cars));
   if (auto heat = runtime.TakeLocalHeat()) {
     heat->player = 1;
     add(*heat);
