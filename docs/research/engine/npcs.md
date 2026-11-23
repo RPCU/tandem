@@ -250,8 +250,14 @@ workWorkspotInstance {resource, animName, idleAnim, entryId}`
 - **A workspot to play from**: `WorkspotResourceComponent` (`:105125`, an
   `IPlacedComponent`; Codeware exposes `workspotResource: ResourceAsyncRef`).
   Codeware's `Entity.AddComponent` only appends to the components array, so
-  it must run before the entity initializes: tandem adds one in the
-  `Entity/Assemble` callback of entities tagged `Tandem.Proxy`. Redscript
+  it must run before the entity initializes. Added in the `Entity/Assemble`
+  callback (targets: the tag `Tandem.Proxy`, then each proxy's record) it
+  never reached a proxy: 79 and 188 "has no workspot component" at
+  kabuki-market, 84 NPCs in workspots and none shown in one on the guest
+  (2026-11-23) [2.5-verified]. tandem now adds it to the template the
+  entity is built from, in `Entity/Extract` by record
+  (`EntityBuilderTemplateWrapper.AddComponent`, `TandemNpcAnims.WatchRecord`).
+  Redscript
   cannot build a `ResourceAsyncRef` from a hash: the plugin writes it
   (`TandemNative.SetResourcePath`, by RTTI property name and type
   `ResourceAsyncReference`). To check in game: that the component added at

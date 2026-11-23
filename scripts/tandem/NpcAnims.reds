@@ -424,17 +424,36 @@ public class TandemNpcAnims {
       .AddTarget(DynamicEntityTarget.Tag(n"Tandem.Puppet"));
   }
 
-  // A proxy's record, before its first body of that record is spawned: the
-  // tag target above never matched an NPC proxy (its tags are not set yet at
-  // Assemble: 79 of 79 proxies at kabuki-market had no workspot component,
-  // 2026-11-23), so they are also watched by record, as Probe.reds does.
+  // A proxy's record, before its first body of that record is spawned. A
+  // component added at Assemble never reached an NPC proxy (79 and then 188
+  // "has no workspot component" at kabuki-market, by tag and by record,
+  // 2026-11-23), as edits at Assemble came too late for the animation probe
+  // (engine/measurements.md): the component goes into the entity's template
+  // while it is extracted (Entity/Extract, the builder's own AddComponent),
+  // watched by record as Probe.reds does.
   public func WatchRecord(record: TweakDBID) -> Void {
     if ArrayContains(this.m_records, record) {
       return;
     }
     ArrayPush(this.m_records, record);
-    GameInstance.GetCallbackSystem().RegisterCallback(n"Entity/Assemble", this, n"OnAssemble")
+    GameInstance.GetCallbackSystem().RegisterCallback(n"Entity/Extract", this, n"OnExtract")
       .AddTarget(EntityTarget.RecordID(record));
+  }
+
+  // (watched by record: our own NPCs of that record get one too, unused)
+  private cb func OnExtract(event: ref<EntityBuilderEvent>) {
+    let template = event.GetEntityBuilder().GetTemplate();
+    if !IsDefined(template) {
+      return;
+    }
+    for component in template.GetComponents() {
+      if Equals(component.GetName(), TandemNpcAnims.SpotName()) {
+        return;
+      }
+    }
+    let spot = new WorkspotResourceComponent();
+    spot.name = TandemNpcAnims.SpotName();
+    template.AddComponent(spot);
   }
 
   private cb func OnAssemble(event: ref<EntityLifecycleEvent>) {
