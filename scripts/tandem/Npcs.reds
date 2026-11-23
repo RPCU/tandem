@@ -1151,7 +1151,9 @@ public class TandemNpcs {
         ArrayPush(orientations, npc.GetWorldOrientation());
         let mask = this.Detected(npc, watched);
         ArrayPush(detected, mask);
-        if TandemNpcs.NearAny(sharedAt, vs) {
+        // One in a workspot (a bench, a stall) is placed by it on both games
+        // (NpcAnims.reds): it stays in the 10 Hz list only.
+        if TandemNpcs.NearAny(sharedAt, vs) && !GameInstance.GetWorkspotSystem(this.m_game).IsActorInWorkspot(npc) {
           ArrayPush(this.m_nearBodies, npc);
           ArrayPush(this.m_nearIds, known.npc);
           ArrayPush(this.m_nearDetected, mask);
