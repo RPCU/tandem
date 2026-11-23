@@ -612,6 +612,7 @@ public class TandemNpcs {
       GameInstance.GetCommunitySystem(this.m_game).ResetDensityModifier();
       this.m_quiet = false;
     }
+    TandemStreet.SpawnersOff(false);
     this.m_share = 1.0;
     this.UpdateNullAreas(false);
   }
@@ -681,15 +682,17 @@ public class TandemNpcs {
       this.m_share = 0.0;
       this.m_densityAt = this.m_now;
       crowd.ChangeDensityModifier(0.0);
+      // Density 0 leaves the traffic and the parked cars: their spawners too.
+      TandemStreet.SpawnersOff(true);
       TandemNative.Log(s"npcs: guest, own crowd off (inside player \(by)'s region)");
     } else if by == 0u && this.m_quiet {
       this.m_quiet = false;
       this.m_share = 1.0;
       this.m_densityAt = this.m_now;
       crowd.ResetDensityModifier();
+      TandemStreet.SpawnersOff(false);
       TandemNative.Log("npcs: own region, own crowd on");
     }
-    // (Also deep inside: whether density 0 stops traffic too is not known.)
     if Equals(this.m_overlap, "area") {
       this.UpdateNullAreas(true);
     }
@@ -763,7 +766,7 @@ public class TandemNpcs {
   // (test) what our game holds back now.
   public func OverlapReport() -> String {
     let covers = TandemRegions.Covers();
-    return s"overlap: \(this.m_overlap), \(ArraySize(covers)) cover(s), own crowd \(this.m_quiet ? "off" : s"at \(this.m_share)"), \(ArraySize(this.m_nullIds)) null area(s), \(this.m_hidden) NPC(s) hidden so far, \(this.m_riders) rider(s) left to their vehicle";
+    return s"overlap: \(this.m_overlap), \(ArraySize(covers)) cover(s), own crowd \(this.m_quiet ? "off" : s"at \(this.m_share)"), \(ArraySize(this.m_nullIds)) null area(s), \(this.m_hidden) NPC(s) hidden so far, \(this.m_riders) rider(s) left to their vehicle; \(TandemStreet.SpawnersReport())";
   }
 
   // An NPC of ours that we do not add to the shared world: brain off and out

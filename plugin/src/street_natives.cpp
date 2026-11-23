@@ -9,6 +9,7 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "combat.hpp"
+#include "engine/crowd.hpp"
 #include "mods.hpp"
 #include "runtime.hpp"
 
@@ -340,6 +341,11 @@ struct TandemStreet : Red::IScriptable {
   static bool FollowsLight(Red::EntityID entity) {
     return Runtime::Get().FollowsLight(entity.hash);
   }
+  // Our crowd's own spawners (pedestrians, traffic, parked cars) off while
+  // another game runs our street (Npcs.reds, deep inside a cover), on again
+  // after; applied on the game thread's frame (engine/crowd.hpp). Any thread.
+  static void SpawnersOff(bool off) { engine::WantCrowdSpawnersOff(off); }
+  static Red::CString SpawnersReport() { return engine::CrowdSpawnersReport().c_str(); }
 
   RTTI_IMPL_TYPEINFO(TandemStreet);
   RTTI_IMPL_ALLOCATOR();
@@ -400,6 +406,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStreet, "TandemStreet", {
   RTTI_METHOD(TakeLightsSaid);
   RTTI_METHOD(FollowLights);
   RTTI_METHOD(FollowsLight);
+  RTTI_METHOD(SpawnersOff);
+  RTTI_METHOD(SpawnersReport);
   RTTI_METHOD(MakeId);
   RTTI_METHOD(OwnerOf);
   RTTI_METHOD(RunBy);

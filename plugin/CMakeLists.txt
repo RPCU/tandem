@@ -56,6 +56,7 @@ add_library(tandem SHARED
   src/engine/controller.cpp
   src/engine/hooks.cpp
   src/engine/guards.cpp
+  src/engine/crowd.cpp
   src/engine/look.cpp
   src/engine/trace.cpp
   src/engine/pose.cpp

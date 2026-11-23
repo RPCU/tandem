@@ -4,6 +4,7 @@
 #include "config.hpp"
 #include "degradations.hpp"
 #include "engine/access.hpp"
+#include "engine/crowd.hpp"
 #include "engine/guards.hpp"
 #include "engine/hooks.hpp"
 #include "engine/pose.hpp"
@@ -104,6 +105,8 @@ bool OnRunningUpdate(RED4ext::CGameApplication *) {
   tandem::plugin::engine::ReportCrashGuards();
   // The disposals the scripts asked for (Traffic.reds Remove), here.
   tandem::plugin::engine::RunDisposals();
+  // Our crowd's spawners, off where another game runs the street.
+  tandem::plugin::engine::RunCrowdSpawners();
   // Once, at the first frame: what of the engine this game lets us use
   // (engine/access.hpp). A blocked plugin touches nothing and checks nothing.
   if (!tandem::plugin::engine::AccessChecked() && !tandem::plugin::Runtime::Get().Blocked())

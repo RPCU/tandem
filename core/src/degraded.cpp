@@ -37,6 +37,9 @@ constexpr Info kCatalogue[] = {
      "vehicles other games run are teleported every frame, not moved by the engine"},
     {"body slots", Degraded, State,
      "a puppet's body gets no grapple slot: a grappled NPC is held in front of it"},
+    {"crowd spawners", Degraded, State,
+     "where another game runs the street, our own traffic and parked cars still spawn there "
+     "and are removed out of sight"},
     // ---- states the plugin and the scripts find ----
     {"drawn prompts", Degraded, State,
      "prompts on players and vendors are drawn by tandem, not the game's interactions"},

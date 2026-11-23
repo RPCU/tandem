@@ -332,8 +332,11 @@ companions, the session lost.
   off, nothing hidden. The `ChangeDensityModifier(0)` a guest applied for
   the whole session is gone.
 - **Inside a higher-ranked linked player's region** (our V within 45 m of
-  theirs; back to normal beyond 60 m): density 0, as before, once that has
-  held for a second (at a join, a place not yet known covered a guest 1 km
+  theirs; back to normal beyond 60 m): density 0, as before, and the
+  crowd's own spawners off (its managers and the parking-space spawner,
+  which density does not reach: `engine/crowd.cpp`, engine facts §13.158;
+  on again after, unless a quest holds the crowd off), once that has held
+  for a second (at a join, a place not yet known covered a guest 1 km
   away for a moment and emptied its street). The two Vs see the same
   streets; one game populates them.
 - **In the overlap only**: an NPC of ours first seen inside a higher-ranked
@@ -389,9 +392,10 @@ does about its own ambient crowd and traffic, beyond the three rules above:
 - **Restored when apart**: the covers go with the link (or the session):
   density is reset, the null areas are disabled, held back cars are shared
   again. NPCs hidden meanwhile stay hidden until they stream out (§10).
-- Nothing is switched in the crowd, traffic or prevention systems
-  themselves: the game's own levers only (a density, a null area), so what
-  expects a crowd (quests' own crowd nodes, fear reactions) keeps working.
+- The game's own levers only (a density, a null area, the bytes the
+  crowd's own enable sets), so what expects a crowd (quests' own crowd
+  nodes, fear reactions) keeps working; a quest's crowd switch is left as
+  the quest set it.
 
 `tools/game.sh cmd overlap` reports the setting, the covers, the crowd's
 share, the null areas and the cars held back.
