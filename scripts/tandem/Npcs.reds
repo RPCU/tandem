@@ -108,6 +108,8 @@ public class TandemNpcProxy {
   // Our modifier on it for the host's NPC's level (Levels.reds).
   public let levelMod: ref<gameStatModifierData>;
   public let levelShift: Float;
+  // Since when its body has been far from its owner's NPC (Check; 0: not).
+  public let strayAt: Float;
 }
 
 // A proxy taken out of its seat, deleted a moment later (a body is deleted
@@ -198,6 +200,8 @@ public class TandemNpcs {
   private let m_popIn: Int32;
   private let m_popOut: Int32;
   private let m_popWaited: Int32;
+  // Proxies put back where their owner says (Check).
+  private let m_strays: Int32;
   // Host: guests' status effects waiting for their puppet (the instigator).
   private let m_pendingEffects: array<TandemNpcEvent>;
   private let m_pendingSince: array<Float>;
@@ -1411,7 +1415,7 @@ public class TandemNpcs {
         }
       }
     }
-    TandemNative.Log(s"npc list: \(ours) ours, \(proxies) proxies, \(unshown) shared without a proxy, \(own) own unshared (\(inSight) in sight) within 200 m; in sight within 50 m since the start: \(this.m_popIn) came, \(this.m_popOut) went, \(this.m_popWaited) of ours held back later for it");
+    TandemNative.Log(s"npc list: \(ours) ours, \(proxies) proxies, \(unshown) shared without a proxy, \(own) own unshared (\(inSight) in sight) within 200 m; in sight within 50 m since the start: \(this.m_popIn) came, \(this.m_popOut) went, \(this.m_popWaited) of ours held back later for it; \(this.m_strays) proxies put back where their owner says");
   }
 
   private func IsPuppet(id: EntityID) -> Bool {
@@ -1988,7 +1992,31 @@ public class TandemNpcs {
     // What the players linked with us share and we do not show.
     let missing: array<Uint32>;
     let since: array<Float>;
-    for npc in TandemSync.SharedNpcs() {
+    let sharedNow = TandemSync.SharedNpcs();
+    for npc in sharedNow {
+      // A proxy far from where its owner says (carried off by a car, fallen
+      // through, held by a seat it left: 130 to 440 m off on a rider's game,
+      // 2026-11-23) is put back there, out of the player's sight when it can
+      // be: at most 20 s in sight.
+      let far = this.FindProxy(npc.npc);
+      let farBody = IsDefined(far) && far.ready && !far.dead && !far.down && !far.seatWaits && !EntityID.IsDefined(far.seatedIn) ? this.ProxyBody(far.id) as GameObject : null;
+      if IsDefined(farBody) {
+        let told = new Vector4(npc.x, npc.y, npc.z, 1.0);
+        if Vector4.Distance(farBody.GetWorldPosition(), told) > 20.0 {
+          if far.strayAt <= 0.0 {
+            far.strayAt = now;
+          }
+          let seen = TandemSight.Seen(this.m_game, farBody, 1.8, 0.5);
+          if !seen || now - far.strayAt > 20.0 {
+            TandemNative.Log(s"consistency: proxy \(npc.npc) was \(Vector4.Distance(farBody.GetWorldPosition(), told)) m from its owner's NPC: put back");
+            GameInstance.GetTeleportationFacility(this.m_game).Teleport(farBody, told, TandemYawAngles(Rad2Deg(npc.yaw)));
+            far.strayAt = 0.0;
+            this.m_strays += 1;
+          }
+        } else {
+          far.strayAt = 0.0;
+        }
+      }
       if !IsDefined(this.FindProxy(npc.npc)) && !IsDefined(this.FindNpc(npc.npc)) {
         let first = this.MissingSince(npc.npc, now);
         if ArrayContains(lost, npc.npc) || now - first >= 2.0 {
