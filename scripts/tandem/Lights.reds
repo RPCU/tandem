@@ -226,7 +226,8 @@ public class TandemLights {
         if IsDefined(light) {
           let far = Vector4.Distance(light.GetWorldPosition(), at);
           if far < 60.0 {
-            line += s" \(EntityID.ToDebugStringDecimal(id)) \(Cast<Int32>(far)) m \(TandemLights.Name(light.TandemColor()))\(IsDefined(light as CrossingLight) ? " crossing" : "")\(ArrayContains(this.m_theirs, id) ? " (followed)" : "");";
+            let lamp = light.GetWorldPosition();
+            line += s" \(EntityID.ToDebugStringDecimal(id)) \(Cast<Int32>(far)) m \(TandemLights.Name(light.TandemColor()))\(IsDefined(light as CrossingLight) ? " crossing" : "")\(ArrayContains(this.m_theirs, id) ? " (followed)" : "") at \(lamp.X) \(lamp.Y) \(lamp.Z);";
           }
         }
       }
