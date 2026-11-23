@@ -355,3 +355,18 @@ within 20 s of every ride, five rides in five, at one of two places.
   guest's meter) now asks for a hostile attitude as well
   (`TandemNpcs.Detected`, `Notice`): a riding guest's combat that came
   and went was this. Changed after the measure, not yet run. [2.5-verified]
+- **What seats an NPC's body, beside the mount**: the vehicle's
+  `VehicleComponent.OnMountingEvent` pushes `VehicleNPCData` (side,
+  driver) to any NPC mounted; the seat's own animations come from
+  `VehicleComponent.SetAnimsetOverrideForPassenger(npc, vehicle, slot, 1.0)`
+  (two `AnimWrapperWeightSetter`s: the vehicle's animset override for the
+  seat's bone, and the bone), which only the NPC's AI sets when it mounts
+  (`SetAnimsetOverrideForPassengerNPC`, final.reds :322965; the unmount sets
+  0); and an NPC in a seat has the stance `Vehicle` (or `VehicleWindow`).
+  A proxy mounted by a bare `MountingRequest`, its brain off, got none of
+  the last two; and tandem then gave it its owner's stance and workspot (a
+  crowd driver's: `Stand`, its own car's seat workspot, whose failed entry
+  let go of the seated body's controller). Seen as drivers standing
+  upright through their seat or put out of it on one game. tandem sets the
+  override on seating (`TandemNpcs.FollowSeat`), the stance `Vehicle` and
+  no workspot while seated (`TandemNpcAnims`). [2.5-static]
