@@ -158,6 +158,7 @@ names of `engine-access.md`.
 | `physics watch` | degraded | state | `engine/physics.cpp` | a long physics pause is not watched |
 | `transform guard` | degraded | state | `engine/guards.cpp` (Wine) | the engine's own crash on an expired entity is not guarded |
 | `dismemberment guard` | degraded | state | `engine/guards.cpp` | the engine's own crash on an NPC detached in the middle of an action is not guarded (`../research/engine/re.md` §13.142) |
+| `slide guard` | degraded | state | `engine/guards.cpp` | the engine's own crash on an NPC proxy seated in a vehicle is not guarded (`../research/engine/npcs.md` §13.154) |
 | `anim trace` | degraded | state | `engine/trace.cpp` (asked for and off) | no animation trace, no mirror |
 | `vehicle move` | degraded | state | `engine/vehiclemove.cpp` (layout, hash); `System.reds` `MovePath` (5 bodies and none followed); only when asked for (`vehicle_move = kinematic` or `velocity`; teleports are the default) | the engine's move asked for, unavailable: vehicles are teleported every frame |
 | `body slots` | degraded | state | `engine/slots.cpp` (layout) | a puppet's body gets no grapple slot: a grappled NPC is held in front of it, teleported each tick (`grapple held`) |

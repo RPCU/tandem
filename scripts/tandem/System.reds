@@ -1493,6 +1493,13 @@ public class TandemSystem extends ScriptableSystem {
       view.cameraPerspective = Equals(how, "far") ? vehicleCameraPerspective.TPPFar : Equals(how, "medium") ? vehicleCameraPerspective.TPPMedium : Equals(how, "close") ? vehicleCameraPerspective.TPPClose : vehicleCameraPerspective.FPP;
       GetPlayer(this.GetGameInstance()).QueueEvent(view);
       TandemNative.Log(s"vehicle camera: \(how)");
+    } else if StrBeginsWith(command, "vehicle lamps") {
+      // (test, Traffic.reds LampsCommand) the headlights of the nearest
+      // vehicles: "vehicle lamps", "vehicle lamps on|off|engine|mode".
+      let street = TandemTraffic.Of(this.GetGameInstance());
+      if IsDefined(street) {
+        street.LampsCommand(command);
+      }
     } else if StrBeginsWith(command, "pose hips ") {
       // (test) a seated puppet's hips: "pose hips seat" (their height only,
       // the puppet's own place in its seat) or "pose hips stream".

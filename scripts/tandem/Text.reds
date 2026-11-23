@@ -351,6 +351,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-physics-watch", "the watch on long physics pauses");
     this.Text("Tandem-Degraded-Id-transform-guard", "the guard against an engine crash");
     this.Text("Tandem-Degraded-Id-dismemberment-guard", "the guard against an engine crash when an NPC is removed");
+    this.Text("Tandem-Degraded-Id-slide-guard", "the guard against an engine crash when an NPC is seated in a car");
     this.Text("Tandem-Degraded-Id-anim-trace", "the animation trace");
     this.Text("Tandem-Degraded-Id-vehicle-move", "smooth movement of other players' vehicles (they are teleported)");
     this.Text("Tandem-Degraded-Id-body-slots", "grapples held by the game on other players' bodies (a grabbed NPC is placed in front of them)");
@@ -900,6 +901,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-physics-watch", "la surveillance des longues pauses de la physique");
     this.Text("Tandem-Degraded-Id-transform-guard", "la protection contre un plantage du moteur");
     this.Text("Tandem-Degraded-Id-dismemberment-guard", "la protection contre un plantage du moteur quand un PNJ est retiré");
+    this.Text("Tandem-Degraded-Id-slide-guard", "la protection contre un plantage du moteur quand un PNJ est assis dans une voiture");
     this.Text("Tandem-Degraded-Id-anim-trace", "la trace des animations");
     this.Text("Tandem-Degraded-Id-vehicle-move", "le déplacement fluide des véhicules des autres joueurs (ils sont téléportés)");
     this.Text("Tandem-Degraded-Id-body-slots", "les prises tenues par le jeu sur le corps des autres joueurs (un PNJ saisi est placé devant eux)");

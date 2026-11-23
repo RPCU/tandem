@@ -301,8 +301,34 @@ within 20 s of every ride, five rides in five, at one of two places.
   (`0x1408AAD70`) stores the entity id of a weak object handle, null or
   not, and it then asks `0x142AE4A04` whether that object is the local
   player's, which dereferences it (`object + 0xC0`). Which action it is
-  and why its object is null were not found. A wait of 1 s after the
-  body came, and the controller not held, changed nothing. tandem seats no
+  and why its object is null were not found then. A wait of 1 s after the
+  body came, and the controller not held, changed nothing. **The action**
+  (2026-11-23, exe read): **SlideToSimple** (factory type 13,
+  `gameCActionsFactory` `0x140905000`; `0xC0` bytes, vtable `0x143774798`,
+  constructor `0x142C46528`), whose move controller
+  "CActionSlideToSimpleController" sits at `+0x58` (vtable `0x143774820`,
+  base "Transition Controller" `0x143665AB8`); `0x142C46940` is that
+  controller's slot 15. Only the behaviour-tree node
+  `AIbehaviorActionSlideToWorldPositionNodeDefinition` with `useMovePlanner`
+  false creates it (`0x142C36B18`, `0x142C36268`; setup `0x142C46BA8`, host
+  the puppet's `moveComponent` at `+0x440`): a proxy's tree still runs a
+  slide with its brain off. Its start (slot 6, `0x142C469C4`) adds the
+  controller to the move component (`0x14022ED40`, `0x14022EDC4`), which
+  hands it the entity in its weak handle `+0x270`, non-null (checked at
+  `0x14022EE98`). Slot 15 casts that entity to `gamePuppet` (`0x1401BCA1C`)
+  and, unlike the motion-table controller's override (`0x141932FF0`, a
+  `gameObject` cast with a null test), sends the result unchecked to
+  `0x142AE4A04` (is it the local player, through `gameIPlayerManager`): an
+  entity that is not a puppet makes the cast null and the read of `+0xC0`
+  faults. Who sets `moveComponent+0x270` was not found (the mount's vehicle
+  is the guess). [2.5-static] The **slide guard** (`engine/guards.cpp`,
+  feature `slide guard`) hooks `0x142C46940` (hash 2938119384) behind its
+  first `0x36` bytes (its two first calls checked against hashes 1165500739,
+  the base, and 2632196524, the cast) and answers through the base alone
+  when the entity is null or not a `gamePuppet`, which is what the original
+  returns for "not the local player". With our V on foot the same crash
+  came twice on 2026-11-23, 3 to 13 s after drivers were seated in street
+  cars (with the 100 m share, about ten a minute). tandem seats no
   proxy while our own V is mounted (`TandemNpcs.FollowSeat`: it waits out
   of sight). A proxy seated 1.5 s after our V got out of a seat died the
   same way (instance c, 20:41:31, a street car's driver): it now waits 5 s
