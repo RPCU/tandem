@@ -766,3 +766,31 @@ record.CustomizeCarRims())` (a colour packed as
   writes the placed component (1828854026, `0x14061ddc8`, the move's
   first step too), which the vehicle's update writes back from its rigid
   body every frame. [2.5-static]
+
+### 13.157 A Dispose during the scene's detach phase: one entity detached on two threads (2026-11-23, game 2.50, exe read)
+
+Five crashes of a guest whose V had just come into another game's area
+while tandem disposed of its own cars there (`TandemWheels.Dispose`, 27 in
+one tick, 30 a second), all inside the engine's `EntityScene/DetachAsync`
+job (`0x140DBB958`, hash 574635343; set up at `0x140DBBD14`, called from
+`0x14074B714`). `entEntity.Dispose` (`0x142993D88`, 52566656) posts a
+removal (type 3) to the scene's request (`0x14074BC5C`, 3800374702): under
+the lock at `scene+0x229F58`, with `scene+0x229F5C` zero it queues it
+(de-duplicated by the entity's request field `+0x68`), and non-zero it runs
+it at once on the caller's thread (`0x1410D1C04`: the detach `0x140206A14`,
+then Uninitialize `0x140720600`). That flag stays set for the whole async
+phase (set in `0x14071A59C`, cleared by a last job `0x140CC5934`). An
+entity already in the phase's batch (status `+0x156` 4) is then detached
+twice: the collider's OnDetach (`entColliderComponent` slot 50,
+`0x140721684`) finds its registry `+0x128` cleared by the other and its
+removal (`0x140721E50`) reads `0x16A` (`+0x22CA324`, a spinlock); or the
+puppet's OnDetach (`gamePuppet` slot 45, `0x1407C6D94`) finds its
+components gone and reads the never-set `+0x538` (`+0x6DC998`); a third
+crash (`+0x7C60C0`) was an event handed to a script callback on a freed
+object. [2.5-static] The **dispose gate** (`engine/guards.cpp`, feature
+`dispose gate`) checks `0x14074BC5C`'s lock and phase test on 2.50 and
+refuses a script's Dispose while `scene+0x229F5C` is set, the entity's
+status is not 4 or its request field has a request (the scene read as
+`entEntity.Dispose` does, `**(entity+0xB8)`); the script tries again on a
+later tick. A small race remains between the check and the engine's own
+decision. [unverified]

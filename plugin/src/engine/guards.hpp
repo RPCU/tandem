@@ -29,6 +29,12 @@ void CheckDismembermentGuard();
 // gamePuppet's class. For the startup line: "hooked (…)" or "off (why)".
 std::string InstallSlideGuard(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle);
 void CheckSlideGuard();
+// The first frame: whether the entity scene's request is 2.50's (engine/
+// vehicles.md §13.157); then DisposeAllowed: false while the scene runs its
+// async detach phase or the entity is not attached with nothing pending
+// (the script retries on a later tick). Game thread.
+void CheckDisposeGate();
+bool DisposeAllowed(void *entity);
 // Game thread, every frame: what the guards skipped on job threads, said
 // when it changed and at most every 600 frames
 // (`dismemberment guard: N detached notifications skipped`).

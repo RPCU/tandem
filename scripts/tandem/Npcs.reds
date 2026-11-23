@@ -159,6 +159,8 @@ public class TandemNpcs {
   private let m_coveredSince: Float;
   private let m_assumeTogether: Bool;
   private let m_lastQuiet: Float;
+  // When our crowd's density last changed (Traffic.reds waits after it).
+  private let m_densityAt: Float;
   // The overlap: this game's setting (read once), the share of our crowd we
   // keep now, the null areas we keep (by the player whose region each
   // covers), and the NPCs left to their vehicle's fate.
@@ -598,6 +600,11 @@ public class TandemNpcs {
     return this.m_hidden;
   }
 
+  // Since our crowd's density last changed (a large number: never).
+  public func DensityFor() -> Float {
+    return this.m_densityAt > 0.0 && this.m_now >= this.m_densityAt ? this.m_now - this.m_densityAt : 1000.0;
+  }
+
   // Our own crowd is off (our V deep in a linked player's region): no save
   // meanwhile (Saves.reds).
   public func Quiet() -> Bool {
@@ -652,11 +659,13 @@ public class TandemNpcs {
     if by != 0u && !this.m_quiet && this.m_now - this.m_coveredSince >= 1.0 {
       this.m_quiet = true;
       this.m_share = 0.0;
+      this.m_densityAt = this.m_now;
       crowd.ChangeDensityModifier(0.0);
       TandemNative.Log(s"npcs: guest, own crowd off (inside player \(by)'s region)");
     } else if by == 0u && this.m_quiet {
       this.m_quiet = false;
       this.m_share = 1.0;
+      this.m_densityAt = this.m_now;
       crowd.ResetDensityModifier();
       TandemNative.Log("npcs: own region, own crowd on");
     }

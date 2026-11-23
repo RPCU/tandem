@@ -30,6 +30,8 @@ constexpr Info kCatalogue[] = {
      "the engine's crash on an NPC detached in the middle of an action is not guarded"},
     {"slide guard", Degraded, State,
      "the engine's crash on an NPC proxy seated in a vehicle is not guarded"},
+    {"dispose gate", Degraded, State,
+     "the engine's crash on a car removed while the world detaches is not guarded"},
     {"anim trace", Degraded, State, "no animation trace, no mirror"},
     {"vehicle move", Degraded, State,
      "vehicles other games run are teleported every frame, not moved by the engine"},

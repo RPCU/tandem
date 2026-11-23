@@ -38,6 +38,7 @@ inline constexpr std::string_view kPhysics = "physics watch";
 inline constexpr std::string_view kTransformGuard = "transform guard";
 inline constexpr std::string_view kDismembermentGuard = "dismemberment guard";
 inline constexpr std::string_view kSlideGuard = "slide guard";
+inline constexpr std::string_view kDisposeGate = "dispose gate";
 inline constexpr std::string_view kTrace = "anim trace";
 inline constexpr std::string_view kVehicleMove = "vehicle move";
 inline constexpr std::string_view kBodySlots = "body slots";

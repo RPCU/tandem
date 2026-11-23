@@ -7,6 +7,7 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "engine/guards.hpp"
 #include "engine/vehiclemove.hpp"
 #include "runtime.hpp"
 
@@ -94,8 +95,11 @@ struct TandemWheels : Red::IScriptable {
   // The engine's own removal of an entity from the world (entEntity.Dispose,
   // a native the scripts do not declare): our own crowd's vehicles and their
   // riders where another game runs the street (Traffic.reds Remove).
+  // Not while the scene detaches (the dispose gate, engine/guards.cpp): false,
+  // and the script asks again on a later tick.
   static bool Dispose(Red::Handle<Red::ent::Entity> entity) {
-    return entity && Red::CallVirtual(entity.instance, "Dispose");
+    return entity && engine::DisposeAllowed(entity.instance) &&
+           Red::CallVirtual(entity.instance, "Dispose");
   }
 
   // A vehicle named across games: a player's car, a shared world vehicle.

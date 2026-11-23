@@ -162,6 +162,28 @@ bool SlideDetour(void *controller, void *moves, AnyHandle *entity) {
   return g_slideOriginal(controller, moves, entity);
 }
 
+// The dispose gate (engine/vehicles.md §13.157): the entity scene's request
+// (0x14074BC5C on 2.50, hash 3800374702) runs a removal at once on the
+// caller's thread while the scene's async detach phase is on (its flag at
+// scene+0x229F5C), and the same entity may then be detached on two threads
+// (five crashes on 2026-11-23, +0x22CA324, our V arriving in another game's
+// area while we disposed of our own cars there). A script's Dispose waits
+// while the phase is on, or while the entity is not attached (status +0x156
+// is not 4) or has a request pending (+0x68 & 0xF).
+constexpr std::uint32_t kSceneRequest = 3800374702;
+constexpr std::size_t kSceneLockAt = 0x16;
+constexpr std::array<std::uint8_t, 7> kSceneLock{0x48, 0x8D, 0x91, 0x58, 0x9F, 0x22, 0x00};
+constexpr std::size_t kScenePhaseAt = 0x2A;
+constexpr std::array<std::uint8_t, 10> kScenePhase{0x8B, 0x87, 0x5C, 0x9F, 0x22,
+                                                   0x00, 0x85, 0xC0, 0x74, 0x10};
+constexpr std::size_t kScenePhaseFlag = 0x229F5C;
+constexpr std::size_t kEntitySceneRef = 0xB8;
+constexpr std::size_t kEntityStatus = 0x156;
+constexpr std::size_t kEntityRequest = 0x68;
+constexpr std::uint8_t kAttached = 4;
+std::atomic_bool g_gateOn{false};
+std::atomic<std::uint64_t> g_gateWaited{0};
+
 // Skips are said at most once per kReportFrames frames (game thread).
 constexpr std::uint32_t kReportFrames = 600;
 
@@ -321,6 +343,41 @@ void CheckSlideGuard() {
             "whether it is the local player");
 }
 
+void CheckDisposeGate() {
+  const auto f = feature::kDisposeGate;
+  const auto request = FindAddress(f, "the entity scene's request", kSceneRequest);
+  if (!request)
+    return;
+  bool ok = Matches("dispose gate", "the scene request's lock", request + kSceneLockAt, kSceneLock);
+  ok = Matches("dispose gate", "the scene request's phase test", request + kScenePhaseAt,
+               kScenePhase) &&
+       ok;
+  if (!ok) {
+    FeatureOff(f, "the entity scene's request differs from 2.50");
+    return;
+  }
+  g_gateOn.store(true, std::memory_order_relaxed);
+  FeatureOn(f);
+  log::Info("dispose gate: on: no entity is disposed of while the scene detaches");
+}
+
+bool DisposeAllowed(void *entity) {
+  if (!entity)
+    return false;
+  if (!g_gateOn.load(std::memory_order_relaxed))
+    return true;
+  const auto *bytes = static_cast<const std::uint8_t *>(entity);
+  const auto *ref = *reinterpret_cast<const std::uint8_t *const *>(bytes + kEntitySceneRef);
+  const auto *scene = ref ? *reinterpret_cast<const std::uint8_t *const *>(ref) : nullptr;
+  const bool busy = !scene ||
+                    *reinterpret_cast<const std::uint32_t *>(scene + kScenePhaseFlag) != 0 ||
+                    bytes[kEntityStatus] != kAttached ||
+                    (*reinterpret_cast<const std::uint32_t *>(bytes + kEntityRequest) & 0xF) != 0;
+  if (busy)
+    g_gateWaited.fetch_add(1, std::memory_order_relaxed);
+  return !busy;
+}
+
 void CheckDismembermentGuard() {
   // Off already, with its reason (the hash, the bytes, the hook).
   if (!g_notifyTarget)
@@ -339,6 +396,14 @@ void ReportCrashGuards() {
   if (s_frames < kReportFrames)
     ++s_frames;
   static std::uint64_t s_slideSaid = 0;
+  static std::uint64_t s_gateSaid = 0;
+  const auto waited = g_gateWaited.load(std::memory_order_relaxed);
+  if (waited != s_gateSaid && s_frames >= kReportFrames) {
+    s_gateSaid = waited;
+    log::Info(
+        "dispose gate: {} disposals put off (the scene detaching, or the entity not attached)",
+        waited);
+  }
   const auto n = g_notifySkipped.load(std::memory_order_relaxed);
   const auto slides = g_slideSkipped.load(std::memory_order_relaxed);
   if ((n == s_said && slides == s_slideSaid) || s_frames < kReportFrames)
