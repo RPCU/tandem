@@ -1515,11 +1515,14 @@ public class TandemTraffic {
   // the crowd's (HeldBack): a parked crowd car of ours, a parked police
   // car; that game's world has its own there. Not a placed one (the same
   // in every game: shared by its own id), nor a quest's, nor a police car
-  // with its crew aboard (a unit on the move: Police.reds), nor a wreck
-  // (27 disposed in one tick with a burning wreck among them, and the game
-  // died: no proxy is spawned onto it instead, OwnNear).
+  // with its crew aboard (a unit on the move: Police.reds). A wreck of ours
+  // goes too, only the population system's way (it spawned it: FindStub,
+  // RemoveEntity: TandemWheels.DisposeBySystem, else left), out of sight:
+  // left, it was one game's wreck and parts while the other's street had its
+  // own car there. (27 disposed in one tick with a burning wreck among them
+  // took the game down before the dispose gate and the stub path, §13.157.)
   private func OneSided(vehicle: ref<VehicleObject>, body: EntityID, entities: ref<DynamicEntitySystem>) -> Bool {
-    return !EntityID.IsStatic(body) && this.Eligible(vehicle, body, entities) && !vehicle.IsQuest() && !vehicle.IsDestroyed() && (!vehicle.IsPrevention() || !VehicleComponent.HasActiveDriverMounted(this.m_game, body));
+    return !EntityID.IsStatic(body) && this.Eligible(vehicle, body, entities) && !vehicle.IsQuest() && (!vehicle.IsPrevention() || !VehicleComponent.HasActiveDriverMounted(this.m_game, body));
   }
 
   // (overlap_despawn = remove, the default) Out of our world at once: the
@@ -1579,7 +1582,7 @@ public class TandemTraffic {
     }
     this.m_removed += 1;
     TandemNative.LogDebug(s"street: our \(TDBID.ToStringDEBUG(vehicle.GetRecordID())) \(EntityID.ToDebugString(body)) removed (another game runs the street here)");
-    return TandemWheels.Dispose(vehicle);
+    return vehicle.IsDestroyed() ? TandemWheels.DisposeBySystem(vehicle) : TandemWheels.Dispose(vehicle);
   }
 
   private func ReadDespawn() -> Void {

@@ -136,7 +136,7 @@ def main():
                 if own["kind"] == "ours" and prx["kind"] == "proxy" and own.get("spot") and prx.get("spot"):
                     if own["spot"] not in ("none", "unread"):
                         # (seated: a driver's seat workspot, the seat's own on the proxy)
-                        history.setdefault(i, []).append(prx["spot"] in (own["spot"], "entering", "seated"))
+                        history.setdefault(i, []).append((own["spot"], prx["spot"] in (own["spot"], "entering", "seated")))
                     if own["spot"] != "none" or prx["spot"] not in ("none", "seated"):
                         acts += 1
                         if own["spot"] != prx["spot"] and prx["spot"] != "seated" and not (prx["spot"] == "entering" and prx["said"] == own["spot"]):
@@ -183,8 +183,10 @@ def main():
     # A proxy that went out of its owner's workspot and back in between
     # lists while the owner stayed: the seated NPC that stood up and sat again.
     if any(len(h) > 1 for h in history.values()):
-        flicker = {i: sum(1 for x, y in zip(h, h[1:]) if x != y) for i, h in history.items() if len(h) > 1}
-        steady = sum(1 for i, h in history.items() if len(h) > 1 and all(h))
+        # (a change while the owner changed workspots too is the copy
+        # following it, not a flicker)
+        flicker = {i: sum(1 for x, y in zip(h, h[1:]) if x[0] == y[0] and x[1] != y[1]) for i, h in history.items() if len(h) > 1}
+        steady = sum(1 for i, h in history.items() if len(h) > 1 and all(m for _, m in h))
         print(f"== activity over the lists: {len(flicker)} NPCs in a workspot, {steady} shown in it every time, "
               f"{sum(1 for n in flicker.values() if n)} flickered ({sum(flicker.values())} changes)")
         for i, n in sorted(flicker.items()):
