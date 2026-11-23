@@ -237,6 +237,10 @@ public class TandemSpot {
   // When it was last jumped to its entry, last checked for being in.
   public let jumpedAt: Float;
   public let checkedAt: Float;
+  // When it last got up (0: settled), where its body last stood.
+  public let leftAt: Float;
+  public let lastPlace: Vector4;
+  public let sampledAt: Float;
 
   public func Playing() -> Bool {
     return this.state == 1 || this.state == 2;
@@ -246,7 +250,7 @@ public class TandemSpot {
     let workspots = GameInstance.GetWorkspotSystem(game);
     switch this.state {
       case 0:
-        if want != 0ul {
+        if want != 0ul && this.Settled(body, now) {
           this.Enter(game, body, hold, want, now, label);
         }
         break;
@@ -323,12 +327,38 @@ public class TandemSpot {
           }
           this.state = 0;
           this.path = 0ul;
+          this.leftAt = now;
           if hold != 0u {
             TandemNative.HoldPuppet(hold, false);
           }
         }
         break;
     }
+  }
+
+  // Out of one workspot, into the next only once the body has walked where
+  // its owner went and stands (the owner gets up, walks a few metres, sits
+  // at the next: the copy sat down where it had got up, 5.6 m off, as soon
+  // as the next was said). At most 6 s.
+  private func Settled(body: ref<ScriptedPuppet>, now: Float) -> Bool {
+    if this.leftAt <= 0.0 || now < this.leftAt || now - this.leftAt >= 6.0 {
+      return true;
+    }
+    if now - this.leftAt < 1.0 {
+      return false;
+    }
+    // (sampled every quarter second: still means under 0.2 m/s)
+    if now - this.sampledAt < 0.25 && now >= this.sampledAt {
+      return false;
+    }
+    this.sampledAt = now;
+    let at = body.GetWorldPosition();
+    let still = Vector4.Distance(at, this.lastPlace) < 0.05;
+    this.lastPlace = at;
+    if still {
+      this.leftAt = 0.0;
+    }
+    return still;
   }
 
   // Out at once (the one it follows is gone).
@@ -944,10 +974,14 @@ public class TandemNpcAnims {
       }
     }
     for proxy in this.m_proxies {
-      let body = this.Body(proxy.npc);
+      // Nothing to do for this one this tick: no body looked up (each
+      // lookup walks every proxy; 160 of them made the guest's NPC section
+      // 3 ms a tick at kabuki-market, 2026-11-23).
+      let seatDue = now - proxy.seatCheckedAt >= 0.5 || now < proxy.seatCheckedAt;
+      let body = proxy.dirty || seatDue || this.SpotDue(proxy, now) ? this.Body(proxy.npc) : null;
       if IsDefined(body) {
         // Seated or not: twice a second (a mount changes rarely).
-        if now - proxy.seatCheckedAt >= 0.5 || now < proxy.seatCheckedAt {
+        if seatDue {
           proxy.seatCheckedAt = now;
           let seated = VehicleComponent.IsMountedToVehicle(this.m_game, body);
           if NotEquals(seated, proxy.seated) {
@@ -962,6 +996,23 @@ public class TandemNpcAnims {
         this.Workspot(body, proxy, now);
       }
     }
+  }
+
+  // Whether its workspot has something to do this tick: get in or out, a
+  // new entry, its keep-alive jump or its twice-a-second check.
+  private func SpotDue(proxy: ref<TandemNpcAnimProxy>, now: Float) -> Bool {
+    let spot = proxy.spot;
+    let want = (proxy.anim.flags & 2) != 0 ? proxy.anim.workspot : 0ul;
+    if !IsDefined(spot) {
+      return want != 0ul;
+    }
+    if spot.state == 0 {
+      return want != 0ul && want != spot.path || spot.leftAt > 0.0;
+    }
+    if spot.state != 2 || proxy.seated || want != spot.path || proxy.anim.workspotEntry != spot.entry {
+      return true;
+    }
+    return now - spot.checkedAt >= 0.5 || now - spot.jumpedAt >= 6.0 || now < spot.checkedAt;
   }
 
   // The proxy is gone or dead: nothing more to follow.

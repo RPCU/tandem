@@ -134,9 +134,12 @@ def main():
                 both += 1
                 own, prx = (x, y) if x["kind"] == "ours" else (y, x)
                 if own["kind"] == "ours" and prx["kind"] == "proxy" and own.get("spot") and prx.get("spot"):
-                    if own["spot"] not in ("none", "unread"):
-                        # (seated: a driver's seat workspot, the seat's own on the proxy)
-                        history.setdefault(i, []).append((own["spot"], prx["spot"] in (own["spot"], "entering", "seated")))
+                    if own["spot"] != "unread":
+                        # (seated: a driver's seat workspot, the seat's own on the proxy;
+                        # every list, the owner out of one too, so its own getting up
+                        # and sitting again is not the copy's flicker)
+                        same = prx["spot"] in (own["spot"], "seated") or (prx["spot"] == "entering" and own["spot"] != "none")
+                        history.setdefault(i, []).append((own["spot"], same))
                     if own["spot"] != "none" or prx["spot"] not in ("none", "seated"):
                         acts += 1
                         if own["spot"] != prx["spot"] and prx["spot"] != "seated" and not (prx["spot"] == "entering" and prx["said"] == own["spot"]):
@@ -182,11 +185,17 @@ def main():
         print(f"== all: {sum(t[0] for t in totals)} of {sum(t[1] for t in totals)} on both games over {len(totals)} lists")
     # A proxy that went out of its owner's workspot and back in between
     # lists while the owner stayed: the seated NPC that stood up and sat again.
-    if any(len(h) > 1 for h in history.values()):
+    if any(len(h) > 1 and any(o != "none" for o, _ in h) for h in history.values()):
         # (a change while the owner changed workspots too is the copy
         # following it, not a flicker)
-        flicker = {i: sum(1 for x, y in zip(h, h[1:]) if x[0] == y[0] and x[1] != y[1]) for i, h in history.items() if len(h) > 1}
-        steady = sum(1 for i, h in history.items() if len(h) > 1 and all(m for _, m in h))
+        # (the lists of the two games are taken a moment apart: a list
+        # beside the owner's change, before or after, is not counted)
+        def flips(h):
+            return sum(1 for k in range(1, len(h)) if h[k][1] != h[k - 1][1] and h[k][0] == h[k - 1][0]
+                       and (k + 1 >= len(h) or h[k + 1][0] == h[k][0]) and k >= 2 and h[k - 2][0] == h[k][0])
+        sitting = {i: h for i, h in history.items() if len(h) > 1 and any(o != "none" for o, _ in h)}
+        flicker = {i: flips(h) for i, h in sitting.items()}
+        steady = sum(1 for h in sitting.values() if all(m for o, m in h if o != "none"))
         print(f"== activity over the lists: {len(flicker)} NPCs in a workspot, {steady} shown in it every time, "
               f"{sum(1 for n in flicker.values() if n)} flickered ({sum(flicker.values())} changes)")
         for i, n in sorted(flicker.items()):
