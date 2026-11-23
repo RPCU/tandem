@@ -67,6 +67,8 @@ public class TandemCar {
   public let siren: Bool;
   // Proxies: its headlights as we last set them (0 not yet, 1 off, 2 on).
   public let lamps: Int32;
+  // When its headlights were last checked against its owner's (Drive).
+  public let lampsAt: Float;
   // Our V is getting in: we no longer move it (the claim is on its way).
   public let claimed: Bool;
   // Someone has sat in it here: its body is never deleted (engine-knowledge §13.6).
@@ -892,6 +894,15 @@ public class TandemTraffic {
             }
             this.Show(car, body, true);
           }
+          // The game sets a copy's lights up after it came (and its own
+          // state may darken them): checked against the owner's every 2 s.
+          if !this.m_lampsOff && (this.m_now - car.lampsAt >= 2.0 || this.m_now < car.lampsAt) && (car.flags & 4) == 0 {
+            car.lampsAt = this.m_now;
+            let lit = (car.flags & 32) != 0;
+            if NotEquals(TandemTraffic.HeadlightsOn(body), lit) {
+              TandemTraffic.SetHeadlights(body, lit);
+            }
+          }
           let at = TandemStreet.Position(car.id);
           // By the engine's kinematic move, a teleport for a jump; a car at
           // rest where its owner says is left alone (TandemSystem.MoveBody).
@@ -1565,8 +1576,13 @@ public class TandemTraffic {
   // (the quests' own toggle, VehicleLightQuestToggleEvent).
   private static func SetHeadlights(vehicle: ref<VehicleObject>, on: Bool) -> Void {
     let state = TandemTraffic.ControllerOf(vehicle);
+    // Lit takes the mode and the car on: a copy came Disabled (a parked
+    // crowd car's state) and stayed dark with the mode On (2026-11-23).
     if IsDefined(state) {
       state.SetHeadLightMode(on ? vehicleELightMode.On : vehicleELightMode.Off);
+      if on && NotEquals(state.GetState(), vehicleEState.On) {
+        state.SetState(vehicleEState.On);
+      }
     }
     let lamps = vehicle.GetAccessoryController();
     if IsDefined(lamps) {
