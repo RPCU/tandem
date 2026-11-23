@@ -840,8 +840,47 @@ std::optional<proto::World> Runtime::HostWorld(std::uint32_t &changes) {
 }
 
 void Runtime::SubmitLocalPaused(bool paused) {
-  std::lock_guard _(m_lock);
-  m_localPaused = paused;
+  {
+    std::lock_guard _(m_lock);
+    m_localPaused = paused;
+  }
+  // The frames after the close are timed (NoteEngineFrame): a pause must
+  // give the world back without a hitch.
+  if (!paused)
+    m_afterPauseFrames.store(kAfterPauseFrames, std::memory_order_relaxed);
+}
+
+void Runtime::NoteEngineFrame() {
+  const auto now = net::NowUs();
+  const auto last = m_lastEngineFrameUs.exchange(now, std::memory_order_relaxed);
+  if (last == 0 || now < last)
+    return;
+  const auto gap = now - last;
+  m_engineFrames.fetch_add(1, std::memory_order_relaxed);
+  auto longest = m_engineLongestUs.load(std::memory_order_relaxed);
+  while (gap > longest &&
+         !m_engineLongestUs.compare_exchange_weak(longest, gap, std::memory_order_relaxed)) {
+  }
+  // The frames after our pause menu closed: the first's length and the
+  // longest, in one line once they are timed.
+  const auto left = m_afterPauseFrames.load(std::memory_order_relaxed);
+  if (left == 0)
+    return;
+  const auto index = kAfterPauseFrames - left;
+  if (index == 0) {
+    m_afterPauseFirstUs = gap;
+    m_afterPauseLongestUs = 0;
+  }
+  if (gap > m_afterPauseLongestUs) {
+    m_afterPauseLongestUs = gap;
+    m_afterPauseLongestAt = index + 1;
+  }
+  m_afterPauseFrames.store(left - 1, std::memory_order_relaxed);
+  if (left == 1)
+    log::Info("pause: after our menu closed, the first frame took {:.1f} ms, the longest of the "
+              "next {} {:.1f} ms (frame {})",
+              static_cast<double>(m_afterPauseFirstUs) / 1000.0, kAfterPauseFrames,
+              static_cast<double>(m_afterPauseLongestUs) / 1000.0, m_afterPauseLongestAt);
 }
 
 std::optional<bool> Runtime::TakeLocalPaused() {
@@ -2230,6 +2269,9 @@ void Runtime::ForgetRemote(proto::PlayerId player) {
     m_vehicles.erase(player);
   }
   PresenceState::Get().Forget(player);
+  // Its last state out of the captures' context (a player gone 20 min stayed
+  // in it, "as it said 1287.9 s before", 2026-11-23).
+  Observer::Get().Forget(player);
   std::lock_guard _(m_posesLock);
   m_poses.erase(player);
 }

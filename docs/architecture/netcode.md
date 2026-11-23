@@ -170,7 +170,11 @@ events, taps and recordings above it see `PlayerState`, `PoseState`,
   leaves from where and when it stood; not one held over a pause in the
   states (our V elsewhere: a state 4.4 s old, refused by the referee's
   clock rule, 2026-11-21). The receiver's interval estimate skips still
-  gaps, so the delay does not grow.
+  gaps, so the delay does not grow (a still V near: every 43 ms, drawn
+  70 ms behind). Past 200 m a V goes 5 times a second moving or not: that
+  interval is the stream's and the delay holds it (a companion 242 m away,
+  standing then running at 6.5 m/s: every 213 ms, drawn 217 ms behind,
+  2026-11-23; `interpolation_test`, "a V standing still…").
 - **Coalescing**: the net thread holds our V's state or pose up to 8 ms for
   the other (they come from the script tick and the animation job a few ms
   apart): one datagram per frame instead of two. A broadcast is encoded

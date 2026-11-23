@@ -796,6 +796,27 @@ public:
   // the log, for tools/game.sh and the scenarios.
   void NoteGameFrame() { m_lastFrameUs.store(net::NowUs(), std::memory_order_relaxed); }
   std::uint64_t LastGameFrameUs() const { return m_lastFrameUs.load(std::memory_order_relaxed); }
+  // The engine's own frame (RED4ext's Running state update, main.cpp): it
+  // goes on in a pause menu and behind a loading screen, where the script
+  // tick above waits (Pause.reds counts a paused menu's frames from it), and
+  // stops with a crash or a hang. Within the last second: the game runs.
+  void NoteEngineFrame();
+  static constexpr std::uint32_t kAfterPauseFrames = 30;
+  bool EngineFramesRun(std::uint64_t now) const {
+    const auto last = m_lastEngineFrameUs.load(std::memory_order_relaxed);
+    return last != 0 && (now <= last || now - last < 1'000'000);
+  }
+  // The engine's frames since the last call, and the longest of them (us):
+  // a script tick's gap that held many is a pause, not a long frame (the
+  // observer's frame trigger, Observer::Frame).
+  struct EngineFrames {
+    std::uint32_t count{};
+    std::uint64_t longestUs{};
+  };
+  EngineFrames TakeEngineFrames() {
+    return {m_engineFrames.exchange(0, std::memory_order_relaxed),
+            m_engineLongestUs.exchange(0, std::memory_order_relaxed)};
+  }
 
   // Puppets: which entity draws which player. Read lock-free on the animation
   // thread (by entity hash only), written on the game thread.
@@ -922,6 +943,14 @@ private:
   std::atomic<std::int64_t> m_clockOffsetUs{0};
   std::atomic_bool m_vehicleSmoothing{true}; // sync::RenderClock (test: off)
   std::atomic<std::uint64_t> m_lastFrameUs{0};
+  std::atomic<std::uint64_t> m_lastEngineFrameUs{0};
+  std::atomic<std::uint32_t> m_engineFrames{0};
+  std::atomic<std::uint64_t> m_engineLongestUs{0};
+  // After our pause menu closes: the engine's frames left to time (0: none),
+  // the first one's length and the longest (main thread only).
+  std::atomic<std::uint32_t> m_afterPauseFrames{0};
+  std::uint64_t m_afterPauseFirstUs{0}, m_afterPauseLongestUs{0};
+  std::uint32_t m_afterPauseLongestAt{0};
   // Each NPC's word with when it came (host clock): every owner lists only
   // its own NPCs, so an entry ends by going stale, not by being left out.
   std::map<proto::NpcId, std::pair<std::uint8_t, std::uint64_t>> m_npcDetected;  // m_lock

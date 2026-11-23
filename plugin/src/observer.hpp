@@ -71,6 +71,8 @@ public:
   // its state came (net thread). For the captures' context.
   void Local(const proto::Vec3 &position);
   void Remote(proto::PlayerId player, const proto::Vec3 &position);
+  // Net thread: the player left; its last state goes from the context.
+  void Forget(proto::PlayerId player);
   // Runtime::Start / Stop (game thread): a session began (`what`: its role
   // and address) or ended (the summary is written).
   void SessionStarted(std::string what);

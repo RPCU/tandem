@@ -101,6 +101,8 @@ struct ScriptFrame {
 
 bool OnRunningUpdate(RED4ext::CGameApplication *) {
   tandem::plugin::threads::NoteFrame();
+  // The watchdog's sign of life through pauses and loading screens.
+  tandem::plugin::Runtime::Get().NoteEngineFrame();
   // What the crash guards skipped on job threads (engine/guards.cpp).
   tandem::plugin::engine::ReportCrashGuards();
   // The disposals the scripts asked for (Traffic.reds Remove), here.
