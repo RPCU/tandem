@@ -129,7 +129,12 @@ query held [puppet | player N]`; the mock player's `--hold-left`,
   e.g. `visibilityRange`, are the base's), the icon and its colour (no
   mappin group knows the variant: the widgets fall back to their quest
   state), the name label in the world (the quest widget's display name or
-  distance text, rewritten after each native update: watch for flicker)
+  distance text, rewritten after each native update: watch for flicker;
+  once our `SetText` reached a controller's distance text, the native
+  `UpdateDistanceText` only showed its raw format, "{0, number, 0}M", seen
+  2026-11-23 on a pooled controller, a hidden name and an empty one: from
+  then on that controller's distance is ours at each `OnUpdate`, whatever
+  mappin it holds, `QuestMappinController.m_tandemDistance`)
   and on the map tooltip, and that the marker follows a seated player's car
   copy.
 - **Identity colour** (`TandemMarkers.ColorOf`): one colour per player id,

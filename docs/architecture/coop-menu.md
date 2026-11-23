@@ -143,14 +143,27 @@ yet run in game**).
   the Mod Settings mod appends its entry wherever the game's Mods entry is
   missing, and `ShowActionsList` its Close game.
 - **The page** (`scripts/tandem/Settings.reds`, both menus' Co-op page →
-  Co-op settings): one item per setting, "Name: V"; the status panel shows
-  what the row under the cursor (hovered, else selected) does
-  (`Settings-About-*`, `TandemSettings.About`). Its arrays (`Keys`,
-  `Labels`, `Abouts`, `Kinds`, `Whens`) have one entry per setting in the
+  Co-op settings): its groups, as the game's settings have tabs, so that
+  no list runs past the menu's panel: Session (name, friendly_fire,
+  enemy_scaling, level_gap, story), Gameplay (quest_freeze, scene_privacy,
+  time_host, race_car), Interface (notices, markers, nameplates,
+  party_hud), Scans and pings (link, pings), Advanced (recorder, relay,
+  code, direct); each opens a page of one item per setting, a short label
+  on one line, "Name: V" (a typed value past 18 characters is cut, the
+  description shows it whole). Back and Esc go to the list of groups, on
+  the group left; a change keeps the cursor on its row. Beside the list,
+  under the status lines and apart from them (a rule, then the row's name,
+  what it does in the game's settings info grey, when a change takes
+  effect in yellow, as the game's settings say "requires a restart"): the
+  description of the row under the cursor (hovered, else selected;
+  `Settings-About-*`, `Settings-Group-About-*`, `TandemSettings.About`,
+  `Note`). Its arrays (`Keys`,
+  `Labels`, `Abouts`, `Kinds`, `Whens`, `Groups`) have one entry per setting in the
   page's order: name, friendly_fire, enemy_scaling, level_gap, notices, markers,
   nameplates, party_hud, link, pings, recorder, relay, code, direct, story,
   quest_freeze, scene_privacy, time_host, race_car. `tools/menu-check.py`
   (`task menu:check`, run by `scripts:check` and CI) checks them aligned,
+  every group named and described and none empty,
   each key taken by `ApplySetting` and `settings::IsEditable`, every label,
   description and choice text in English and French, no two entries
   reading the same, nothing registered with Mod Settings, and no value
@@ -173,13 +186,13 @@ yet run in game**).
   still shows; `comms.md`);
   `name`, `relay`, `relay_token`, `story`, `time_host`, `level_gap` are what a running
   session was set up with, so a change during one waits for its end (the
-  label says "from the next session"); `quest_freeze` and `scene_privacy`
-  choose hooks installed at launch ("after a restart").
+  description says so, `Settings-NextSession`); `quest_freeze` and `scene_privacy`
+  choose hooks installed at launch (`Settings-AfterRestart`).
 - **What they do**: `friendly_fire` is the host's rule for the whole
   session (`friendly_fire = off` by default; `combat.md`, `Rules`): on a host's page it
   changes the rule at once (the host sends `Rules` again, every game
   follows); on a guest's page in a session it shows the host's value,
-  "(the host's rule)", and cannot be changed there (its own tandem.ini's
+  the description says it is the host's rule, and it cannot be changed there (its own tandem.ini's
   value counts when it hosts). `enemy_scaling` (on by default; `npcs.md`,
   "Enemy scaling") is the host's rule the same way: hostile NPCs tougher for
   each extra player near them; its health per player,

@@ -5,8 +5,10 @@
 //   Co-op   -> Start a new co-op game | Host a saved game | Join a game |
 //              Join by address | Play solo (once one is chosen) | Write a
 //              bug report | Co-op settings | Back
-//   Settings -> one item per setting (Settings.reds): picking it switches or
-//              cycles it, or asks for a text; saved to tandem.ini at once
+//   Settings -> its groups (Session, Gameplay, Interface, Scans and pings,
+//              Advanced) | Back; a group -> one item per setting
+//              (Settings.reds): picking it switches or cycles it, or asks
+//              for a text; saved to tandem.ini at once
 //   Host    -> Continue | Load game | Back      (the game's own load list)
 //   Join    -> recent hosts... | Enter a join code | Back (no recent host:
 //              straight to the code's popup)
@@ -81,6 +83,7 @@ enum TandemCoopAction {
   Mods = 18,
   NewHost = 19,
   NewV = 20,
+  SettingsGroup = 21,
 }
 
 // One of our entries in a menu's list: the vanilla item data (its label is
@@ -477,8 +480,24 @@ public class TandemCoopMenu {
   public let nameFor: TandemCoopAction;
   // A popup closed with Esc: the menu still gets its release (clock ticks).
   public let swallowBack: Int32;
-  // The description of the setting under the cursor (the Settings page).
+  // The Settings page's group (0: the list of groups, 1 the first), and the
+  // next page's; the row the cursor goes to when the page shows (the row
+  // just changed, the group just left).
+  public let group: Int32;
+  public let nextGroup: Int32;
+  public let cursor: Int32;
+  public let nextCursor: Int32;
+  // In a session when the page was built (when a setting takes effect).
+  public let sessionNow: Bool;
+  // The description of the row under the cursor (the Settings page): its
+  // title, what it does, when a change takes effect.
+  public let aboutTitle: String;
   public let about: String;
+  public let aboutNote: String;
+  public let aboutBox: wref<inkVerticalPanel>;
+  public let aboutHead: wref<inkText>;
+  public let aboutBody: wref<inkText>;
+  public let aboutFoot: wref<inkText>;
 
   public static func Create(inGame: Bool) -> ref<TandemCoopMenu> {
     TandemCoop.ReportExpansion();
@@ -565,9 +584,19 @@ public class TandemCoopMenu {
       }
       this.Add("Menu-EnterCode", TandemCoopAction.EnterAddress);
     } else if Equals(this.page, TandemCoopPage.Settings) {
-      for key in TandemSettings.Keys() {
-        let item = this.Add("", TandemCoopAction.Setting, TandemSettings.Label(key, inSession || TandemNative.IsStarted()));
-        item.target = key;
+      this.sessionNow = inSession || TandemNative.IsStarted();
+      if this.group <= 0 {
+        let i = 1;
+        while i <= TandemSettings.GroupCount() {
+          let group = this.Add(TandemSettings.GroupKey(i), TandemCoopAction.SettingsGroup);
+          group.target = s"\(i)";
+          i += 1;
+        }
+      } else {
+        for key in TandemSettings.KeysOf(this.group) {
+          let item = this.Add("", TandemCoopAction.Setting, TandemSettings.Label(key));
+          item.target = key;
+        }
       }
     } else if ArraySize(problems) > 0 {
       // Co-op is off: nothing to host or join, only the report.
@@ -632,8 +661,10 @@ public class TandemCoopMenu {
   // its entry when the game's Mods entry is missing, as on our pages), and
   // ShowActionsList its Close game: dropped here. True: the list was rebuilt.
   public func Tidy(list: wref<ListController>) -> Bool {
+    this.aboutTitle = "";
+    this.about = "";
+    this.aboutNote = "";
     if !IsDefined(list) || Equals(this.page, TandemCoopPage.Root) {
-      this.about = "";
       return false;
     }
     let rebuilt = false;
@@ -645,11 +676,39 @@ public class TandemCoopMenu {
       list.Refresh();
       rebuilt = true;
     }
-    this.about = "";
     if Equals(this.page, TandemCoopPage.Settings) {
-      this.about = TandemSettings.About(this.Pointed(list));
+      let target = this.Pointed(list);
+      if StrLen(target) == 0 {
+        return rebuilt;
+      }
+      if this.group <= 0 {
+        let group = StringToInt(target, 0);
+        this.aboutTitle = TandemText.Get(TandemSettings.GroupKey(group));
+        this.about = TandemSettings.GroupAbout(group);
+      } else {
+        this.aboutTitle = TandemSettings.Title(target);
+        this.about = TandemSettings.About(target);
+        this.aboutNote = TandemSettings.Note(target, this.sessionNow);
+      }
     }
     return rebuilt;
+  }
+
+  // The row the cursor goes to as the page shows (within the list).
+  public func Cursor() -> Int32 {
+    return this.cursor >= 0 && this.cursor < ArraySize(this.items) ? this.cursor : 0;
+  }
+
+  // The index of the row that stands for this target (a setting's key).
+  public func RowOf(target: String) -> Int32 {
+    let i = 0;
+    while i < ArraySize(this.items) {
+      if Equals(this.items[i].target, target) {
+        return i;
+      }
+      i += 1;
+    }
+    return 0;
   }
 
   // The setting key of the row under the mouse, else of the selected one.
@@ -714,6 +773,49 @@ public class TandemCoopMenu {
       ArrayPush(this.lines, text);
       i += 1;
     }
+    // The Settings page's description, apart from the status above as the
+    // game's settings show theirs: a rule, the row's name, what it does
+    // (the game's settings info grey), when a change takes effect.
+    let box = new inkVerticalPanel();
+    box.SetName(n"tandem_about");
+    box.SetFitToContent(true);
+    box.SetHAlign(inkEHorizontalAlign.Right);
+    box.SetMargin(inkMargin(0.0, 56.0, 0.0, 0.0));
+    box.SetVisible(false);
+    box.Reparent(panel);
+    this.aboutBox = box;
+    let rule = new inkRectangle();
+    rule.SetName(n"tandem_about_rule");
+    rule.SetSize(Vector2(1100.0, 2.0));
+    rule.SetStyle(r"base\\gameplay\\gui\\common\\main_colors.inkstyle");
+    rule.BindProperty(n"tintColor", n"MainColors.MildRed");
+    rule.SetMargin(inkMargin(0.0, 0.0, 0.0, 24.0));
+    rule.Reparent(box);
+    let parts = 0;
+    while parts < 3 {
+      let part = new inkText();
+      part.SetName(parts == 0 ? n"tandem_about_title" : (parts == 1 ? n"tandem_about_text" : n"tandem_about_note"));
+      part.SetFontFamily("base\\gameplay\\gui\\fonts\\raj\\raj.inkfontfamily");
+      part.SetFontStyle(parts == 0 ? n"Medium" : n"Regular");
+      part.SetFontSize(parts == 0 ? 46 : 38);
+      part.SetLetterCase(parts == 0 ? textLetterCase.UpperCase : textLetterCase.OriginalCase);
+      part.SetStyle(r"base\\gameplay\\gui\\common\\main_colors.inkstyle");
+      part.BindProperty(n"tintColor", parts == 0 ? n"MainColors.White" : (parts == 1 ? n"MainColors.Grey" : n"MainColors.Yellow"));
+      part.SetFitToContent(true);
+      part.SetWrapping(true, 1100.0);
+      part.SetHAlign(inkEHorizontalAlign.Left);
+      part.SetHorizontalAlignment(textHorizontalAlignment.Left);
+      part.SetMargin(inkMargin(0.0, parts == 2 ? 24.0 : 0.0, 0.0, parts == 0 ? 12.0 : 0.0));
+      part.Reparent(box);
+      if parts == 0 {
+        this.aboutHead = part;
+      } else if parts == 1 {
+        this.aboutBody = part;
+      } else {
+        this.aboutFoot = part;
+      }
+      parts += 1;
+    }
     // Two empty widgets to animate: the clock (every half second) and a
     // one-frame wait for page changes.
     let clock = new inkCanvas();
@@ -753,8 +855,10 @@ public class TandemCoopMenu {
 
   // Asks for OnTandemDeferred on the owner next frame; false: no panel to
   // wait on (then the owner switches at once).
-  public func Defer(page: TandemCoopPage, owner: ref<IScriptable>) -> Bool {
+  public func Defer(page: TandemCoopPage, owner: ref<IScriptable>, opt group: Int32, opt cursor: Int32) -> Bool {
     this.nextPage = page;
+    this.nextGroup = group;
+    this.nextCursor = cursor;
     this.switching = true;
     if !IsDefined(this.later) {
       return false;
@@ -777,7 +881,18 @@ public class TandemCoopMenu {
     }
     this.switching = false;
     this.page = this.nextPage;
+    this.group = Equals(this.page, TandemCoopPage.Settings) ? this.nextGroup : 0;
+    this.cursor = this.nextCursor;
     return true;
+  }
+
+  // Back (and Esc): a settings group goes back to the list of groups, on
+  // the group it was; any other page up a page (Up).
+  public func DeferUp(owner: ref<IScriptable>) -> Bool {
+    if Equals(this.page, TandemCoopPage.Settings) && this.group > 0 {
+      return this.Defer(TandemCoopPage.Settings, owner, 0, this.group - 1);
+    }
+    return this.Defer(this.Up(), owner);
   }
 
   public func Refresh() -> Void {
@@ -797,9 +912,6 @@ public class TandemCoopMenu {
         ArrayPush(lines, TandemText.Get("Status-PickHost"));
       } else if Equals(this.page, TandemCoopPage.Settings) {
         ArrayPush(lines, TandemText.Get("Settings-Saved"));
-        if StrLen(this.about) > 0 {
-          ArrayPush(lines, this.about);
-        }
       } else if this.inGame && status.role == 1 && status.state == 3 {
         ArrayPush(lines, TandemCoop.InviteText());
       }
@@ -815,6 +927,16 @@ public class TandemCoopMenu {
         text.SetVisible(false);
       }
       i += 1;
+    }
+    let described = Equals(this.page, TandemCoopPage.Settings) && StrLen(this.about) > 0;
+    if IsDefined(this.aboutBox) {
+      this.aboutBox.SetVisible(described);
+    }
+    if described && IsDefined(this.aboutHead) && IsDefined(this.aboutBody) && IsDefined(this.aboutFoot) {
+      this.aboutHead.SetText(this.aboutTitle);
+      this.aboutBody.SetText(this.about);
+      this.aboutFoot.SetText(this.aboutNote);
+      this.aboutFoot.SetVisible(StrLen(this.aboutNote) > 0);
     }
     if this.swallowBack > 0 {
       this.swallowBack -= 1;
@@ -873,8 +995,16 @@ private func PopulateMenuItemList() -> Void {
   }
   this.m_menuListController.Refresh();
   if !root {
-    this.SetCursorOverWidget(inkCompoundRef.GetWidgetByIndex(this.m_menuList, 0));
+    this.TandemCursor();
   }
+}
+
+// The cursor on the page's row (the first, or the one just changed).
+@addMethod(SingleplayerMenuGameController)
+private func TandemCursor() -> Void {
+  let row = this.m_tandem.Cursor();
+  this.m_menuListController.SetSelectedIndex(row);
+  this.SetCursorOverWidget(inkCompoundRef.GetWidgetByIndex(this.m_menuList, row));
 }
 
 @wrapMethod(SingleplayerMenuGameController)
@@ -895,7 +1025,7 @@ protected cb func OnGlobalRelease(e: ref<inkPointerEvent>) -> Bool {
       e.Handle();
       if back == 2 {
         this.PlaySound(n"Button", n"OnPress");
-        this.TandemGo(this.m_tandem.Up());
+        this.TandemUp();
       }
       return true;
     }
@@ -913,18 +1043,25 @@ protected cb func OnContinueButtonEnter(evt: ref<inkPointerEvent>) -> Bool {
 }
 
 @addMethod(SingleplayerMenuGameController)
-private func TandemGo(page: TandemCoopPage) -> Void {
-  if !this.m_tandem.Defer(page, this) && this.m_tandem.TakeSwitch() {
+private func TandemGo(page: TandemCoopPage, opt group: Int32, opt cursor: Int32) -> Void {
+  if !this.m_tandem.Defer(page, this, group, cursor) && this.m_tandem.TakeSwitch() {
+    this.TandemShowPage();
+  }
+}
+
+@addMethod(SingleplayerMenuGameController)
+private func TandemUp() -> Void {
+  if !this.m_tandem.DeferUp(this) && this.m_tandem.TakeSwitch() {
     this.TandemShowPage();
   }
 }
 
 // Only our items on our pages (TandemCoopMenu.Tidy), the cursor back on
-// the first when the list was rebuilt.
+// the page's row when the list was rebuilt.
 @addMethod(SingleplayerMenuGameController)
 private func TandemTidy() -> Void {
   if this.m_tandem.Tidy(this.m_menuListController) {
-    this.SetCursorOverWidget(inkCompoundRef.GetWidgetByIndex(this.m_menuList, 0));
+    this.TandemCursor();
   }
 }
 
@@ -1013,7 +1150,7 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Bool {
   } else if Equals(action, TandemCoopAction.Report) {
     GenericMessageNotification.Show(this, TandemText.Get("Popup-Report"), TandemCoop.ReportText(), GenericMessageNotificationType.OK);
   } else if Equals(action, TandemCoopAction.Back) {
-    this.TandemGo(this.m_tandem.Up());
+    this.TandemUp();
   } else if Equals(action, TandemCoopAction.HostPage) {
     if !this.TandemAskName(action) {
       this.m_tandem.port = 0;
@@ -1060,12 +1197,14 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Bool {
     this.TandemGo(TandemCoopPage.Root);
   } else if Equals(action, TandemCoopAction.Settings) {
     this.TandemGo(TandemCoopPage.Settings);
+  } else if Equals(action, TandemCoopAction.SettingsGroup) {
+    this.TandemGo(TandemCoopPage.Settings, StringToInt(item.target, 0));
   } else if Equals(action, TandemCoopAction.Setting) {
     if TandemSettings.Kind(item.target) == 2 {
       this.TandemAskSetting(item.target);
     } else {
       TandemSettings.Set(item.target, TandemSettings.Next(item.target));
-      this.TandemGo(TandemCoopPage.Settings);
+      this.TandemGo(TandemCoopPage.Settings, this.m_tandem.group, this.m_tandem.RowOf(item.target));
     }
   }
   return true;
@@ -1093,7 +1232,7 @@ protected cb func OnTandemSetting(data: ref<inkGameNotificationData>) -> Bool {
   if !TandemSettings.Set(this.m_tandem.settingKey, close.input) {
     GenericMessageNotification.Show(this, TandemSettings.Title(this.m_tandem.settingKey), TandemSettings.Refusal(this.m_tandem.settingKey, close.input), GenericMessageNotificationType.OK);
   }
-  this.TandemGo(TandemCoopPage.Settings);
+  this.TandemGo(TandemCoopPage.Settings, this.m_tandem.group, this.m_tandem.RowOf(this.m_tandem.settingKey));
   return true;
 }
 
@@ -1262,7 +1401,7 @@ private func TandemCommand(command: String) -> Void {
   } else if TandemCoop.AnswerName(this.m_tandem, command) {
   } else if TandemSettings.Command(command) {
     if Equals(this.m_tandem.page, TandemCoopPage.Settings) {
-      this.TandemGo(TandemCoopPage.Settings);
+      this.TandemGo(TandemCoopPage.Settings, this.m_tandem.group);
     }
   } else {
     TandemCoop.LogStatus();
@@ -1308,8 +1447,16 @@ private func PopulateMenuItemList() -> Void {
   }
   this.m_menuListController.Refresh();
   if !root {
-    this.SetCursorOverWidget(inkCompoundRef.GetWidgetByIndex(this.m_menuList, 0));
+    this.TandemCursor();
   }
+}
+
+// The cursor on the page's row (the first, or the one just changed).
+@addMethod(PauseMenuGameController)
+private func TandemCursor() -> Void {
+  let row = this.m_tandem.Cursor();
+  this.m_menuListController.SetSelectedIndex(row);
+  this.SetCursorOverWidget(inkCompoundRef.GetWidgetByIndex(this.m_menuList, row));
 }
 
 // The pause menu's Exit as a guest (progression.md, decision 7): held here,
@@ -1358,7 +1505,7 @@ protected cb func OnGlobalRelease(e: ref<inkPointerEvent>) -> Bool {
       e.Handle();
       if back == 2 {
         this.PlaySound(n"Button", n"OnPress");
-        this.TandemGo(this.m_tandem.Up());
+        this.TandemUp();
       }
       return true;
     }
@@ -1440,18 +1587,25 @@ private func CoopSystem() -> ref<TandemSystem> {
 }
 
 @addMethod(PauseMenuGameController)
-private func TandemGo(page: TandemCoopPage) -> Void {
-  if !this.m_tandem.Defer(page, this) && this.m_tandem.TakeSwitch() {
+private func TandemGo(page: TandemCoopPage, opt group: Int32, opt cursor: Int32) -> Void {
+  if !this.m_tandem.Defer(page, this, group, cursor) && this.m_tandem.TakeSwitch() {
+    this.TandemShowPage();
+  }
+}
+
+@addMethod(PauseMenuGameController)
+private func TandemUp() -> Void {
+  if !this.m_tandem.DeferUp(this) && this.m_tandem.TakeSwitch() {
     this.TandemShowPage();
   }
 }
 
 // Only our items on our pages (TandemCoopMenu.Tidy), the cursor back on
-// the first when the list was rebuilt.
+// the page's row when the list was rebuilt.
 @addMethod(PauseMenuGameController)
 private func TandemTidy() -> Void {
   if this.m_tandem.Tidy(this.m_menuListController) {
-    this.SetCursorOverWidget(inkCompoundRef.GetWidgetByIndex(this.m_menuList, 0));
+    this.TandemCursor();
   }
 }
 
@@ -1512,7 +1666,7 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Void {
   } else if Equals(action, TandemCoopAction.Report) {
     GenericMessageNotification.Show(this, TandemText.Get("Popup-Report"), TandemCoop.ReportText(), GenericMessageNotificationType.OK);
   } else if Equals(action, TandemCoopAction.Back) {
-    this.TandemGo(this.m_tandem.Up());
+    this.TandemUp();
   } else if Equals(action, TandemCoopAction.HostNow) {
     if !this.TandemAskName(action) {
       system.CoopHost(0);
@@ -1546,12 +1700,14 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Void {
     this.TandemGo(TandemCoopPage.Coop);
   } else if Equals(action, TandemCoopAction.Settings) {
     this.TandemGo(TandemCoopPage.Settings);
+  } else if Equals(action, TandemCoopAction.SettingsGroup) {
+    this.TandemGo(TandemCoopPage.Settings, StringToInt(item.target, 0));
   } else if Equals(action, TandemCoopAction.Setting) {
     if TandemSettings.Kind(item.target) == 2 {
       this.TandemAskSetting(item.target);
     } else {
       TandemSettings.Set(item.target, TandemSettings.Next(item.target));
-      this.TandemGo(TandemCoopPage.Settings);
+      this.TandemGo(TandemCoopPage.Settings, this.m_tandem.group, this.m_tandem.RowOf(item.target));
     }
   }
 }
@@ -1577,7 +1733,7 @@ protected cb func OnTandemSetting(data: ref<inkGameNotificationData>) -> Bool {
   if !TandemSettings.Set(this.m_tandem.settingKey, close.input) {
     GenericMessageNotification.Show(this, TandemSettings.Title(this.m_tandem.settingKey), TandemSettings.Refusal(this.m_tandem.settingKey, close.input), GenericMessageNotificationType.OK);
   }
-  this.TandemGo(TandemCoopPage.Settings);
+  this.TandemGo(TandemCoopPage.Settings, this.m_tandem.group, this.m_tandem.RowOf(this.m_tandem.settingKey));
   return true;
 }
 

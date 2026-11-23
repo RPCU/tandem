@@ -3,8 +3,9 @@
 
 Checks scripts/tandem against plugin/src/config.cpp and core/src/settings.cpp:
 
-- Settings.reds' Keys(), Labels(), Abouts(), Kinds() and Whens() have one
-  entry per setting, in the same order; no key twice;
+- Settings.reds' Keys(), Labels(), Abouts(), Kinds(), Whens() and Groups()
+  have one entry per setting, in the same order; no key twice; every group
+  (GroupNames(), GroupAbouts()) named in both languages and not empty;
 - every setting is one tandem.ini's parser takes (ApplySetting) and the page
   may save (settings::IsEditable);
 - every label, description and choice text is a key of Text.reds in English
@@ -79,7 +80,7 @@ def main():
     texts = packages((scripts / "Text.reds").read_text())
     english, french = texts.get("TandemTextEnglish", {}), texts.get("TandemTextFrench", {})
 
-    arrays = {n: array_of(settings, n) for n in ("Keys", "Labels", "Abouts", "Kinds", "Whens")}
+    arrays = {n: array_of(settings, n) for n in ("Keys", "Labels", "Abouts", "Kinds", "Whens", "Groups")}
     for name, values in arrays.items():
         if values is None:
             errors.append(f"Settings.reds: no {name}()")
@@ -104,6 +105,25 @@ def main():
         for key, v in zip(keys, arrays[name]):
             if v not in allowed:
                 errors.append(f"Settings.reds: {key}'s {name[:-1].lower()} {v} is not 0, 1 or 2")
+
+    # The groups the page lists: each named and described in both
+    # languages, each setting in one of them, none empty.
+    names, abouts = array_of(settings, "GroupNames") or [], array_of(settings, "GroupAbouts") or []
+    if not names or len(names) != len(abouts):
+        errors.append(f"Settings.reds: GroupNames() has {len(names)} entries, GroupAbouts() {len(abouts)}: one per group")
+    for text in names + abouts:
+        for lang, table in (("English", english), ("French", french)):
+            if text not in table:
+                errors.append(f"Settings.reds: group text {text} is not a key of Text.reds in {lang}")
+    for v in sorted({v for v in names if names.count(v) > 1}):
+        errors.append(f"Settings.reds: {v} used twice in GroupNames()")
+    groups = arrays["Groups"]
+    for key, g in zip(keys, groups):
+        if not g.isdigit() or not 1 <= int(g) <= len(names):
+            errors.append(f"Settings.reds: {key}'s group {g} is not 1 to {len(names)}")
+    for i in range(1, len(names) + 1):
+        if str(i) not in groups:
+            errors.append(f"Settings.reds: group {i} ({names[i - 1]}) has no setting")
 
     # Choices and their texts, key by key.
     def by_key(func):
