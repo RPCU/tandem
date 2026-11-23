@@ -14,7 +14,23 @@ public abstract class TandemSight {
     if !IsDefined(player) || !IsDefined(object) || Vector4.Distance(player.GetWorldPosition(), object.GetWorldPosition()) > 50.0 {
       return false;
     }
-    return GameInstance.GetCameraSystem(game).IsInCameraFrustum(object, height, radius);
+    // By position alone: the frustum test asked of the object itself was
+    // made of bodies a frame old (spawning, being disposed) in the run that
+    // went down three times (2026-11-23). The camera's view cone, widened
+    // by the object's radius at its distance.
+    let cameras = GameInstance.GetCameraSystem(game);
+    let forward = Vector4.Normalize(cameras.GetActiveCameraForward());
+    let eye = player.GetWorldPosition();
+    eye.Z += 1.7;
+    let at = object.GetWorldPosition();
+    at.Z += height * 0.5;
+    let to = at - eye;
+    let far = Vector4.Length(to);
+    if far < radius {
+      return true;
+    }
+    let half = Deg2Rad(cameras.GetActiveCameraFOV()) * 0.5 * 1.25 + AtanF(radius, far);
+    return Vector4.Dot(to, forward) / far > CosF(half);
   }
 }
 

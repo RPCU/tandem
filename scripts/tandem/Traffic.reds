@@ -533,10 +533,18 @@ public class TandemTraffic {
     return true;
   }
 
-  // A vehicle of our own world we do not share stands within 5 m.
+  // A vehicle of our own world we do not share stands within 5 m, or the
+  // body of another proxy within 2.5 m (copies spawned onto each other
+  // flickered and burnt on one game, 2026-11-23).
   private func OwnNear(at: Vector4) -> Bool {
     for vehicle in this.m_live {
       if IsDefined(vehicle) && !IsDefined(this.FindBody(vehicle.GetEntityID())) && Vector4.Distance(vehicle.GetWorldPosition(), at) < 5.0 {
+        return true;
+      }
+    }
+    for car in this.m_cars {
+      let other = !car.mine ? TandemTraffic.Body(this.m_game, car.body) : null;
+      if IsDefined(other) && Vector4.Distance(other.GetWorldPosition(), at) < 2.5 {
         return true;
       }
     }
@@ -1306,6 +1314,9 @@ public class TandemTraffic {
   // owner says. One line each: two games' lists are compared by id.
   public func ListReport() -> Void {
     let bodies = 0;
+    // Proxies wrecked here and not on their owner's game (a crash or a fire
+    // of our own world's).
+    let burnt = 0;
     // Where our V is (two games' lists are compared around both Vs), with
     // the world's time (lists of two games taken a moment apart).
     let player = GetPlayer(this.m_game);
@@ -1315,6 +1326,9 @@ public class TandemTraffic {
       let body = TandemTraffic.Body(this.m_game, car.body);
       if IsDefined(body) {
         bodies += 1;
+        if !car.mine && body.IsDestroyed() && (car.flags & 4) == 0 {
+          burnt += 1;
+        }
         let at = body.GetWorldPosition();
         let off = -1.0;
         if !car.mine {
@@ -1349,7 +1363,7 @@ public class TandemTraffic {
         }
       }
     }
-    TandemNative.Log(s"street list: \(ArraySize(this.m_cars)) vehicle(s), \(bodies) with a body, \(unshared) of our own unshared within \(TandemTraffic.DropRange()) m; in sight within 50 m since the start: \(this.m_popIn) came, \(this.m_popOut) went, \(this.m_popWaited) removal round(s) of ours waited for it");
+    TandemNative.Log(s"street list: \(ArraySize(this.m_cars)) vehicle(s), \(bodies) with a body, \(unshared) of our own unshared within \(TandemTraffic.DropRange()) m, \(burnt) proxies wrecked here only; in sight within 50 m since the start: \(this.m_popIn) came, \(this.m_popOut) went, \(this.m_popWaited) removal round(s) of ours waited for it");
   }
 
   // (test: `street lanes`) the cars we run that someone drives, nearest
@@ -1536,8 +1550,10 @@ public class TandemTraffic {
   // it here does not (one car's lit on its owner's screen, dark on the
   // other, 2026-11-23).
   public static func HeadlightsOn(vehicle: ref<VehicleObject>) -> Bool {
+    // Lit: a light mode, and the car on (a parked crowd car has the mode On
+    // and its state Disabled: dark).
     let state = TandemTraffic.ControllerOf(vehicle);
-    return IsDefined(state) && NotEquals(state.GetHeadLightMode(), vehicleELightMode.Off);
+    return IsDefined(state) && NotEquals(state.GetHeadLightMode(), vehicleELightMode.Off) && Equals(state.GetState(), vehicleEState.On);
   }
 
   private static func ControllerOf(vehicle: ref<VehicleObject>) -> ref<vehicleControllerPS> {
