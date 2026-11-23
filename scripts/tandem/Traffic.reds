@@ -502,6 +502,20 @@ public class TandemTraffic {
     ArrayPush(this.m_cars, car);
   }
 
+  // A proxy's life is its owner's: immortal here (the god mode the game
+  // gives a quest's car tagged Immortal) until its owner says it is
+  // destroyed, or until it is ours to run.
+  public static func Spare(game: GameInstance, body: ref<VehicleObject>, on: Bool) -> Void {
+    let gods = GameInstance.GetGodModeSystem(game);
+    let id = body.GetEntityID();
+    let has = gods.HasGodMode(id, gameGodModeType.Immortal);
+    if on && !has {
+      gods.AddGodMode(id, gameGodModeType.Immortal, n"TandemProxy");
+    } else if !on && has {
+      gods.RemoveGodMode(id, gameGodModeType.Immortal, n"TandemProxy");
+    }
+  }
+
   private static func SpawnProxy(record: TweakDBID, appearance: CName, position: Vector4, orientation: Quaternion) -> EntityID {
     let spec = new DynamicEntitySpec();
     spec.recordID = record;
@@ -730,6 +744,12 @@ public class TandemTraffic {
     // (an overturned wreck yellow here and red on its owner's, 2026-11-23).
     let mine = body.GetCurrentAppearanceName();
     let owners = IsNameValid(car.appearance) && NotEquals(car.appearance, mine);
+    // Its end is its owner's word: here it shows damage (smoke, fire) and
+    // never dies by itself, as the game keeps a quest's car (its record's
+    // Immortal tag, VehicleComponent.SetImmortalityMode). A crash into our
+    // world's cars or a fire burnt proxies out here only, their wrecks and
+    // parts on one screen (2026-11-22).
+    TandemTraffic.Spare(this.m_game, body, !destroyed);
     // Only on our own instance of a placed car (a spawned body has its
     // owner's look from its spec, a reused one is of the same look).
     if joining && owners && car.own {
@@ -805,6 +825,7 @@ public class TandemTraffic {
     car.mine = false;
     car.ready = true;
     car.wrecked = body.IsDestroyed();
+    TandemTraffic.Spare(this.m_game, body, !car.wrecked);
     car.health = 1.0;
     let at = body.GetWorldPosition();
     car.x = at.X;
@@ -841,6 +862,7 @@ public class TandemTraffic {
     car.claimed = false;
     car.flags = event.flags;
     car.health = event.amount;
+    TandemTraffic.Spare(this.m_game, body, false);
     let inherited = (event.reason & 16) != 0;
     if !inherited {
       // Where the giver left it (our proxy was drawn a little in the past).
