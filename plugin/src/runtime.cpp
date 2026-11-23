@@ -409,7 +409,7 @@ void Runtime::Stop() {
     m_hostWorld.reset();
     m_hostWorldChanges = 0;
     m_npcOutbox.clear();
-    m_npcStates.reset();
+    m_npcStates.clear();
     m_npcEvents.clear();
     m_npcReplies.clear();
     m_actionEvents.clear();
@@ -1630,7 +1630,7 @@ void Runtime::ResetSession() {
     m_localShots.clear();
     m_remoteShots.clear();
     m_npcOutbox.clear();
-    m_npcStates.reset();
+    m_npcStates.clear();
     m_npcEvents.clear();
     m_playerHits.clear();
     m_hackOutbox.clear();
