@@ -5,7 +5,9 @@
 #
 #   tools/play-session.sh start    the companion bot (it joins whenever the
 #                                  game is in a session, again after a leave)
-#   tools/play-session.sh stop     the bot stopped, the session's logs fetched
+#   tools/play-session.sh stop     the bot stopped (and the logs fetched); not
+#                                  needed: the logs are fetched by themselves
+#                                  each time the game is closed
 #   tools/play-session.sh status   the game's settings, the bot, the logs
 #   tools/play-session.sh restore  the player's own tandem.ini back (no host)
 #
@@ -25,6 +27,8 @@ write_runner() {
   cat >"$state/run.sh" <<'E'
 #!/usr/bin/env bash
 cd "$(dirname "$0")/../.."
+# The game closed after a session: its logs fetched by themselves.
+tools/play-session.sh watch &
 n=0
 while [ ! -f .cache/play-sim/stop ]; do
   addr=$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')
@@ -53,10 +57,27 @@ start)
   setsid "$state/run.sh" >/dev/null 2>&1 &
   echo "companion started: it joins as soon as your game is in a session (logs: $state/sim-*.log)"
   ;;
+watch)
+  # Every 30 s: the game seen running, then gone: fetched.
+  was=0
+  while [ ! -f "$state/stop" ]; do
+    if ssh -o ConnectTimeout=5 "$host" "pgrep -f 'steamapps/common/Cyberpunk 2077/bin/x64/Cyberpunk2077[.]exe' >/dev/null" 2>/dev/null; then
+      was=1
+    elif [ "$was" = 1 ]; then
+      was=0
+      "$0" fetch >>"$state/watch.log" 2>&1 || true
+    fi
+    sleep 30
+  done
+  ;;
 stop)
   touch "$state/stop"
   for p in $(runner); do kill "$p" 2>/dev/null || true; done
   for p in $(pgrep -f '^build/linux/peer/tandem-peer sim --role join' || true); do kill "$p" 2>/dev/null || true; done
+  for p in $(pgrep -f '^bash tools/play-session[.]sh watch' || true); do kill "$p" 2>/dev/null || true; done
+  "$0" fetch
+  ;;
+fetch)
   out=.cache/play-sessions/$(date +%Y%m%d-%H%M%S)
   mkdir -p "$out"
   ssh "$host" "cd '$plugin/../../logs' && ls -t tandem-*.log redgraph-*.log 2>/dev/null | head -6" | while read -r f; do
@@ -64,12 +85,12 @@ stop)
   done
   scp -qr "$host:$plugin/observer" "$out/" 2>/dev/null || true
   cp "$state"/sim-*.log "$out/" 2>/dev/null || true
-  echo "companion stopped; logs in $out"
+  echo "logs in $out"
   ;;
 status)
   ssh "$host" "grep -v '^;' '$plugin/tandem.ini' | grep -E '^(role|log|recorder|observer|vehicle_move) '" || true
   if [ -n "$(runner)" ]; then echo "companion: running"; else echo "companion: stopped"; fi
-  ssh "$host" "pgrep -af Cyberpunk2077.exe | grep -v tandem-instances | grep -q . && echo 'game: running' || echo 'game: not running'"
+  ssh "$host" "pgrep -f 'steamapps/common/Cyberpunk 2077/bin/x64/Cyberpunk2077[.]exe' >/dev/null && echo 'game: running' || echo 'game: not running'"
   ;;
 restore)
   ssh "$host" "cd '$plugin' && [ -f tandem.ini.player ] && cp tandem.ini.player tandem.ini && echo 'your own tandem.ini is back'"
