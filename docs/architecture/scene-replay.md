@@ -117,8 +117,9 @@ reliable and ordered.
 - The staging area is the middle of the host's V and the actors that show,
   the distance of the farthest from it, and the way the host's V faces it.
 - Cost: bounded. The scene's streams (each actor's body, the camera)
-  share **22 kbit/s** on a guest's link (`scene::kSceneBytesPerSecond`,
-  2750 bytes a second with 12 a message; `scene_kbps` in `tandem.ini`
+  share **80 kbit/s** on a guest's link (`scene::kSceneBytesPerSecond`,
+  10000 bytes a second with 12 a message, 22 kbit/s before the 256 budget;
+  `scene_kbps` in `tandem.ini`
   raises it on a good link), split by `scene::Pacer` in the host's
   `Endpoint`: every stream it can serve gets a frame at least every 0.5 s,
   the rest of the budget goes by weight (camera 3; a body 1 within 15 m of
@@ -300,9 +301,9 @@ turns it off by itself, logged).
   host put it with a 60 ms time constant; a bone the host put back at rest
   blends back to the rig's own animation and is let go). No frame for 2 s:
   nothing is written.
-- **What it costs in fidelity**: within the default budget a face gets 5
-  to 10 small frames a second: the jaw and the widest lip moves follow, fine
-  shapes lag. `scene_kbps` raises it.
+- **What it costs in fidelity**: within the 22 kbit/s of before a face got 5
+  to 10 small frames a second (the jaw and the widest lip moves followed, fine
+  shapes lagged); the default is 80 since 2026-11-23. `scene_kbps` raises it.
 - **Float tracks** (wrinkle maps, pupils, blinks, the lipsync envelope: a
   face rig's `trackNames`, about 427 on an NPC): read and written at the
   same commit, beside the bones, from the sampled pose's track pointer

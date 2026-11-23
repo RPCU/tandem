@@ -201,9 +201,9 @@ private:
 // What the scene's streams (each actor's body, a speaker's face, a body on
 // another rig, the camera) may put on a guest's link together, bytes a
 // second, each message's own header included (they ride in the datagrams
-// the host's V already sends): 22 kbit/s of the 64 a link has
+// the host's V already sends): 80 kbit/s of the 256 a link has
 // (docs/architecture/netcode.md, Budget). tandem.ini scene_kbps changes it.
-inline constexpr std::uint32_t kSceneBytesPerSecond = 2750;
+inline constexpr std::uint32_t kSceneBytesPerSecond = 10000;
 inline constexpr std::size_t kStreamOverhead = 12;
 // No stream goes faster than this, and one that would go slower than
 // kSlowestUs is not sent at all (its actor keeps its own animation, as an
