@@ -31,6 +31,9 @@ ROW = re.compile(STAMP + r".*npc list: (\d+) (ours|proxy) (\S+) (?:at (\S+) (\S+
 SHARED = re.compile(STAMP + r".*npc list: (\d+) shared (\S+) at (\S+) (\S+) (\S+) no proxy \((\S+) s\)")
 OWN = re.compile(STAMP + r".*npc list: own (\S+) at (\S+) (\S+) (\S+) unshared \(([^)]*)\) (shown|hidden)")
 END = re.compile(STAMP + r".*npc list: (\d+) ours, (\d+) proxies")
+# What an NPC does (NpcAnims.reds ActivityOf, ProxyActivity): its owner's
+# workspot (or "none", "unread"), a proxy's played one and what it was told.
+SPOT = re.compile(r" spot (\S+)(?: said (\S+))?")
 
 
 def when(stamp):
@@ -51,7 +54,9 @@ def blocks(path):
         elif m := ROW.search(line):
             pos = tuple(float(x) for x in m.group(5, 6, 7)) if m.group(5) else None
             state = m.group(8) if pos else "no body" + (f" ({m.group(10)})" if m.group(10) else "")
-            cur["rows"][int(m.group(2))] = {"kind": m.group(3), "rec": m.group(4), "pos": pos, "state": state}
+            s = SPOT.search(line, m.end())
+            cur["rows"][int(m.group(2))] = {"kind": m.group(3), "rec": m.group(4), "pos": pos, "state": state,
+                                            "spot": s.group(1) if s else None, "said": s.group(2) if s else None}
         elif m := SHARED.search(line):
             pos = tuple(float(x) for x in m.group(4, 5, 6))
             cur["shared"][int(m.group(2))] = {"rec": m.group(3), "pos": pos, "for": float(m.group(7))}
@@ -104,6 +109,9 @@ def main():
             return min(flat(p, v) for v in vs)
 
         apart, close, off, seated, missing, total, both, dead_one_sided = [], [], [], 0, [], 0, 0, 0
+        # Activity: an NPC on both games, its owner in a workspot or its
+        # proxy in one, and whether the proxy plays the owner's.
+        acts, act_off = 0, []
         for i in sorted(set(a["rows"]) | set(b["rows"]) | set(a["shared"]) | set(b["shared"])):
             x, y = a["rows"].get(i), b["rows"].get(i)
             sx, sy = shows(x), shows(y)
@@ -121,6 +129,13 @@ def main():
             total += 1
             if sx and sy:
                 both += 1
+                own, prx = (x, y) if x["kind"] == "ours" else (y, x)
+                if own["kind"] == "ours" and prx["kind"] == "proxy" and own.get("spot") and prx.get("spot"):
+                    if own["spot"] != "none" or prx["spot"] not in ("none", "seated"):
+                        acts += 1
+                        if own["spot"] != prx["spot"] and not (prx["spot"] == "entering" and prx["said"] == own["spot"]):
+                            act_off.append(f"{i} ({own['rec']}): owner {own['spot']}, proxy {prx['spot']} (told {prx['said']}), "
+                                           f"{near(ref):.0f} m from a V")
                 d = flat(x["pos"], y["pos"])
                 if d > 1000.0:
                     seated += 1
@@ -148,6 +163,10 @@ def main():
                   f"{len(off)} more than 0.5 m apart")
         print(f"  within {args.near:.0f} m of either V: {both} of {total} on both games ({total - both} one-sided)"
               + (f"; {dead_one_sided} corpse(s) on one game only" if dead_one_sided else ""))
+        if acts:
+            print(f"  activity: {acts} in a workspot on either game, {len(act_off)} not the same on both")
+        for line in act_off:
+            print("  activity: " + line)
         for line in off:
             print("  apart: " + line)
         for line in missing:
