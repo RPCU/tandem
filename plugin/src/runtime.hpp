@@ -792,7 +792,9 @@ public:
 
   // Puppets: which entity draws which player. Read lock-free on the animation
   // thread (by entity hash only), written on the game thread.
-  static constexpr std::size_t kMaxPuppets = 64;
+  // 128: the other players and the NPC proxies of the 100 m share (64 an
+  // owner; 64 slots were full on a guest at a Kabuki crossing, 2026-11-23).
+  static constexpr std::size_t kMaxPuppets = 128;
   void RegisterPuppet(proto::PlayerId player, std::uint64_t entityHash);
   void UnregisterPuppet(proto::PlayerId player);
   proto::PlayerId PuppetPlayer(std::uint64_t entityHash) const;

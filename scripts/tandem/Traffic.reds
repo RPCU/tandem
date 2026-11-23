@@ -996,9 +996,14 @@ public class TandemTraffic {
           // Ours still stands there (see OnSpawn), or this moment's spawns
           // are spent: after it.
           car.goneSince = this.m_now;
-        } else if this.m_now - car.goneSince > wait {
+        } else if this.m_now - car.goneSince > (EntityID.IsDefined(car.body) ? wait : 0.25) {
+          // A body never asked for (its first was put off: MaySpawn,
+          // OwnNear) is no respawn.
+          let first = !EntityID.IsDefined(car.body);
           TandemEntities.Delete(car.body);
-          car.goneTries += 1;
+          if !first {
+            car.goneTries += 1;
+          }
           let at = TandemStreet.Position(car.id);
           if at.W == 0.0 {
             at = new Vector4(car.x, car.y, car.z, 1.0);
@@ -1010,8 +1015,12 @@ public class TandemTraffic {
           car.siren = false;
           car.seated = false;
           car.goneSince = 0.0;
-          TandemNative.Log(s"street: check: vehicle \(car.id)'s body was gone for \(wait) s: spawned again (\(car.goneTries) in a row)");
-          TandemDegraded.Fallback("street body respawned", s"vehicle \(car.id)'s body was gone for \(wait) s (\(car.goneTries) in a row)");
+          if first {
+            TandemNative.LogDebug(s"street: check: vehicle \(car.id)'s body asked for (put off before)");
+          } else {
+            TandemNative.Log(s"street: check: vehicle \(car.id)'s body was gone for \(wait) s: spawned again (\(car.goneTries) in a row)");
+            TandemDegraded.Fallback("street body respawned", s"vehicle \(car.id)'s body was gone for \(wait) s (\(car.goneTries) in a row)");
+          }
         }
       }
     }
