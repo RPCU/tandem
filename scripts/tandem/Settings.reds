@@ -3,8 +3,11 @@
 // it changes (TandemNative.SetSetting) and applied at once where that is
 // safe (the link's default and pings by the plugin's comms, in a session too); what a running session was set up with (the name, the relay, the
 // story) waits for the session's end, the hooks installed at launch (quest
-// freeze, scene privacy) for a restart. Tests: `tools/game.sh cmd coop
-// settings` logs them, `coop set KEY VALUE` changes one.
+// freeze, scene privacy) for a restart. The page lists groups (GroupNames),
+// each a page of short one-line rows; what the row under the cursor does,
+// and when a change takes effect, is the description beside the list.
+// Tests: `tools/game.sh cmd coop settings` logs them, `coop set KEY VALUE`
+// changes one.
 
 public class TandemSettings {
   // In the page's order. kind: 0 on/off, 1 a choice, 2 typed. when: 0 at
@@ -38,6 +41,52 @@ public class TandemSettings {
 
   private static func Whens() -> array<Int32> {
     return [1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 2, 2, 1, 0];
+  }
+
+  // The page lists these groups, each opening its own rows, so that no list
+  // runs past the menu's panel (the game's settings have their tabs).
+  private static func GroupNames() -> array<String> {
+    return ["Settings-Group-Session", "Settings-Group-Gameplay", "Settings-Group-Interface", "Settings-Group-Sharing", "Settings-Group-Advanced"];
+  }
+
+  private static func GroupAbouts() -> array<String> {
+    return ["Settings-Group-About-Session", "Settings-Group-About-Gameplay", "Settings-Group-About-Interface", "Settings-Group-About-Sharing", "Settings-Group-About-Advanced"];
+  }
+
+  // Each setting's group (1: the first of GroupNames).
+  private static func Groups() -> array<Int32> {
+    return [1, 1, 1, 1, 3, 3, 3, 3, 4, 4, 5, 5, 5, 5, 1, 2, 2, 2, 2];
+  }
+
+  public static func GroupCount() -> Int32 {
+    let names = TandemSettings.GroupNames();
+    return ArraySize(names);
+  }
+
+  // A group's text key ("" for none).
+  public static func GroupKey(group: Int32) -> String {
+    let names = TandemSettings.GroupNames();
+    return group >= 1 && group <= ArraySize(names) ? names[group - 1] : "";
+  }
+
+  public static func GroupAbout(group: Int32) -> String {
+    let abouts = TandemSettings.GroupAbouts();
+    return group >= 1 && group <= ArraySize(abouts) ? TandemText.Get(abouts[group - 1]) : "";
+  }
+
+  // The keys of a group, in the page's order.
+  public static func KeysOf(group: Int32) -> array<String> {
+    let keys = TandemSettings.Keys();
+    let groups = TandemSettings.Groups();
+    let found: array<String>;
+    let i = 0;
+    while i < ArraySize(keys) {
+      if groups[i] == group {
+        ArrayPush(found, keys[i]);
+      }
+      i += 1;
+    }
+    return found;
   }
 
   private static func IndexOf(key: String) -> Int32 {
@@ -152,25 +201,38 @@ public class TandemSettings {
     return value;
   }
 
-  // "Name: V", and when it takes effect if not now.
-  public static func Label(key: String, inSession: Bool) -> String {
-    let i = TandemSettings.IndexOf(key);
-    if i < 0 {
+  // The row: "Name: V", on one line (a long typed value is cut, the
+  // description shows it whole). When a change takes effect is the
+  // description's (Note), where the game's own settings say it.
+  public static func Label(key: String) -> String {
+    if TandemSettings.IndexOf(key) < 0 {
       return key;
     }
-    let label = TandemText.F("Settings-Item", TandemSettings.Title(key), TandemSettings.ValueText(key));
+    let value = TandemSettings.ValueText(key);
+    if StrLen(value) > 18 {
+      value = StrLeft(value, 17) + "…";
+    }
+    return TandemText.F("Settings-Item", TandemSettings.Title(key), value);
+  }
+
+  // When a change takes effect, if not at once ("" then).
+  public static func Note(key: String, inSession: Bool) -> String {
+    let i = TandemSettings.IndexOf(key);
+    if i < 0 {
+      return "";
+    }
     if TandemSettings.IsHostsRule(key) {
-      return TandemText.F("Settings-HostsRule", label);
+      return TandemText.Get("Settings-HostsRule");
     }
     let whens = TandemSettings.Whens();
     let when = whens[i];
     if when == 2 {
-      return TandemText.F("Settings-AfterRestart", label);
+      return TandemText.Get("Settings-AfterRestart");
     }
     if when == 1 && inSession {
-      return TandemText.F("Settings-NextSession", label);
+      return TandemText.Get("Settings-NextSession");
     }
-    return label;
+    return "";
   }
 
   // Each array in a local before it is indexed: a String read straight from
@@ -182,10 +244,19 @@ public class TandemSettings {
     return i < 0 ? key : TandemText.Get(labels[i]);
   }
 
+  // What it does; a typed value the row cut, whole after it.
   public static func About(key: String) -> String {
     let i = TandemSettings.IndexOf(key);
     let abouts = TandemSettings.Abouts();
-    return i < 0 ? "" : TandemText.Get(abouts[i]);
+    if i < 0 {
+      return "";
+    }
+    let about = TandemText.Get(abouts[i]);
+    let value = TandemSettings.ValueText(key);
+    if TandemSettings.Kind(key) == 2 && StrLen(value) > 18 {
+      about += "\n" + value;
+    }
+    return about;
   }
 
   // What a typed setting's popup says: the name its rules, the others

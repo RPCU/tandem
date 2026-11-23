@@ -389,6 +389,14 @@ public final static func MappinToTexturePart(mappinVariant: gamedataMappinVarian
   return wrappedMethod(mappinVariant);
 }
 
+// A controller whose distance text we wrote: the game's own writing of it
+// is gone for good (it showed its raw format, "{0, number, 0}M"), so from
+// then on we write it at each update, whatever mappin the pooled controller
+// holds now (another player's, a quest's), whether a name goes before it
+// or not.
+@addField(QuestMappinController)
+private let m_tandemDistance: Bool;
+
 // The world label: the player's name where the game writes a marker's name,
 // else before the distance.
 @wrapMethod(QuestMappinController)
@@ -403,22 +411,23 @@ protected cb func OnUpdate() -> Bool {
   }
   // One name over a player: none with nameplates = off, the nameplate's
   // where it shows (PartyHud.reds), else the marker's. Pings keep theirs.
-  if player != 0u && (TandemSettings.NameplateMode() == 2 || TandemPartyHud.PlateShown(GetGameInstance(), player)) {
-    if inkWidgetRef.IsValid(this.displayName) {
-      inkWidgetRef.SetVisible(this.displayName, false);
-    } else if inkWidgetRef.IsValid(this.distanceText) {
-      // The distance alone, written by us too: once we wrote this text (the
-      // name before it), the game's own distance lost its number and showed
-      // "{0, number, 0}M".
-      inkTextRef.SetText(this.distanceText, TandemText.F("Marker-Metres", s"\(RoundF(this.GetDistanceToPlayer()))"));
-    }
-  } else if NotEquals(name, "") {
-    if inkWidgetRef.IsValid(this.displayName) {
+  let withName = NotEquals(name, "") && !(player != 0u && (TandemSettings.NameplateMode() == 2 || TandemPartyHud.PlateShown(GetGameInstance(), player)));
+  if inkWidgetRef.IsValid(this.displayName) {
+    // The game's own name line: ours, or none, on a player's marker.
+    if withName {
       inkTextRef.SetText(this.displayName, name);
       inkWidgetRef.SetVisible(this.displayName, true);
-    } else if inkWidgetRef.IsValid(this.distanceText) {
-      inkTextRef.SetText(this.distanceText, TandemText.F("Marker-Distance", name, s"\(RoundF(this.GetDistanceToPlayer()))"));
+    } else if player != 0u {
+      inkWidgetRef.SetVisible(this.displayName, false);
+    }
+  } else if inkWidgetRef.IsValid(this.distanceText) && (withName || this.m_tandemDistance) {
+    let metres = s"\(RoundF(this.GetDistanceToPlayer()))";
+    this.m_tandemDistance = true;
+    if withName {
+      inkTextRef.SetText(this.distanceText, TandemText.F("Marker-Distance", name, metres));
       inkWidgetRef.SetVisible(this.distanceText, true);
+    } else {
+      inkTextRef.SetText(this.distanceText, TandemText.F("Marker-Metres", metres));
     }
   }
   return result;
