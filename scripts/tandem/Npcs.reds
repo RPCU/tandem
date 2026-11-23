@@ -1895,6 +1895,7 @@ public class TandemNpcs {
   }
 
   private func SpawnProxy(npc: Uint32, record: TweakDBID, appearance: CName, position: Vector4, orientation: Quaternion) -> Void {
+    this.m_anims.WatchRecord(record);
     let spec = new DynamicEntitySpec();
     spec.recordID = record;
     spec.appearanceName = appearance;
