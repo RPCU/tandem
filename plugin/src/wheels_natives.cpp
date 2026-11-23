@@ -20,10 +20,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
+#include <vector>
 
 namespace tandem::plugin {
 namespace {
 proto::Vec3 Of(const Red::Vector4 &v) { return {v.X, v.Y, v.Z}; }
+// The disposals asked for by the scripts (which may run on job threads),
+// done on the game thread's frame (engine::RunDisposals).
+std::mutex g_disposeLock;
+std::vector<Red::Handle<Red::ent::Entity>> g_disposals;
 bool Finite(const Red::Vector4 &v) {
   return std::isfinite(v.X) && std::isfinite(v.Y) && std::isfinite(v.Z);
 }
@@ -95,11 +101,15 @@ struct TandemWheels : Red::IScriptable {
   // The engine's own removal of an entity from the world (entEntity.Dispose,
   // a native the scripts do not declare): our own crowd's vehicles and their
   // riders where another game runs the street (Traffic.reds Remove).
-  // Not while the scene detaches (the dispose gate, engine/guards.cpp): false,
-  // and the script asks again on a later tick.
+  // Queued for the game thread's frame (RunDisposals): never in a script
+  // tick, which may run on a job thread beside the scene's (§13.157).
   static bool Dispose(Red::Handle<Red::ent::Entity> entity) {
-    return entity && engine::DisposeAllowed(entity.instance) &&
-           Red::CallVirtual(entity.instance, "Dispose");
+    if (!entity)
+      return false;
+    std::scoped_lock lock(g_disposeLock);
+    if (g_disposals.size() < 256)
+      g_disposals.push_back(entity);
+    return true;
   }
 
   // A vehicle named across games: a player's car, a shared world vehicle.
@@ -422,3 +432,36 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemWheels, "TandemWheels", {
   RTTI_METHOD(RollSeconds);
   RTTI_METHOD(RamFlags);
 });
+
+namespace tandem::plugin::engine {
+// Game thread, every frame: up to four of the disposals asked for, each
+// through the population system when it spawned it, else entEntity.Dispose
+// outside the scene's detach phase (the dispose gate); one the gate refuses
+// waits for a later frame.
+void RunDisposals() {
+  std::vector<Red::Handle<Red::ent::Entity>> now;
+  {
+    std::scoped_lock lock(g_disposeLock);
+    if (g_disposals.empty())
+      return;
+    const auto n = std::min<std::size_t>(g_disposals.size(), 4);
+    now.assign(g_disposals.begin(), g_disposals.begin() + static_cast<std::ptrdiff_t>(n));
+    g_disposals.erase(g_disposals.begin(), g_disposals.begin() + static_cast<std::ptrdiff_t>(n));
+  }
+  std::vector<Red::Handle<Red::ent::Entity>> later;
+  for (auto &entity : now) {
+    if (!entity)
+      continue;
+    if (!DisposeAllowed(entity.instance)) {
+      later.push_back(entity);
+      continue;
+    }
+    if (RemoveIfStubbed(entity.instance) == 0)
+      Red::CallVirtual(entity.instance, "Dispose");
+  }
+  if (!later.empty()) {
+    std::scoped_lock lock(g_disposeLock);
+    g_disposals.insert(g_disposals.end(), later.begin(), later.end());
+  }
+}
+} // namespace tandem::plugin::engine

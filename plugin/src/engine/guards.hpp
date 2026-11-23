@@ -35,6 +35,12 @@ void CheckSlideGuard();
 // (the script retries on a later tick). Game thread.
 void CheckDisposeGate();
 bool DisposeAllowed(void *entity);
+// Game thread: an entity the population system spawned is removed by it (1),
+// or left alone (2); 0: not one of its own (the caller disposes of it).
+int RemoveIfStubbed(void *entity);
+// Game thread, every frame (main.cpp): the disposals the scripts asked for
+// (wheels_natives.cpp), a few a frame.
+void RunDisposals();
 // Game thread, every frame: what the guards skipped on job threads, said
 // when it changed and at most every 600 frames
 // (`dismemberment guard: N detached notifications skipped`).

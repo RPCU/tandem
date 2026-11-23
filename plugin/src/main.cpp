@@ -102,6 +102,8 @@ bool OnRunningUpdate(RED4ext::CGameApplication *) {
   tandem::plugin::threads::NoteFrame();
   // What the crash guards skipped on job threads (engine/guards.cpp).
   tandem::plugin::engine::ReportCrashGuards();
+  // The disposals the scripts asked for (Traffic.reds Remove), here.
+  tandem::plugin::engine::RunDisposals();
   // Once, at the first frame: what of the engine this game lets us use
   // (engine/access.hpp). A blocked plugin touches nothing and checks nothing.
   if (!tandem::plugin::engine::AccessChecked() && !tandem::plugin::Runtime::Get().Blocked())

@@ -177,7 +177,10 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   not a placed one, a quest's, a wreck, nor a police car with its crew
   aboard; parked police cars included since 2026-11-23, and our own
   parked ones we had shared before that game's region came over us) are
-  taken out of our world, two a second and never in the player's sight
+  taken out of our world (on the game thread's frame: by the population
+  system when it spawned them, `entEntity.Dispose` otherwise, never while
+  the scene detaches: the dispose gate, `../research/engine/vehicles.md`
+  §13.157), two a second and never in the player's sight
   (within 50 m in the camera's view: it waits; 27 disposed in one tick,
   a burning wreck among them, and the game died, and again at 30 a second,
   2026-11-23), with whoever
