@@ -160,7 +160,7 @@ names of `engine-access.md`.
 | `dismemberment guard` | degraded | state | `engine/guards.cpp` | the engine's own crash on an NPC detached in the middle of an action is not guarded (`../research/engine/re.md` §13.142) |
 | `slide guard` | degraded | state | `engine/guards.cpp` | the engine's own crash on an NPC proxy seated in a vehicle is not guarded (`../research/engine/npcs.md` §13.154) |
 | `anim trace` | degraded | state | `engine/trace.cpp` (asked for and off) | no animation trace, no mirror |
-| `vehicle move` | degraded | state | `engine/vehiclemove.cpp` (layout, hash); `System.reds` `MovePath` (5 bodies and none followed); only when asked for (`vehicle_move = kinematic` or `velocity`; teleports are the default) | the engine's move asked for, unavailable: vehicles are teleported every frame |
+| `vehicle move` | degraded | state | `engine/vehiclemove.cpp` (layout, hash); `System.reds` `MovePath` (5 bodies and none followed); when asked for (`vehicle_move = kinematic`, the default, or `velocity`) | the engine's move asked for, unavailable: vehicles are teleported every frame |
 | `body slots` | degraded | state | `engine/slots.cpp` (layout) | a puppet's body gets no grapple slot: a grappled NPC is held in front of it, teleported each tick (`grapple held`) |
 | `drawn prompts` | degraded | state | `Prompts.reds` (`prompts.tweak` not loaded; the test command `prompts off`); chosen: `native_prompts = off` | prompts on players and vendors drawn by tandem |
 | `attitude relations` | degraded | state | `Attitudes.reds` `Declared` (did NOT take; "in part" is the save's run-time changes, carried by the runtime copy) | attitudes copied agent by agent (`npcs.md`) |

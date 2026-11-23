@@ -4239,7 +4239,7 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   // The path of this run, read once and said once (tandem.ini vehicle_move,
-  // vehicles.md "How a copy is moved"): teleports (the default); the
+  // vehicles.md "How a copy is moved"): teleports (vehicle_move = teleport); the
   // kinematic body (a body in the engine's kinematic state, put where its
   // owner says by the engine's own move, engine/vehicles.md §13.155); the
   // velocity move (that move on a simulated body, §13.141). A moved path the
@@ -4260,7 +4260,7 @@ public class TandemSystem extends ScriptableSystem {
     } else if this.m_moveKinematic {
       TandemNative.Log(s"vehicles: the vehicles other games run are moved by the engine's velocity move (a teleport beyond \(TandemSystem.SnapDistance()) m, at a spawn, and for a body that does not follow)");
     } else {
-      TandemNative.Log(s"vehicles: the vehicles other games run are teleported every frame (\(off ? "vehicle_move = teleport, the default" : "the vehicle layout check failed")); the car our own V rides in every other frame while a body spawns");
+      TandemNative.Log(s"vehicles: the vehicles other games run are teleported every frame (\(off ? "vehicle_move = teleport" : "the vehicle layout check failed")); the car our own V rides in every other frame while a body spawns");
       // Teleports are the default (vehicles.md "How a copy is moved"): only
       // a moved path asked for and unavailable is a degradation.
       if !off { TandemDegraded.State("vehicle move", s"vehicle_move = \(this.m_moveMode), but the vehicle layout check failed: vehicles are teleported every frame"); }

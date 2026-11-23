@@ -109,11 +109,12 @@
 //                        ; game's despawn, once nobody looks), off (ini only)
 //   saves = on           ; off: this game never saves (a test game: locked from
 //                        ; its first tick until it ends) (ini only)
-//   vehicle_move = teleport ; how the vehicles other games run (their cars, their
-//                        ; traffic) are moved here: teleport (every frame),
-//                        ; kinematic (a kinematic body the engine puts where its
-//                        ; owner says), velocity (the engine's move on a simulated
-//                        ; body); vehicles.md "How a copy is moved" (ini only).
+//   vehicle_move = kinematic ; how the vehicles other games run (their cars,
+//                        ; their traffic) are moved here: kinematic (a kinematic
+//                        ; body the engine puts where its owner says), teleport
+//                        ; (every frame), velocity (the engine's move on a
+//                        ; simulated body); vehicles.md "How a copy is moved"
+//                        ; (ini only).
 //                        ; kinematic_ride = on, its older form: velocity
 //   death_ledger = on    ; off: placed NPCs another player killed in the session
 //                        ; stay alive in our game (ini only)
@@ -279,12 +280,12 @@ struct Config {
   // off: all drawn by us, as before.
   bool nativePrompts{true};
   // How the vehicles other games run are moved here (vehicles.md, "How a
-  // copy is moved"): "teleport" (every frame, the measured default),
-  // "kinematic" (a kinematic body put where its owner says by the engine's
-  // own move) or "velocity" (the engine's move on a simulated body: the
+  // copy is moved"): "kinematic" (a kinematic body put where its owner says
+  // by the engine's own move: the default since 2026-11-23's rides),
+  // "teleport" (every frame) or "velocity" (the engine's move on a simulated body: the
   // 2026-11-22 kinematic_ride = on). kinematic_ride = on is read as
   // "velocity".
-  std::string vehicleMove{"teleport"};
+  std::string vehicleMove{"kinematic"};
   // off: a test game, which never saves (tools/instance.sh, tools/game.sh).
   bool saves{true};
   // Where it was read from (the settings page writes there).

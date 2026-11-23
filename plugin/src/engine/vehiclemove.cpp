@@ -136,10 +136,10 @@ void AskVehicleMove(std::string_view mode) {
 }
 
 bool CheckVehicleMove() {
-  // Not asked for (teleports are the default, vehicles.md "How a copy is
+  // Not asked for (vehicle_move = teleport asked for, vehicles.md "How a copy is
   // moved"): not a degradation.
   if (g_mode == Mode::Teleport) {
-    FeatureNotAsked(feature::kVehicleMove, "tandem.ini vehicle_move = teleport (the default)");
+    FeatureNotAsked(feature::kVehicleMove, "tandem.ini vehicle_move = teleport");
     return false;
   }
   if (!VehicleClass()) {

@@ -177,9 +177,10 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   not a placed one, a quest's, a wreck, nor a police car with its crew
   aboard; parked police cars included since 2026-11-23, and our own
   parked ones we had shared before that game's region came over us) are
-  taken out of our world, three a round and never in the player's sight
-  (within 50 m in the camera's frustum: it waits; 27 disposed in one tick,
-  a burning wreck among them, and the game died, 2026-11-23), with whoever
+  taken out of our world, two a second and never in the player's sight
+  (within 50 m in the camera's view: it waits; 27 disposed in one tick,
+  a burning wreck among them, and the game died, and again at 30 a second,
+  2026-11-23), with whoever
   sits in them. No proxy is spawned within 5 m of one of ours still there
   (`OwnNear`: two bodies in one place collide and burn); a wreck of ours
   stays, and no proxy comes onto it (its colour may still differ) (`entEntity.Dispose`,
@@ -207,7 +208,7 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   stream around it), extrapolated up to 500 ms along its velocity when a
   far car only gets every third packet, then held. Proxies are moved as
   every vehicle another game runs (`vehicles.md`, "How a copy is moved":
-  teleports by default, a kinematic body with `vehicle_move = kinematic`);
+  a kinematic body by default, teleports with `vehicle_move = teleport`);
   one at rest is left alone.
 - **Occupants** are NPCs of the owner, shared by the NPC range (100 m,
   `regions::kShare`), seated with `NpcSeat`: one proxy a second at most,

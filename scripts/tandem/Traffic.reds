@@ -1436,16 +1436,14 @@ public class TandemTraffic {
       this.m_popWaited += 1;
       return false;
     }
-    // A few a round: 27 parked cars disposed in one tick (our V just come
-    // into another game's area) and the game died in that tick (2026-11-23,
-    // 0xc0000005 at +0x22CA324; a burning wreck among them).
-    if this.m_removedAt == this.m_now && this.m_removedNow >= 3 {
+    // Two a second: 27 parked cars disposed in one tick (our V just come
+    // into another game's area) and the game died in that tick, and again
+    // at 30 a second (2026-11-23, 0xc0000005 at +0x22CA324, a lock taken
+    // through null; a burning wreck among them the first time).
+    if this.m_now - this.m_removedAt < 0.5 && this.m_now >= this.m_removedAt {
       return false;
     }
-    if this.m_removedAt != this.m_now {
-      this.m_removedAt = this.m_now;
-      this.m_removedNow = 0;
-    }
+    this.m_removedAt = this.m_now;
     this.m_removedNow += 1;
     let system = TandemSystem.Of(this.m_game);
     let mounting = GameInstance.GetMountingFacility(this.m_game);
