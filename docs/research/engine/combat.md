@@ -806,7 +806,7 @@ scripts:check`), never run.
   `PlayerStateMachine.UpperBody` = 7, `gamePSMUpperBodyStates.DualWield`).
 - **Animation switches.** On the body: the animation wrapper `dual_wield`
   (`AnimationControllerComponent.SetAnimWrapperWeight(owner, n"dual_wield",
-  1.0)`, with the blackboard flag, `:539004`; 0 on unequip, `:537814`), the
+1.0)`, with the blackboard flag, `:539004`; 0 on unequip, `:537814`), the
   equip event's `weaponEquipAnimFeature.dualWield` and
   `AnimFeature_LeftHandAnimation.lockLeftHandAnimation = true` (`:528411-528425`).
   On the weapons: `AnimationControllerComponent.RefreshDualWieldAnimWrapperWeight(owner)`

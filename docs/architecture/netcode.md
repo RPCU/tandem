@@ -28,8 +28,8 @@ compact, W whole`, then the `perf:` line (Frame cost); the whole table at
 
 ## Budget
 
-**64 kbit/s each way** on a two-player link, headers included (a slow
-uplink, a phone's hotspot); NPCs in a fight may take the host's side to 96. `tests/budget_test.cpp` plays each session for 4 s over loopback UDP
+**256 kbit/s each way** on a two-player link, headers included (what co-op
+games commonly send; the user, 2026-11-23); NPCs in a fight may take the host's side to 384. `tests/budget_test.cpp` plays each session for 4 s over loopback UDP
 with real endpoints (30 Hz states and walk-cycle poses, 24 NPCs at 10 Hz,
 strikes, shots and their cues, health and animation twice a second) and
 checks it, legacy wire alongside:

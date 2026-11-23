@@ -512,7 +512,7 @@ tracks).
   known NPCs only, paced);
 - the actors' bodies: paced and delta coded on the wire, whole for the
   guest's game (`scene_test`); the link with three actors and a camera
-  within 64 kbit/s (`budget_test`, the scene row);
+  within 256 kbit/s (`budget_test`, the scene row);
 - the camera: a view through the wire, cuts told from moves, the track
   (blend, a cut, old views, silence, another play), the pacer (five
   streams within the budget and none under two a second, twenty bodies on a
@@ -675,7 +675,7 @@ scene report`: `face tracks on (R reads, W writes)`, R > 0 on the host,
   its frozen story but near the host's scene hears only the host's. A
   guest whose own open-world scenes still run (they are not frozen) can
   hear both at once; nothing new, but more audible now.
-- **Few poses a second.** Within the 64 kbit/s of a link a scene's bodies
+- **Few poses a second.** Within the 256 kbit/s of a link a scene's bodies
   come 3 to 6 times a second, drawn between: slow acting reads well, a
   sharp gesture is softened, and a body is up to 0.3 s behind its voice.
   `scene_kbps` is the lever where the link allows.

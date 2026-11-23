@@ -28,8 +28,8 @@ using namespace tandem;
 namespace {
 // What a link may carry each way in a two-player session; the host's side
 // of a fight with 24 NPCs may take more (netcode.md, Budget).
-constexpr double kBudgetKbps = 64.0;
-constexpr double kFightDownKbps = 96.0;
+constexpr double kBudgetKbps = 256.0;
+constexpr double kFightDownKbps = 384.0;
 
 enum class Play { OnFoot, Standing, Fight, Driving, Apart, Scene };
 

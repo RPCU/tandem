@@ -174,16 +174,16 @@ func TestOpenSessionsBandwidth(t *testing.T) {
 	up := Data(0, payload)
 	// The burst, then nothing until the bucket refills.
 	burst := s.cfg.OpenBurst / len(up)
-	if got := count(guestA, up, now, 100); got != burst {
+	if got := count(guestA, up, now, 400); got != burst {
 		t.Fatalf("up: %d passed, want the burst %d", got, burst)
 	}
 	// A second's worth, and what the burst left.
 	again := (s.cfg.OpenBurst - burst*len(up) + s.cfg.OpenRate) / len(up)
-	if got := count(guestA, up, now.Add(time.Second), 100); got != again {
+	if got := count(guestA, up, now.Add(time.Second), 400); got != again {
 		t.Fatalf("a second later: %d passed, want %d", got, again)
 	}
 	// The other way has its own.
-	if got := count(hostA, Data(ch, payload), now, 100); got != burst {
+	if got := count(hostA, Data(ch, payload), now, 400); got != burst {
 		t.Fatalf("down: %d passed", got)
 	}
 	if s.Metrics.drops[dropBandwidth].Load() == 0 {

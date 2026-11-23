@@ -44,10 +44,10 @@ opens a session like this, and the relay keeps no account of anyone:
   (`--max-sessions`, 256, counts every session). Past them the host is told
   "the relay hosts as many sessions from your address as it may", or that
   the relay is full.
-- **A bandwidth cap per guest link and direction**: `--open-kbps` (128,
-  twice what tandem sends) with `--open-burst-kb` (32) at once; the rest is
+- **A bandwidth cap per guest link and direction**: `--open-kbps` (512,
+  twice what tandem sends) with `--open-burst-kb` (128) at once; the rest is
   dropped (`tandem_relay_dropped_total{reason="bandwidth"}`). A session of
-  3 guests may move 3 × 128 kbit/s each way.
+  3 guests may move 3 × 512 kbit/s each way.
 - **Idle sessions end** after 2 minutes, as any.
 - Everything else holds as before: guests need the code, the code-guessing
   limits, no answer to strangers' data, no answer larger than its request.

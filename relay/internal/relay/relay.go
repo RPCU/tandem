@@ -128,9 +128,9 @@ func DefaultConfig() Config {
 		ChallengeTTL:         2 * time.Minute,
 		MaxOpenSessions:      192,
 		MaxSessionsPerSource: 2,
-		// Twice tandem's 64 kbit/s per link, and 2 s of it at once.
-		OpenRate:  16_000,
-		OpenBurst: 32_000,
+		// Twice tandem's 256 kbit/s per link, and 2 s of it at once.
+		OpenRate:  64_000,
+		OpenBurst: 128_000,
 
 		ExpectPublicClients: true,
 	}

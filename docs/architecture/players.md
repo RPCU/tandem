@@ -60,7 +60,7 @@
     draws are the engine's own). The mock player sends no pose: its
     puppet's arms are the NPC stance's.
   - Protocol 16. Scenarios `presence-akimbo`, `outcomes-offhand`; `cmd test
-    query held [puppet | player N]`; the mock player's `--hold-left`,
+query held [puppet | player N]`; the mock player's `--hold-left`,
     `--strike offhand`.
 - **Looks** (`engine/look.cpp`, `scripts/tandem/Outfit.reds`): a V's face
   and body travel as the appearance keys the game's appearance changer takes
