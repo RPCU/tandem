@@ -28,7 +28,7 @@
   host's car, the host on autodrive for 150 s, both Vs checked alive):
 
   <!-- prettier-ignore -->
-  | | teleports (`vehicle_move = teleport`, the default) | velocity move (`velocity`, then `kinematic_ride = on`) |
+  | | teleports (`vehicle_move = teleport`, the default then) | velocity move (`velocity`, then `kinematic_ride = on`) |
   | --- | --- | --- |
   | the ride | whole, the two together at the end (27 proxies on the guest) | one of two rides whole; in the other the guest's V slid to the copy's wheel after 2 min 12 s (the driver's puppet out of its seat here, cause not found), its game drove the copy and the host left it 1 km behind |
   | `body was gone` | 0 and 0 | 0 and 0 |
@@ -66,18 +66,25 @@
     `0xC0000005` at `+0x53A742`); until then it is teleported, counted as
     not held yet in the report, and tried again the next frame.
 
-  One run each on one machine running both games (30 frames a second at
-  rest), so the frame rates are an indication, not a benchmark; the
-  velocity move did not come out cheaper, and its copies collide with the
-  rider's own world (the guest's game showed the "damaging vehicles" hint in
-  the copy). **So the default is the teleports**, with the rule that fixed
-  the missing traffic: the car our own V is mounted to is not teleported
-  two frames running while a body of ours waits to spawn
-  (`RideTeleportAllowed`; `TandemEntities.Create` keeps the list), and a
-  body whose owner says the same transform twice is left alone. Three
-  paths, by `tandem.ini` `vehicle_move` (`kinematic_ride = on`, its older
-  form, reads as `velocity`): `teleport`, `kinematic` (below, the clean
-  target), `velocity`.
+  **2026-11-23, three rides of 5 min with the kinematic body** (instances a
+  and c with the player's mods, a on AutoDrive through Kabuki from the test
+  field, c riding, out and back in at half time; the NPCs shared to 100 m,
+  their drivers seated with the slide guard): every ride whole, both Vs at
+  100, no seat lost (the riding V's origin within 0.1 mm of its seat, no
+  wheel taken), NPCs within 100 m on both games 27 of 27 to 32 of 33,
+  vehicles 13 of 13 to 21 of 22; the passenger's car: acceleration rms 3 to
+  6 m/s², 0 to 2 frames over 200 m/s² in 10 000 (with teleports 565 m/s²
+  and 78 % of frames over 200, the every-other-frame hold needed for
+  spawns). **So the default is the kinematic body** (`vehicle_move =
+kinematic`); teleports remain by `vehicle_move = teleport`, and are what
+  a game without the setter or the layout falls back to (`vehicle move`
+  degraded). With teleports, the rule that fixed the missing traffic
+  stays: the car our own V is mounted to is not teleported two frames
+  running while a body of ours waits to spawn (`RideTeleportAllowed`;
+  `TandemEntities.Create` keeps the list), and a body whose owner says the
+  same transform twice is left alone. Three paths, by `tandem.ini`
+  `vehicle_move` (`kinematic_ride = on`, its older form, reads as
+  `velocity`): `kinematic` (the default), `teleport`, `velocity`.
   - **The kinematic body** (`vehicle_move = kinematic`): what today's netcode does with a physics
     object another machine owns. The copy is not simulated here: it is
     put in the engine's own physics state for a vehicle driven
@@ -162,13 +169,13 @@
     wheel: a copy must never be driven by a passenger's game unasked);
     collisions of a copy with the rider's own world (damage and hits must
     stay its owner's); the frame cost; wheels and sound, not looked at.
-  - **Teleports** (the default, or a `vehicleBaseObject` that is not the
-    0xBC0 bytes measured on 2.50, or a game without the function: the
-    plugin logs which once): every body that moves is teleported every
+  - **Teleports** (`vehicle_move = teleport`, or a `vehicleBaseObject` that
+    is not the 0xBC0 bytes measured on 2.50, or a game without the
+    function: the plugin logs which once): every body that moves is teleported every
     frame, the car our V rides in every other frame while a body spawns.
   - **In the log**: once a run, `vehicles: the vehicles other games run
 are kinematic bodies …`, `… are moved by the engine's velocity move …`
-    or `… are teleported every frame (vehicle_move = teleport, the default
+    or `… are teleported every frame (vehicle_move = teleport
 | the vehicle layout check failed)`; `tools/game.sh cmd vehicle moves`
     (and the end of `street count`): `moves: path kinematic|velocity|teleport,
 N moved by the engine, N held kinematic now, N given their physics

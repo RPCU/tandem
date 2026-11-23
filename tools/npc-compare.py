@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Compare two games' `npc list` blocks (docs/architecture/npcs.md, "Inside
-the plugin"; the vehicles' twin is tools/street-compare.py).
+"""Compare two games' `npc list` blocks (docs/architecture/npcs.md, "The
+same people on both screens"; the vehicles' twin is tools/street-compare.py).
 
-    tools/npc-compare.py HOST.log GUEST.log [--near 100]
+    tools/npc-compare.py HOST.log GUEST.log [--near 100] [--close 30]
 
 `tools/instance.sh cmd NAME npc list` on both games at about the same
 moment; their logs here. Blocks are paired in order.
@@ -13,8 +13,10 @@ its own it shares with nobody and has not hidden) and how many of them
 both games show; each one shown on one game only, with why the other does
 not show it (not shared to it, its proxy has no body yet or lost it, held
 out of sight, the owner's own unshared one and why); how far apart the
-two bodies of each NPC on both are (median, largest). Corpses are counted
-apart.
+two bodies of each NPC on both are (median, largest), and for those within
+--close m of a V how many are more than 0.5 m apart (each listed). A
+seated body's place reads as nonsense (§13.154's mounts), so the NPCs more
+than 1 km apart are counted apart. Corpses are counted apart.
 """
 
 import argparse
@@ -87,6 +89,7 @@ def main():
     ap.add_argument("a")
     ap.add_argument("b")
     ap.add_argument("--near", type=float, default=100.0)
+    ap.add_argument("--close", type=float, default=30.0)
     ap.add_argument("--names", default="host,guest", help="the two games' names in the output")
     args = ap.parse_args()
     names = args.names.split(",")
@@ -100,11 +103,12 @@ def main():
         def near(p):
             return min(flat(p, v) for v in vs)
 
-        apart, missing, total, both, dead_one_sided = [], [], 0, 0, 0
+        apart, close, off, seated, missing, total, both, dead_one_sided = [], [], [], 0, [], 0, 0, 0
         for i in sorted(set(a["rows"]) | set(b["rows"]) | set(a["shared"]) | set(b["shared"])):
             x, y = a["rows"].get(i), b["rows"].get(i)
             sx, sy = shows(x), shows(y)
-            ref = next((r["pos"] for r in (x, y) if r and r["pos"]), None)
+            ref = next((r["pos"] for r in (x, y) if r and r["pos"] and r["kind"] == "ours"), None)
+            ref = ref or next((r["pos"] for r in (x, y) if r and r["pos"]), None)
             ref = ref or next((s["pos"] for s in (a["shared"].get(i), b["shared"].get(i)) if s), None)
             if ref is None or near(ref) > args.near:
                 continue
@@ -117,7 +121,15 @@ def main():
             total += 1
             if sx and sy:
                 both += 1
-                apart.append(flat(x["pos"], y["pos"]))
+                d = flat(x["pos"], y["pos"])
+                if d > 1000.0:
+                    seated += 1
+                    continue
+                apart.append(d)
+                if near(ref) <= args.close:
+                    close.append(d)
+                    if d > 0.5:
+                        off.append(f"{i} ({x['rec']}): {d:.2f} m apart, {near(ref):.0f} m from a V")
                 continue
             shown, other, row, blk = (0, 1, y, b) if sx else (1, 0, x, a)
             src = x if sx else y
@@ -129,9 +141,15 @@ def main():
                     total += 1
                     missing.append(f"{names[side]}'s own {o['rec']} ({o['why']}): not on the {names[other]}, {near(o['pos']):.0f} m from a V")
         if apart:
-            print(f"  on both: {len(apart)}, median {statistics.median(apart):.2f} m apart, largest {max(apart):.2f} m")
+            print(f"  on both: {len(apart)}, median {statistics.median(apart):.2f} m apart, largest {max(apart):.2f} m"
+                  + (f" ({seated} seated, their places unread)" if seated else ""))
+        if close:
+            print(f"  within {args.close:.0f} m of a V: {len(close)}, median {statistics.median(close):.2f} m apart, "
+                  f"{len(off)} more than 0.5 m apart")
         print(f"  within {args.near:.0f} m of either V: {both} of {total} on both games ({total - both} one-sided)"
               + (f"; {dead_one_sided} corpse(s) on one game only" if dead_one_sided else ""))
+        for line in off:
+            print("  apart: " + line)
         for line in missing:
             print("  one-sided: " + line)
         totals.append((both, total))
