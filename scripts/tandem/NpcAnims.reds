@@ -210,6 +210,9 @@ public class TandemNpcAnimProxy {
   public let lookAt: Uint32;
   // The host's workspot, played on the proxy.
   public let spot: ref<TandemSpot>;
+  // Seated in a vehicle here (Npcs.reds FollowSeat): the seat gives the
+  // pose, not the owner's stance or workspot.
+  public let seated: Bool;
 }
 
 // A workspot played on a body tandem moves (an NPC proxy, a player's
@@ -801,6 +804,11 @@ public class TandemNpcAnims {
     for proxy in this.m_proxies {
       let body = this.Body(proxy.npc);
       if IsDefined(body) {
+        let seated = VehicleComponent.IsMountedToVehicle(this.m_game, body);
+        if NotEquals(seated, proxy.seated) {
+          proxy.seated = seated;
+          proxy.dirty = true;
+        }
         if proxy.dirty {
           proxy.dirty = false;
           this.Apply(body, proxy);
@@ -829,8 +837,15 @@ public class TandemNpcAnims {
     let anim = proxy.anim;
     let before = proxy.shown;
     let states = body.GetStatesComponent();
+    // Seated, the stance is the seat's (the game's own for an NPC in a
+    // vehicle, what its AI sets when it mounts): a crowd driver's owner says
+    // Stand, and the proxy stood upright through its seat.
+    let stance = IntEnum<gamedataNPCStanceState>(anim.stance);
+    if proxy.seated && NotEquals(stance, gamedataNPCStanceState.VehicleWindow) {
+      stance = gamedataNPCStanceState.Vehicle;
+    }
     if IsDefined(states) {
-      states.TandemFollow(IntEnum<gamedataNPCHighLevelState>(anim.highLevel), IntEnum<gamedataNPCUpperBodyState>(anim.upperBody), IntEnum<gamedataNPCStanceState>(anim.stance));
+      states.TandemFollow(IntEnum<gamedataNPCHighLevelState>(anim.highLevel), IntEnum<gamedataNPCUpperBodyState>(anim.upperBody), stance);
     }
     // The weapon first: an aim or a shot needs it in the hand.
     this.Arm(body, proxy);
@@ -922,6 +937,14 @@ public class TandemNpcAnims {
   private func Workspot(body: ref<ScriptedPuppet>, proxy: ref<TandemNpcAnimProxy>, now: Float) -> Void {
     if !IsDefined(proxy.spot) {
       proxy.spot = new TandemSpot();
+    }
+    // Seated: the seat is its place. The owner's driver sits in its own
+    // car's seat workspot; played here it took the proxy off its seat.
+    if proxy.seated {
+      if proxy.spot.Playing() {
+        proxy.spot.Stop(this.m_game, body);
+      }
+      return;
     }
     let want = (proxy.anim.flags & 2) != 0 ? proxy.anim.workspot : 0ul;
     proxy.spot.Step(this.m_game, body, TandemNative.NpcPuppetId(proxy.npc), want, proxy.anim.workspotEntry, now, s"npc anims: proxy \(proxy.npc)");

@@ -235,7 +235,10 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   seated in 12 min on foot, 3 slides answered by the guard, no crash. With
   the guard off (degraded `slide guard`) or `npc seats hold`, a seated proxy
   waits out of sight and the car has nobody at the wheel (`npc-compare`:
-  "its proxy is held").
+  "its proxy is held"). Seated, a proxy sits the game's way (the seat's
+  animset override its AI would set, the stance `Vehicle`), never its
+  owner's stance or workspot (engine facts §13.154: drivers stood upright
+  through their seat, or were put out of it).
 - **Headlights** are the owner's (flag 32 of the state: a light mode, and
   the car on; a parked crowd car has the mode and is off): a copy gets the
   mode and is turned on, and is checked against its owner's every 2 s (the

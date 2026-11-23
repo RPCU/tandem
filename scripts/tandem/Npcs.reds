@@ -1912,6 +1912,10 @@ public class TandemNpcs {
     }
     this.m_seatGateAt = now + 1.0;
     TandemVehicles.Seat(game, npc, car, slot);
+    // The seat's own animations for this car and seat, as the NPC's AI sets
+    // them when it mounts (SetAnimsetOverrideForPassengerNPC); the vehicle's
+    // unmount sets them back. Without them the proxy sat in the generic pose.
+    VehicleComponent.SetAnimsetOverrideForPassenger(npc, carId, slot, 1.0);
     if street && IsDefined(traffic) {
       traffic.MarkSeated(TandemStreet.CarOfSeat(proxy.seatOwner));
     }
