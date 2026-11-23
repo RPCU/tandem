@@ -231,6 +231,8 @@ public class TandemSpot {
   public let path: Uint64;
   public let entry: Int32;
   public let since: Float;
+  // Times the copy left the workspot by itself while its owner stayed.
+  public let replays: Int32;
 
   public func Playing() -> Bool {
     return this.state == 1 || this.state == 2;
@@ -266,6 +268,25 @@ public class TandemSpot {
           this.state = 3;
           this.since = now;
           workspots.SendSlowExitSignal(body);
+        } else if !workspots.IsActorInWorkspot(body) && now - this.since < 3.0 {
+          // Out again within 3 s of going in: not played in a loop.
+          this.state = 0;
+          if hold != 0u {
+            TandemNative.HoldPuppet(hold, false);
+          }
+          TandemDegraded.Fallback("workspot not entered", s"\(label) left workspot \(this.path) at once: left standing");
+        } else if !workspots.IsActorInWorkspot(body) {
+          // Our copy's tree ran to its end (played once from its start, it
+          // reaches the exit; the owner's stays, its spot kept by its AI):
+          // the copy stood up while the owner sat, and sat again at the
+          // owner's next entry. Back in at the owner's entry, as the spot
+          // keeps the owner's NPC there.
+          this.replays += 1;
+          this.state = 0;
+          let path = this.path;
+          this.path = 0ul;
+          this.Enter(game, body, hold, path, now, label);
+          TandemNative.LogDebug(s"\(label) left workspot \(path) by itself while its owner stays: back in (\(this.replays) so far)");
         } else if entry != this.entry {
           this.entry = entry;
           workspots.SendJumpCommandEnt(body, this.entry, false);
@@ -592,7 +613,8 @@ public class TandemNpcAnims {
     } else if IsDefined(proxy) && proxy.seated {
       plays = "seated";
     }
-    return s"spot \(plays) said \(said)";
+    let replays = IsDefined(proxy) && IsDefined(proxy.spot) ? proxy.spot.replays : 0;
+    return s"spot \(plays) said \(said) replays \(replays)";
   }
 
   private func Send(anim: TandemNpcAnim) -> Void {

@@ -237,6 +237,15 @@ the first group session.
   in it (`PlayNpcInWorkspot`) and jumped to the host's entry; meanwhile
   the controller keeps still (`HoldPuppet`). When the host's NPC gets up
   the proxy plays the slow exit and the controller takes over again.
+  Played once from its start, the copy's tree runs to its exit while the
+  host's NPC stays (its spot keeps it there): a copy out of its workspot
+  by itself goes back in at the host's entry (`TandemSpot` `replays`), once
+  it held 3 s; out sooner is a `workspot not entered` fallback, never a
+  loop (a seated NPC seen sitting, standing, sitting again, 2026-11-23). A
+  workspot the host cannot read (`workspot unread`) is a fallback too.
+  `npc list` gives each NPC's activity (`spot P|unread|none`, a proxy's
+  `said` and `replays`); `npc-compare` counts those not the same on both
+  games and, over several lists, those that flickered.
   Scenarios `npcs-anims` (guest of a replay with `--anims`),
   `npcs-anims-host` and `npcs-anims-events`. **Not yet verified in game**; open: tracers (the
   shot's target is sent, not drawn), cover poses beyond the stance, hit
