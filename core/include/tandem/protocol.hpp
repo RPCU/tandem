@@ -307,7 +307,9 @@ struct NpcEntry {
   friend bool operator==(const NpcEntry &, const NpcEntry &) = default;
 };
 
-inline constexpr std::size_t kMaxNpcsPerState = 64;
+// 128: what a busy street holds within the 100 m a game shares (regions.hpp
+// kShare: 78 within it at a Kabuki crossing, 2026-11-23).
+inline constexpr std::size_t kMaxNpcsPerState = 128;
 
 struct NpcStates { // State channel, ~10 Hz: every NPC the host shares, in one go
   std::uint32_t seq{};

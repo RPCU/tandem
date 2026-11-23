@@ -19,12 +19,17 @@
 namespace tandem::regions {
 // Metres. kTake < kRadius < kKeep < kLose: an NPC between two players does
 // not bounce, and a hand-over is asked for before its owner would drop it.
-inline constexpr float kRadius = 60.f;   // a region: what a game shares around its V
+inline constexpr float kRadius = 60.f; // a region: whose crowd and streets these are
+// What a game shares of its NPCs around its V, and holds back of its own
+// inside a higher-ranked linked player's: the 100 m within which both
+// screens show the same people (kShare < kLose; kept by the scripts,
+// TandemRegionRules.Share).
+inline constexpr float kShare = 100.f;
 inline constexpr float kLinkIn = 150.f;  // two Vs closer than this: linked
 inline constexpr float kLinkOut = 190.f; // linked Vs farther than this: unlinked
 inline constexpr float kKeep = 80.f;     // an owner keeps its NPC while its V is within this
 inline constexpr float kTake = 55.f;     // another player takes it over when this close to it
-inline constexpr float kLose = 90.f;     // an owner stops sharing an NPC farther than this
+inline constexpr float kLose = 130.f;    // an owner stops sharing an NPC farther than this
 // A lower-ranked game's own crowd is off while its V is this deep in a
 // higher-ranked linked player's region, and back on beyond the radius.
 inline constexpr float kQuietIn = 45.f;

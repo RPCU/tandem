@@ -13,7 +13,8 @@ to the other's moment before the two are compared.
 For each pair: the shared vehicles with a body on both games and how far
 apart the two bodies are (median, largest); every vehicle within --near m of
 either V (shared, or a game's own one it shares with nobody) and how many of
-them both games show; and each one missing on a side, with why.
+them both games show; each one missing on a side, with why; and each one on
+both whose look differs (record, appearance: its paint; headlights; wreck).
 """
 
 import argparse
@@ -23,7 +24,7 @@ import re
 import statistics
 
 STAMP = r"\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+)\]"
-ROW = re.compile(STAMP + r".*street list: (\d+) (ours|proxy) (\S+) (?:(\S+) at (\S+) (\S+) (\S+) yaw (\S+) flags (\d+) off (\S+)(?: v (\S+) (\S+))?|no body)")
+ROW = re.compile(STAMP + r".*street list: (\d+) (ours|proxy) (\S+) (?:(\S+) at (\S+) (\S+) (\S+) yaw (\S+) flags (\d+) off (\S+)(?: v (\S+) (\S+))?(?: lamps (\d) wreck (\d))?|no body)")
 OWN = re.compile(STAMP + r".*street list: own (\S+) at (\S+) (\S+) (\S+) unshared \(([^)]*)\)(?: v (\S+) (\S+))?")
 VAT = re.compile(STAMP + r".*street list: our V at (\S+) (\S+) (\S+)")
 END = re.compile(STAMP + r".*street list: (\d+) vehicle\(s\), (\d+) with a body")
@@ -44,7 +45,7 @@ def blocks(path):
             cur["t"] = cur["t"] or when(m.group(1))
             pos = tuple(float(x) for x in m.group(6, 7, 8)) if m.group(6) else None
             vel = (float(m.group(12)), float(m.group(13))) if m.group(12) else (0.0, 0.0)
-            cur["rows"][int(m.group(2))] = {"kind": m.group(3), "rec": m.group(4), "pos": pos, "vel": vel}
+            cur["rows"][int(m.group(2))] = {"kind": m.group(3), "rec": m.group(4), "look": (m.group(5), m.group(14), m.group(15)), "pos": pos, "vel": vel}
         elif m := OWN.search(line):
             vel = (float(m.group(7)), float(m.group(8))) if m.group(7) else (0.0, 0.0)
             pos = tuple(float(x) for x in m.group(3, 4, 5))
@@ -81,7 +82,7 @@ def main():
         def near(p):
             return min((flat(p, v) for v in vs), default=float("nan"))
 
-        apart, missing, total, both = [], [], 0, 0
+        apart, missing, looks, total, both = [], [], [], 0, 0
         for i in sorted(set(a["rows"]) | set(b["rows"])):
             x, y = a["rows"].get(i), b["rows"].get(i)
             px = x and x["pos"] and carried(x["pos"], x["vel"], da)
@@ -93,6 +94,8 @@ def main():
             if px and py:
                 apart.append(flat(px, py))
                 both += 1 if inside else 0
+                if inside and (x["rec"], x["look"]) != (y["rec"], y["look"]):
+                    looks.append(f"shared {i} ({x['rec']}): host {x['look']}, guest {y['look']}, {d:.0f} m from a V")
             elif inside:
                 missing.append(f"shared {i} ({(x or y)['rec']}): host {'body' if px else 'none'}, guest {'body' if py else 'none'}, {d:.0f} m from a V")
         for side, other, blk, dt in (("host", "guest", a, da), ("guest", "host", b, db)):
@@ -104,9 +107,11 @@ def main():
                     missing.append(f"{side}'s own {o['rec']} ({o['why']}): not on the {other}, {d:.0f} m from a V")
         if apart:
             print(f"  shared with a body on both: {len(apart)}, median {statistics.median(apart):.3f} m apart, largest {max(apart):.3f} m")
-        print(f"  within {args.near:.0f} m of either V: {both} of {total} on both games")
+        print(f"  within {args.near:.0f} m of either V: {both} of {total} on both games, {both - len(looks)} of them the same look")
         for line in missing:
             print("  missing: " + line)
+        for line in looks:
+            print("  look: " + line)
 
 
 if __name__ == "__main__":

@@ -159,6 +159,17 @@ the first group session.
   Open: police (`PreventionSpawnSystem`), quest NPCs the guest needs to
   talk to (milestone 6). Hit reactions and ragdolls from other players'
   hits: built, untested in game (`presence.md`, `combat.md`).
+- **The same people on both screens** (`tools/npc-compare.py A.log B.log`,
+  `npc list` on both games at once: each NPC we run, each proxy with or
+  without a body, what a linked game shares that we show no proxy of, and
+  our own unshared ones with why and whether they are in sight). Two
+  instances at a Kabuki crossing, 2026-11-23: with the 60 m share, 14 to
+  25 of 34 to 45 NPCs within 100 m of either V were on one screen only
+  (each game's own crowd 60 to 100 m out, and the drivers below); with
+  `regions::kShare` 100 m and 128 a message, on foot 84 of 85 and 88 of 98
+  (the 10: the old 64 cap). What is still one-sided: the drivers and
+  passengers of the others' cars, never seated here (`traffic.md`,
+  "Occupants"; 42 of 52 on foot with traffic).
 - **A kill seen first, and NPCs that cannot die** (`Npcs.reds`
   `PredictKill`, `Reconcile`): a guest's hit that takes the last of a
   proxy's health kills it there at once (on-kill perks, loot, XP), ahead of

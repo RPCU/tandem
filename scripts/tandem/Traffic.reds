@@ -59,10 +59,14 @@ public class TandemCar {
   // A crowd car of ours we gave away: held out of its lane while it is a
   // proxy (TandemHold), back into traffic when it is ours again.
   public let held: Bool;
-  // Proxies: its body exists and shows how the owner says it stands.
+  // Proxies: its body exists and shows how the owner says it stands, since
+  // when (our clock).
   public let ready: Bool;
+  public let readyAt: Float;
   public let wrecked: Bool;
   public let siren: Bool;
+  // Proxies: its headlights as we last set them (0 not yet, 1 off, 2 on).
+  public let lamps: Int32;
   // Our V is getting in: we no longer move it (the claim is on its way).
   public let claimed: Bool;
   // Someone has sat in it here: its body is never deleted (engine-knowledge §13.6).
@@ -113,6 +117,11 @@ public class TandemTraffic {
   private let m_last: Float;
   private let m_lastCheck: Float;
   private let m_now: Float;
+  // (street list) proxies whose body came or went in sight within 50 m,
+  // and rounds a removal of ours waited for being in sight.
+  private let m_popIn: Int32;
+  private let m_popOut: Int32;
+  private let m_popWaited: Int32;
   private let m_you: Uint32;
   // Vehicles that are a player's car now (ours too): never shared again.
   private let m_taken: array<EntityID>;
@@ -150,8 +159,11 @@ public class TandemTraffic {
     return 150.0;
   }
 
+  // 96: a Kabuki crossing had 71 vehicles of ours within the share range,
+  // most of them parked (they cost nothing until they move), and the cap
+  // left 23 of them out (2026-11-23; 48 before).
   public static func MaxShared() -> Int32 {
-    return 48;
+    return 96;
   }
 
   // The NPC racers of a street race of ours that partners race in
@@ -326,6 +338,19 @@ public class TandemTraffic {
     return EntityID.FromHash(0ul);
   }
 
+  // How long its body has stood here as a proxy shown (0: not yet; a
+  // vehicle of ours: long enough).
+  public func ShownFor(id: Uint32) -> Float {
+    let car = this.Find(id);
+    if !IsDefined(car) {
+      return 0.0;
+    }
+    if car.mine {
+      return 1000.0;
+    }
+    return car.ready ? this.m_now - car.readyAt : 0.0;
+  }
+
   // A proxy (NPC or puppet) was seated in it here.
   public func MarkSeated(id: Uint32) -> Void {
     let car = this.Find(id);
@@ -455,7 +480,11 @@ public class TandemTraffic {
       TandemNative.Log(s"street: vehicle \(car.id) is our own placed \(TDBID.ToStringDEBUG(car.record))");
     } else {
       car.body = this.Reuse(car.record, at, turn);
-      if !EntityID.IsDefined(car.body) {
+      // Not into a car of our own that stands there (the same parked car or
+      // wreck in both worlds): ours goes first, out of sight, and the
+      // check below spawns the proxy then (two bodies in one place collide
+      // and burn).
+      if !EntityID.IsDefined(car.body) && !this.OwnNear(at) {
         car.body = TandemTraffic.SpawnProxy(car.record, car.appearance, at, turn);
       }
       TandemNative.Log(s"street: vehicle \(car.id) \(TDBID.ToStringDEBUG(car.record)) of player \(TandemStreet.RunBy(car.id)) (flags \(car.flags)) spawning at (\(event.x), \(event.y), \(event.z))");
@@ -478,6 +507,16 @@ public class TandemTraffic {
     spec.active = true;
     ArrayPush(spec.tags, n"Tandem.Traffic");
     return TandemEntities.Create(spec);
+  }
+
+  // A vehicle of our own world we do not share stands within 5 m.
+  private func OwnNear(at: Vector4) -> Bool {
+    for vehicle in this.m_live {
+      if IsDefined(vehicle) && !IsDefined(this.FindBody(vehicle.GetEntityID())) && Vector4.Distance(vehicle.GetWorldPosition(), at) < 5.0 {
+        return true;
+      }
+    }
+    return false;
   }
 
   // A retired proxy of the same record, put where the new one is.
@@ -599,6 +638,10 @@ public class TandemTraffic {
   // must not be deleted, §13.6); a body of our own world stays (and a crowd
   // car we held drives on).
   private func Retire(car: ref<TandemCar>) -> Void {
+    let gone = TandemTraffic.Body(this.m_game, car.body);
+    if IsDefined(gone) && !car.own && TandemSight.Seen(this.m_game, gone, 1.5, 2.5) {
+      this.m_popOut += 1;
+    }
     if car.held {
       let body = TandemTraffic.Body(this.m_game, car.body);
       if IsDefined(body) {
@@ -643,6 +686,15 @@ public class TandemTraffic {
     let pools = GameInstance.GetStatPoolsSystem(this.m_game);
     let id = Cast<StatsObjectID>(body.GetEntityID());
     let destroyed = (car.flags & 4) != 0;
+    // Its owner's look (paint, a wreck's own): a body we reused, our own
+    // instance of a placed car or a wreck we put there has ours otherwise
+    // (an overturned wreck yellow here and red on its owner's, 2026-11-23).
+    let mine = body.GetCurrentAppearanceName();
+    let owners = IsNameValid(car.appearance) && NotEquals(car.appearance, mine);
+    if joining && owners {
+      body.ScheduleAppearanceChange(car.appearance);
+      TandemNative.LogDebug(s"street: vehicle \(car.id) takes its owner's look \(NameToString(car.appearance)) (ours \(NameToString(mine)))");
+    }
     if destroyed && !car.wrecked {
       car.wrecked = true;
       if joining {
@@ -650,9 +702,10 @@ public class TandemTraffic {
         if IsDefined(state) {
           state.SetIsDestroyed(true);
         }
+        // The wreck's look is its owner's, when it said one.
         let record = body.GetRecord();
         let look = IsDefined(record) ? record.DestroyedAppearance() : n"None";
-        if IsNameValid(look) {
+        if IsNameValid(look) && !IsNameValid(car.appearance) {
           body.ScheduleAppearanceChange(look);
         }
         TandemNative.Log(s"street: vehicle \(car.id) is a wreck");
@@ -669,6 +722,11 @@ public class TandemTraffic {
     if NotEquals(siren, car.siren) {
       car.siren = siren;
       body.ToggleSiren(siren);
+    }
+    let lamps = (car.flags & 32) != 0 ? 2 : 1;
+    if lamps != car.lamps && !destroyed {
+      car.lamps = lamps;
+      TandemTraffic.SetHeadlights(body, lamps == 2);
     }
   }
 
@@ -796,6 +854,10 @@ public class TandemTraffic {
         if IsDefined(body) {
           if !car.ready {
             car.ready = true;
+            car.readyAt = this.m_now;
+            if !car.own && TandemSight.Seen(this.m_game, body, 1.5, 2.5) {
+              this.m_popIn += 1;
+            }
             this.Show(car, body, true);
           }
           let at = TandemStreet.Position(car.id);
@@ -886,6 +948,9 @@ public class TandemTraffic {
         } else if GameInstance.GetDynamicEntitySystem().IsSpawning(car.body) {
           car.goneSince = 0.0;
         } else if car.goneSince == 0.0 {
+          car.goneSince = this.m_now;
+        } else if this.OwnNear(new Vector4(car.x, car.y, car.z, 1.0)) {
+          // Ours still stands there (see OnSpawn): after it.
           car.goneSince = this.m_now;
         } else if this.m_now - car.goneSince > wait {
           TandemEntities.Delete(car.body);
@@ -979,6 +1044,21 @@ public class TandemTraffic {
         car.seen = false;
         let body = TandemTraffic.Body(this.m_game, car.body);
         let range = TandemRaces.Racer(this.m_game, body) ? TandemTraffic.RacerRange() : TandemTraffic.DropRange();
+        // The crowd reuses a vehicle entity for another car (its record
+        // changes under the same id): the one we shared is gone, the new one
+        // is announced as any other (a Quartz shared, a Hella on the screen
+        // that runs it, 2026-11-23).
+        if IsDefined(body) && body.GetRecordID() != car.record {
+          body = null;
+        }
+        // One of ours standing where another game runs our area (shared
+        // before that game's region came over it): that game's own car
+        // stands there, so ours goes from both worlds, as a new one of ours
+        // would (OneSided; a wreck yellow here and red there, two cars in
+        // one place, 2026-11-23). One that drives leaves by itself.
+        if !away && !owns && IsDefined(body) && !car.seated && !ArrayContains(this.m_taken, car.body) && (this.FlagsOf(body) & 1) != 0 && this.OneSided(body, car.body, entities) && this.Remove(body, car.body) {
+          body = null;
+        }
         if !away && IsDefined(body) && !ArrayContains(this.m_taken, car.body) && TandemTraffic.Nearest(body.GetWorldPosition(), viewers) <= range {
           car.seen = true;
           this.Say(car, body, pools);
@@ -1220,7 +1300,7 @@ public class TandemTraffic {
           }
         }
         let velocity = body.GetLinearVelocity();
-        TandemNative.Log(s"street list: \(car.id) \(car.mine ? "ours" : "proxy") \(TDBID.ToStringDEBUG(car.record)) \(NameToString(body.GetCurrentAppearanceName())) at \(at.X) \(at.Y) \(at.Z) yaw \(body.GetWorldYaw()) flags \(car.flags) off \(off) v \(velocity.X) \(velocity.Y)");
+        TandemNative.Log(s"street list: \(car.id) \(car.mine ? "ours" : "proxy") \(TDBID.ToStringDEBUG(car.record)) \(NameToString(body.GetCurrentAppearanceName())) at \(at.X) \(at.Y) \(at.Z) yaw \(body.GetWorldYaw()) flags \(car.flags) off \(off) v \(velocity.X) \(velocity.Y) lamps \(TandemTraffic.HeadlightsOn(body) ? 1 : 0) wreck \(body.IsDestroyed() ? 1 : 0)");
       } else {
         TandemNative.Log(s"street list: \(car.id) \(car.mine ? "ours" : "proxy") \(TDBID.ToStringDEBUG(car.record)) no body");
       }
@@ -1244,7 +1324,7 @@ public class TandemTraffic {
         }
       }
     }
-    TandemNative.Log(s"street list: \(ArraySize(this.m_cars)) vehicle(s), \(bodies) with a body, \(unshared) of our own unshared within \(TandemTraffic.DropRange()) m");
+    TandemNative.Log(s"street list: \(ArraySize(this.m_cars)) vehicle(s), \(bodies) with a body, \(unshared) of our own unshared within \(TandemTraffic.DropRange()) m; in sight within 50 m since the start: \(this.m_popIn) came, \(this.m_popOut) went, \(this.m_popWaited) removal round(s) of ours waited for it");
   }
 
   // (test: `street lanes`) the cars we run that someone drives, nearest
@@ -1283,11 +1363,13 @@ public class TandemTraffic {
   }
 
   // A car of our own making where another game runs the street, beside
-  // the crowd's (HeldBack): a parked crowd car of ours. Not a placed one
-  // (the same in every game: shared by its own id), nor a quest's, the
-  // police's or a wreck.
+  // the crowd's (HeldBack): a parked crowd car of ours, a wreck, a parked
+  // police car; that game's world has its own there (a wreck one colour
+  // here and another there, 2026-11-23). Not a placed one (the same in
+  // every game: shared by its own id), nor a quest's, nor a police car
+  // with its crew aboard (a unit on the move: Police.reds).
   private func OneSided(vehicle: ref<VehicleObject>, body: EntityID, entities: ref<DynamicEntitySystem>) -> Bool {
-    return !EntityID.IsStatic(body) && this.Eligible(vehicle, body, entities) && !vehicle.IsQuest() && !vehicle.IsPrevention() && !vehicle.IsDestroyed();
+    return !EntityID.IsStatic(body) && this.Eligible(vehicle, body, entities) && !vehicle.IsQuest() && (!vehicle.IsPrevention() || !VehicleComponent.HasActiveDriverMounted(this.m_game, body));
   }
 
   // (overlap_despawn = remove, the default) Out of our world at once: the
@@ -1296,6 +1378,11 @@ public class TandemTraffic {
   private func Remove(vehicle: ref<VehicleObject>, body: EntityID) -> Bool {
     this.ReadDespawn();
     if !Equals(this.m_despawnMode, "remove") || vehicle.IsPlayerMounted() {
+      return false;
+    }
+    // Never before the player's eyes: it goes once out of sight.
+    if TandemSight.Seen(this.m_game, vehicle, 1.5, 2.5) {
+      this.m_popWaited += 1;
       return false;
     }
     let system = TandemSystem.Of(this.m_game);
@@ -1395,6 +1482,9 @@ public class TandemTraffic {
     if IsDefined(state) && state.GetSirenState() {
       flags += 16;
     }
+    if TandemTraffic.HeadlightsOn(vehicle) {
+      flags += 32;
+    }
     if vehicle.IsPerformingPanicDriving() {
       flags += 64;
     }
@@ -1402,6 +1492,32 @@ public class TandemTraffic {
       flags += 128;
     }
     return flags;
+  }
+
+  // Its headlights, as its controller's state has them (on or high beams):
+  // a crowd car lights them itself by the hour and the weather, a copy of
+  // it here does not (one car's lit on its owner's screen, dark on the
+  // other, 2026-11-23).
+  public static func HeadlightsOn(vehicle: ref<VehicleObject>) -> Bool {
+    let state = TandemTraffic.ControllerOf(vehicle);
+    return IsDefined(state) && NotEquals(state.GetHeadLightMode(), vehicleELightMode.Off);
+  }
+
+  private static func ControllerOf(vehicle: ref<VehicleObject>) -> ref<vehicleControllerPS> {
+    let id = CreatePersistentID(vehicle.GetEntityID(), n"VehicleController");
+    return GameInstance.GetPersistencySystem(vehicle.GetGame()).GetConstAccessToPSObject(id, n"gamevehicleControllerPS") as vehicleControllerPS;
+  }
+
+  // The owner's headlights on our body: the controller's mode, and its lamps.
+  private static func SetHeadlights(vehicle: ref<VehicleObject>, on: Bool) -> Void {
+    let state = TandemTraffic.ControllerOf(vehicle);
+    if IsDefined(state) {
+      state.SetHeadLightMode(on ? vehicleELightMode.On : vehicleELightMode.Off);
+    }
+    let lamps = vehicle.GetAccessoryController();
+    if IsDefined(lamps) {
+      lamps.ToggleLights(on, vehicleELightType.Head);
+    }
   }
 
   private static func Nearest(point: Vector4, viewers: array<Vector4>) -> Float {
