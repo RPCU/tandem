@@ -1445,6 +1445,15 @@ public class TandemTraffic {
       this.m_popWaited += 1;
       return false;
     }
+    // Not in the 5 s after our crowd's density changed: the traffic system
+    // takes its own cars away then, and the game died in the tick we
+    // disposed of one just after our crowd went off (2026-11-23, the same
+    // crash as below, our V arriving in another game's area).
+    let system = TandemSystem.Of(this.m_game);
+    let npcs = IsDefined(system) ? system.Npcs() : null;
+    if IsDefined(npcs) && npcs.DensityFor() < 5.0 {
+      return false;
+    }
     // Two a second: 27 parked cars disposed in one tick (our V just come
     // into another game's area) and the game died in that tick, and again
     // at 30 a second (2026-11-23, 0xc0000005 at +0x22CA324, a lock taken

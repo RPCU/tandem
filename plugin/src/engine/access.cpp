@@ -42,12 +42,24 @@ std::atomic_bool g_checked{false};
 
 // The summary's order (a feature not listed here comes after these).
 constexpr std::string_view kOrder[] = {
-    feature::kMovement,           feature::kClipLengths, feature::kLooks,
-    feature::kLookKeys,           feature::kThirdPerson, feature::kPoseStream,
-    feature::kQuestNodes,         feature::kQuestFreeze, feature::kPrefabs,
-    feature::kWorkspots,          feature::kPhysics,     feature::kTransformGuard,
-    feature::kDismembermentGuard, feature::kSlideGuard,  feature::kTrace,
-    feature::kVehicleMove,        feature::kBodySlots,
+    feature::kMovement,
+    feature::kClipLengths,
+    feature::kLooks,
+    feature::kLookKeys,
+    feature::kThirdPerson,
+    feature::kPoseStream,
+    feature::kQuestNodes,
+    feature::kQuestFreeze,
+    feature::kPrefabs,
+    feature::kWorkspots,
+    feature::kPhysics,
+    feature::kTransformGuard,
+    feature::kDismembermentGuard,
+    feature::kSlideGuard,
+    feature::kDisposeGate,
+    feature::kTrace,
+    feature::kVehicleMove,
+    feature::kBodySlots,
 };
 
 // Under g_lock: the entries in the summary's order.
@@ -223,6 +235,7 @@ void CheckAccess() {
   CheckPhysics();
   CheckDismembermentGuard();
   CheckSlideGuard();
+  CheckDisposeGate();
   CheckBodySlots();
   g_checked = true;
   const auto summary = AccessSummary();
