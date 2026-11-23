@@ -106,7 +106,8 @@ spots scenarios need that the test field lacks. `at NAME` (or `at "X Y
 Z [YAW]"`; `tools/scenario.sh`) teleports our V and waits until it stands
 within 4 m of the spot (its position asked every 2 s, 45 s at most: a far
 teleport has a loading screen), then 3 s. Our V's position is set before
-a loading screen ends: when one came (the watchdog's `silent` line), `at`
+a loading screen ends: when one came (the watchdog's `paused` line, its
+`silent` one if the engine's frames stopped too), `at`
 also waits for its `back` line (90 s at most) and 5 s of streaming, then
 marks the log past it (three spots surveyed empty, each shot the loading
 screen, 2026-11-21; the watchdog's state outlives a session, so a guest

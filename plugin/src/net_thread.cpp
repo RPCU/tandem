@@ -56,6 +56,8 @@ struct NetThread::Impl {
   // started a new session, and the "back" line never came (the scenarios
   // wait for it: vendor-guest, 2026-11-21).
   std::uint64_t silentSinceUs = 0;
+  // The silence so far is a pause: the engine's own frames still ran.
+  bool silencePaused = false;
   // What we last handed an endpoint that it keeps for the session: a new
   // session (a guest joining again) starts from them.
   std::optional<proto::Appearance> lastAppearance;
@@ -406,12 +408,26 @@ struct NetThread::Impl {
     while (!stop.stop_requested() && !ended) {
       stall::NetBeat(stall::kPass);
       // Watchdog (runtime.hpp): one line when the game thread stops ticking,
-      // one when it comes back. Pause menus and loading screens stop it too.
+      // one when it comes back. A pause menu or a loading screen stops the
+      // script tick while the engine's frames run on: that is "paused"; a
+      // crash or a hang stops both: "silent".
       if (const auto last = runtime.LastGameFrameUs(); last) {
         const auto now = net::NowUs();
+        const bool framesRun = runtime.EngineFramesRun(now);
         if (!silentSinceUs && now - last > 5'000'000) {
           silentSinceUs = last;
-          log::Warn("watchdog: game thread silent for 5 s (crashed, hung, paused or loading)");
+          silencePaused = framesRun;
+          if (framesRun)
+            log::Info("watchdog: game thread paused for 5 s (a pause menu or a loading screen: "
+                      "the engine's frames run)");
+          else
+            log::Warn("watchdog: game thread silent for 5 s (crashed or hung: the engine's "
+                      "frames stopped too)");
+        } else if (silentSinceUs && silencePaused && !framesRun && now - last > 5'000'000) {
+          silencePaused = false;
+          log::Warn("watchdog: game thread silent: the engine's frames stopped too, {:.1f} s into "
+                    "the pause (crashed or hung)",
+                    static_cast<double>(now - silentSinceUs) / 1e6);
         } else if (silentSinceUs && now - last < 1'000'000) {
           log::Info("watchdog: game thread back after {:.1f} s",
                     static_cast<double>(last - silentSinceUs) / 1e6);

@@ -102,6 +102,41 @@ TEST_CASE("jitter widens the delay, within the cap") {
   CHECK(track.DelayUs() <= Track::kMaxDelayUs);
 }
 
+// netcode.md, Still: a still V goes 5 times a second, and the receiver's
+// interval estimate leaves those gaps out, so standing does not widen the
+// delay. A V 200 m away is sent 5 times a second whether it moves or not:
+// that interval is the stream's, and the delay holds it (a companion 242 m
+// away was drawn 217 ms behind, every 213 ms, running or standing,
+// 2026-11-23).
+TEST_CASE("a V standing still is drawn as soon as one walking; a far one later") {
+  auto drawn = [](bool far) {
+    Track track;
+    std::uint32_t seq = 1;
+    float x = 0.f;
+    for (; seq <= 60; ++seq) {
+      x = 3.f * seq * kStep / 1e6f;
+      const auto s = StateAt(seq, x, 0.f, 3.f);
+      track.Push(s, s.timeUs + 2'000);
+      track.At(s.timeUs + 2'000);
+    }
+    const auto last = kStart + 60 * kStep;
+    for (std::uint32_t i = 1; i <= 50; ++i, ++seq) {
+      auto s = StateAt(seq, far ? x + 1.3f * i : x, 0.f, far ? 6.5f : 0.f);
+      s.timeUs = last + i * 200'000;
+      track.Push(s, s.timeUs + 2'000);
+      for (std::uint64_t f = 0; f < 200'000; f += 16'000)
+        track.At(s.timeUs + 2'000 + f);
+    }
+    return track.Stats();
+  };
+  const auto still = drawn(false);
+  CHECK(still.intervalUs < 60'000);
+  CHECK(still.delayUs < 120'000);
+  const auto far = drawn(true);
+  CHECK(far.intervalUs > 150'000);
+  CHECK(far.delayUs > 150'000);
+}
+
 TEST_CASE("turning across ±pi takes the short way") {
   Track track;
   constexpr float pi = std::numbers::pi_v<float>;

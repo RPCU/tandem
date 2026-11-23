@@ -260,7 +260,8 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
   crash handler waits forever): run `tools/game.sh bt` before restarting it
   (every thread's stack, tandem's frames named from its .pdb). The plugin's
   watchdog logs `watchdog: game thread silent` after 5 s without a tick
-  (`plugin/src/runtime.hpp`); a hang that stops the net thread too (no
+  and without an engine frame (`plugin/src/runtime.hpp`; a pause menu or
+  a loading screen, the engine's frames running, is `paused`); a hang that stops the net thread too (no
   watchdog line) is in `red4ext/plugins/tandem/stall.log`, with the stuck
   threads' stacks (`plugin/src/stall.hpp`).
 - anya's keyboard is AZERTY: simulated keys land on other letters. Restart

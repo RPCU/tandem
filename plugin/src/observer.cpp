@@ -278,7 +278,13 @@ void Observer::Frame() {
   const auto now = net::NowUs();
   const auto previous = std::exchange(m_lastFrameUs, now);
   m_frames.fetch_add(1, std::memory_order_relaxed);
-  const auto gap = previous ? now - previous : 0;
+  auto gap = previous ? now - previous : 0;
+  // A gap that held several of the engine's frames is a pause menu or a
+  // loading screen holding the script tick (a 682 ms pause read as a frame
+  // of 682 ms, 2026-11-23): its longest engine frame is the frame time.
+  const auto engine = Runtime::Get().TakeEngineFrames();
+  if (engine.count > 2)
+    gap = engine.longestUs;
   // Over 2 s is a loading screen or a pause: the stall watch's, not a frame.
   if (gap > std::uint64_t{m_settings.frameMs} * 1000 && gap < 2'000'000) {
     const auto ms = static_cast<float>(gap) / 1000.f;
@@ -320,6 +326,13 @@ void Observer::Remote(proto::PlayerId player, const proto::Vec3 &position) {
   std::lock_guard _(m_lock);
   if (m_remote.size() < 64 || m_remote.contains(player))
     m_remote[player] = Seen{.position = position, .us = us};
+}
+
+void Observer::Forget(proto::PlayerId player) {
+  if (!On())
+    return;
+  std::lock_guard _(m_lock);
+  m_remote.erase(player);
 }
 
 void Observer::SessionStarted(std::string what) {
@@ -445,14 +458,17 @@ void Observer::WatchStall(std::uint64_t now) {
     return;
   }
   const auto silent = now - last;
-  if (!m_stalled && silent > kStallUs) {
+  // A pause menu or a loading screen holds the script tick while the
+  // engine's frames run on (Runtime::EngineFramesRun): no stall, whatever
+  // its length (the watchdog's "paused" rows say it). A stall is the
+  // engine's frames silent too.
+  if (!m_stalled && silent > kStallUs && !Runtime::Get().EngineFramesRun(now)) {
     m_stalled = true;
     m_stalledSinceUs = last;
     std::lock_guard _(m_lock);
     HitLocked({.kind = observer::Trigger::Stall,
-               .detail = std::format("the game thread silent for {:.0f} s: under Proton a crash "
-                                     "(tools/game.sh bt), else a hang, or a long pause or "
-                                     "loading screen",
+               .detail = std::format("the game thread and the engine's frames silent for {:.0f} "
+                                     "s: under Proton a crash (tools/game.sh bt), else a hang",
                                      static_cast<double>(silent) / 1e6),
                .severity = 95},
               now, 0);
@@ -460,8 +476,8 @@ void Observer::WatchStall(std::uint64_t now) {
     m_stalled = false;
     std::lock_guard _(m_lock);
     RowLocked("watchdog",
-              std::format("the game thread is back after {:.1f} s: the stall capture was a "
-                          "pause or a loading screen",
+              std::format("the game thread is back after {:.1f} s: the stall was a hang that "
+                          "ended",
                           static_cast<double>(last - m_stalledSinceUs) / 1e6),
               now);
   }

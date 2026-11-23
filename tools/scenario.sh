@@ -205,7 +205,7 @@ ensure() {
   if [ -n "$teleport" ]; then
     while ((SECONDS - start < 30)); do
       since_t=$(remote "tail -n +$teleport '$mark_file'")
-      silent=$(grep -c 'watchdog: game thread silent' <<<"$since_t" || true)
+      silent=$(grep -cE 'watchdog: game thread (silent|paused)' <<<"$since_t" || true)
       back=$(grep -c 'watchdog: game thread back' <<<"$since_t" || true)
       if ((silent > 0 && back >= silent)) || ((silent == 0 && SECONDS - start >= 8)); then
         break
@@ -253,7 +253,7 @@ pilot() {
 }
 reset() {
   local result status=0 silent back moves
-  silent=$(watchdog_lines silent)
+  silent=$(watchdog_lines 'silent|paused')
   back=$(watchdog_lines back)
   moves=$(since | grep -c 'elsewhere: a teleport' || true)
   result=$($game test-reset 2>&1) || status=$?
@@ -346,11 +346,11 @@ getent() {
   done
   return 2
 }
-# The watchdog's lines so far (silent, back), and the loading screen that
+# The watchdog's lines so far (silent or paused, back), and the loading screen that
 # came since those counts, waited out and the log marked after it.
-watchdog_lines() { since | grep -c "watchdog: game thread $1" || true; }
+watchdog_lines() { since | grep -cE "watchdog: game thread ($1)" || true; }
 past_loading() {
-  [ "$(watchdog_lines silent)" != "$1" ] || return 0
+  [ "$(watchdog_lines 'silent|paused')" != "$1" ] || return 0
   # Our V's position is set before the loading screen ends: the world
   # around it streams in only after (fixtures-survey found nothing at
   # three spots, each shot still the loading screen). Its end is the
@@ -365,7 +365,7 @@ past_loading() {
 }
 moved() {
   local silent back
-  silent=$(watchdog_lines silent)
+  silent=$(watchdog_lines 'silent|paused')
   back=$(watchdog_lines back)
   cmd "$@"
   # The watchdog says "silent" after 5 s without a tick.
@@ -385,7 +385,7 @@ at() {
   local where x y z start=$SECONDS line silent back
   where=$(spot "$1") || fail "no fixture '$1' in $fixture_file"
   read -r x y z _ <<<"$where"
-  silent=$(watchdog_lines silent)
+  silent=$(watchdog_lines 'silent|paused')
   back=$(watchdog_lines back)
   cmd teleport "$where"
   while ((SECONDS - start < 45)); do
