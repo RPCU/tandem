@@ -30,6 +30,9 @@ proto::Vec3 Of(const Red::Vector4 &v) { return {v.X, v.Y, v.Z}; }
 // done on the game thread's frame (engine::RunDisposals).
 std::mutex g_disposeLock;
 std::vector<Red::Handle<Red::ent::Entity>> g_disposals;
+// Of those, the ones only the population system may remove (a wreck: never
+// disposed behind its back). Under g_disposeLock.
+std::vector<Red::Handle<Red::ent::Entity>> g_systemOnly;
 bool Finite(const Red::Vector4 &v) {
   return std::isfinite(v.X) && std::isfinite(v.Y) && std::isfinite(v.Z);
 }
@@ -109,6 +112,18 @@ struct TandemWheels : Red::IScriptable {
     std::scoped_lock lock(g_disposeLock);
     if (g_disposals.size() < 256)
       g_disposals.push_back(entity);
+    return true;
+  }
+  // The same, only when the population system spawned it (removed by it);
+  // otherwise left where it is: a wreck of our own crowd's (Traffic.reds).
+  static bool DisposeBySystem(Red::Handle<Red::ent::Entity> entity) {
+    if (!entity)
+      return false;
+    std::scoped_lock lock(g_disposeLock);
+    if (g_disposals.size() < 256) {
+      g_disposals.push_back(entity);
+      g_systemOnly.push_back(entity);
+    }
     return true;
   }
 
@@ -398,6 +413,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemWheels, "TandemWheels", {
   RTTI_METHOD(Hold);
   RTTI_METHOD(Held);
   RTTI_METHOD(Dispose);
+  RTTI_METHOD(DisposeBySystem);
   RTTI_METHOD(CarOf);
   RTTI_METHOD(StreetOf);
   RTTI_METHOD(IsStreet);
@@ -456,7 +472,17 @@ void RunDisposals() {
       later.push_back(entity);
       continue;
     }
-    if (RemoveIfStubbed(entity.instance) == 0)
+    bool systemOnly = false;
+    {
+      std::scoped_lock lock(g_disposeLock);
+      const auto it = std::ranges::find_if(
+          g_systemOnly, [&](const auto &e) { return e.instance == entity.instance; });
+      if (it != g_systemOnly.end()) {
+        systemOnly = true;
+        g_systemOnly.erase(it);
+      }
+    }
+    if (RemoveIfStubbed(entity.instance) == 0 && !systemOnly)
       Red::CallVirtual(entity.instance, "Dispose");
   }
   if (!later.empty()) {

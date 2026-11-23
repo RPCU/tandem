@@ -79,6 +79,8 @@ public native class TandemWheels extends IScriptable {
   // The engine's removal of an entity (entEntity.Dispose): our own crowd's
   // vehicles and riders where another game runs the street.
   public static native func Dispose(entity: ref<Entity>) -> Bool
+  // The same, only when the population system spawned it; else left (a wreck).
+  public static native func DisposeBySystem(entity: ref<Entity>) -> Bool
 
   // Our own vehicles: the destruction grid and parts as the game reports
   // them, then how it stands (sent when it changed).

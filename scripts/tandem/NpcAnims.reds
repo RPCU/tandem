@@ -216,6 +216,7 @@ public class TandemNpcAnimProxy {
   // Seated in a vehicle here (Npcs.reds FollowSeat): the seat gives the
   // pose, not the owner's stance or workspot.
   public let seated: Bool;
+  public let seatCheckedAt: Float;
 }
 
 // A workspot played on a body tandem moves (an NPC proxy, a player's
@@ -233,6 +234,9 @@ public class TandemSpot {
   public let since: Float;
   // Times the copy left the workspot by itself while its owner stayed.
   public let replays: Int32;
+  // When it was last jumped to its entry, last checked for being in.
+  public let jumpedAt: Float;
+  public let checkedAt: Float;
 
   public func Playing() -> Bool {
     return this.state == 1 || this.state == 2;
@@ -251,6 +255,7 @@ public class TandemSpot {
           this.state = 2;
           workspots.SendJumpCommandEnt(body, entry, true);
           this.entry = entry;
+          this.jumpedAt = now;
           TandemNative.Log(s"\(label) in workspot \(want), entry \(this.entry)");
         } else if now - this.since > 2.0 {
           // Never started: leave it standing, moved by the controller.
@@ -268,7 +273,29 @@ public class TandemSpot {
           this.state = 3;
           this.since = now;
           workspots.SendSlowExitSignal(body);
-        } else if !workspots.IsActorInWorkspot(body) && now - this.since < 3.0 {
+          break;
+        }
+        if entry != this.entry {
+          this.entry = entry;
+          this.jumpedAt = now;
+          workspots.SendJumpCommandEnt(body, this.entry, false);
+          break;
+        }
+        // Kept at the owner's entry: played once from its start, the copy's
+        // tree runs on to its exit while the owner's stays, held by its AI
+        // (22 copies stood up by themselves in 70 s, 2026-11-23). Jumped to
+        // the same entry again before it can (the game's own blend), as the
+        // owner's spot keeps the owner there.
+        if now - this.jumpedAt >= 6.0 || now < this.jumpedAt {
+          this.jumpedAt = now;
+          workspots.SendJumpCommandEnt(body, this.entry, false);
+        }
+        // Whether it is still in: twice a second, not every tick.
+        if now - this.checkedAt < 0.5 && now >= this.checkedAt {
+          break;
+        }
+        this.checkedAt = now;
+        if !workspots.IsActorInWorkspot(body) && now - this.since < 3.0 {
           // Out again within 3 s of going in: not played in a loop.
           this.state = 0;
           if hold != 0u {
@@ -287,9 +314,6 @@ public class TandemSpot {
           this.path = 0ul;
           this.Enter(game, body, hold, path, now, label);
           TandemNative.LogDebug(s"\(label) left workspot \(path) by itself while its owner stays: back in (\(this.replays) so far)");
-        } else if entry != this.entry {
-          this.entry = entry;
-          workspots.SendJumpCommandEnt(body, this.entry, false);
         }
         break;
       case 3:
@@ -922,10 +946,14 @@ public class TandemNpcAnims {
     for proxy in this.m_proxies {
       let body = this.Body(proxy.npc);
       if IsDefined(body) {
-        let seated = VehicleComponent.IsMountedToVehicle(this.m_game, body);
-        if NotEquals(seated, proxy.seated) {
-          proxy.seated = seated;
-          proxy.dirty = true;
+        // Seated or not: twice a second (a mount changes rarely).
+        if now - proxy.seatCheckedAt >= 0.5 || now < proxy.seatCheckedAt {
+          proxy.seatCheckedAt = now;
+          let seated = VehicleComponent.IsMountedToVehicle(this.m_game, body);
+          if NotEquals(seated, proxy.seated) {
+            proxy.seated = seated;
+            proxy.dirty = true;
+          }
         }
         if proxy.dirty {
           proxy.dirty = false;

@@ -174,7 +174,7 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   default): where another game runs the street (our V inside a
   higher-ranked player's region, or that game running our area), our own
   crowd's vehicles and our other dynamic cars there (a parked crowd car;
-  not a placed one, a quest's, a wreck, nor a police car with its crew
+  not a placed one, a quest's, nor a police car with its crew
   aboard; parked police cars included since 2026-11-23, and our own
   parked ones we had shared before that game's region came over us) are
   taken out of our world (on the game thread's frame: by the population
@@ -185,8 +185,9 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   a burning wreck among them, and the game died, and again at 30 a second,
   2026-11-23), with whoever
   sits in them. No proxy is spawned within 5 m of one of ours still there
-  (`OwnNear`: two bodies in one place collide and burn); a wreck of ours
-  stays, and no proxy comes onto it (its colour may still differ) (`entEntity.Dispose`,
+  (`OwnNear`: two bodies in one place collide and burn). A wreck of ours
+  goes only the population system's way (`TandemWheels.DisposeBySystem`:
+  one it did not spawn stays, and no proxy comes onto it) (`entEntity.Dispose`,
   `TandemWheels.Dispose`; `TandemTraffic.Remove`; never one with a player
   or a puppet aboard). Density 0 does not stop the traffic, a crowd null
   area (`overlap = area`) did not either (measured in a ride: 7 to 10 held
