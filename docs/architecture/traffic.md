@@ -412,7 +412,11 @@ from that moment: `NpcSeat` out, then its states as for any NPC.
 
 - A vehicle's health is state (`TrafficStatus`), kept for late joiners and
   in the digest. The proxy's own health pool follows it, so the damage
-  stages (smoke, then fire) show by themselves on every game.
+  stages (smoke, then fire) show by themselves on every game. A proxy is
+  immortal on the games that do not run it (`TandemTraffic.Spare`: the god
+  mode the game gives a quest car tagged `Immortal`) until its owner says
+  destroyed or it becomes theirs: crashes into a guest's own cars burnt
+  proxies out on that game only, their wrecks and parts on one screen.
 - At zero the owner's vehicle explodes the game's way. On the others the
   status says destroyed and the proxy's health is set to its minimum: the
   **game's own explosion** runs there too (the blast effect, the sound,
