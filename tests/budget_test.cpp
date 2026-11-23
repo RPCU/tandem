@@ -13,6 +13,7 @@
 #include "tandem/net_traffic.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/presence.hpp"
+#include "tandem/traffic.hpp"
 
 #include <doctest/doctest.h>
 
@@ -33,7 +34,7 @@ namespace {
 constexpr double kBudgetKbps = 256.0;
 constexpr double kFightDownKbps = 384.0;
 
-enum class Play { OnFoot, Standing, Fight, Driving, Apart, Scene, Crowd };
+enum class Play { OnFoot, Standing, Fight, Driving, Apart, Scene, Crowd, Traffic };
 
 const char *NameOf(Play play) {
   switch (play) {
@@ -49,6 +50,8 @@ const char *NameOf(Play play) {
     return "a scene, 3 actors, camera";
   case Play::Crowd:
     return "a dense street, 96 NPCs";
+  case Play::Traffic:
+    return "a street, 24 cars";
   default:
     return "apart (500 m)";
   }
@@ -97,7 +100,9 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
   const auto warmUp = start + 1'000'000;
   const auto end = warmUp + static_cast<std::uint64_t>(seconds * 1e6);
   std::uint64_t nextFrame = start, nextNpcs = start, nextEvent = start;
-  std::uint32_t frame = 0, sceneFrame = 0, npcFrame = 0;
+  std::uint32_t frame = 0, sceneFrame = 0, npcFrame = 0, trafficFrame = 0;
+  std::uint64_t nextTraffic = start;
+  traffic::Budget streetBudget;
   std::optional<net::Traffic> before;
   std::uint64_t measuredFrom = 0;
   for (std::size_t i = 0; i < all.size(); ++i)
@@ -120,7 +125,8 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
         const float apart = play == Play::Apart && i > 0 ? 500.f : 3.f * static_cast<float>(i);
         state.position.x += apart;
         float energy = 1.f;
-        if (play == Play::Standing || play == Play::Driving || play == Play::Scene) {
+        if (play == Play::Standing || play == Play::Driving || play == Play::Scene ||
+            play == Play::Traffic) {
           state.position = {apart, 0.f, 0.f};
           state.velocity = {};
           state.orientation = sync::FromYaw(0.f);
@@ -198,6 +204,37 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
       if (whole && play == Play::Fight)
         host->SendNpcAwareness({.entries = {{1, 2, 100}, {2, 2, 120}, {3, 2, 40}, {4, 2, 255}}});
     }
+    // The host's street as Traffic.reds sends it: a round of the budget's
+    // pick 10 times a second, the moving cars within 50 m of a V on the
+    // frames between (traffic.md, Near either V). 24 cars driving at 10 m/s
+    // on two lanes 150 m long, 12 of them near.
+    if (play == Play::Traffic && trafficFrame != frame) {
+      trafficFrame = frame;
+      const bool round = now >= nextTraffic;
+      if (round)
+        nextTraffic += 100'000;
+      const float s = static_cast<float>(now - start) / 1e6f;
+      std::vector<traffic::Car> cars;
+      for (std::uint32_t n = 1; n <= 24; ++n) {
+        const auto id = proto::MakeTrafficId(1, n);
+        const float lane = n % 2 ? 1.f : -1.f;
+        const float x = std::fmod(6.25f * static_cast<float>(n) + 10.f * s, 150.f) - 75.f;
+        cars.push_back({.id = id,
+                        .position = {lane * x, 6.f * lane, 0.f},
+                        .orientation = sync::FromYaw(lane > 0 ? -1.5708f : 1.5708f),
+                        .velocity = {10.f * lane, 0.f, 0.f}});
+        if (frame < 5)
+          host->SendTrafficSpawn({.id = id,
+                                  .record = 0x4321 + n,
+                                  .appearance = 0x66,
+                                  .position = cars.back().position,
+                                  .orientation = cars.back().orientation});
+      }
+      const std::vector<proto::Vec3> viewers{{0.f, 0.f, 0.f}, {3.f, 0.f, 0.f}};
+      proto::TrafficStates states;
+      states.cars = round ? streetBudget.Pick(cars, viewers) : traffic::PickNear(cars, viewers);
+      host->SendTrafficStates(states);
+    }
     if (play == Play::Fight && now >= nextEvent) {
       // Twice a second: a guest's strike, the NPC's health and animation,
       // shots both ways with their tracers' ends, a ricochet, a charge.
@@ -242,7 +279,7 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
 
 TEST_CASE("typical sessions stay within the bandwidth budget, each way") {
   for (const auto play : {Play::OnFoot, Play::Standing, Play::Fight, Play::Driving, Play::Apart,
-                          Play::Scene, Play::Crowd}) {
+                          Play::Scene, Play::Crowd, Play::Traffic}) {
     CAPTURE(NameOf(play));
     const auto legacy = Run(play, false);
     const auto compact = Run(play, true);

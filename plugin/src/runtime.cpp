@@ -1660,7 +1660,7 @@ void Runtime::ResetSession() {
     // The street: the next session's ids are other vehicles, and nobody is
     // wanted in it until its game says so.
     m_streetOutbox.clear();
-    m_trafficStates.reset();
+    m_trafficStates.clear();
     m_streetEvents.clear();
     m_sharedTraffic.clear();
     m_trafficStatus.clear();
@@ -1694,6 +1694,7 @@ void Runtime::ResetSession() {
   std::lock_guard _(m_tracksLock);
   std::erase_if(m_tracks, [](const auto &entry) { return entry.first >= kNpcPuppetBase; });
   m_trafficTracks.clear();
+  m_trafficPace.clear();
 }
 
 void Runtime::SubmitStreet(proto::Message message) {
@@ -1710,18 +1711,22 @@ std::vector<proto::Message> Runtime::TakeStreetOutbox() {
 }
 
 void Runtime::SubmitTrafficCars(std::span<const traffic::Car> cars,
-                                std::span<const proto::Vec3> viewers) {
-  proto::TrafficStates states;
-  states.cars = m_trafficBudget.Pick(cars, viewers);
+                                std::span<const proto::Vec3> viewers, bool near) {
+  // When our game read them (the receivers' timeline goes by it).
+  proto::TrafficStates states{.timeUs = HostNowUs()};
+  states.cars = near ? traffic::PickNear(cars, viewers) : m_trafficBudget.Pick(cars, viewers);
   if (states.cars.empty())
     return;
   std::lock_guard _(m_lock);
-  m_trafficStates = std::move(states);
+  // Taken every net pass: more waiting is a stalled net thread.
+  if (m_trafficStates.size() >= 8)
+    m_trafficStates.erase(m_trafficStates.begin());
+  m_trafficStates.push_back(std::move(states));
 }
 
-std::optional<proto::TrafficStates> Runtime::TakeTrafficStates() {
+std::vector<proto::TrafficStates> Runtime::TakeTrafficStates() {
   std::lock_guard _(m_lock);
-  return std::exchange(m_trafficStates, std::nullopt);
+  return std::exchange(m_trafficStates, {});
 }
 
 void Runtime::PushStreetEvent(StreetEvent event) {
@@ -1751,33 +1756,44 @@ std::vector<StreetEvent> Runtime::TakeStreetEvents() {
 }
 
 void Runtime::PushTrafficStates(const proto::TrafficStates &states) {
+  const auto arrival = HostNowUs();
   std::lock_guard _(m_tracksLock);
   for (const auto &entry : states.cars) {
     const auto car = traffic::Unpack(entry);
-    m_trafficTracks[entry.id].Push({.seq = states.seq,
+    const proto::VehicleState state{.seq = states.seq,
                                     .timeUs = states.timeUs,
                                     .position = car.position,
                                     .orientation = car.orientation,
-                                    .velocity = car.velocity});
+                                    .velocity = car.velocity};
+    m_trafficTracks[entry.id].Push(state);
+    m_trafficPace.try_emplace(entry.id, 30)
+        .first->second.Push({.seq = state.seq, .timeUs = state.timeUs, .position = state.position},
+                            arrival);
   }
 }
 
 void Runtime::ForgetTraffic(proto::TrafficId id) {
   std::lock_guard _(m_tracksLock);
   m_trafficTracks.erase(id);
+  m_trafficPace.erase(id);
 }
 
 sync::VehicleView Runtime::TrafficOf(proto::TrafficId id) {
-  // Drawn 200 ms in the past: two states of a 10 Hz stream around it even
-  // when one is late, and half a second of extrapolation when a far
-  // vehicle only gets every third packet (traffic::Budget).
-  constexpr std::uint64_t kDelayUs = 200'000;
+  // Drawn as far in the past as its own stream needs (sync::Track: transit,
+  // the interval between its states, jitter): about 100 ms for a car near
+  // a V (30 a second), 200 for a far one (10, or every third round when the
+  // street is full: traffic::Budget); 200 for every car before.
   const auto now = HostNowUs();
   std::lock_guard _(m_tracksLock);
   const auto car = m_trafficTracks.find(id);
   if (car == m_trafficTracks.end())
     return {};
-  const auto target = now > kDelayUs ? now - kDelayUs : 0;
+  std::uint64_t delay = 200'000;
+  if (const auto pace = m_trafficPace.find(id); pace != m_trafficPace.end()) {
+    pace->second.At(now);
+    delay = pace->second.DelayUs();
+  }
+  const auto target = now > delay ? now - delay : 0;
   return m_vehicleSmoothing.load(std::memory_order_relaxed) ? car->second.Draw(net::NowUs(), target)
                                                             : car->second.At(target);
 }

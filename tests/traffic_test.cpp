@@ -168,6 +168,21 @@ TEST_CASE("a packet holds the nearest vehicles every round and the others in tur
   }
 }
 
+TEST_CASE("between rounds the moving cars near a V go, the nearest first") {
+  const std::vector<proto::Vec3> viewers{{0, 0, 0}, {200, 0, 0}};
+  std::vector<traffic::Car> cars{CarAt(1, 30), CarAt(2, 10),  CarAt(3, 49),
+                                 CarAt(4, 60), CarAt(5, 180), CarAt(6, 5, 0.f)};
+  const auto near = traffic::PickNear(cars, viewers);
+  // Within 50 m of either V and moving: 2, 1, 5 (20 m from the other), 3.
+  std::vector<proto::TrafficId> ids;
+  for (const auto &entry : near)
+    ids.push_back(entry.id);
+  CHECK(ids == std::vector<proto::TrafficId>{proto::MakeTrafficId(1, 2), proto::MakeTrafficId(1, 1),
+                                             proto::MakeTrafficId(1, 5),
+                                             proto::MakeTrafficId(1, 3)});
+  CHECK(traffic::PickNear(cars, viewers, 2).size() == 2);
+}
+
 TEST_CASE("a vehicle at rest leaves the stream, says where it stopped, and is kept alive") {
   traffic::Budget budget;
   const std::vector<proto::Vec3> viewers{{0, 0, 0}};

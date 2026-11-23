@@ -547,8 +547,10 @@ public:
   void FollowLights(std::vector<std::uint64_t> entities);
   bool FollowsLight(std::uint64_t entity) const;
   std::vector<proto::Message> TakeStreetOutbox();
-  void SubmitTrafficCars(std::span<const traffic::Car> cars, std::span<const proto::Vec3> viewers);
-  std::optional<proto::TrafficStates> TakeTrafficStates();
+  // `near`: the moving cars near a V only, between two rounds (traffic.md).
+  void SubmitTrafficCars(std::span<const traffic::Car> cars, std::span<const proto::Vec3> viewers,
+                         bool near = false);
+  std::vector<proto::TrafficStates> TakeTrafficStates();
   // net -> game: events for the scripts, and each vehicle's track.
   void PushStreetEvent(StreetEvent event);
   std::vector<StreetEvent> TakeStreetEvents();
@@ -855,20 +857,23 @@ private:
   std::vector<proto::Message> m_npcOutbox;                                           // m_lock
   std::vector<NpcStatesOut> m_npcStates;                                             // m_lock
   std::vector<proto::Message> m_streetOutbox;                                        // m_lock
-  std::optional<proto::TrafficStates> m_trafficStates;                               // m_lock
+  std::vector<proto::TrafficStates> m_trafficStates;                                 // m_lock
   std::vector<StreetEvent> m_streetEvents;                                           // m_lock
   std::vector<proto::TrafficLights> m_lightsIn;                                      // m_lock
   mutable std::mutex m_lightsLock;               // a light's hook: never held across an engine call
   std::vector<proto::TrafficLight> m_lightsSaid; // m_lightsLock
   std::vector<std::uint64_t> m_lightsFollowed; // sorted                             // m_lightsLock
-  std::map<proto::TrafficId, proto::TrafficSpawn> m_sharedTraffic;             // m_lock
-  std::map<proto::TrafficId, proto::TrafficStatus> m_trafficStatus;            // m_lock
-  std::set<proto::TrafficId> m_trafficShown;                                   // m_lock
-  std::map<proto::TrafficId, proto::PlayerId> m_trafficOwners;                 // m_lock
-  std::optional<proto::Heat> m_localHeat;                                      // m_lock
-  std::map<proto::PlayerId, proto::Heat> m_heat;                               // m_lock
-  traffic::Budget m_trafficBudget;                                             // game thread
-  std::map<proto::TrafficId, sync::VehicleTrack> m_trafficTracks;              // m_tracksLock
+  std::map<proto::TrafficId, proto::TrafficSpawn> m_sharedTraffic;  // m_lock
+  std::map<proto::TrafficId, proto::TrafficStatus> m_trafficStatus; // m_lock
+  std::set<proto::TrafficId> m_trafficShown;                        // m_lock
+  std::map<proto::TrafficId, proto::PlayerId> m_trafficOwners;      // m_lock
+  std::optional<proto::Heat> m_localHeat;                           // m_lock
+  std::map<proto::PlayerId, proto::Heat> m_heat;                    // m_lock
+  traffic::Budget m_trafficBudget;                                  // game thread
+  std::map<proto::TrafficId, sync::VehicleTrack> m_trafficTracks;   // m_tracksLock
+  // Each shared vehicle's stream, for the delay it is drawn with: a car
+  // near a V comes 30 times a second, a far one 10 times or less.
+  std::map<proto::TrafficId, sync::Track> m_trafficPace;                       // m_tracksLock
   std::vector<NpcEvent> m_npcEvents;                                           // m_lock
   std::vector<proto::Message> m_wheelsOutbox;                                  // m_lock
   std::vector<WheelsEvent> m_wheelsEvents;                                     // m_lock
