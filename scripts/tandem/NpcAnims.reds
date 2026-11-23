@@ -196,6 +196,9 @@ public class TandemNpcAnimSent {
   // The round of events it was last read in (several events in a tick: one
   // read).
   public let round: Int32;
+  // In a workspot whose instance we could not read (not sent): said once
+  // as a fallback each time it starts.
+  public let unread: Bool;
 }
 
 // A guest's view of one proxy: the host's latest state, and what of it is
@@ -299,10 +302,12 @@ public class TandemSpot {
     let spot = TandemSpot.ComponentOf(body);
     if !IsDefined(spot) {
       TandemNative.Log(s"\(label) has no workspot component");
+      TandemDegraded.Fallback("workspot not entered", s"\(label) has no workspot component: left standing");
       this.path = path;
       return;
     }
     if !TandemNative.SetResourcePath(spot, n"workspotResource", path) {
+      TandemDegraded.Fallback("workspot not entered", s"\(label) could not take workspot \(path): left standing");
       this.path = path;
       return;
     }
@@ -498,7 +503,11 @@ public class TandemNpcAnims {
       ArrayPush(this.m_sent, sent);
       this.m_first += 1;
       this.Send(sent.anim);
+      this.NoteUnread(npc, sent);
       return;
+    }
+    if this.m_slow {
+      this.NoteUnread(npc, sent);
     }
     let settling = sent.settleAt > 0.0;
     if this.m_slow || (settling && this.m_now >= sent.settleAt) {
@@ -548,6 +557,42 @@ public class TandemNpcAnims {
         this.Send(sent.anim);
       }
     }
+  }
+
+  // An NPC of ours sits, leans or smokes in a workspot we cannot read: its
+  // proxies stand. A fallback, said each time it starts (the 2 s poll).
+  private func NoteUnread(npc: ref<ScriptedPuppet>, sent: ref<TandemNpcAnimSent>) -> Void {
+    let unread = (sent.anim.flags & 2) == 0 && GameInstance.GetWorkspotSystem(this.m_game).IsActorInWorkspot(npc);
+    if unread && !sent.unread {
+      let spot = TandemActivity.Workspot(npc.GetEntityID());
+      TandemDegraded.Fallback("workspot unread", s"npc \(sent.npc) (\(TDBID.ToStringDEBUG(npc.GetRecordID()))) is in a workspot not sent: \(TandemNpcAnims.SpotStateName(spot.state))");
+    }
+    sent.unread = unread;
+  }
+
+  // (test: `npc list`) what an NPC of ours is doing as its proxies are
+  // told: `spot P` (its workspot's resource), `spot unread` (in one we
+  // cannot read: not sent), `spot none`.
+  public func ActivityOf(npc: ref<ScriptedPuppet>) -> String {
+    if !GameInstance.GetWorkspotSystem(this.m_game).IsActorInWorkspot(npc) {
+      return "spot none";
+    }
+    let spot = TandemActivity.Workspot(npc.GetEntityID());
+    return spot.state == 1 ? s"spot \(spot.path)" : "spot unread";
+  }
+
+  // (test: `npc list`) what a proxy plays (`spot P`, `spot entering`,
+  // `spot none`) and what its owner said (`said P`, `said none`).
+  public func ProxyActivity(npc: Uint32, body: ref<ScriptedPuppet>) -> String {
+    let proxy = this.FindProxy(npc);
+    let said = IsDefined(proxy) && (proxy.anim.flags & 2) != 0 ? s"\(proxy.anim.workspot)" : "none";
+    let plays = "none";
+    if IsDefined(proxy) && IsDefined(proxy.spot) && GameInstance.GetWorkspotSystem(this.m_game).IsActorInWorkspot(body) {
+      plays = proxy.spot.state == 1 ? "entering" : s"\(proxy.spot.path)";
+    } else if IsDefined(proxy) && proxy.seated {
+      plays = "seated";
+    }
+    return s"spot \(plays) said \(said)";
   }
 
   private func Send(anim: TandemNpcAnim) -> Void {
