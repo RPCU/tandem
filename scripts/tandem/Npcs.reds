@@ -178,10 +178,13 @@ public class TandemNpcs {
   // No proxy seated before this (one a second, game-wide: FollowSeat).
   private let m_seatGateAt: Float;
   private let m_noSeatHold: Bool;
-  // (test: npc seats mount) proxies seated with the mounting facility again:
-  // off, every seated proxy waits out of sight (FollowSeat, §13.154).
-  private let m_seatsMount: Bool;
+  // (test: npc seats hold) every seated proxy waits out of sight instead of
+  // being mounted (FollowSeat, §13.154); so it does when the slide guard is
+  // off (asked again every 5 s).
+  private let m_seatsHold: Bool;
   private let m_seatsOffSaid: Bool;
+  private let m_guardOff: Bool;
+  private let m_guardAt: Float;
   private let m_seatWaits: Int32;
   // (test: npc hide off) our own NPCs held back keep their looks.
   private let m_noHide: Bool;
@@ -1280,8 +1283,8 @@ public class TandemNpcs {
     if StrBeginsWith(command, "npc seats ") {
       this.m_noStreetSeats = Equals(command, "npc seats off");
       this.m_noSeatHold = Equals(command, "npc seats nohold");
-      this.m_seatsMount = Equals(command, "npc seats mount");
-      TandemNative.Log(s"npc seats: proxies seated in shared vehicles \(!this.m_noStreetSeats), mounted \(this.m_seatsMount)");
+      this.m_seatsHold = Equals(command, "npc seats hold");
+      TandemNative.Log(s"npc seats: proxies seated in shared vehicles \(!this.m_noStreetSeats), mounted \(!this.m_seatsHold)");
       return;
     }
     if StrBeginsWith(command, "npc sense ") {
@@ -1731,17 +1734,31 @@ public class TandemNpcs {
     // on foot, 3 to 13 s after drivers were seated in street cars (2026-11-23,
     // the 100 m share seating ten a minute). No proxy is mounted until the
     // cause is found: the others' cars have nobody at the wheel here.
-    if !this.m_seatsMount && !this.m_seatsOffSaid {
-      this.m_seatsOffSaid = true;
-      TandemNative.Log("npcs: proxies are not seated in vehicles (engine/npcs.md §13.154): drivers and passengers of the others' cars wait out of sight");
+    if now - this.m_guardAt >= 5.0 || now < this.m_guardAt {
+      this.m_guardAt = now;
+      this.m_guardOff = false;
+      let states = TandemDegraded.Entries();
+      for entry in states {
+        if Equals(entry.id, "slide guard") && !entry.over && (entry.player == this.m_you || entry.player == 0u) {
+          this.m_guardOff = true;
+        }
+      }
     }
-    if riding || !this.m_seatsMount || (this.m_noStreetSeats && TandemStreet.IsStreetSeat(proxy.seatOwner)) {
+    let hold = this.m_seatsHold || this.m_guardOff;
+    if hold && !this.m_seatsOffSaid {
+      this.m_seatsOffSaid = true;
+      TandemNative.Log(s"npcs: proxies are not seated in vehicles (\(this.m_guardOff ? "the slide guard is off" : "npc seats hold"), engine/npcs.md §13.154): drivers and passengers of the others' cars wait out of sight");
+    }
+    // With the slide guard on (the crash's cause, §13.154) they are seated
+    // whether our V rides or not: 20 seated on foot in 12 min, 3 slides
+    // answered by the guard, no crash (2026-11-23).
+    if hold || riding && this.m_guardOff || (this.m_noStreetSeats && TandemStreet.IsStreetSeat(proxy.seatOwner)) {
       if !proxy.seatWaits {
         proxy.seatWaits = true;
         this.m_seatWaits += 1;
         TandemVisibility.Fade(game, npc, false, 0.0);
         TandemNative.HoldPuppet(TandemNative.NpcPuppetId(proxy.npc), true);
-        TandemNative.LogDebug(s"npcs: proxy \(proxy.npc) waits for its seat out of sight (our V rides: \(riding))");
+        TandemNative.LogDebug(s"npcs: proxy \(proxy.npc) waits for its seat out of sight (our V rides: \(riding), held: \(hold))");
       }
       proxy.seatRetryAt = now + 0.5;
       return;
