@@ -87,6 +87,11 @@ public class TandemPause {
 
   // (test, tools/game.sh cmd) commands while the tick stands still.
   private func TakeCommandWhilePaused() -> Void {
+    // Our pause menu's own clock takes them (Coop.reds: coop menu and coop
+    // pick drive it; taken here first they found no menu, 2026-11-23).
+    if this.m_menuOpen {
+      return;
+    }
     let system = GameInstance.GetScriptableSystemsContainer(GetGameInstance()).Get(n"TandemSystem") as TandemSystem;
     if !IsDefined(system) {
       return;

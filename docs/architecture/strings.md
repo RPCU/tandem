@@ -393,7 +393,9 @@ into the others as `{1}` or `{2}`.
 | Key | English | French | Shown by |
 | --- | --- | --- | --- |
 | `Marker-Description` | Another V, in your city | Un autre V, dans votre ville | Markers.reds |
-| `Marker-Distance` | {1}  {2}M | {1}  {2}M | Markers.reds |
+| `Marker-Distance` | {1}  {2} | {1}  {2} | Markers.reds |
+| `Marker-Metres` | {1}M | {1}M | Markers.reds |
+| `Marker-Kilometres` | {1}KM | {1}KM | Markers.reds |
 
 ### Down, revive, respawn
 

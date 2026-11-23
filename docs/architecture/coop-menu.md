@@ -215,7 +215,10 @@ yet run in game**).
   `tools/game.sh role` files swap around it: a setting changed while a test
   `tandem.ini` is in place lands in that one. Tests: `coop settings` logs
   them all, `coop set KEY VALUE` changes one (scenario `settings`).
-- Not yet verified in game. Not done: the Mod Settings mod's page (it keeps
+- The pause menu's page seen in game 2026-11-23 (English; scenario
+  `settings-page`, its shots). Esc (the simulated key) there closed the
+  whole pause menu instead of going up a page: to look at by hand. French
+  lengths not seen. Not done: the Mod Settings mod's page (it keeps
   its own saved values, which would compete with tandem.ini's: one source of
   truth was kept). **Mod Settings: not used, by decision 2026-11-19**
   (the user: no duplicated settings menu), even when it is installed: this

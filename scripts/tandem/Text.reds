@@ -513,8 +513,9 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-World-WeatherIsHost", "Another mod changes your weather: in co-op the host's weather stays");
     this.Text("Tandem-Time-ModSlow", "A mod slowed time: shared as a time bubble around you");
     this.Text("Tandem-Marker-Description", "Another V, in your city");
-    this.Text("Tandem-Marker-Distance", "{1}  {2}M");
+    this.Text("Tandem-Marker-Distance", "{1}  {2}");
     this.Text("Tandem-Marker-Metres", "{1}M");
+    this.Text("Tandem-Marker-Kilometres", "{1}KM");
     // Down, revive, respawn.
     this.Text("Tandem-Revive-Down", "You are down. {1} can revive you");
     this.Text("Tandem-Revive-DownAlone", "You are down");
@@ -1070,8 +1071,9 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-World-WeatherIsHost", "Un autre mod change votre météo : en coop, la météo de l'hôte reste");
     this.Text("Tandem-Time-ModSlow", "Un mod a ralenti le temps : partagé comme une bulle de temps autour de vous");
     this.Text("Tandem-Marker-Description", "Un autre V, dans votre ville");
-    this.Text("Tandem-Marker-Distance", "{1}  {2}M");
+    this.Text("Tandem-Marker-Distance", "{1}  {2}");
     this.Text("Tandem-Marker-Metres", "{1}M");
+    this.Text("Tandem-Marker-Kilometres", "{1}KM");
 
     this.Text("Tandem-Revive-Down", "Vous êtes à terre. {1} peut vous réanimer");
     this.Text("Tandem-Revive-DownAlone", "Vous êtes à terre");

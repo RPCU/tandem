@@ -421,13 +421,16 @@ protected cb func OnUpdate() -> Bool {
       inkWidgetRef.SetVisible(this.displayName, false);
     }
   } else if inkWidgetRef.IsValid(this.distanceText) && (withName || this.m_tandemDistance) {
-    let metres = s"\(RoundF(this.GetDistanceToPlayer()))";
+    // As the game writes it: metres, kilometres with one decimal from 1 km
+    // (a quest's "5.5KM" on a controller the pool hands back).
+    let far = this.GetDistanceToPlayer();
+    let distance = far >= 1000.0 ? TandemText.F("Marker-Kilometres", FloatToStringPrec(far / 1000.0, 1)) : TandemText.F("Marker-Metres", s"\(RoundF(far))");
     this.m_tandemDistance = true;
     if withName {
-      inkTextRef.SetText(this.distanceText, TandemText.F("Marker-Distance", name, metres));
+      inkTextRef.SetText(this.distanceText, TandemText.F("Marker-Distance", name, distance));
       inkWidgetRef.SetVisible(this.distanceText, true);
     } else {
-      inkTextRef.SetText(this.distanceText, TandemText.F("Marker-Metres", metres));
+      inkTextRef.SetText(this.distanceText, distance);
     }
   }
   return result;
