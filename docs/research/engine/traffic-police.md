@@ -374,10 +374,66 @@ the device; no seed or clock of the phase is exposed, so two games' crossings
 run apart. A light given a colour by script the same way shows it until the
 next event. `Lights.reds` (traffic.md, "Traffic lights"). [2.5-untested]
 
+The walk markings painted on a crossing are a third kind, `TrafficZebra`
+(a `TrafficLight`, controller `TrafficZebraController`, display name
+"Gameplay-Devices-DisplayNames-Zebra"; final.reds :508381): it **overrides**
+`OnTrafficLightChangeEvent` without calling the light's, keeps the colour in
+`m_lightState` and shows it as its mesh appearance, `default` for GREEN and
+`stop` for any other (`SetMeshAppearance`). A wrap of the light's handler
+never sees a zebra. [2.5-static]
+
+## 13.158 The crowd's spawners: managers, parked cars, the quest's switch (2026-11-23, game 2.50, exe read)
+
+All read in the exe, nothing run. The community system's crowd is the
+object at `gameCommunitySystem +0xD0` (`ChangeDensityModifier`, hash
+509682613, writes its `+0x720`); its vtable (`0x14307DFF0`) has the
+request functions at `+0x30` and `+0x38`. [2.5-static]
+
+- **Crowd managers** at `+0x640`, inline, their count (u32) at `+0x650`
+  (room for two). A manager's update (`0x140430858`) runs only while its
+  byte `+0x248` and the config variable `Crowd/Enabled` (`0x143917610`) are
+  set; it spawns up to its target (`+0x1D0`) less its count (`+0x1D4`),
+  capped by `Crowd/SpawnLimit` (100, `0x140430E40`). Its enable
+  (`0x140FA35F0`, hash 2088899922) zeroes its counters when turned off.
+  [2.5-static]
+- **The parking-space spawner** at `+0x670` (`0x1407D3D68`, called per
+  parking space as it streams in): only while its byte `+0x9C` is set, for
+  a space not already in its list (`+0x48`), outside the null areas
+  (`0x1407D3F28`), with fewer than 50 cars, it rolls the crowd's parked
+  probability times `Crowd/BaseParkedCarProbability` (`0x143C0DC70`) and
+  spawns one. So a parked crowd car is rolled when its space streams in:
+  one removed is rolled again on the next arrival. [2.5-static]
+- **The quest's switch** (`questCrowdManagerNodeType_ControlCrowd`,
+  `questControlCrowdAction` Disable/Enable, `distantCrowdOnly`): a request
+  list on the crowd. Disable (`0x1421DBEC0`, hash 3834778093, `(crowd, key,
+distantOnly)`) and enable (`0x142BD257C`, hash 2891845843, `(crowd, key)`)
+  queue under the lock `+0x6F8` into `+0x6D8`; the community update
+  (`0x140DC9E00`, hash 1426265232) moves them to the active keys (`+0x6C8`,
+  count `+0x6D4`). From none to some: `0x1421DBF40` turns the distant crowd
+  off (`+0x660` byte `+0x15`) and, unless every key is distant-only, deletes
+  every parked car's stub (`0x14193936C` → DeleteStub: in sight too), clears
+  `+0x9C`, turns every manager off and tells the traffic object (`+0x6A8`,
+  virtual `+0x40`, "disable crowd"). From some to none: the enable
+  (`0x142BD26CC`, hash 2843676965) sets every manager's `+0x248`, `+0x9C`
+  and the distant crowd's `+0x15`. The active keys are written into the
+  save (`gameCommunitySystem` slot 41, `0x140A5C5BC`, reads them back and
+  disables again). [2.5-static]
+- `Crowd/EnablePedestrians` and `Crowd/EnableVehicles` exist as config
+  variables (`0x143917620`, `0x143917658`) and nothing in the exe reads them.
+  [2.5-static]
+- **tandem** (`engine/crowd.cpp`, feature `crowd spawners`): the game that
+  does not run its street (deep inside a cover, `regions.md` §6) clears the
+  bytes the enable sets, managers and parked spawner, every frame while so
+  (a quest's enable may set them again), and calls the enable when it runs
+  its street again unless a quest holds the crowd off. Not the request list:
+  it deletes parked cars in sight and goes into the save. [unverified]
+
 ## 13.34 Traffic and police: open questions (need the game)
 
 1. Does `ChangeDensityModifier(0.0)` remove the crowd's **parked** cars,
-   and how fast do already spawned traffic cars leave?
+   and how fast do already spawned traffic cars leave? (Measured: density
+   0 does not stop the traffic, `traffic.md`; the spawners' own bytes,
+   §13.158.)
 2. Do `PreventionSpawnSystem.RequestDespawnVehicleAndPassengers` or
    `ReactionSystem.MarkDespawnCandidate` take a traffic car away?
 3. Cost of teleporting 30–40 vehicles a frame; wheels and suspension of a

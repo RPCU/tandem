@@ -147,8 +147,9 @@ found through this table, each number once.
 | 13.151 | Dual wielding (akimbo): two weapons, two state machines, what tells them apart | `combat.md` |
 | 13.154 | Two crashes of a guest riding with the host (an NPC mounted while V is mounted; HideIrreversibly on an armed NPC); the senses' meter on an NPC body | `npcs.md` |
 | 13.155 | A vehicle's physics state, the engine's kinematic drive (DriveToPoint's bit 0x100), the move on a kinematic body, what reads a vehicle's speed | `vehicles.md` |
-| 13.156 | Traffic lights: the native crossing tells each light its colour | `traffic-police.md` |
+| 13.156 | Traffic lights: the native crossing tells each light its colour; a crossing's walk markings (`TrafficZebra`) | `traffic-police.md` |
 | 13.157 | A Dispose during the scene's detach phase: one entity detached on two threads; a stub left pointing at a disposed entity; the dispose gate | `vehicles.md` |
+| 13.158 | The crowd's spawners: its managers, the parking-space spawner, the quest's crowd switch | `traffic-police.md` |
 | 13.153 | A choice of our own on a puppet's interaction component | `story.md` |
 
 ## Top traps (one line each)

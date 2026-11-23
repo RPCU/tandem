@@ -192,7 +192,10 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   area (`overlap = area`) did not either (measured in a ride: 7 to 10 held
   back): the vehicles are removed as they come (862 and 1656 in two rides
   of 150 s), and the riding guest's own within 100 m went from 19 to 36 to
-  none. `ask`: the game's own despawn (`RequestDespawnVehicleAndPassengers`,
+  none. Deep inside another game's region our crowd's own spawners are
+  off too (`regions.md` §6; engine facts §13.158): no traffic car or
+  parked car of ours comes there, and the removal only takes what was
+  there before. `ask`: the game's own despawn (`RequestDespawnVehicleAndPassengers`,
   which waits until nobody looks: 39 asked, the cars stayed); `off`.
 - **A packet** holds at most 32 entries of 28 bytes: position as floats,
   the rotation in 6 bytes (the quaternion's i, j, k in 1/32767 with r ≥ 0,
@@ -283,8 +286,12 @@ owner's lights are the truth** (`scripts/tandem/Lights.reds`,
 - What follows the light is only what the light shows: the NPCs' crossings
   and the traffic lanes of the follower's game run on its own phase (its
   traffic is the owner's proxies there).
+- A crossing's walk markings are lights of their own (`TrafficZebra`, its
+  mesh's `stop` or `default` look) whose handler overrides the light's:
+  wrapped and shown the same way (`TandemShowZebra`); before, the markings
+  ran on each game's phase while the 8 crossing lights matched (2026-11-23).
 - `tools/game.sh cmd lights` lists the counts and each light within 60 m
-  with its colour, on each game, to compare.
+  with its colour (`crossing`, `zebra`), on each game, to compare.
 
 ## Collisions: who simulates the impact
 

@@ -42,6 +42,7 @@ inline constexpr std::string_view kDisposeGate = "dispose gate";
 inline constexpr std::string_view kTrace = "anim trace";
 inline constexpr std::string_view kVehicleMove = "vehicle move";
 inline constexpr std::string_view kBodySlots = "body slots";
+inline constexpr std::string_view kCrowdSpawners = "crowd spawners";
 } // namespace feature
 
 // The address of an address-library hash in this game, 0 when its library
