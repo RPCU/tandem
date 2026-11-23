@@ -1711,10 +1711,10 @@ std::vector<proto::Message> Runtime::TakeStreetOutbox() {
 }
 
 void Runtime::SubmitTrafficCars(std::span<const traffic::Car> cars,
-                                std::span<const proto::Vec3> viewers, bool near) {
+                                std::span<const proto::Vec3> viewers, bool nearOnly) {
   // When our game read them (the receivers' timeline goes by it).
   proto::TrafficStates states{.timeUs = HostNowUs()};
-  states.cars = near ? traffic::PickNear(cars, viewers) : m_trafficBudget.Pick(cars, viewers);
+  states.cars = nearOnly ? traffic::PickNear(cars, viewers) : m_trafficBudget.Pick(cars, viewers);
   if (states.cars.empty())
     return;
   std::lock_guard _(m_lock);
