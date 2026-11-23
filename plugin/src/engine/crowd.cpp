@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <cstring>
 #include <format>
+#include <string>
 
 namespace tandem::plugin::engine {
 namespace {
@@ -44,8 +45,8 @@ constexpr std::size_t kManagerOn = 0x248;     // byte, per manager
 constexpr std::size_t kParked = 0x670;        // the parking-space spawner
 constexpr std::size_t kParkedOn = 0x9C;       // byte
 constexpr std::size_t kDisabledCount = 0x6D4; // u32: quests holding it off
-constexpr std::size_t kDisableSlot = 0x30;    // the request functions
-constexpr std::size_t kEnableSlot = 0x38;
+constexpr std::size_t kDisableSlot = 0x18;    // the request functions
+constexpr std::size_t kEnableSlot = 0x20;
 constexpr std::uint32_t kMaxManagers = 4;
 
 constexpr std::uint32_t kEnableAll = 2843676965;
@@ -108,24 +109,38 @@ bool Same(const char *what, std::uintptr_t at, const std::array<std::uint8_t, N>
   return false;
 }
 
-std::uint8_t *Crowd() {
+// The community system's crowd, checked; `why` says which step failed.
+std::uint8_t *Crowd(std::string *why = nullptr) {
+  const auto fail = [&](std::string reason) -> std::uint8_t * {
+    if (why)
+      *why = std::move(reason);
+    return nullptr;
+  };
   auto *engine = RED4ext::CGameEngine::Get();
-  auto *type = RED4ext::CRTTISystem::Get()->GetClass("gameICommunitySystem");
-  if (!engine || !engine->framework || !engine->framework->gameInstance || !type)
-    return nullptr;
-  auto *community = static_cast<std::uint8_t *>(engine->framework->gameInstance->GetSystem(type));
+  if (!engine || !engine->framework || !engine->framework->gameInstance)
+    return fail("no game instance");
+  void *system = nullptr;
+  for (const char *name : {"gameICommunitySystem", "gameCommunitySystem"})
+    if (auto *type = RED4ext::CRTTISystem::Get()->GetClass(name); type && !system)
+      system = engine->framework->gameInstance->GetSystem(type);
+  auto *community = reinterpret_cast<std::uint8_t *>(system);
   if (!community)
-    return nullptr;
+    return fail("no community system");
   auto *crowd = *reinterpret_cast<std::uint8_t **>(community + kCrowd);
   if (!crowd)
-    return nullptr;
+    return fail("no crowd at +0xD0");
   // The crowd's own class: its vtable carries the request functions.
   const auto vtable = *reinterpret_cast<const std::uintptr_t *>(crowd);
+  const auto base = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
   if (!InGameImage(vtable))
-    return nullptr;
+    return fail(std::format("its vtable 0x{:X} is not the game's", vtable));
   const auto *slots = reinterpret_cast<const std::uintptr_t *>(vtable);
-  if (Follow(slots[kDisableSlot / 8]) != g_disable || Follow(slots[kEnableSlot / 8]) != g_enable)
-    return nullptr;
+  const auto disable = Follow(slots[kDisableSlot / 8]), enable = Follow(slots[kEnableSlot / 8]);
+  if (disable != g_disable || enable != g_enable)
+    return fail(std::format(
+        "vtable exe+0x{:X}: slots exe+0x{:X} exe+0x{:X}, the requests exe+0x{:X} "
+        "exe+0x{:X}",
+        vtable - base, disable - base, enable - base, g_disable - base, g_enable - base));
   return crowd;
 }
 
@@ -171,12 +186,15 @@ void RunCrowdSpawners() {
   const bool want = g_wantOff.load(std::memory_order_relaxed);
   if (!want && !g_turnedOff)
     return;
-  auto *crowd = Crowd();
+  std::string why;
+  auto *crowd = Crowd(&why);
   if (!crowd) {
     static bool s_said = false;
     if (!s_said) {
       s_said = true;
-      log::Warn("crowd spawners: the community system's crowd is not the one measured: left alone");
+      log::Warn("crowd spawners: the community system's crowd is not the one measured ({}): left "
+                "alone",
+                why);
     }
     return;
   }
@@ -214,9 +232,10 @@ std::string CrowdSpawnersReport() {
   const auto state = g_state.load(std::memory_order_relaxed);
   if (state != 1)
     return state == 0 ? "crowd spawners: not checked" : "crowd spawners: unavailable";
-  auto *crowd = Crowd();
+  std::string why;
+  auto *crowd = Crowd(&why);
   if (!crowd)
-    return "crowd spawners: no crowd";
+    return "crowd spawners: no crowd (" + why + ")";
   int on = 0;
   for (std::uint32_t i = 0; i < Managers(crowd); ++i)
     if (const auto *manager = Manager(crowd, i); manager && manager[kManagerOn] != 0)

@@ -362,6 +362,8 @@ public class TandemNpcAnims {
   private let m_shots: Int32;
   private let m_applied: Int32;
   private let m_you: Uint32;
+  // The records whose Assemble we watch (WatchRecord).
+  private let m_records: array<TweakDBID>;
 
   // Owner: the time of this tick, the last 2 s poll and whether this
   // sampling is one, the round of events.
@@ -416,10 +418,29 @@ public class TandemNpcAnims {
       .AddTarget(DynamicEntityTarget.Tag(n"Tandem.Puppet"));
   }
 
+  // A proxy's record, before its first body of that record is spawned: the
+  // tag target above never matched an NPC proxy (its tags are not set yet at
+  // Assemble: 79 of 79 proxies at kabuki-market had no workspot component,
+  // 2026-11-23), so they are also watched by record, as Probe.reds does.
+  public func WatchRecord(record: TweakDBID) -> Void {
+    if ArrayContains(this.m_records, record) {
+      return;
+    }
+    ArrayPush(this.m_records, record);
+    GameInstance.GetCallbackSystem().RegisterCallback(n"Entity/Assemble", this, n"OnAssemble")
+      .AddTarget(EntityTarget.RecordID(record));
+  }
+
   private cb func OnAssemble(event: ref<EntityLifecycleEvent>) {
     let entity = event.GetEntity();
     if !IsDefined(entity) {
       return;
+    }
+    // (watched by record: our own NPCs of that record too; one each)
+    for component in entity.GetComponents() {
+      if Equals(component.GetName(), TandemNpcAnims.SpotName()) {
+        return;
+      }
     }
     let spot = new WorkspotResourceComponent();
     spot.name = TandemNpcAnims.SpotName();
