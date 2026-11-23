@@ -794,3 +794,23 @@ status is not 4 or its request field has a request (the scene read as
 `entEntity.Dispose` does, `**(entity+0xB8)`); the script tries again on a
 later tick. A small race remains between the check and the engine's own
 decision. [unverified]
+
+**And a dangling stub** (the fifth of five arrivals with the gate on,
+`+0x61DDD7`, a read of `0xfffff748000000cc`): the population system's
+pooling update (`0x1405370DC` → `0x140469BE8`, which walks a pool's
+entries at `+0xD8` checking each for an `AIHumanComponentPS` →
+`0x140469C88` → `0x14046A170`, the stub's place under its lock `+0xD1` from
+its entity `+0xA8`'s transform `+0xB0` → `0x14061DDC8`) read the freed
+entity of a parked car it had spawned (`Vehicle.hackable_kaukaz_zeya`,
+disposed by tandem 0.8 s before, as on each of the four arrivals before:
+freed memory crashes once reused). `entEntity.Dispose` frees an entity
+behind its stub's back; the stub system clears `stub+0xA8` (its slot
+`+0x200`, `0x140501104`, hash 52174438) only in one registration state.
+[2.5-static] So an entity with a stub (`gameIEntityStubSystem` slot
+`+0x1D0` FindStub, `0x140219D60`) is removed by the population system
+(`gameIPopulationSystem` slot `+0x1F8` RemoveEntity, `0x1402FCAFC`, hash
+46405381, which finds its stub by 32 bits and reads it unchecked), the
+others disposed of, both on the game thread's frame, four a frame, behind
+a check of both functions' starts and both slots (`dispose gate` off
+otherwise, and such entities are left). A gate check of `+0x229F5C` from a
+script tick was itself racy: the scripts ran on job threads 508 to 536.

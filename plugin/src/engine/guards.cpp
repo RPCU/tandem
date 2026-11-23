@@ -184,6 +184,52 @@ constexpr std::uint8_t kAttached = 4;
 std::atomic_bool g_gateOn{false};
 std::atomic<std::uint64_t> g_gateWaited{0};
 
+// An entity the population system spawned (a parked car, a crowd car, its
+// driver) has a stub that keeps a raw pointer to it: disposed behind that
+// system's back, the stub's next pooling update read the freed entity
+// (2026-11-23, +0x61DDD7, the fifth arrival: §13.157). It goes through that
+// system instead: the stub system's FindStub (slot +0x1D0, 0x140219D60 on
+// 2.50) and the population system's RemoveEntity (slot +0x1F8, hash
+// 46405381; the vendored SDK header is a slot short, §13.101), which
+// despawns it and lets its stub go.
+constexpr std::size_t kFindStubSlot = 0x1D0;
+constexpr std::uintptr_t kFindStubOffset = 0x219D60;
+constexpr std::size_t kRemoveEntitySlot = 0x1F8;
+constexpr std::uint32_t kRemoveEntity = 46405381;
+constexpr std::size_t kEntityId = 0x48;
+// RemoveEntity's start on 2.50: its prologue, then the stub system it asks.
+constexpr std::array<std::uint8_t, 0x29> kRemoveStart{
+    0x4C, 0x89, 0x44, 0x24, 0x18,             // mov [rsp+0x18], r8
+    0x89, 0x54, 0x24, 0x10,                   // mov [rsp+0x10], edx
+    0x55, 0x53, 0x56, 0x57,                   // push rbp, rbx, rsi, rdi
+    0x41, 0x54, 0x41, 0x56, 0x41, 0x57,       // push r12, r14, r15
+    0x48, 0x8B, 0xEC,                         // mov rbp, rsp
+    0x48, 0x81, 0xEC, 0x80, 0x00, 0x00, 0x00, // sub rsp, 0x80
+    0x48, 0x8B, 0xF9,                         // mov rdi, rcx
+    0x8B, 0xF2,                               // mov esi, edx
+    0x48, 0x8B, 0x89, 0xC0, 0x1F, 0x00, 0x00, // mov rcx, [rcx+0x1FC0]
+};
+// FindStub's start on 2.50.
+constexpr std::array<std::uint8_t, 7> kFindStart{0x48, 0x8B, 0xC4, 0x48, 0x83, 0xEC, 0x28};
+using FindStubFn = void *(*)(void *, std::uint64_t);
+using RemoveEntityFn = void (*)(void *, std::uint32_t, std::uint64_t);
+// 0 not checked yet, 1 on, 2 off (its reason logged once).
+std::atomic<int> g_stubPath{0};
+std::uintptr_t g_removeEntity = 0;
+std::atomic<std::uint64_t> g_stubRemoved{0};
+
+void *GameSystem(const char *name) {
+  auto *engine = RED4ext::CGameEngine::Get();
+  auto *type = RED4ext::CRTTISystem::Get()->GetClass(name);
+  if (!engine || !engine->framework || !engine->framework->gameInstance || !type)
+    return nullptr;
+  return engine->framework->gameInstance->GetSystem(type);
+}
+
+std::uintptr_t Slot(void *object, std::size_t slot) {
+  return (*reinterpret_cast<const std::uintptr_t *const *>(object))[slot / sizeof(void *)];
+}
+
 // Skips are said at most once per kReportFrames frames (game thread).
 constexpr std::uint32_t kReportFrames = 600;
 
@@ -361,6 +407,48 @@ void CheckDisposeGate() {
   log::Info("dispose gate: on: no entity is disposed of while the scene detaches");
 }
 
+// The game thread: whether the entity has a stub, and if so its removal by
+// the population system. 0: no stub (the caller disposes of it); 1: removed;
+// 2: it has one and cannot be removed now (the path off, or its id wider
+// than the population system's): left alone.
+int RemoveIfStubbed(void *entity) {
+  if (!entity)
+    return 2;
+  auto *stubs = GameSystem("gameIEntityStubSystem");
+  auto *population = GameSystem("gameIPopulationSystem");
+  if (!stubs || !population)
+    return 2;
+  if (g_stubPath.load(std::memory_order_relaxed) == 0) {
+    const auto f = feature::kDisposeGate;
+    const auto base = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
+    g_removeEntity = FindAddress(f, "the population system's RemoveEntity", kRemoveEntity);
+    bool ok = g_removeEntity != 0;
+    ok = ok && Matches("dispose gate", "RemoveEntity's start", g_removeEntity, kRemoveStart);
+    ok = ok && Matches("dispose gate", "FindStub's start", base + kFindStubOffset, kFindStart);
+    if (ok && (Slot(stubs, kFindStubSlot) != base + kFindStubOffset ||
+               Slot(population, kRemoveEntitySlot) != g_removeEntity)) {
+      log::Error("dispose gate: the stub or population system's slots differ from 2.50");
+      ok = false;
+    }
+    if (!ok)
+      FeatureOff(f, "the stub and population systems differ from 2.50: their entities are left");
+    g_stubPath.store(ok ? 1 : 2, std::memory_order_relaxed);
+  }
+  const auto id = *reinterpret_cast<const std::uint64_t *>(
+      static_cast<const std::uint8_t *>(entity) + kEntityId);
+  const auto find = reinterpret_cast<FindStubFn>(Slot(stubs, kFindStubSlot));
+  if (g_stubPath.load(std::memory_order_relaxed) != 1)
+    return 2; // nothing we can tell: never disposed behind its back
+  if (!find(stubs, id))
+    return 0;
+  // RemoveEntity looks its stub up by 32 bits and reads it unchecked.
+  if (id > 0xFFFFFFFFull || !find(stubs, id & 0xFFFFFFFFull))
+    return 2;
+  reinterpret_cast<RemoveEntityFn>(g_removeEntity)(population, static_cast<std::uint32_t>(id), 0);
+  g_stubRemoved.fetch_add(1, std::memory_order_relaxed);
+  return 1;
+}
+
 bool DisposeAllowed(void *entity) {
   if (!entity)
     return false;
@@ -401,8 +489,9 @@ void ReportCrashGuards() {
   if (waited != s_gateSaid && s_frames >= kReportFrames) {
     s_gateSaid = waited;
     log::Info(
-        "dispose gate: {} disposals put off (the scene detaching, or the entity not attached)",
-        waited);
+        "dispose gate: {} disposals put off (the scene detaching, or the entity not attached), "
+        "{} removed by the population system",
+        waited, g_stubRemoved.load(std::memory_order_relaxed));
   }
   const auto n = g_notifySkipped.load(std::memory_order_relaxed);
   const auto slides = g_slideSkipped.load(std::memory_order_relaxed);
