@@ -489,7 +489,7 @@ public class TandemTraffic {
       car.own = true;
       TandemNative.Log(s"street: vehicle \(car.id) is our own placed \(TDBID.ToStringDEBUG(car.record))");
     } else {
-      car.body = this.Reuse(car.record, at, turn);
+      car.body = this.Reuse(car.record, car.appearance, at, turn);
       // Not into a car of our own that stands there (the same parked car or
       // wreck in both worlds): ours goes first, out of sight, and the
       // check below spawns the proxy then (two bodies in one place collide
@@ -554,10 +554,15 @@ public class TandemTraffic {
   }
 
   // A retired proxy of the same record, put where the new one is.
-  private func Reuse(record: TweakDBID, position: Vector4, orientation: Quaternion) -> EntityID {
+  // Of the same look only: an appearance changed on a body the moment it is
+  // reused detaches its old components while the scene detaches others (the
+  // arrival crash, engine/vehicles.md §13.157, came with such changes).
+  private func Reuse(record: TweakDBID, appearance: CName, position: Vector4, orientation: Quaternion) -> EntityID {
     let i = 0;
     while i < ArraySize(this.m_retired) {
-      if this.m_retired[i].record == record {
+      let retired = GameInstance.GetDynamicEntitySystem().GetEntity(this.m_retired[i].body) as GameObject;
+      let same = !IsNameValid(appearance) || IsDefined(retired) && Equals(retired.GetCurrentAppearanceName(), appearance);
+      if this.m_retired[i].record == record && same {
         let body = this.m_retired[i].body;
         ArrayErase(this.m_retired, i);
         let entity = GameInstance.GetDynamicEntitySystem().GetEntity(body) as GameObject;
@@ -725,7 +730,9 @@ public class TandemTraffic {
     // (an overturned wreck yellow here and red on its owner's, 2026-11-23).
     let mine = body.GetCurrentAppearanceName();
     let owners = IsNameValid(car.appearance) && NotEquals(car.appearance, mine);
-    if joining && owners {
+    // Only on our own instance of a placed car (a spawned body has its
+    // owner's look from its spec, a reused one is of the same look).
+    if joining && owners && car.own {
       body.ScheduleAppearanceChange(car.appearance);
       TandemNative.LogDebug(s"street: vehicle \(car.id) takes its owner's look \(NameToString(car.appearance)) (ours \(NameToString(mine)))");
     }
