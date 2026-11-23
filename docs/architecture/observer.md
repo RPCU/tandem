@@ -150,5 +150,8 @@ of quest phases.
   scene's rows, a guest's trail.
 - Hashes are not names: the report could resolve journal paths and scene
   resources with a dump of the game's data.
-- Not yet seen in game: that RED4ext's Running state update goes on behind
-  every loading screen (else a loading screen over 30 s is still a stall).
+- Seen in game 2026-11-23 (scenario `pause-own`): a 5.8 s pause menu says
+  `paused`, then `back`; the frames after each close 33 ms (the instance's
+  30 fps), the longest of 30 34 ms. Not yet seen: that RED4ext's Running
+  state update goes on behind every loading screen (else a loading screen
+  over 30 s is still a stall).
