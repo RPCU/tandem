@@ -1,4 +1,4 @@
-# As a guest: where the host's region overlaps ours, our own crowd thins (overlap = density) or stays out of it (overlap = area), is off deep inside it, our own traffic there is held back, and all of it comes back when the host walks off
+# As a guest: where the host's region overlaps ours, our own crowd thins (overlap = density) or stays out of it (overlap = area), is off deep inside it with its own spawners (no traffic or parked car of ours comes), our own traffic there is held back, and all of it comes back when the host walks off
 # shellcheck shell=bash disable=SC2317
 # The mock host stands 100 m from our V with two NPCs (linked: its region
 # overlaps ours), walks up to us 25 s in, and off again at 55 s. Stand on a
@@ -22,14 +22,18 @@ shot regions-overlap-near
 # The host walks up: deep in its region our crowd is off, and what is left
 # of our traffic there is held back (never announced).
 expect 'npcs: guest, own crowd off \(inside player 1.s region\)' 40
+# Density 0 leaves the vehicles: the crowd's own spawners go off too.
+expect 'crowd spawners: off \([0-9]+ managers, parked cars\)' 5
 pause 5
 cmd overlap
+expect 'crowd spawners: wanted off \(off by us\), 0 of [0-9]+ managers on, parked off' 10
 expect 'overlap: street: area another game.s, [0-9]+ crowd vehicle\(s\) of our own held back' 10
 note "$(since | grep -E 'overlap: ' | tail -2)"
 cmd street count
 shot regions-overlap-deep
 # It walks off: our crowd is back.
 expect 'npcs: own region, own crowd on' 60
+expect 'crowd spawners: on again \(our street\)' 5
 if [ "${OVERLAP:-density}" = area ]; then
   expect 'npcs: crowd null area over player 1.s region removed' 60
 else
