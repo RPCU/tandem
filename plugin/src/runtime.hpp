@@ -549,7 +549,7 @@ public:
   std::vector<proto::Message> TakeStreetOutbox();
   // `near`: the moving cars near a V only, between two rounds (traffic.md).
   void SubmitTrafficCars(std::span<const traffic::Car> cars, std::span<const proto::Vec3> viewers,
-                         bool near = false);
+                         bool nearOnly = false);
   std::vector<proto::TrafficStates> TakeTrafficStates();
   // net -> game: events for the scripts, and each vehicle's track.
   void PushStreetEvent(StreetEvent event);

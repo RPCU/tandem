@@ -131,7 +131,7 @@ struct TandemStreet : Red::IScriptable {
                      const Red::DynArray<Red::Vector4> &positions,
                      const Red::DynArray<Red::Quaternion> &orientations,
                      const Red::DynArray<Red::Vector4> &velocities,
-                     const Red::DynArray<Red::Vector4> &viewers, bool near) {
+                     const Red::DynArray<Red::Vector4> &viewers, bool nearOnly) {
     std::vector<traffic::Car> cars;
     for (std::uint32_t n = 0; n < ids.Size() && n < positions.Size() && n < orientations.Size() &&
                               n < velocities.Size() && cars.size() < proto::kMaxTrafficSet;
@@ -144,7 +144,7 @@ struct TandemStreet : Red::IScriptable {
     std::vector<proto::Vec3> eyes;
     for (std::uint32_t n = 0; n < viewers.Size(); ++n)
       eyes.push_back({viewers[n].X, viewers[n].Y, viewers[n].Z});
-    Runtime::Get().SubmitTrafficCars(cars, eyes, near);
+    Runtime::Get().SubmitTrafficCars(cars, eyes, nearOnly);
   }
   // Area owner: it is no longer shared (0 out of range, 2 removed for good).
   static void SendGone(std::uint32_t id, std::int32_t reason) {
