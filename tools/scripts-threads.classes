@@ -101,6 +101,7 @@ ThrowEvents < CarriedObjectEvents < CarriedObjectTransition < DefaultTransition 
 TimeDilationHelper < IScriptable
 TimeskipGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 TrafficLight < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
+TrafficZebra < TrafficLight < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 UpdateWhistlePosition < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
 UploadFromNPCToPlayerListener < QuickHackUploadListener < ActionUploadListener < CustomValueStatPoolsListener < ScriptStatPoolsListener < IStatPoolsListener < IScriptable
 VehicleComponent < ScriptableDeviceComponent < DeviceComponent < GameComponent < IComponent < IScriptable
