@@ -1537,8 +1537,10 @@ public class TandemSystem extends ScriptableSystem {
         }
       }
       TandemNative.Log(s"test choice: \(count) hub(s) up, \(call ? "a call up" : "no call")");
-    } else if StrBeginsWith(command, "test query") {
-      // (test) the game's own state for a scenario's checks, solo too (TestQuery.reds).
+    } else if StrBeginsWith(command, "test query") || StrBeginsWith(command, "parity") {
+      // (test) the game's own state for a scenario's checks, solo too
+      // (TestQuery.reds); "parity [M]": all of it around every V, for
+      // tools/world-compare.py (Parity.reds).
       TandemTestQuery.Run(this.GetGameInstance(), this, command);
     } else if StrBeginsWith(command, "fixture") {
       // (test) what stands around our V at a scenario's spot, solo too (Fixtures.reds).

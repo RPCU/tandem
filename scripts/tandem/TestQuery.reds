@@ -82,6 +82,12 @@
 //                         placed it). none: no such player
 public class TandemTestQuery {
   public static func Run(game: GameInstance, system: ref<TandemSystem>, command: String) -> Void {
+    // "parity [M]" comes this way too: a command of its own (Parity.reds),
+    // kept out of RunCommand, which must not grow (AGENTS.md).
+    if StrBeginsWith(command, "parity") {
+      TandemParity.Command(game, system, command);
+      return;
+    }
     let words = StrSplit(command, " ");
     let count = ArraySize(words);
     // (Padded: every word read below exists.)

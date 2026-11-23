@@ -1470,6 +1470,27 @@ public class TandemDevices extends ScriptableSystem {
     }
   }
 
+  // (test, Parity.reds) every device we follow within `radius` of one of
+  // `centers` (the Vs drawn here), with its state as the session says it:
+  // one "parity device:" line each. How many.
+  public func ParityList(centers: array<ref<GameObject>>, radius: Float) -> Int32 {
+    let game = this.GetGameInstance();
+    let count = 0;
+    for device in this.m_devices {
+      let object: ref<GameObject>;
+      if device.attached {
+        object = GameInstance.FindEntityByID(game, device.entity) as GameObject;
+      }
+      let ps = IsDefined(object) ? this.StateOf(device) : null;
+      if IsDefined(ps) && TandemParity.Within(object, centers, radius) {
+        let at = object.GetWorldPosition();
+        TandemNative.Log(s"parity device: \(TandemNative.EntityHex(device.entity)) \(NameToString(device.cls)) at \(at.X) \(at.Y) \(at.Z) status \(TandemDevices.StatusOf(ps)) flags \(TandemDevices.FlagsOf(ps)) value \(TandemDevices.ValueOf(ps))");
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   public func Command(command: String) -> Void {
     let words = StrSplit(command, " ");
     let verb = ArraySize(words) > 1 ? words[1] : "";

@@ -272,6 +272,10 @@ read):
 | `nameplate [path\|apart] [player N]` | the first remote player's nameplate (player N's) on the HUD's last tick (`PartyHud.reds`): `engine X Y of W x H, within B, in screen B, uv U V, distance D (ours M m), slot 'S', told N times; ours X Y, in view B; apart A units (P px, Q % of the height), plate on\|off` (the engine's screen projection in the HUD's units beside our own projection of the same tick), or `script X Y of W x H px, in view B, plate on\|off`; `path`: `engine` or `script`; `apart`: Q alone |
 | `upload` | the upload on our V (an NPC's hack or trace), percent of its `QuickHackUpload` pool (`none`: no upload) |
 
+`cmd parity [M]` (`Parity.reds`, through the same dispatch) dumps
+everything readable within M m of every V the game draws, for
+`tools/world-compare.py` to compare two games (`parity.md`, "The checker").
+
 In a scenario: `query VAR WHAT [ARGS]` asks, waits 10 s for this answer
 and sets VAR; `expect_value V OP W` (OP `=`, `!=`, `~` an ERE, `<`, `<=`,
 `>`, `>=` as numbers); `expect_changed BEFORE AFTER HOW` (HOW `down`, `up`,
@@ -737,7 +741,7 @@ same), then pass on a rerun. Since 2026-11-19:
   `pose loop`, `travel`, `regroup accept`…) need no restart. Restart only
   for script or plugin changes.
 - `tools/game.sh engine` prints the newest log's `engine: N features on, M
-  off: …` line (`cmd engine` asked of a running game first) and fails when
+off: …` line (`cmd engine` asked of a running game first) and fails when
   a feature is off: what a game update turned off, at once
   (`engine-access.md`).
 - `tools/game.sh bt` (a frozen game: Proton's crash handler waits) writes
