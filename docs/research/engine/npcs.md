@@ -256,7 +256,12 @@ workWorkspotInstance {resource, animName, idleAnim, entryId}`
   kabuki-market, 84 NPCs in workspots and none shown in one on the guest
   (2026-11-23) [2.5-verified]. tandem now adds it to the template the
   entity is built from, in `Entity/Extract` by record
-  (`EntityBuilderTemplateWrapper.AddComponent`, `TandemNpcAnims.WatchRecord`).
+  (`EntityBuilderTemplateWrapper.AddComponent`, `TandemNpcAnims.WatchRecord`):
+  0 missing then, 264 entered. Its local transform is in the entity's
+  frame, not the world's: the body's world position given as local played
+  the workspot 2.3 km away (the offset as long as the world position,
+  rotated about the entity); tandem gives it the entity's origin.
+  [2.5-verified]
   Redscript
   cannot build a `ResourceAsyncRef` from a hash: the plugin writes it
   (`TandemNative.SetResourcePath`, by RTTI property name and type

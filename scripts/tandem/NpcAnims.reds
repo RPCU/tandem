@@ -338,7 +338,11 @@ public class TandemSpot {
       this.path = path;
       return;
     }
-    spot.SetLocalTransform(body.GetWorldPosition(), body.GetWorldOrientation());
+    // Its local transform is the entity's own frame: the body's world
+    // position given there played the workspot 2.3 km away, rotated about
+    // the entity (a seated proxy gone from its bench, 2026-11-23). At the
+    // entity's origin: where the body stands.
+    spot.SetLocalTransform(new Vector4(0.0, 0.0, 0.0, 1.0), new Quaternion(0.0, 0.0, 0.0, 1.0));
     if hold != 0u {
       TandemNative.HoldPuppet(hold, true);
     }
