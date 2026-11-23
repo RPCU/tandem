@@ -779,7 +779,7 @@ public:
                                 std::uint64_t arrivalUs);
 
   // Net thread writes remote states; the animation thread and scripts read views.
-  void PushRemote(const proto::PlayerState &state);
+  void PushRemote(const proto::PlayerState &state, bool recovered = false);
   void ForgetRemote(proto::PlayerId player);
   sync::View ViewOf(proto::PlayerId player);
   std::optional<sync::TrackStats> StatsOf(proto::PlayerId player);

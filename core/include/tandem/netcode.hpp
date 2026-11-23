@@ -119,6 +119,12 @@ proto::PlayerMotion Compact(const proto::PlayerState &state);
 proto::PlayerState Whole(const proto::PlayerMotion &motion);
 proto::VehicleMotion Compact(const proto::VehicleState &state);
 proto::VehicleState Whole(const proto::VehicleMotion &motion);
+// With the state sent before it on the same stream (its `before`; none when
+// that one is over 6.5 s or 32 m back), and that state back whole (seq - 1).
+proto::PlayerMotion Compact(const proto::PlayerState &state, const proto::PlayerState *before);
+proto::VehicleMotion Compact(const proto::VehicleState &state, const proto::VehicleState *before);
+std::optional<proto::PlayerState> Before(const proto::PlayerMotion &motion);
+std::optional<proto::VehicleState> Before(const proto::VehicleMotion &motion);
 
 // One move as the guest reads it back (tests).
 proto::NpcEntry Dequantize(const proto::NpcMotion &motion, const proto::NpcMove &move);

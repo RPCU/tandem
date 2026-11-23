@@ -169,30 +169,44 @@ template <class Archive> zpp::bits::errc serialize(Archive &in, PoseFrame &frame
 
 // The other streams of every frame and every shot (v17): the player in a
 // byte, not four; the rest as zpp_bits would write it.
+// The state sent before (v22): its time back, then the rest only when there
+// is one (timeBack 0: the stream's first, 2 bytes).
 template <class Archive> zpp::bits::errc serialize(Archive &out, const PlayerMotion &motion) {
-  return out(static_cast<std::uint8_t>(motion.player), motion.seq, motion.timeUs, motion.position,
-             motion.yaw, motion.velocity, motion.stance, motion.flags);
+  if (auto result =
+          out(static_cast<std::uint8_t>(motion.player), motion.seq, motion.timeUs, motion.position,
+              motion.yaw, motion.velocity, motion.stance, motion.flags, motion.before.timeBack);
+      zpp::bits::failure(result) || motion.before.timeBack == 0)
+    return result;
+  return out(motion.before.offset, motion.before.yaw, motion.before.velocity);
 }
 
 template <class Archive> zpp::bits::errc serialize(Archive &in, PlayerMotion &motion) {
   std::uint8_t player = 0;
   const auto result = in(player, motion.seq, motion.timeUs, motion.position, motion.yaw,
-                         motion.velocity, motion.stance, motion.flags);
+                         motion.velocity, motion.stance, motion.flags, motion.before.timeBack);
   motion.player = player;
-  return result;
+  if (zpp::bits::failure(result) || motion.before.timeBack == 0)
+    return result;
+  return in(motion.before.offset, motion.before.yaw, motion.before.velocity);
 }
 
 template <class Archive> zpp::bits::errc serialize(Archive &out, const VehicleMotion &motion) {
-  return out(static_cast<std::uint8_t>(motion.player), motion.seq, motion.timeUs, motion.position,
-             motion.orientation, motion.velocity);
+  if (auto result =
+          out(static_cast<std::uint8_t>(motion.player), motion.seq, motion.timeUs, motion.position,
+              motion.orientation, motion.velocity, motion.before.timeBack);
+      zpp::bits::failure(result) || motion.before.timeBack == 0)
+    return result;
+  return out(motion.before.offset, motion.before.orientation, motion.before.velocity);
 }
 
 template <class Archive> zpp::bits::errc serialize(Archive &in, VehicleMotion &motion) {
   std::uint8_t player = 0;
-  const auto result =
-      in(player, motion.seq, motion.timeUs, motion.position, motion.orientation, motion.velocity);
+  const auto result = in(player, motion.seq, motion.timeUs, motion.position, motion.orientation,
+                         motion.velocity, motion.before.timeBack);
   motion.player = player;
-  return result;
+  if (zpp::bits::failure(result) || motion.before.timeBack == 0)
+    return result;
+  return in(motion.before.offset, motion.before.orientation, motion.before.velocity);
 }
 
 // A cue: the player in a byte; a charge's `at` is its level and its hand, a

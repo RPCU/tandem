@@ -114,13 +114,23 @@ Quality Measure(const net::LinkShape &shape, std::uint64_t seed, std::uint64_t i
 // its last two samples since (netcode::NpcVelocities).
 enum class Pace { Game, None, Sampled };
 
+// `before`: each state carries the one sent before it (protocol 22): one
+// whose datagram was lost is put back when the next comes (netcode.md, Loss).
 Quality Walker(const net::LinkShape &shape, std::uint64_t seed, std::uint64_t intervalUs,
-               Pace pace = Pace::Game) {
+               Pace pace = Pace::Game, bool before = false) {
   test::Walker walker;
   sync::Track track(static_cast<std::uint32_t>(1'000'000 / intervalUs));
+  std::uint32_t newest = 0;
   return Measure(
       shape, seed, intervalUs, [&](std::uint64_t t) { return walker.At(test::Seconds(t)); },
       [&](std::uint32_t seq, std::uint64_t t, std::uint64_t arrival) {
+        if (before && newest != 0 && static_cast<std::int32_t>(seq - 1 - newest) > 0) {
+          auto lost = walker.State(t - intervalUs);
+          lost.seq = seq - 1;
+          track.Push(lost, arrival, true);
+        }
+        if (static_cast<std::int32_t>(seq - newest) > 0)
+          newest = seq;
         auto state = walker.State(t);
         state.seq = seq;
         if (pace == Pace::None)
@@ -179,13 +189,15 @@ TEST_CASE("smoothness on real connections: numbers within bounds") {
     const auto &link = kLinks[i];
     const auto &bound = bounds[i];
     CAPTURE(link.name);
-    const auto walk = Walker(link.shape, 11 + i, 33'333);
+    const auto walk = Walker(link.shape, 11 + i, 33'333, Pace::Game, true);
+    const auto walkV21 = Walker(link.shape, 11 + i, 33'333); // without `before`
     const auto car = Car(link.shape, 23 + i);
     // An NPC far from every V (10 Hz) and one near one (30 Hz), with the
     // owner's velocity; and as it was sent before protocol 21, for the record.
     const auto npc = Walker(link.shape, 37 + i, 100'000, Pace::Sampled);
     const auto near = Walker(link.shape, 41 + i, 33'333, Pace::Sampled);
     const auto old = Walker(link.shape, 37 + i, 100'000, Pace::None);
+    MESSAGE(walkV21.Line("V v21", link.name));
     MESSAGE(walk.Line("V", link.name));
     MESSAGE(car.Line("car", link.name));
     MESSAGE(old.Line("NPC v20", link.name));
@@ -196,6 +208,9 @@ TEST_CASE("smoothness on real connections: numbers within bounds") {
     CHECK(walk.worstBack < 0.005f);
     CHECK(walk.delayMs < bound.walkDelayMs);
     CHECK(walk.extrapolated < 0.05);
+    // A lost datagram is put back: fewer guesses than without, no worse.
+    CHECK(walk.extrapolated <= walkV21.extrapolated);
+    CHECK(walk.maxError <= walkV21.maxError + 0.01f);
     CHECK(car.p95Error < bound.carP95);
     CHECK(car.maxPop < bound.carPop);
     CHECK(car.worstBack < 0.01f);

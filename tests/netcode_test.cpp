@@ -13,6 +13,7 @@
 
 #include <doctest/doctest.h>
 
+#include <cmath>
 #include <functional>
 #include <map>
 #include <set>
@@ -325,6 +326,58 @@ TEST_CASE("a still V goes 5 times a second, and leaves from where it stood") {
   }
 }
 
+TEST_CASE("a V's and a car's state carry the one sent before them, read back within a mm") {
+  const proto::PlayerState was{.player = 2,
+                               .seq = 7,
+                               .timeUs = test::kEpoch,
+                               .position = {-900.f, 1880.f, 36.f},
+                               .orientation = sync::FromYaw(0.5f),
+                               .velocity = {1.5f, 0.f, 0.f},
+                               .stance = 1};
+  auto now = was;
+  now.seq = 8;
+  now.timeUs = test::kEpoch + 33'333;
+  now.position = {-899.95f, 1880.f, 36.f};
+  now.orientation = sync::FromYaw(0.6f);
+  const auto motion = netcode::Compact(now, &was);
+  const auto decoded = proto::Decode(proto::Encode(motion));
+  REQUIRE(decoded);
+  const auto *wire = std::get_if<proto::PlayerMotion>(&*decoded);
+  REQUIRE(wire);
+  const auto back = netcode::Before(*wire);
+  REQUIRE(back);
+  CHECK(back->seq == 7);
+  CHECK(std::abs(static_cast<std::int64_t>(back->timeUs - was.timeUs)) <= 100);
+  CHECK(std::hypot(back->position.x - was.position.x, back->position.y - was.position.y) < 0.001f);
+  CHECK(std::abs(sync::YawOf(back->orientation) - 0.5f) < 0.001f);
+  CHECK(std::abs(back->velocity.x - 1.5f) < 0.01f);
+  CHECK(back->stance == 1);
+  // None for the first, a pause or a teleport.
+  CHECK_FALSE(netcode::Before(netcode::Compact(now, nullptr)));
+  auto far = was;
+  far.position.x -= 100.f;
+  CHECK_FALSE(netcode::Before(netcode::Compact(now, &far)));
+  auto old = was;
+  old.timeUs -= 10'000'000;
+  CHECK_FALSE(netcode::Before(netcode::Compact(now, &old)));
+
+  const proto::VehicleState car{.player = 2,
+                                .seq = 3,
+                                .timeUs = test::kEpoch,
+                                .position = {10.f, 0.f, 0.f},
+                                .orientation = sync::FromYaw(1.f),
+                                .velocity = {20.f, 0.f, 0.f}};
+  auto next = car;
+  next.seq = 4;
+  next.timeUs += 33'333;
+  next.position.x += 0.66f;
+  const auto carBack = netcode::Before(netcode::Compact(next, &car));
+  REQUIRE(carBack);
+  CHECK(carBack->seq == 3);
+  CHECK(std::abs(carBack->position.x - 10.f) < 0.001f);
+  CHECK(std::abs(sync::YawOf(carBack->orientation) - 1.f) < 0.002f);
+}
+
 TEST_CASE("relevance: poses and states by the distance to the nearest V") {
   CHECK(netcode::PoseIntervalUs(netcode::kNearest) == 0);
   CHECK(netcode::PoseIntervalUs(10.f) == 0);
@@ -370,7 +423,9 @@ TEST_CASE("a session counts its traffic by message, channel and direction") {
   const auto held = proto::Message(proto::Held{}).index();
   CHECK(delta.kinds[state][net::kSent].messages == 30);
   CHECK(delta.kinds[held][net::kSent].messages == 30);
-  CHECK(delta.kinds[state][net::kSent].bytes == 30 * proto::Encode(proto::PlayerMotion{}).size());
+  // Each but the first with the one before it (16 bytes: netcode.md, Loss).
+  CHECK(delta.kinds[state][net::kSent].bytes ==
+        30 * proto::Encode(proto::PlayerMotion{}).size() + 29 * 16);
   CHECK(delta.channels[0][net::kSent].messages >= 30);
   CHECK(delta.channels[1][net::kSent].messages >= 30);
   // ENet's own: datagrams both ways, acknowledgements included.
