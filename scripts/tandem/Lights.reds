@@ -15,6 +15,11 @@
 // light's own change sequence: yellow, then red or green), and drops its
 // own game's changes on those lights; the others keep their own. A light
 // the owner stops naming (12 s) goes back to its own game.
+//
+// The walk markings painted on a crossing are lights too: TrafficZebra, a
+// TrafficLight told its colour the same way, which shows it as its mesh's
+// appearance ("stop" or "default") from its own handler (engine facts
+// §13.156). Its handler is wrapped as the light's is.
 public class TandemLights {
   private let m_game: GameInstance;
   // Ours: each light our game gave a colour, the colour, and those that
@@ -227,7 +232,7 @@ public class TandemLights {
           let far = Vector4.Distance(light.GetWorldPosition(), at);
           if far < 60.0 {
             let lamp = light.GetWorldPosition();
-            line += s" \(EntityID.ToDebugStringDecimal(id)) \(Cast<Int32>(far)) m \(TandemLights.Name(light.TandemColor()))\(IsDefined(light as CrossingLight) ? " crossing" : "")\(ArrayContains(this.m_theirs, id) ? " (followed)" : "") at \(lamp.X) \(lamp.Y) \(lamp.Z);";
+            line += s" \(EntityID.ToDebugStringDecimal(id)) \(Cast<Int32>(far)) m \(TandemLights.Name(light.TandemColor()))\(IsDefined(light as CrossingLight) ? " crossing" : "")\(IsDefined(light as TrafficZebra) ? " zebra" : "")\(ArrayContains(this.m_theirs, id) ? " (followed)" : "") at \(lamp.X) \(lamp.Y) \(lamp.Z);";
           }
         }
       }
@@ -260,6 +265,10 @@ public func TandemColor() -> Int32 {
 // when it changed.
 @addMethod(TrafficLight)
 public func TandemShow(color: Int32) -> Bool {
+  let zebra = this as TrafficZebra;
+  if IsDefined(zebra) {
+    return zebra.TandemShowZebra(color);
+  }
   let wanted = IntEnum<worldTrafficLightColor>(color);
   if Equals(this.m_lightState, wanted) || !IsDefined(this.GetDevicePS()) || !this.GetDevicePS().IsInitialized() {
     return false;
@@ -280,6 +289,37 @@ public func TandemShow(color: Int32) -> Bool {
 // shows another game's colours now (TandemLights.Follow puts that one's).
 // job thread safe: it only calls natives that queue (LightSaid) or read (FollowsLight) and the wrapped method.
 @wrapMethod(TrafficLight)
+protected cb func OnTrafficLightChangeEvent(evt: ref<TrafficLightChangeEvent>) -> Bool {
+  let id = this.GetEntityID();
+  TandemStreet.LightSaid(id, EnumInt(evt.lightColor));
+  if TandemStreet.FollowsLight(id) {
+    return true;
+  }
+  return wrappedMethod(evt);
+}
+
+// A crossing's walk markings: another game's colour, the zebra's own way
+// (its handler: green shows the "default" appearance, anything else "stop").
+@addMethod(TrafficZebra)
+public func TandemShowZebra(color: Int32) -> Bool {
+  let wanted = IntEnum<worldTrafficLightColor>(color);
+  if Equals(this.m_lightState, wanted) || !IsDefined(this.GetDevicePS()) || !this.GetDevicePS().IsInitialized() {
+    return false;
+  }
+  this.m_lightState = wanted;
+  if Equals(wanted, worldTrafficLightColor.GREEN) {
+    this.HandleGreenLight();
+  } else {
+    this.HandleRedLight();
+  }
+  return true;
+}
+
+// The zebra's own handler overrides the light's (it never calls it), so the
+// light's wrap above never saw a zebra: its colour was neither said nor
+// followed, and the walk markings ran on each game's own phase.
+// job thread safe: it only calls natives that queue (LightSaid) or read (FollowsLight) and the wrapped method.
+@wrapMethod(TrafficZebra)
 protected cb func OnTrafficLightChangeEvent(evt: ref<TrafficLightChangeEvent>) -> Bool {
   let id = this.GetEntityID();
   TandemStreet.LightSaid(id, EnumInt(evt.lightColor));
