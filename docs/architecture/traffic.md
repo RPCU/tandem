@@ -211,7 +211,10 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   most (`traffic::PickNear`, `TandemTraffic.ShareNear`, the list of the
   last round read anew): where a V could touch them, the copy follows
   closely. Every state carries the moment its game read it (`Runtime`),
-  not when the net thread sent it.
+  not when the net thread sent it. Two instances at the Kabuki market and
+  test field (`street-compare`, 8 lists each, 2026-11-23): the largest gap
+  between a car's two bodies 1.5 to 2.9 m (2.3 to 5.2 before), the median
+  0.001 to 0.8 m (0.000 to 1.1).
 - **Drawing**: each vehicle has its own track (`sync::VehicleTrack`, the
   one player cars use), drawn as far in the past as its own stream needs
   (a `sync::Track` of its arrivals: transit, interval, jitter; about
