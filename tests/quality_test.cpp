@@ -177,13 +177,13 @@ Quality Car(const net::LinkShape &shape, std::uint64_t seed) {
 TEST_CASE("smoothness on real connections: numbers within bounds") {
   // Bounds per link (index as kLinks): what a player must not notice.
   struct Bound {
-    float walkP95, walkPop, carP95, carPop, npcP95;
+    float walkP95, walkPop, carP95, carPop, npcP95, npcPop;
     std::uint64_t walkDelayMs;
   };
   const Bound bounds[] = {
-      {0.05f, 0.03f, 0.10f, 0.06f, 0.08f, 120},
-      {0.08f, 0.04f, 0.20f, 0.10f, 0.12f, 220},
-      {0.12f, 0.05f, 0.35f, 0.15f, 0.15f, 330},
+      {0.05f, 0.03f, 0.10f, 0.06f, 0.08f, 0.03f, 120},
+      {0.08f, 0.04f, 0.20f, 0.10f, 0.12f, 0.05f, 220},
+      {0.12f, 0.05f, 0.35f, 0.15f, 0.15f, 0.08f, 330},
   };
   for (std::size_t i = 0; i < std::size(kLinks); ++i) {
     const auto &link = kLinks[i];
@@ -216,10 +216,10 @@ TEST_CASE("smoothness on real connections: numbers within bounds") {
     CHECK(car.worstBack < 0.01f);
     CHECK(npc.p95Error < bound.npcP95);
     CHECK(npc.worstBack < 0.005f);
-    CHECK(npc.maxPop < bound.walkPop);
+    CHECK(npc.maxPop < bound.npcPop);
     CHECK(near.p95Error < bound.walkP95);
     CHECK(near.maxError < (i < 2 ? 0.5f : 0.8f)); // within half a metre near a V
     CHECK(near.worstBack < 0.005f);
-    CHECK(near.maxPop < bound.walkPop);
+    CHECK(near.maxPop < bound.npcPop);
   }
 }

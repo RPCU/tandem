@@ -1343,6 +1343,9 @@ TEST_CASE("actor poses are paced and delta coded on the wire, whole for the gues
     host->SendNpcSpawn({.npc = npc, .record = npc});
   REQUIRE(Pump({host.get(), a.get()},
                [&](std::size_t, const auto &) { return a->SharedNpcs().size() == 4; }));
+  // A small budget (22 kbit/s, the default before 2026-11-23): the actors
+  // share it, none gets every frame.
+  host->SetSceneBudget(2750);
   // What the guest hears on the wire, and what its game is told.
   std::map<std::string, int> wire;
   a->SetWireTap([&](Endpoint::Wire way, proto::PlayerId, const proto::Message &message) {
