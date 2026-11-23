@@ -4444,6 +4444,9 @@ int main(int argc, char **argv) {
   // join: when each was last in the host's states (dead and far NPCs are
   // not), and the NPCs whose grab the host refused (not asked again).
   std::map<tandem::proto::NpcId, std::chrono::steady_clock::time_point> npcSeen;
+  // States heard of each NPC since the last report (netcode.md, NPC motion:
+  // those near a V 30 a second, the others 10).
+  std::map<tandem::proto::NpcId, std::uint32_t> npcStatesHeard;
   std::optional<tandem::proto::NpcId> nearNpc; // join, --near-npc: the NPC we stand by
   std::set<tandem::proto::NpcId> grabRefused;
   std::set<tandem::proto::NpcId> bodies; // join: the host's NPCs that died, still lying there
@@ -5123,6 +5126,7 @@ int main(int argc, char **argv) {
               for (const auto &entry : e.states.npcs) {
                 npcAt[entry.npc] = entry.position;
                 npcSeen[entry.npc] = std::chrono::steady_clock::now();
+                ++npcStatesHeard[entry.npc];
               }
               for (const auto &entry : e.states.npcs)
                 if (auto &seen = detection[entry.npc]; seen != entry.detected) {
@@ -8166,6 +8170,17 @@ int main(int argc, char **argv) {
         lastTraffic = traffic;
         lastTrafficUs = nowUs;
         Log("traffic: {}", tandem::net::Summary(delta, seconds));
+        if (!npcStatesHeard.empty() && seconds > 0) {
+          std::uint32_t most = 0, all = 0;
+          for (const auto &[npc, count] : npcStatesHeard) {
+            most = std::max(most, count);
+            all += count;
+          }
+          Log("npc states: {} NPCs, {:.0f} a second for the most heard, {:.1f} on average",
+              npcStatesHeard.size(), most / seconds,
+              all / seconds / static_cast<double>(npcStatesHeard.size()));
+          npcStatesHeard.clear();
+        }
         if (options.traffic)
           std::cout << tandem::net::Table(delta, seconds) << std::flush;
       }
