@@ -135,10 +135,11 @@ def main():
                 own, prx = (x, y) if x["kind"] == "ours" else (y, x)
                 if own["kind"] == "ours" and prx["kind"] == "proxy" and own.get("spot") and prx.get("spot"):
                     if own["spot"] not in ("none", "unread"):
-                        history.setdefault(i, []).append(prx["spot"] in (own["spot"], "entering"))
+                        # (seated: a driver's seat workspot, the seat's own on the proxy)
+                        history.setdefault(i, []).append(prx["spot"] in (own["spot"], "entering", "seated"))
                     if own["spot"] != "none" or prx["spot"] not in ("none", "seated"):
                         acts += 1
-                        if own["spot"] != prx["spot"] and not (prx["spot"] == "entering" and prx["said"] == own["spot"]):
+                        if own["spot"] != prx["spot"] and prx["spot"] != "seated" and not (prx["spot"] == "entering" and prx["said"] == own["spot"]):
                             act_off.append(f"{i} ({own['rec']}): owner {own['spot']}, proxy {prx['spot']} (told {prx['said']}), "
                                            f"{near(ref):.0f} m from a V")
                 d = flat(x["pos"], y["pos"])
