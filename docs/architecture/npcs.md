@@ -166,10 +166,11 @@ the first group session.
   instances at a Kabuki crossing, 2026-11-23: with the 60 m share, 14 to
   25 of 34 to 45 NPCs within 100 m of either V were on one screen only
   (each game's own crowd 60 to 100 m out, and the drivers below); with
-  `regions::kShare` 100 m and 128 a message, on foot 84 of 85 and 88 of 98
-  (the 10: the old 64 cap). What is still one-sided: the drivers and
-  passengers of the others' cars, never seated here (`traffic.md`,
-  "Occupants"; 42 of 52 on foot with traffic).
+  `regions::kShare` 100 m, on foot 84 of 85 and 88 of 98 (the 10: the 64
+  of one message, now the nearest first); the drivers and passengers of the
+  others' cars were the rest (42 of 52) until the slide guard let them be
+  seated again: 57 of 57, 46 of 46, 49 of 49 without the player's mods and
+  53 of 53, 59 of 59, 61 of 61 with them, on foot in traffic.
 - **A kill seen first, and NPCs that cannot die** (`Npcs.reds`
   `PredictKill`, `Reconcile`): a guest's hit that takes the last of a
   proxy's health kills it there at once (on-kill perks, loot, XP), ahead of

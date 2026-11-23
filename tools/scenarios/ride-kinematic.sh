@@ -20,7 +20,7 @@ shot ride-kinematic
 # body under 5 cm), none teleported but for the first placements.
 cmd vehicle moves
 expect 'vehicle moves: path kinematic, [1-9][0-9]* moved by the engine, [1-9][0-9]* held kinematic now' 5
-expect 'vehicle moves: .* 0 over 8\.0+ m, 0 of bodies that do not follow, 0 with the path off\), 0 body\(ies\) that do not follow, 0 refused, 0 frame\(s\) our seat.s car was not teleported, largest error 0\.0[0-4]' 5
+expect 'vehicle moves: .* 0 over 8\.0+ m, 0 of bodies that do not follow, 0 with the path off(, [0-9]+ not held yet)?\), 0 body\(ies\) that do not follow, 0 refused, 0 frame\(s\) our seat.s car was not teleported, largest error 0\.0[0-4]' 5
 cmd vehicle unride
 expect 'player [0-9]+: on foot|vehicle ride: out' 30
 reject "street: check: vehicle [0-9]+'s body was gone"

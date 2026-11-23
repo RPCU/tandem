@@ -210,13 +210,26 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   teleports by default, a kinematic body with `vehicle_move = kinematic`);
   one at rest is left alone.
 - **Occupants** are NPCs of the owner, shared by the NPC range (100 m,
-  `regions::kShare`). **They are not seated on the other games for now**:
-  seating an NPC proxy with the mounting facility takes the game down
-  (`engine/npcs.md` §13.154; twice on 2026-11-23 with our V on foot, 3 to
-  13 s after drivers were seated), so every proxy the owner says is seated
-  waits out of sight and the others' cars drive with nobody at the wheel
-  (`npc seats mount` turns the mounts back on, for a test). `npc-compare`
-  counts them as "its proxy is held".
+  `regions::kShare`), seated with `NpcSeat`: one proxy a second at most,
+  into a street car's body shown for 2 s or more, our V riding or not.
+  Seating one took the game down (`engine/npcs.md` §13.154, on foot too,
+  2026-11-23) until the **slide guard** (`engine/guards.cpp`): with it, 20
+  seated in 12 min on foot, 3 slides answered by the guard, no crash. With
+  the guard off (degraded `slide guard`) or `npc seats hold`, a seated proxy
+  waits out of sight and the car has nobody at the wheel (`npc-compare`:
+  "its proxy is held").
+- **Headlights** are the owner's (flag 32 of the state: a light mode, and
+  the car on; a parked crowd car has the mode and is off): a copy gets the
+  mode and is turned on, and is checked against its owner's every 2 s (the
+  game sets a copy's lights up after it comes). Brake, reverse and
+  indicator lights are not carried (`NPCBlinkers`, a mod of the player's,
+  runs indicators on each game's own traffic). `vehicle lamps [on|off|engine|mode|sync off]`.
+- **Proxy bodies** come four a quarter second at most (`MaySpawn`: about
+  seventy asked for in one tick, our V arriving in an area another game
+  shared 96 vehicles of, took the game down twice, `+0x22CA324`), never within
+  5 m of a vehicle of ours still standing or 2.5 m of another proxy's body
+  (`OwnNear`: copies spawned onto each other flickered and burnt on one
+  game). `street list` counts the proxies wrecked here only.
 - **The look** is the owner's: a proxy takes the appearance its owner
   announced when its body is first shown (a body reused from another proxy,
   our own instance of a placed car, a wreck), the wreck's too (an
