@@ -328,14 +328,16 @@ TEST_CASE("a still V goes 5 times a second, and leaves from where it stood") {
 TEST_CASE("relevance: poses and states by the distance to the nearest V") {
   CHECK(netcode::PoseIntervalUs(netcode::kNearest) == 0);
   CHECK(netcode::PoseIntervalUs(10.f) == 0);
-  CHECK(netcode::PoseIntervalUs(50.f) > 0);
+  CHECK(netcode::PoseIntervalUs(50.f) == 0);
+  CHECK(netcode::PoseIntervalUs(150.f) == 66'667);
+  CHECK(netcode::PoseIntervalUs(300.f) == 200'000);
   CHECK(netcode::PoseIntervalUs(1000.f) == 1'000'000);
   CHECK(netcode::StateIntervalUs(50.f) == 0);
   CHECK(netcode::StateIntervalUs(1000.f) == 200'000);
   netcode::Gate gate;
   int due = 0;
   for (std::uint64_t t = 0; t < 1'000'000; t += kFrame) // 31 frames: 0 to 0.99999 s
-    due += gate.Due(test::kEpoch + t, netcode::PoseIntervalUs(50.f));
+    due += gate.Due(test::kEpoch + t, netcode::PoseIntervalUs(150.f));
   CHECK(due == 16);
 }
 

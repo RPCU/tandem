@@ -42,6 +42,7 @@
   proxy's workspot) is its holder's: no placement and no teleport while
   held (a pending one is dropped), placement afresh once let go.
 - Rates: players and vehicles 30 Hz, fewer when far from every other V or
-  standing still; poses 30 Hz within 30 m, fewer beyond (`netcode.md`,
-  Relevance); NPC proxies 10 Hz, only those that changed (`NpcMotion`).
+  standing still; poses 30 Hz within 80 m, fewer beyond (`netcode.md`,
+  Relevance); NPC proxies 30 Hz within 35 m of a V, 10 Hz beyond, only
+  those that changed (`NpcMotion`), with their owner's velocity.
   The clock offset is slewed in (`Endpoint::kClockSlew`), not jumped.
