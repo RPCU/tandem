@@ -1368,7 +1368,7 @@ public class TandemNpcs {
       let body = GameInstance.FindEntityByID(this.m_game, known.id) as ScriptedPuppet;
       if IsDefined(body) {
         let at = body.GetWorldPosition();
-        TandemNative.Log(s"npc list: \(known.npc) ours \(TDBID.ToStringDEBUG(known.record)) at \(at.X) \(at.Y) \(at.Z) \(known.dead ? "dead" : known.down ? "down" : "alive")");
+        TandemNative.Log(s"npc list: \(known.npc) ours \(TDBID.ToStringDEBUG(known.record)) at \(at.X) \(at.Y) \(at.Z) \(known.dead ? "dead" : known.down ? "down" : "alive") \(this.m_anims.ActivityOf(body))");
       } else {
         TandemNative.Log(s"npc list: \(known.npc) ours \(TDBID.ToStringDEBUG(known.record)) no body");
       }
@@ -1380,7 +1380,7 @@ public class TandemNpcs {
       if IsDefined(body) {
         let at = body.GetWorldPosition();
         let state = proxy.dead ? "dead" : proxy.down ? "down" : proxy.seatWaits ? "held" : proxy.ready ? "alive" : "loading";
-        TandemNative.Log(s"npc list: \(proxy.npc) proxy \(TDBID.ToStringDEBUG(proxy.record)) at \(at.X) \(at.Y) \(at.Z) \(state)\(proxy.native ? " native" : "")");
+        TandemNative.Log(s"npc list: \(proxy.npc) proxy \(TDBID.ToStringDEBUG(proxy.record)) at \(at.X) \(at.Y) \(at.Z) \(state)\(proxy.native ? " native" : "") \(this.m_anims.ProxyActivity(proxy.npc, body))");
       } else {
         TandemNative.Log(s"npc list: \(proxy.npc) proxy \(TDBID.ToStringDEBUG(proxy.record)) no body (\(proxy.seenAt > 0.0 ? "lost" : "spawning"))");
       }

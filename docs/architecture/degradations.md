@@ -180,7 +180,8 @@ names of `engine-access.md`.
 | `look not received` | degraded | fallback | `System.reds` `StandIn` ("no look received") | a stand-in body; the mock player's case (allowed in every scenario) |
 | `stand-in look` | degraded | fallback | `System.reds` `StandIn` (a look that has no body, still no look) | a stand-in body, or hidden |
 | `body incomplete` | degraded | fallback | `Body.reds` (no donor, no visible object, no Character extension) | the puppet glides, or NPCs do not see it |
-| `workspot not entered` | degraded | fallback | `NpcAnims.reds` `Step` | the proxy stands |
+| `workspot not entered` | degraded | fallback | `NpcAnims.reds` `Step`, `Enter` (no component, the resource refused) | the proxy stands |
+| `workspot unread` | degraded | fallback | `NpcAnims.reds` `NoteUnread` (owner: in a workspot whose instance has no resource, §13.134) | its copies stand where it sits |
 | `scene camera missing` | degraded | fallback | `Scenes.reds`, `Spectate.reds` | our own eyes stay |
 | `carried by placement` | degraded | fallback | `Spectate.reds`, `Transit.reds` | our V placed in the car a few times a second |
 | `revive ended by hand` | degraded | fallback | `Revive.reds` `CheckUp` | the death effects ended by hand |

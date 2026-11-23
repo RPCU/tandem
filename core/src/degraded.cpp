@@ -69,6 +69,8 @@ constexpr Info kCatalogue[] = {
     {"body incomplete", Degraded, Fallback,
      "a puppet's body misses a part of its donor's (it glides, or NPCs do not see it)"},
     {"workspot not entered", Degraded, Fallback, "an NPC could not enter its workspot: it stands"},
+    {"workspot unread", Degraded, Fallback,
+     "an NPC's workspot could not be read: its copies stand where it sits"},
     {"scene camera missing", Degraded, Fallback,
      "a scene's camera body has no camera: our own eyes stay"},
     {"carried by placement", Degraded, Fallback,
