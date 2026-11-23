@@ -136,6 +136,8 @@ public class TandemTraffic {
   // Proxy bodies asked for in this quarter second (MaySpawn).
   private let m_spawnAt: Float;
   private let m_spawnNow: Int32;
+  private let m_spawnTickAt: Float;
+  private let m_spawnTick: Int32;
   // (test: vehicle lamps sync off) no headlight read or set.
   private let m_lampsOff: Bool;
   private let m_you: Uint32;
@@ -542,15 +544,22 @@ public class TandemTraffic {
   // A few proxy bodies asked for at a time: some seventy asked for in one
   // tick (our V come into an area another game shares 96 vehicles of) took
   // the game down there, twice (2026-11-23, 0xc0000005 at +0x22CA324, a lock
-  // taken through null under the spawns). Four a quarter second.
+  // taken through null under the spawns). Eight a quarter second, two a
+  // tick (an area of 96 shared in 3 s; four a quarter second before, 6 s:
+  // traffic.md, Proxy bodies).
   private func MaySpawn() -> Bool {
     if this.m_now - this.m_spawnAt >= 0.25 || this.m_now < this.m_spawnAt {
       this.m_spawnAt = this.m_now;
       this.m_spawnNow = 0;
     }
-    if this.m_spawnNow >= 4 {
+    if this.m_now != this.m_spawnTickAt {
+      this.m_spawnTickAt = this.m_now;
+      this.m_spawnTick = 0;
+    }
+    if this.m_spawnNow >= 8 || this.m_spawnTick >= 2 {
       return false;
     }
+    this.m_spawnTick += 1;
     this.m_spawnNow += 1;
     return true;
   }

@@ -127,22 +127,22 @@ cost one message each until someone moves them.
 
 Appended to the protocol (`protocol.hpp`); no existing message changed.
 
-| Message                | Channel         | From → to                                   | What                                                                                                                                                 |
-| ---------------------- | --------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TrafficSpawn`         | Event           | owner → all (kept)                          | id, record, appearance, static entity id or 0, transform, flags                                                                                      |
-| `TrafficStates`        | State, 10 Hz    | owner → all                                 | the vehicles that move: id, position, rotation, velocity (28 bytes)                                                                                  |
-| `TrafficStatus`        | Event           | owner → all (kept)                          | health 0..1 and the lasting flags (wreck, siren, parked, panic…)                                                                                     |
-| `TrafficGone`          | Event           | owner → all                                 | out of range, removed, or **taken** by a player                                                                                                      |
-| `TrafficHit`           | Event, one-shot | a player's game → owner                     | damage and, for a ram, the push given                                                                                                                |
-| `TrafficHack`          | Event, one-shot | a player's game → host → every other player | a vehicle quickhack (brakes, explode, accelerate) and its length: the owner applies it, everyone marks it (`devices.md`, "A partner's hack, marked") |
-| `TrafficClaim`         | Event, one-shot | a player's game → owner                     | "my V is getting into this one"                                                                                                                      |
-| `TrafficSet`           | Event           | host → one guest; a guest owner → host      | opens a resync: every vehicle shown to it now; from a guest, its whole set                                                                           |
-| `NpcSeat`              | (existing)      | owner → all (kept)                          | `owner` with the top bit set names a shared vehicle, not a player                                                                                    |
-| `TrafficOwnership`     | Event           | host → all who see it (kept)                | who runs a vehicle now (absent: its announcer)                                                                                                       |
-| `TrafficHandover`      | Event, one-shot | host → owner                                | give it to `to`                                                                                                                                      |
-| `TrafficHandoverState` | Event, one-shot | giver → host → receiver                     | place, orientation, velocity, health, flags (inherited: the host's record)                                                                           |
-| `TrafficHandoverDone`  | Event, one-shot | receiver or giver → host                    | runs it now (or cannot: it goes); a giver's refusal                                                                                                  |
-| `TrafficLights`        | Event           | area owner → its linked players             | traffic lights by entity id and colour: on change, all round its V every 5 s ("Traffic lights")                                                      |
+| Message                | Channel                    | From → to                                   | What                                                                                                                                                 |
+| ---------------------- | -------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TrafficSpawn`         | Event                      | owner → all (kept)                          | id, record, appearance, static entity id or 0, transform, flags                                                                                      |
+| `TrafficStates`        | State, 10 Hz (30 near a V) | owner → all                                 | the vehicles that move: id, position, rotation, velocity (28 bytes)                                                                                  |
+| `TrafficStatus`        | Event                      | owner → all (kept)                          | health 0..1 and the lasting flags (wreck, siren, parked, panic…)                                                                                     |
+| `TrafficGone`          | Event                      | owner → all                                 | out of range, removed, or **taken** by a player                                                                                                      |
+| `TrafficHit`           | Event, one-shot            | a player's game → owner                     | damage and, for a ram, the push given                                                                                                                |
+| `TrafficHack`          | Event, one-shot            | a player's game → host → every other player | a vehicle quickhack (brakes, explode, accelerate) and its length: the owner applies it, everyone marks it (`devices.md`, "A partner's hack, marked") |
+| `TrafficClaim`         | Event, one-shot            | a player's game → owner                     | "my V is getting into this one"                                                                                                                      |
+| `TrafficSet`           | Event                      | host → one guest; a guest owner → host      | opens a resync: every vehicle shown to it now; from a guest, its whole set                                                                           |
+| `NpcSeat`              | (existing)                 | owner → all (kept)                          | `owner` with the top bit set names a shared vehicle, not a player                                                                                    |
+| `TrafficOwnership`     | Event                      | host → all who see it (kept)                | who runs a vehicle now (absent: its announcer)                                                                                                       |
+| `TrafficHandover`      | Event, one-shot            | host → owner                                | give it to `to`                                                                                                                                      |
+| `TrafficHandoverState` | Event, one-shot            | giver → host → receiver                     | place, orientation, velocity, health, flags (inherited: the host's record)                                                                           |
+| `TrafficHandoverDone`  | Event, one-shot            | receiver or giver → host                    | runs it now (or cannot: it goes); a giver's refusal                                                                                                  |
+| `TrafficLights`        | Event                      | area owner → its linked players             | traffic lights by entity id and colour: on change, all round its V every 5 s ("Traffic lights")                                                      |
 
 "Owner → all" reads "owner → the players linked with it, through the host".
 
@@ -206,10 +206,18 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   (its last state had a velocity: the others would run it on), then leaves
   the stream, with a keepalive every 2 s. A parked car costs nothing until
   something moves it.
+- **Near either V** (2026-11-23): between two rounds (30 a second) the
+  moving cars of ours within 50 m of a V go again, nearest first, 16 at
+  most (`traffic::PickNear`, `TandemTraffic.ShareNear`, the list of the
+  last round read anew): where a V could touch them, the copy follows
+  closely. Every state carries the moment its game read it (`Runtime`),
+  not when the net thread sent it.
 - **Drawing**: each vehicle has its own track (`sync::VehicleTrack`, the
-  one player cars use), drawn 200 ms in the past (two samples of a 10 Hz
-  stream around it), extrapolated up to 500 ms along its velocity when a
-  far car only gets every third packet, then held. Proxies are moved as
+  one player cars use), drawn as far in the past as its own stream needs
+  (a `sync::Track` of its arrivals: transit, interval, jitter; about
+  100 ms for a near car on a 30 ms link, 150 to 200 for a far one; a fixed
+  200 for every car before), extrapolated up to 500 ms along its velocity
+  when a far car only gets every third packet, then held. Proxies are moved as
   every vehicle another game runs (`vehicles.md`, "How a copy is moved":
   a kinematic body by default, teleports with `vehicle_move = teleport`);
   one at rest is left alone.
@@ -228,7 +236,8 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   game sets a copy's lights up after it comes). Brake, reverse and
   indicator lights are not carried (`NPCBlinkers`, a mod of the player's,
   runs indicators on each game's own traffic). `vehicle lamps [on|off|engine|mode|sync off]`.
-- **Proxy bodies** come four a quarter second at most (`MaySpawn`: about
+- **Proxy bodies** come eight a quarter second, two a tick, at most (`MaySpawn`;
+  four a quarter second before 2026-11-23: an area of 96 took 6 s, now 3; about
   seventy asked for in one tick, our V arriving in an area another game
   shared 96 vehicles of, took the game down twice, `+0x22CA324`), never within
   5 m of a vehicle of ours still standing or 2.5 m of another proxy's body
