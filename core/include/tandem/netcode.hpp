@@ -16,7 +16,7 @@ namespace tandem::netcode {
 // Distance from our V to the nearest other V (metres) to the shortest gap
 // between two sends of a stream (0: every frame). Far away a puppet is a
 // marker on the map, or streamed out: a few updates a second do.
-std::uint64_t PoseIntervalUs(float nearest);  // 30 m: every frame; 80: 15 Hz; 200: 5; then 1
+std::uint64_t PoseIntervalUs(float nearest);  // 80 m: every frame; 200: 15 Hz; 400: 5; then 1
 std::uint64_t StateIntervalUs(float nearest); // 80 m: every frame; 200: 15 Hz; then 5
 // Unknown distance (nobody else placed yet): as if near.
 inline constexpr float kNearest = 0.f;

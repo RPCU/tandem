@@ -42,11 +42,11 @@ template <class State> bool Jumped(const State &state, const State &last) {
 } // namespace
 
 std::uint64_t PoseIntervalUs(float nearest) {
-  if (nearest <= 30.f)
-    return 0;
   if (nearest <= 80.f)
-    return 66'667;
+    return 0;
   if (nearest <= 200.f)
+    return 66'667;
+  if (nearest <= 400.f)
     return 200'000;
   return 1'000'000;
 }
