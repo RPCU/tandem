@@ -170,7 +170,13 @@ the first group session.
   of one message, now the nearest first); the drivers and passengers of the
   others' cars were the rest (42 of 52) until the slide guard let them be
   seated again: 57 of 57, 46 of 46, 49 of 49 without the player's mods and
-  53 of 53, 59 of 59, 61 of 61 with them, on foot in traffic.
+  53 of 53, 59 of 59, 61 of 61 with them, on foot in traffic. At the
+  Kabuki market (2026-11-23, both Vs 3 m apart): with 64 shared at most,
+  67 to 73 of 93 to 104 (318 of 434 over 8 lists; the rest the host's own,
+  past the cap); with 160 in several messages (`netcode.md`, NPC motion),
+  119 to 121 of 120 to 121 (504 of 506), for 2.7 to 3.4 ms of script tick
+  in `npcs` (1.7 before) and 13 to 27 ticks a second on the guest instance
+  (22 to 29 before; two games on one machine, capped at 30).
 - **A kill seen first, and NPCs that cannot die** (`Npcs.reds`
   `PredictKill`, `Reconcile`): a guest's hit that takes the last of a
   proxy's health kills it there at once (on-kill perks, loot, XP), ahead of

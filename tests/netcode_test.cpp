@@ -423,9 +423,9 @@ TEST_CASE("a session counts its traffic by message, channel and direction") {
   const auto held = proto::Message(proto::Held{}).index();
   CHECK(delta.kinds[state][net::kSent].messages == 30);
   CHECK(delta.kinds[held][net::kSent].messages == 30);
-  // Each but the first with the one before it (16 bytes: netcode.md, Loss).
+  // Each but the first with the one before it (14 bytes: netcode.md, Loss).
   CHECK(delta.kinds[state][net::kSent].bytes ==
-        30 * proto::Encode(proto::PlayerMotion{}).size() + 29 * 16);
+        30 * proto::Encode(proto::PlayerMotion{}).size() + 29 * 14);
   CHECK(delta.channels[0][net::kSent].messages >= 30);
   CHECK(delta.channels[1][net::kSent].messages >= 30);
   // ENet's own: datagrams both ways, acknowledgements included.

@@ -2613,7 +2613,7 @@ struct PlayerMotion {
   std::array<std::int16_t, 3> velocity{}; // cm/s
   std::uint8_t stance{};
   std::uint16_t flags{};
-  PlayerBefore before; // 2 bytes, 16 more when there is one (protocol.cpp)
+  PlayerBefore before; // 2 bytes, 14 more when there is one (protocol.cpp)
   friend bool operator==(const PlayerMotion &, const PlayerMotion &) = default;
 };
 

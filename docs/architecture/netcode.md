@@ -29,31 +29,42 @@ compact, W whole`, then the `perf:` line (Frame cost); the whole table at
 ## Budget
 
 **256 kbit/s each way** on a two-player link, headers included (what co-op
-games commonly send; the user, 2026-11-23); NPCs in a fight may take the host's side to 384. `tests/budget_test.cpp` plays each session for 4 s over loopback UDP
-with real endpoints (30 Hz states and walk-cycle poses, 24 NPCs at 10 Hz,
-strikes, shots and their cues, health and animation twice a second) and
-checks it, legacy wire alongside:
+games commonly send; the user, 2026-11-23); the host's side of NPCs (a
+fight, a dense street) may take 384. `tests/budget_test.cpp` plays each
+session for 4 s over loopback UDP with real endpoints (30 Hz states and
+walk-cycle poses, NPCs and cars as `Npcs.reds` and `Traffic.reds` send
+them: every one 10 times a second, those near a V 30 times; strikes, shots
+and their cues, health and animation twice a second) and checks it, legacy
+wire alongside:
 
 <!-- prettier-ignore -->
-| Session (2 players unless said) | before up | before down | after up | after down | largest after (kbit/s) |
-| --- | --- | --- | --- | --- | --- |
-| on foot together, 3 m apart | 132.7 | 132.9 | 54.9 | 52.4 | PoseFrame 31.2, PlayerMotion 8.9 |
-| standing together | 131.5 | 131.7 | 31.9 | 31.9 | PoseFrame 18.7, PlayerMotion 1.3 |
-| fight, 24 NPCs (half walking) | 137.1 | 187.1 | 59.4 | 83.4 | up: PoseFrame 31.2, PlayerMotion 8.9, Cue 1.6; down: PoseFrame 28.5, NpcMotion 18.4, PlayerMotion 8.9, NpcAwareness 4.2 |
-| driving, the host a passenger | 147.0 | 131.6 | 52.1 | 41.4 | up: PoseFrame 18.7, PlayerMotion 8.9, VehicleMotion 8.9 |
-| apart (500 m) | 131.5 | 131.7 | 8.6 | 8.8 | PoseFrame 2.9, PlayerMotion 1.5 |
-| 4 players on foot, a guest's link | 133.6 | 386.5 | 54.9 | 145.1 | down: three Vs' PoseFrame 86.4, PlayerMotion 26.6 |
-| a scene watched: 3 actors' bodies, a cutscene's camera | 131.5 | 472.8 | 32.1 | 52.9 | down: PoseFrame 18.6, ActorFrame 11.4, SceneCamera 4.8, RigTracks 2.7 (the scene's streams at most 22: `scene::Pacer`) |
+| Session (2 players unless said) | legacy up / down | protocol 20 up / down | protocol 22 up / down | largest, protocol 22 (kbit/s) |
+| --- | --- | --- | --- | --- |
+| on foot together, 3 m apart | 132.7 / 132.9 | 54.9 / 52.4 | 58.8 / 56.3 | PoseFrame 31.2, PlayerMotion 12.7 |
+| standing together | 131.5 / 131.7 | 31.9 / 31.9 | 32.7 / 32.6 | PoseFrame 18.7, PlayerMotion 1.9 |
+| fight, 24 NPCs (half walking, all within 35 m) | 137.1 / 187.1 (297.7 with the near ones at 30 Hz) | 59.4 / 83.4 | 63.6 / 125.8 | up: PoseFrame 31.2, PlayerMotion 12.7, Cue 1.6; down: NpcMotion 57.2, PoseFrame 28.5 |
+| a dense street, 96 NPCs (half walking, 45 within 35 m) | 131.5 / 638.9 | — | 57.6 / 245.3 | down: NpcMotion 186.4, PoseFrame 28.5 |
+| a street, 24 cars at 10 m/s (12 within 50 m) | 131.5 / 263.2 | — | 32.7 / 164.1 | down: TrafficStates 129.5, PoseFrame 18.6 |
+| driving, the host a passenger | 147.0 / 131.6 | 52.1 / 41.4 | 60.5 / 45.2 | up: PoseFrame 18.7, VehicleMotion 13.4, PlayerMotion 12.7 |
+| apart (500 m) | 131.5 / 131.7 | 8.6 / 8.8 | 9.2 / 9.5 | PoseFrame 2.9, PlayerMotion 2.1 |
+| 4 players on foot, a guest's link | 133.6 / 386.5 | 54.9 / 145.1 | 59.6 / 157.3 | down: three Vs' PoseFrame 87.0 |
+| a scene watched: 3 actors' bodies, a cutscene's camera | 131.5 / 472.8 (487.9 at 80) | 32.1 / 52.9 | 32.7 / 91.6 | down: ActorFrame 32.5, PoseFrame 18.6, RigTracks 12 (the scene's streams at most 80: `scene::Pacer`, 22 before) |
 
 kbit/s on the wire, each way, 38 datagrams/s for a V's 60 messages/s (the
-test sends state and pose together); CI, 2026-11-22, protocol 17. Before,
+test sends state and pose together); CI, 2026-11-23, protocol 22 (protocol
+20: 2026-11-22; its largest: the fight's down NpcMotion 18.4, four
+players' three PoseFrame 86.4 and PlayerMotion 26.6). Protocol 22's V and car states carry the one before them
+(Loss: 3.8 kbit/s a stream); its NPCs near a V go 30 times a second with
+their velocity (NPC motion). Before,
 the pose alone was 104 kbit/s (431 bytes at 30 Hz) and the NPC list 21
 bytes an NPC at 10 Hz. The synthetic walk cycle (`tests/motion.hpp`)
 averages 130 bytes a pose frame here (150 before protocol 17; 114 in
 `netcode_test.cpp`, whose keys fall on the same two moments of the stride);
 real play's poses are in the recordings below. The test checks every row
-against 64 (the fight's down 96, four players' down 192) and that no row
-grew, and prints the fight's row stream by stream.
+against 256 (the NPC rows' down 384, four players' down 768) and that no
+row grew over the legacy wire, and prints the NPC rows stream by stream.
+In game (two instances at the Kabuki market, 120 NPCs shared, 2026-11-23):
+the host's up peaked at 229 kbit/s, NpcMotion 134.5 of it.
 
 The fight's up is the fullest row a guest sends: its V's pose and state,
 6 shots a second with their 6 tracer ends, 2 ricochets and 4 charge cues
@@ -106,17 +117,32 @@ events, taps and recordings above it see `PlayerState`, `PoseState`,
   whole and another frame's low 32 bits (`PoseDecoder` completes them from
   its key's time: the frames it can decode have one), no codes on a key
   (all whole), no length (the codes say it).
-- **`NpcMotion`**: positions in 1/128 m from an origin (±256 m; wider
-  spreads go whole as `NpcStates`), yaw in 1/65536 turn, only the NPCs that
-  moved more than 2 cm, turned more than 0.01 rad or changed what they
-  detect, each at least every 5 states (a lost one heals within 0.5 s;
-  newcomers' refreshes staggered), and an NPC dropped from the list flagged
-  once. The guest's `NpcBook` fills in the rest, so `NpcStates` comes out
-  whole (detection counts stay right).
+- **`NpcMotion`** (every owner's, protocol 21; NPC motion): positions in
+  1/128 m from an origin (±256 m; wider spreads go whole as `NpcStates`),
+  yaw in 1/65536 turn, the owner's velocity in cm/s, only the NPCs that
+  moved more than 2 cm, turned more than 0.01 rad, changed pace by more
+  than 0.1 m/s (one that stops is said at once, not carried on) or what
+  they detect, each at least every 5 messages (newcomers' refreshes
+  staggered). Each move is read on its own (`netcode::Read`; protocol 20's
+  guest filled in the rest with its `NpcBook`): an NPC not
+  listed stands where it was; a guest's go compact too and the host relays
+  them as they came, renumbered. 19 bytes a move.
+- **NPC motion** (2026-11-23): an owner sends every NPC it shares 10 times
+  a second (`Npcs.reds` `Share`), and between those, 30 times a second,
+  the ones within 35 m of any V (`ShareNear`: the list of the last round
+  read anew, one native call; a partial list says nothing of the others).
+  Each state carries when its game read it (`Runtime`), and its velocity
+  from the owner's own samples (`netcode::NpcVelocities`): the receiver's
+  track carries a late state on instead of holding it, and draws a near
+  NPC about 75 ms behind instead of 170. Up to 160 NPCs are shared
+  (`kMaxNpcsShared`, 64 before: a market had 26 to 31 of its NPCs within
+  100 m on one screen only), cut into messages of 48 moves or 32 whole
+  states (`netcode::Split`, a datagram each), each numbered.
 - **`PlayerMotion`**, **`VehicleMotion`**: a V's orientation is its yaw
   (16 bits), velocities in cm/s, a car's orientation in 5 bytes, the
   player in a byte (protocol 17; `PlayerId` is 4 everywhere else): 37 bytes
-  for a V instead of 60, 37 for a car instead of 57.
+  for a V instead of 60, 37 for a car instead of 57; each with the state
+  sent before it (`before`, protocol 22: Loss), 53 and 56.
 - **`Cue`** (a shot's end, a bounce, a charge: up to a dozen a second
   from a V that fires): the player in a byte; a charge's level (255
   steps, `proto::ChargeLevel`) and hand in a byte each, not three floats:
@@ -132,8 +158,9 @@ events, taps and recordings above it see `PlayerState`, `PoseState`,
   (`architecture/scene-replay.md` §2).
 - **Relevance** (`netcode::PoseIntervalUs`, `StateIntervalUs`, by the
   distance from our V to the nearest other): poses every frame within
-  30 m, 15 Hz to 80 m, 5 Hz to 200 m, then 1 Hz; states and cars every
-  frame within 80 m, 15 Hz to 200 m, then 5 Hz. The receiver's pose is
+  80 m, 15 Hz to 200 m, 5 Hz to 400 m, then 1 Hz (30, 80 and 200 m before
+  the 256 budget); states and cars every frame within 80 m, 15 Hz to
+  200 m, then 5 Hz. The receiver's pose is
   drawn `PoseTrack::IntervalUs` later when they come less often. A state
   5 m or more from where the last one sent puts it by now (a teleport, a
   fast travel) goes at once, near or far: per-player regions decide links
@@ -205,6 +232,32 @@ corrected over a few frames (at most 1.5 m/s for a V, 6 m/s for a car)
 instead of in one, so the largest error lasts a little longer and the pops
 are gone. Bounds checked: p95 error, pop, backwards, extrapolated share
 and delay per link.
+
+**NPC motion and Loss** (2026-11-23, protocols 21 and 22; the same test,
+CI): the rows above are protocol 20's. An NPC far from every V still
+comes 10 times a second (its owner's velocity is what the receiver
+computed before: the same numbers). One near a V comes 30 times with its
+owner's velocity; a V's state carries the one before it, put back when
+its datagram was lost (`events::RemoteState::recovered`), and while states
+are lost (over 0.4 % of them, EWMA) `sync::Track` holds one interval more,
+so the next datagram brings the lost state back before it is drawn:
+
+<!-- prettier-ignore -->
+| Link | What | protocol 20: error max, pop (m), extrapolated, behind | protocol 22 |
+| --- | --- | --- | --- |
+| 30 ms 1 % | NPC near a V | 0.505, 0.027, 1.6 %, 172 ms | 0.003, 0.001, 1.4 %, 75 ms |
+| 80 ms 3 % | NPC near a V | 0.121, 0.040, 1.8 %, 220 ms | 0.181, 0.040, 2.6 %, 149 ms |
+| 150 ms 5 % | NPC near a V | 0.482, 0.040, 2.9 %, 311 ms | 0.504, 0.067, 5.2 %, 242 ms |
+| 30 ms 1 % | V walking | 0.001, 0.001, 1.6 %, 75 ms | 0.001, 0.001, 0.5 %, 102 ms |
+| 80 ms 3 % | V walking | 0.004, 0.001, 1.7 %, 148 ms | 0.002, 0.001, 0.4 %, 181 ms |
+| 150 ms 5 % | V walking | 0.596, 0.027, 3.6 %, 242 ms | 0.576, 0.027, 2.5 %, 275 ms |
+
+A near NPC is drawn 70 to 100 ms fresher (at a walk, 0.1 to 0.16 m nearer
+where its owner shows it); on the worse links its guesses run longer (a
+burst of 4 lost is 133 ms at 30 Hz) and its sampled velocity lags a change
+of pace by a state, so its pops reach 4 to 7 cm (bound on their own). A
+V's lost datagram costs a third of the guesses it did, for 27 to 33 ms
+more delay while the link loses.
 
 ## Fairness under latency
 
