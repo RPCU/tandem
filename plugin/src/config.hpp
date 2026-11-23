@@ -46,7 +46,7 @@
 //                        ; (comma-separated keys scene:PATH, phase:PATH or
 //                        ; quest:TEXT; docs/architecture/scripted-moments.md,
 //                        ; "The moment list"), added to moments.txt's
-//   scene_kbps = 22      ; with scene_replay, host: what a scene's streams (bodies,
+//   scene_kbps = 80      ; with scene_replay, host: what a scene's streams (bodies,
 //                        ; the camera) may take on a guest's link, 8 to 2000
 //   scene_voice_gender = on ; with scene_replay, guest: a V's line plays the
 //                        ; recording of that V's body (on: the line's gender

@@ -128,7 +128,7 @@ events, taps and recordings above it see `PlayerState`, `PoseState`,
   fight's row, which it takes to 59.9 up and 84.0 down (CI, 2026-11-22).
 - **A scene's streams** (scene replay: each actor's body as `ActorFrame`,
   the camera as `SceneCamera`): one budget for all of them on the host,
-  22 kbit/s by default, split by `scene::Pacer`
+  80 kbit/s by default (22 before), split by `scene::Pacer`
   (`architecture/scene-replay.md` §2).
 - **Relevance** (`netcode::PoseIntervalUs`, `StateIntervalUs`, by the
   distance from our V to the nearest other): poses every frame within
