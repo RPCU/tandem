@@ -515,7 +515,7 @@ struct NetThread::Impl {
                 summary.notes.push_back(e.notice);
                 Notice("refused " + e.name, e.notice);
               } else if constexpr (std::is_same_v<E, events::RemoteState>) {
-                runtime.PushRemote(e.state);
+                runtime.PushRemote(e.state, e.recovered);
               } else if constexpr (std::is_same_v<E, events::RemotePose>) {
                 runtime.PushRemotePose(e.pose);
               } else if constexpr (std::is_same_v<E, events::HostActorPose>) {

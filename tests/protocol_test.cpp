@@ -187,7 +187,15 @@ TEST_CASE("every message survives encoding") {
                           .velocity = {150, -20, 0},
                           .stance = 3,
                           .flags = 0x8001});
-  CHECK(Encode(PlayerMotion{}).size() == 37); // the player in a byte
+  // With the state before it (v22): 16 bytes more; without, 2.
+  const PlayerMotion withBefore{
+      .player = 2,
+      .seq = 9,
+      .timeUs = 1'800'000'000'000'000,
+      .before = {.timeBack = 333, .offset = {-50, 3, 0}, .yaw = 39000, .velocity = {140, -20, 0}}};
+  RoundTrips(withBefore);
+  CHECK(Encode(PlayerMotion{}).size() == 39); // the player in a byte
+  CHECK(Encode(withBefore).size() == 39 + 16);
   CHECK(Encode(PlayerMotion{}).size() < Encode(PlayerState{}).size() * 2 / 3 + 1);
   RoundTrips(VehicleMotion{.player = 2,
                            .seq = 9,
@@ -195,7 +203,15 @@ TEST_CASE("every message survives encoding") {
                            .position = {1, 2, 3},
                            .orientation = {1, 2, 3, 4, 5},
                            .velocity = {2000, 0, -5}});
-  CHECK(Encode(VehicleMotion{}).size() == 37);
+  RoundTrips(VehicleMotion{.player = 2,
+                           .seq = 9,
+                           .timeUs = 1'800'000'000'000'000,
+                           .before = {.timeBack = 333,
+                                      .offset = {-600, 0, 2},
+                                      .orientation = {5, 4, 3, 2, 1},
+                                      .velocity = {1990, 0, -5}}});
+  CHECK(Encode(VehicleMotion{}).size() == 39);
+  CHECK(Encode(VehicleMotion{.before = {.timeBack = 1}}).size() == 39 + 17);
   CHECK(ChannelOf(PlayerMotion{}) == Channel::State);
   CHECK(ChannelOf(VehicleMotion{}) == Channel::State);
   RoundTrips(NpcMotion{.seq = 5,

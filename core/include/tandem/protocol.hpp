@@ -45,7 +45,9 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 21: an NPC's velocity in NpcEntry and NpcMove (cm/s: the receiver
 // carries a late state on), NpcMotion from every owner, read on its own
 // (no book), and a list longer than a datagram in several (netcode.md).
-inline constexpr std::uint16_t kProtocolVersion = 21;
+// 22: PlayerMotion and VehicleMotion carry the state sent before them
+// (`before`): a receiver that lost it puts it back (netcode.md, Loss).
+inline constexpr std::uint16_t kProtocolVersion = 22;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -2585,6 +2587,19 @@ struct NpcMotion { // State channel, as NpcStates; from every owner (v21)
   friend bool operator==(const NpcMotion &, const NpcMotion &) = default;
 };
 
+// The state a V's or a car's stream sent just before this one (seq - 1:
+// the endpoint numbers what it sends), as a step back from it (v22): a
+// receiver that lost that datagram puts the state back before this one, so
+// one lost datagram is neither a freeze nor a snap (netcode.md, Loss).
+// timeBack 0: none (the stream's first, or a pause of over 6.5 s).
+struct PlayerBefore {
+  std::uint16_t timeBack{};               // 100 µs steps
+  std::array<std::int16_t, 3> offset{};   // its position less this one's, mm (±32 m)
+  std::uint16_t yaw{};                    // 1/65536 turn
+  std::array<std::int16_t, 3> velocity{}; // cm/s
+  friend bool operator==(const PlayerBefore &, const PlayerBefore &) = default;
+};
+
 // PlayerState, compact (37 bytes, not 60): a V's orientation is its yaw
 // (1/65536 turn), its velocity in cm/s, the player in a byte (v17, as
 // VehicleMotion's, PoseFrame's and Cue's: protocol.cpp). Endpoint sends
@@ -2598,7 +2613,16 @@ struct PlayerMotion {
   std::array<std::int16_t, 3> velocity{}; // cm/s
   std::uint8_t stance{};
   std::uint16_t flags{};
+  PlayerBefore before; // 2 bytes, 16 more when there is one (protocol.cpp)
   friend bool operator==(const PlayerMotion &, const PlayerMotion &) = default;
+};
+
+struct VehicleBefore {
+  std::uint16_t timeBack{};             // 100 µs steps
+  std::array<std::int16_t, 3> offset{}; // mm
+  std::array<std::uint8_t, kPoseFrameRotationBytes> orientation{};
+  std::array<std::int16_t, 3> velocity{}; // cm/s
+  friend bool operator==(const VehicleBefore &, const VehicleBefore &) = default;
 };
 
 // VehicleState, compact: the orientation a 5-byte smallest-three
@@ -2610,6 +2634,7 @@ struct VehicleMotion {
   Vec3 position;
   std::array<std::uint8_t, kPoseFrameRotationBytes> orientation{};
   std::array<std::int16_t, 3> velocity{}; // cm/s
+  VehicleBefore before;                   // 2 bytes, 17 more when there is one
   friend bool operator==(const VehicleMotion &, const VehicleMotion &) = default;
 };
 

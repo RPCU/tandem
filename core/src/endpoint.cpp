@@ -140,6 +140,22 @@ void Endpoint::ForgetStreams(proto::PlayerId player) {
   m_positions.erase(player);
   m_poseDecoders.erase(player);
   m_relayEncoders.erase(player);
+  m_heardState.erase(player);
+  m_heardVehicle.erase(player);
+}
+
+bool Endpoint::Missed(std::map<proto::PlayerId, std::uint32_t> &heard, proto::PlayerId player,
+                      std::uint32_t seq) {
+  const auto it = heard.find(player);
+  if (it == heard.end()) {
+    heard[player] = seq;
+    return false;
+  }
+  // The one before this (seq - 1) is newer than the newest heard: lost.
+  const bool missed = static_cast<std::int32_t>(seq - 1 - it->second) > 0;
+  if (static_cast<std::int32_t>(seq - it->second) > 0)
+    it->second = seq;
+  return missed;
 }
 
 Endpoint::NetCounters Endpoint::Counters() const {
@@ -578,11 +594,16 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               out.push_back(events::RemoteState{relayed});
             },
             [&](const proto::PlayerMotion &motion) {
-              auto relayed = netcode::Whole(motion);
-              relayed.player = player;
+              // Relayed as it came, with the state before it.
+              auto wire = motion;
+              wire.player = player;
+              auto relayed = netcode::Whole(wire);
               m_places[player] = {.position = relayed.position, .known = true};
               NotePosition(relayed);
-              Broadcast(netcode::Compact(relayed), event.peer);
+              Broadcast(wire, event.peer);
+              if (Missed(m_heardState, player, wire.seq))
+                if (const auto before = netcode::Before(wire))
+                  out.push_back(events::RemoteState{*before, true});
               out.push_back(events::RemoteState{relayed});
             },
             [&](const proto::PoseState &pose) {
@@ -629,10 +650,13 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               out.push_back(events::RemoteVehicle{relayed});
             },
             [&](const proto::VehicleMotion &motion) {
-              auto relayed = netcode::Whole(motion);
-              relayed.player = player;
-              Broadcast(netcode::Compact(relayed), event.peer);
-              out.push_back(events::RemoteVehicle{relayed});
+              auto wire = motion;
+              wire.player = player;
+              Broadcast(wire, event.peer);
+              if (Missed(m_heardVehicle, player, wire.seq))
+                if (const auto before = netcode::Before(wire))
+                  out.push_back(events::RemoteVehicle{*before, true});
+              out.push_back(events::RemoteVehicle{netcode::Whole(wire)});
             },
             [&](const proto::VehicleRadio &radio) {
               // A guest only speaks for the car it drives.
@@ -1434,12 +1458,18 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
       !std::holds_alternative<proto::PlayerMotion>(message) &&
       !std::holds_alternative<proto::VehicleMotion>(message))
     m_receivedTap(message);
-  // Compact states read back whole.
+  // Compact states read back whole; the one before first when it was lost.
   if (const auto *motion = std::get_if<proto::PlayerMotion>(&message)) {
+    if (motion->player != m_you && Missed(m_heardState, motion->player, motion->seq))
+      if (const auto before = netcode::Before(*motion))
+        out.push_back(events::RemoteState{*before, true});
     OnGuestMessage(netcode::Whole(*motion), out);
     return;
   }
   if (const auto *motion = std::get_if<proto::VehicleMotion>(&message)) {
+    if (motion->player != m_you && Missed(m_heardVehicle, motion->player, motion->seq))
+      if (const auto before = netcode::Before(*motion))
+        out.push_back(events::RemoteVehicle{*before, true});
     OnGuestMessage(netcode::Whole(*motion), out);
     return;
   }
@@ -2186,7 +2216,10 @@ void Endpoint::SendLocalState(proto::PlayerState state) {
     ++m_statesSkipped;
   for (auto send : due) {
     send.seq = ++m_seq;
-    const auto wire = m_compact ? proto::Message(netcode::Compact(send)) : proto::Message(send);
+    const auto wire =
+        m_compact ? proto::Message(netcode::Compact(send, m_sentState ? &*m_sentState : nullptr))
+                  : proto::Message(send);
+    m_sentState = send;
     if (IsHost())
       Broadcast(wire);
     else
@@ -2922,7 +2955,11 @@ void Endpoint::SendLocalVehicle(proto::VehicleState vehicle) {
                        : std::vector<proto::VehicleState>{vehicle};
   for (auto send : due) {
     send.seq = ++m_vehicleSeq;
-    const auto wire = m_compact ? proto::Message(netcode::Compact(send)) : proto::Message(send);
+    const auto wire =
+        m_compact
+            ? proto::Message(netcode::Compact(send, m_sentVehicle ? &*m_sentVehicle : nullptr))
+            : proto::Message(send);
+    m_sentVehicle = send;
     if (IsHost())
       Broadcast(wire);
     else

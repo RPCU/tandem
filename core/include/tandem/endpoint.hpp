@@ -97,6 +97,7 @@ struct PlayerReturned {
 };
 struct RemoteState {
   proto::PlayerState state;
+  bool recovered{}; // the state before one that came, its own datagram lost (netcode.md, Loss)
 };
 struct RemotePose {
   proto::PoseState pose;
@@ -115,6 +116,7 @@ struct RemoteSeat {
 };
 struct RemoteVehicle {
   proto::VehicleState vehicle;
+  bool recovered{}; // as RemoteState's
 };
 // The host's NPCs (guests only).
 struct HostNpcSpawn {
@@ -1487,6 +1489,15 @@ private:
   std::uint64_t m_poseSkipped{}, m_statesSkipped{}, m_npcMotions{}, m_npcWhole{};
   netcode::StillGate<proto::PlayerState> m_stateGate;
   netcode::StillGate<proto::VehicleState> m_vehicleGate;
+  // The last state of our V and of its car we sent: the next one carries it
+  // (`before`: netcode.md, Loss).
+  std::optional<proto::PlayerState> m_sentState;
+  std::optional<proto::VehicleState> m_sentVehicle;
+  // The newest seq heard of each player's V and car: a `before` newer than
+  // it was lost on the way, and is put back.
+  std::map<proto::PlayerId, std::uint32_t> m_heardState, m_heardVehicle;
+  static bool Missed(std::map<proto::PlayerId, std::uint32_t> &heard, proto::PlayerId player,
+                     std::uint32_t seq);
   std::optional<proto::Vec3> m_ownPosition;
   std::map<proto::PlayerId, proto::Vec3> m_positions;
   float NearestOther() const;

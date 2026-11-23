@@ -174,6 +174,82 @@ proto::VehicleState Whole(const proto::VehicleMotion &motion) {
           .velocity = Metres(motion.velocity)};
 }
 
+namespace {
+// The step back to the state before: its time in 100 µs, its place in mm.
+// Nullopt: too far back (over 6.5 s, or 32 m: a teleport) to say so.
+struct Back {
+  std::uint16_t timeBack{};
+  std::array<std::int16_t, 3> offset{};
+};
+std::optional<Back> StepBack(std::uint64_t timeUs, const proto::Vec3 &position,
+                             std::uint64_t beforeUs, const proto::Vec3 &before) {
+  if (beforeUs >= timeUs || timeUs - beforeUs >= 65535ull * 100)
+    return std::nullopt;
+  const proto::Vec3 d{before.x - position.x, before.y - position.y, before.z - position.z};
+  constexpr float kMax = 32.767f;
+  if (std::abs(d.x) > kMax || std::abs(d.y) > kMax || std::abs(d.z) > kMax)
+    return std::nullopt;
+  const auto mm = [](float m) { return static_cast<std::int16_t>(std::lround(m * 1000.f)); };
+  return Back{.timeBack = static_cast<std::uint16_t>(
+                  std::max<std::uint64_t>(1, (timeUs - beforeUs + 50) / 100)),
+              .offset = {mm(d.x), mm(d.y), mm(d.z)}};
+}
+
+proto::Vec3 Forward(const proto::Vec3 &position, const std::array<std::int16_t, 3> &offset) {
+  return {position.x + offset[0] / 1000.f, position.y + offset[1] / 1000.f,
+          position.z + offset[2] / 1000.f};
+}
+} // namespace
+
+proto::PlayerMotion Compact(const proto::PlayerState &state, const proto::PlayerState *before) {
+  auto motion = Compact(state);
+  if (before)
+    if (const auto back = StepBack(state.timeUs, state.position, before->timeUs, before->position))
+      motion.before = {.timeBack = back->timeBack,
+                       .offset = back->offset,
+                       .yaw = Turn(sync::YawOf(before->orientation)),
+                       .velocity = Centimetres(before->velocity)};
+  return motion;
+}
+
+proto::VehicleMotion Compact(const proto::VehicleState &state, const proto::VehicleState *before) {
+  auto motion = Compact(state);
+  if (before)
+    if (const auto back =
+            StepBack(state.timeUs, state.position, before->timeUs, before->position)) {
+      motion.before = {.timeBack = back->timeBack,
+                       .offset = back->offset,
+                       .velocity = Centimetres(before->velocity)};
+      pose::PackQuat5(before->orientation, motion.before.orientation.data());
+    }
+  return motion;
+}
+
+std::optional<proto::PlayerState> Before(const proto::PlayerMotion &motion) {
+  const auto &b = motion.before;
+  if (b.timeBack == 0 || motion.timeUs <= b.timeBack * 100ull)
+    return std::nullopt;
+  auto state = Whole(motion);
+  state.seq = motion.seq - 1;
+  state.timeUs = motion.timeUs - b.timeBack * 100ull;
+  state.position = Forward(motion.position, b.offset);
+  state.orientation = sync::FromYaw(Yaw(b.yaw));
+  state.velocity = Metres(b.velocity);
+  return state;
+}
+
+std::optional<proto::VehicleState> Before(const proto::VehicleMotion &motion) {
+  const auto &b = motion.before;
+  if (b.timeBack == 0 || motion.timeUs <= b.timeBack * 100ull)
+    return std::nullopt;
+  return proto::VehicleState{.player = motion.player,
+                             .seq = motion.seq - 1,
+                             .timeUs = motion.timeUs - b.timeBack * 100ull,
+                             .position = Forward(motion.position, b.offset),
+                             .orientation = pose::UnpackQuat5(b.orientation.data()),
+                             .velocity = Metres(b.velocity)};
+}
+
 template class StillGate<proto::PlayerState>;
 template class StillGate<proto::VehicleState>;
 

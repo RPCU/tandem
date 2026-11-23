@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <utility>
 
 namespace tandem::sync {
 namespace {
@@ -75,7 +76,7 @@ Track::Track(std::uint32_t sendRateHz)
     // 15 ms + 1.5 send intervals: 65 ms at 30 Hz.
     : m_baseUs(15'000 + 1'500'000 / std::max<std::uint32_t>(sendRateHz, 1)) {}
 
-void Track::Push(const proto::PlayerState &stateIn, std::uint64_t arrivalHostUs) {
+void Track::Push(const proto::PlayerState &stateIn, std::uint64_t arrivalHostUs, bool recovered) {
   // Drop what is older than what we have: newest wins on the state channel.
   if (m_haveSeq && static_cast<std::int32_t>(stateIn.seq - m_lastSeq) <= 0) {
     ++m_stats.dropped;
@@ -87,7 +88,18 @@ void Track::Push(const proto::PlayerState &stateIn, std::uint64_t arrivalHostUs)
   }
   m_haveSeq = true;
   m_lastSeq = stateIn.seq;
+  if (recovered) {
+    // Drawn as any state; the stream's timing is the one that brought it.
+    ++m_stats.recovered;
+    m_lostOne = true;
+    m_samples.push_back({stateIn.timeUs, stateIn});
+    while (m_samples.size() > kMaxSamples)
+      m_samples.pop_front();
+    m_pushed = true;
+    return;
+  }
   ++m_stats.received;
+  m_loss += ((std::exchange(m_lostOne, false) ? 1.0 : 0.0) - m_loss) / 32.0;
 
   auto state = stateIn;
   // No velocity sent (an NPC's state): the one between the last two
@@ -136,8 +148,12 @@ std::uint64_t Track::TargetDelayUs() const {
   const auto base = m_baseUs + jitterExtra;
   // Enough to always hold the next state: it is in flight for `transit` and
   // comes `interval` after the last.
+  // While states are lost, one interval more: the next datagram brings the
+  // lost state back (its `before`) before it is drawn.
+  const double lossExtra = m_loss > kLossMargin ? m_intervalUs : 0.0;
   const auto needed =
-      static_cast<std::uint64_t>(std::max(0.0, m_transitUs) + m_intervalUs) + jitterExtra;
+      static_cast<std::uint64_t>(std::max(0.0, m_transitUs) + m_intervalUs + lossExtra) +
+      jitterExtra;
   return std::min(std::max(base, needed), std::max(kMaxDelayUs, base));
 }
 

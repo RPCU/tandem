@@ -2197,7 +2197,7 @@ std::vector<ScriptEvent> Runtime::TakeEvents() {
   return std::exchange(m_events, {});
 }
 
-void Runtime::PushRemote(const proto::PlayerState &state) {
+void Runtime::PushRemote(const proto::PlayerState &state, bool recovered) {
   const auto arrival = HostNowUs();
   if (state.player < kNpcPuppetBase) {
     Observer::Get().Remote(state.player, state.position);
@@ -2205,7 +2205,7 @@ void Runtime::PushRemote(const proto::PlayerState &state) {
     m_reach.Push(state.player, state.timeUs, state.position);
   }
   std::lock_guard _(m_tracksLock);
-  m_tracks.try_emplace(state.player).first->second.Push(state, arrival);
+  m_tracks.try_emplace(state.player).first->second.Push(state, arrival, recovered);
 }
 
 void Runtime::ForgetRemote(proto::PlayerId player) {

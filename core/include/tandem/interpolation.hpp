@@ -37,7 +37,8 @@ struct TrackStats {
   std::uint64_t transitUs{};
   std::uint64_t intervalUs{};
   std::uint32_t received{};
-  std::uint32_t dropped{}; // out of order or duplicates
+  std::uint32_t dropped{};   // out of order or duplicates
+  std::uint32_t recovered{}; // lost, put back from the next one's `before`
 };
 
 class Track {
@@ -67,7 +68,14 @@ public:
   explicit Track(std::uint32_t sendRateHz = 30);
 
   // A state from the network. `arrivalHostUs` is when it arrived, on the host clock.
-  void Push(const proto::PlayerState &state, std::uint64_t arrivalHostUs);
+  // `recovered`: one whose datagram was lost, put back from the next one's
+  // `before` (it came with it: no arrival of its own to measure). While
+  // states are lost, the delay holds one more interval, so the next
+  // datagram brings the lost one back before it is drawn: a lost datagram is
+  // neither a guess nor a snap (netcode.md, Loss).
+  void Push(const proto::PlayerState &state, std::uint64_t arrivalHostUs, bool recovered = false);
+  // Loss above this share of the stream (EWMA) widens the delay by an interval.
+  static constexpr double kLossMargin = 0.004;
 
   // Where to draw the player at `nowHostUs` (the delay is applied inside).
   View At(std::uint64_t nowHostUs);
@@ -96,6 +104,8 @@ private:
   double m_transitUs{};
   double m_intervalUs{};
   double m_lastTransitUs{};
+  double m_loss{};  // share of states lost (put back), EWMA 1/32
+  bool m_lostOne{}; // a recovered one came just before
   std::uint64_t m_lastArrivalUs{};
   bool m_haveTransit{};
 
