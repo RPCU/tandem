@@ -322,7 +322,13 @@ public class TandemSpot {
     }
     let spot = TandemSpot.ComponentOf(body);
     if !IsDefined(spot) {
-      TandemNative.Log(s"\(label) has no workspot component");
+      let others = 0;
+      for component in body.GetComponents() {
+        if IsDefined(component as WorkspotResourceComponent) {
+          others += 1;
+        }
+      }
+      TandemNative.Log(s"\(label) has no workspot component (\(others) of another name)");
       TandemDegraded.Fallback("workspot not entered", s"\(label) has no workspot component: left standing");
       this.path = path;
       return;
@@ -445,6 +451,7 @@ public class TandemNpcAnims {
     let spot = new WorkspotResourceComponent();
     spot.name = TandemNpcAnims.SpotName();
     entity.AddComponent(spot);
+    TandemNative.LogDebug(s"npc anims: workspot component given to \(TandemNative.EntityHex(entity.GetEntityID()))");
   }
 
   public func Clear() -> Void {
