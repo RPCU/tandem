@@ -709,7 +709,9 @@ public:
   // owner's word, dropped when the NPC is not ours. The host relays a guest's
   // to the players linked with it and keeps the record for late joiners.
   void SendNpcSpawn(const proto::NpcSpawn &spawn);
-  void SendNpcStates(proto::NpcStates states);
+  // `partial`: some of them only (those near a V, between two whole lists:
+  // netcode.md, NPC motion); timeUs, when our game read them (0: now).
+  void SendNpcStates(proto::NpcStates states, bool partial = false);
   // Host: one scene actor's body pose (State channel; numbered with the NPC
   // states, so the epoch fence that voids the old world's states voids these
   // too). Nothing for an NPC we do not share. Offered as often as the game
@@ -1491,7 +1493,9 @@ private:
   void NotePosition(const proto::PlayerState &state);
   void ForgetStreams(proto::PlayerId player);
   netcode::NpcCoder m_npcCoder;
-  netcode::NpcBook m_npcBook;
+  netcode::NpcVelocities m_npcVelocities;
+  // Our NPC states as they go: compact, cut to datagrams, each numbered.
+  void ShareNpcStates(const proto::NpcStates &states, bool partial);
   void OnRemotePoseFrame(proto::PoseFrame frame, net::PeerId from, std::vector<SessionEvent> &out);
   void OnHostNpcStates(proto::NpcStates states, std::vector<SessionEvent> &out);
 

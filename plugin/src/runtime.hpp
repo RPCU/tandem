@@ -527,7 +527,8 @@ public:
   std::vector<proto::ShotHit> TakeShotHits();
   // Guest: which players the host's NPC has detected (bit player - 1).
   std::uint8_t NpcDetected(proto::NpcId npc);
-  void SubmitNpcStates(const proto::NpcStates &states);
+  // `partial`: the NPCs near a V only, between two whole lists (netcode.md).
+  void SubmitNpcStates(proto::NpcStates states, bool partial = false);
   // World vehicles and police (docs/architecture/traffic.md, police.md).
   // game -> net: what the area's owner says of its vehicles (TrafficSpawn,
   // TrafficGone, TrafficStatus, Crime), and anyone's TrafficHit and
@@ -603,7 +604,11 @@ public:
   void PushBump(const proto::VehicleBump &bump);
   std::vector<vehiclecombat::BumpLedger::Push> TakeDuePushes();
   std::vector<proto::Message> TakeNpcOutbox();
-  std::optional<proto::NpcStates> TakeNpcStates();
+  struct NpcStatesOut {
+    proto::NpcStates states;
+    bool partial{};
+  };
+  std::vector<NpcStatesOut> TakeNpcStates();
   void PushNpcEvent(const NpcEvent &event);
   std::vector<NpcEvent> TakeNpcEvents();
   // Guest: `you` is our player id (whose detection counts for our V).
@@ -848,7 +853,7 @@ private:
   std::optional<proto::World> m_hostWorld;                                           // m_lock
   std::uint32_t m_hostWorldChanges{};                                                // m_lock
   std::vector<proto::Message> m_npcOutbox;                                           // m_lock
-  std::optional<proto::NpcStates> m_npcStates;                                       // m_lock
+  std::vector<NpcStatesOut> m_npcStates;                                             // m_lock
   std::vector<proto::Message> m_streetOutbox;                                        // m_lock
   std::optional<proto::TrafficStates> m_trafficStates;                               // m_lock
   std::vector<StreetEvent> m_streetEvents;                                           // m_lock

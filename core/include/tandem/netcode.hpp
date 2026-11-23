@@ -56,20 +56,21 @@ bool IsStill(const proto::VehicleState &state, const proto::VehicleState &last);
 extern template class StillGate<proto::PlayerState>;
 extern template class StillGate<proto::VehicleState>;
 
-// Host: its NPC states as NpcMotion, with only the NPCs that changed (more
-// than kMoveM, kTurnRad, or what they detect) plus each one at least every
-// kRefreshFrames states (a lost one heals within that), and those no longer
-// listed flagged once. Nullopt: positions out of the quantized range, send
-// the states whole (NpcStates).
-inline constexpr std::uint8_t kNpcUnlisted = 1; // NpcMove::flags bit: not in the host's list now
+// An owner's NPC states as NpcMotion, with only the NPCs that changed (more
+// than kMoveM, kTurnRad, kSpeedMs of velocity, or what they detect) plus
+// each one at least every kRefreshFrames messages (a lost one heals within
+// that). A partial list (the NPCs near a V, between two whole ones) leaves
+// the others as they were. Nullopt: positions out of the quantized range,
+// send the states whole (NpcStates). Unbounded: Split cuts it.
 class NpcCoder {
 public:
   static constexpr float kMoveM = 0.02f;
   static constexpr float kTurnRad = 0.01f;
+  static constexpr float kSpeedMs = 0.1f;
   static constexpr std::uint32_t kRefreshFrames = 5;
   static constexpr float kStep = 1.f / 128.f; // metres
 
-  std::optional<proto::NpcMotion> Encode(const proto::NpcStates &states);
+  std::optional<proto::NpcMotion> Encode(const proto::NpcStates &states, bool partial = false);
   void Forget(proto::NpcId npc) { m_sent.erase(npc); }
   void Reset() { m_sent.clear(); }
 
@@ -77,28 +78,39 @@ private:
   struct Sent {
     proto::Vec3 position;
     float yaw{};
+    proto::Vec3 velocity;
     std::uint8_t detected{};
-    std::uint32_t seq{};
+    std::uint32_t frame{};
   };
   std::map<proto::NpcId, Sent> m_sent;
+  std::uint32_t m_frame{};
 };
 
-// Guest: what the host last said of each NPC, so a motion comes out as the
-// whole list of NPCs it shares (NpcStates), as it was always sent.
-class NpcBook {
+// The NPCs a motion lists, as states (each move read on its own).
+proto::NpcStates Read(const proto::NpcMotion &motion);
+
+// What one datagram carries (a little over 1 kB): an owner's list in as
+// many messages as it takes.
+inline constexpr std::size_t kNpcsPerMotion = 48; // 19 bytes a move
+inline constexpr std::size_t kNpcsPerStates = 32; // 33 bytes an entry
+std::vector<proto::NpcMotion> Split(proto::NpcMotion motion);
+std::vector<proto::NpcStates> Split(proto::NpcStates states);
+
+// An owner's NPC velocities, from its own samples of them (where each was
+// when it was read): the receiver carries a late state on along it.
+class NpcVelocities {
 public:
-  // Only NPCs in `known` (the shared set) are listed.
-  proto::NpcStates Apply(const proto::NpcMotion &motion,
-                         const std::map<proto::NpcId, proto::NpcSpawn> &known);
-  // A whole list (NpcStates): it replaces what is listed.
-  void Note(const proto::NpcStates &states);
-  // A spawn: where it stands until it moves.
-  void Seed(const proto::NpcSpawn &spawn);
-  void Forget(proto::NpcId npc) { m_npcs.erase(npc); }
-  void Reset() { m_npcs.clear(); }
+  // Fills each entry's velocity (states.timeUs: when they were read).
+  void Fill(proto::NpcStates &states);
+  void Forget(proto::NpcId npc) { m_last.erase(npc); }
+  void Reset() { m_last.clear(); }
 
 private:
-  std::map<proto::NpcId, proto::NpcEntry> m_npcs;
+  struct Last {
+    proto::Vec3 position;
+    std::uint64_t timeUs{};
+  };
+  std::map<proto::NpcId, Last> m_last;
 };
 
 // A V's and a car's state, compact on the wire (PlayerMotion,

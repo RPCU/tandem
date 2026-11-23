@@ -88,6 +88,21 @@ TEST_CASE("referee: an owner's word on an NPC goes only to the games that show i
   CHECK(Rules(referee).empty());
 }
 
+TEST_CASE("referee: every owner sends its NPCs' motion, numbered and within its rate") {
+  auto host = Host();
+  // A guest's NPCs go compact too (protocol 21), several messages a tick.
+  const auto ours = regions::MakeNpcId(2, 1);
+  for (std::uint32_t seq = 1; seq <= 4; ++seq)
+    host.Received(2, proto::NpcMotion{.seq = seq, .npcs = {{.npc = ours}}}, kSecond);
+  CHECK(Rules(host).empty());
+  host.Received(2, proto::NpcMotion{.seq = 4, .npcs = {{.npc = ours}}}, kSecond);
+  CHECK(Broke(host, "oneshot.seq-repeated"));
+  auto flood = Host();
+  for (std::uint32_t seq = 1; seq <= 1000; ++seq)
+    flood.Received(2, proto::NpcMotion{.seq = seq}, kSecond + seq * 1000);
+  CHECK(Broke(flood, "rate.over-budget"));
+}
+
 TEST_CASE("referee: a quest interaction is a guest's question and the host's answer to it") {
   auto host = Host();
   host.Received(2, proto::QuestInteract{.target = 9, .seq = 1, .player = 2}, kSecond);

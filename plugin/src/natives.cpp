@@ -1296,19 +1296,34 @@ struct TandemNative : Red::IScriptable {
                                    .yaw = YawOfQuaternion(orientation),
                                    .hint = HintOf(hint)});
   }
-  static void SendNpcStates(Red::DynArray<std::uint32_t> npcs,
-                            Red::DynArray<Red::Vector4> positions,
-                            Red::DynArray<Red::Quaternion> orientations,
-                            Red::DynArray<std::int32_t> detected) {
+  static proto::NpcStates NpcStatesOf(const Red::DynArray<std::uint32_t> &npcs,
+                                      const Red::DynArray<Red::Vector4> &positions,
+                                      const Red::DynArray<Red::Quaternion> &orientations,
+                                      const Red::DynArray<std::int32_t> &detected) {
     proto::NpcStates states;
     for (std::uint32_t i = 0; i < npcs.Size() && i < positions.Size() && i < orientations.Size() &&
-                              i < detected.Size() && states.npcs.size() < proto::kMaxNpcsPerState;
+                              i < detected.Size() && states.npcs.size() < proto::kMaxNpcsShared;
          ++i)
       states.npcs.push_back({.npc = npcs[i],
                              .position = {positions[i].X, positions[i].Y, positions[i].Z},
                              .yaw = YawOfQuaternion(orientations[i]),
                              .detected = static_cast<std::uint8_t>(detected[i])});
-    Runtime::Get().SubmitNpcStates(states);
+    return states;
+  }
+  // Every NPC we share, ten times a second.
+  static void SendNpcStates(Red::DynArray<std::uint32_t> npcs,
+                            Red::DynArray<Red::Vector4> positions,
+                            Red::DynArray<Red::Quaternion> orientations,
+                            Red::DynArray<std::int32_t> detected) {
+    Runtime::Get().SubmitNpcStates(NpcStatesOf(npcs, positions, orientations, detected));
+  }
+  // Those near a V, between (Npcs.reds Near: netcode.md, NPC motion).
+  static void SendNearNpcStates(Red::DynArray<std::uint32_t> npcs,
+                                Red::DynArray<Red::Vector4> positions,
+                                Red::DynArray<Red::Quaternion> orientations,
+                                Red::DynArray<std::int32_t> detected) {
+    if (npcs.Size() > 0)
+      Runtime::Get().SubmitNpcStates(NpcStatesOf(npcs, positions, orientations, detected), true);
   }
 
   // Host: an NPC's health (fraction 0..1) or its protection
@@ -2377,6 +2392,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(PoseReport);
   RTTI_METHOD(SendNpcSpawn);
   RTTI_METHOD(SendNpcStates);
+  RTTI_METHOD(SendNearNpcStates);
   RTTI_METHOD(SendNpcGone);
   RTTI_METHOD(SendNpcHealth);
   RTTI_METHOD(SendNpcHit);

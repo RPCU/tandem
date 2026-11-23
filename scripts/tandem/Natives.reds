@@ -429,6 +429,7 @@ public native class TandemNative extends IScriptable {
   public static native func PoseReport()
   public static native func SendNpcSpawn(npc: Uint32, record: TweakDBID, appearance: CName, position: Vector4, orientation: Quaternion, hint: TandemRecordHint)
   public static native func SendNpcStates(npcs: array<Uint32>, positions: array<Vector4>, orientations: array<Quaternion>, detected: array<Int32>)
+  public static native func SendNearNpcStates(npcs: array<Uint32>, positions: array<Vector4>, orientations: array<Quaternion>, detected: array<Int32>)
   public static native func SendNpcGone(npc: Uint32, reason: Int32, killer: Uint32)
   public static native func SendNpcHealth(npc: Uint32, health: Float, flags: Int32)
   public static native func SendNpcHit(npc: Uint32, damage: Float, flags: Int32, position: Vector4, direction: Vector4)

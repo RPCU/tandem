@@ -1060,16 +1060,23 @@ std::uint8_t Runtime::NpcDetected(proto::NpcId npc) {
   return it == m_npcDetected.end() ? 0 : it->second.first;
 }
 
-void Runtime::SubmitNpcStates(const proto::NpcStates &states) {
+void Runtime::SubmitNpcStates(proto::NpcStates states, bool partial) {
+  // When our game read them: the velocities (NpcVelocities) and the
+  // receivers' timeline go by it, not by when the net thread sends them.
+  const auto now = HostNowUs();
+  states.timeUs = now;
   {
     // Where our NPCs were, for judging the guests' requests (ReachOf).
-    const auto now = HostNowUs();
     std::lock_guard _(m_reachLock);
     for (const auto &entry : states.npcs)
       m_reach.Push(kNpcPuppetBase + entry.npc, now, entry.position);
   }
   std::lock_guard _(m_lock);
-  m_npcStates = states;
+  // Taken every net pass (a few ms): more waiting is a stalled net thread,
+  // whose oldest go.
+  if (m_npcStates.size() >= 8)
+    m_npcStates.erase(m_npcStates.begin());
+  m_npcStates.push_back({std::move(states), partial});
 }
 
 lagcomp::Reach Runtime::ReachOf(proto::PlayerId player, proto::NpcId npc,
@@ -1102,9 +1109,9 @@ std::vector<proto::Message> Runtime::TakeNpcOutbox() {
   return std::exchange(m_npcOutbox, {});
 }
 
-std::optional<proto::NpcStates> Runtime::TakeNpcStates() {
+std::vector<Runtime::NpcStatesOut> Runtime::TakeNpcStates() {
   std::lock_guard _(m_lock);
-  return std::exchange(m_npcStates, std::nullopt);
+  return std::exchange(m_npcStates, {});
 }
 
 void Runtime::PushNpcEvent(const NpcEvent &event) {
@@ -1390,7 +1397,8 @@ void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you)
     });
   }
   // Each NPC is a track of its own, drawn like a remote player (one lock
-  // for them all: this comes ten times a second with up to 64).
+  // for them all: this comes up to 30 times a second with up to 48), with
+  // its owner's velocity: a late state is carried on.
   const auto arrival = HostNowUs();
   std::lock_guard _(m_tracksLock);
   for (const auto &entry : states.npcs) {
@@ -1400,6 +1408,7 @@ void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you)
     state.timeUs = states.timeUs;
     state.position = entry.position;
     state.orientation = sync::FromYaw(entry.yaw);
+    state.velocity = entry.velocity;
     m_tracks.try_emplace(state.player).first->second.Push(state, arrival);
   }
 }

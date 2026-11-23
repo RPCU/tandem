@@ -177,7 +177,8 @@ proto::VehicleState Whole(const proto::VehicleMotion &motion) {
 template class StillGate<proto::PlayerState>;
 template class StillGate<proto::VehicleState>;
 
-std::optional<proto::NpcMotion> NpcCoder::Encode(const proto::NpcStates &states) {
+std::optional<proto::NpcMotion> NpcCoder::Encode(const proto::NpcStates &states, bool partial) {
+  const auto frame = ++m_frame;
   proto::NpcMotion motion{.seq = states.seq, .timeUs = states.timeUs};
   if (!states.npcs.empty()) {
     proto::Vec3 low = states.npcs.front().position, high = low;
@@ -200,82 +201,107 @@ std::optional<proto::NpcMotion> NpcCoder::Encode(const proto::NpcStates &states)
       return static_cast<std::int16_t>(
           std::clamp(std::round((value - origin) / kStep), -32767.f, 32767.f));
     };
-    float yaw = std::fmod(entry.yaw, kTwoPi);
-    if (yaw < 0)
-      yaw += kTwoPi;
     proto::NpcMove move{
         .npc = entry.npc,
         .offset = {quantize(entry.position.x, motion.origin.x),
                    quantize(entry.position.y, motion.origin.y),
                    quantize(entry.position.z, motion.origin.z)},
-        .yaw = static_cast<std::uint16_t>(std::lround(yaw / kTwoPi * 65536.f) & 0xFFFF),
+        .yaw = Turn(entry.yaw),
         .detected = entry.detected,
+        .velocity = Centimetres(entry.velocity),
     };
     const auto read = Dequantize(motion, move);
     const auto it = m_sent.find(entry.npc);
     if (it != m_sent.end()) {
       const auto &sent = it->second;
+      // A change of pace is sent too: one that stopped is not carried on.
       const bool changed = Distance(read.position, sent.position) > kMoveM ||
                            AngleBetween(read.yaw, sent.yaw) > kTurnRad ||
+                           Distance(read.velocity, sent.velocity) > kSpeedMs ||
                            read.detected != sent.detected;
-      if (!changed && states.seq - sent.seq < kRefreshFrames)
+      if (!changed && frame - sent.frame < kRefreshFrames)
         continue;
     }
     motion.npcs.push_back(move);
     // A newcomer's next refresh falls on a frame of its own: they spread.
-    const auto seq = it == m_sent.end() ? states.seq - entry.npc % kRefreshFrames : states.seq;
-    m_sent[entry.npc] = {read.position, read.yaw, read.detected, seq};
+    const auto at = it == m_sent.end() ? frame - entry.npc % kRefreshFrames : frame;
+    m_sent[entry.npc] = {read.position, read.yaw, read.velocity, read.detected, at};
   }
-  // Out of the list (not shared, or out of range): said once.
-  for (auto it = m_sent.begin(); it != m_sent.end();) {
-    if (listed.contains(it->first)) {
-      ++it;
-      continue;
-    }
-    if (motion.npcs.size() < proto::kMaxNpcsPerState)
-      motion.npcs.push_back({.npc = it->first, .flags = kNpcUnlisted});
-    it = m_sent.erase(it);
-  }
-  if (motion.npcs.size() > proto::kMaxNpcsPerState)
-    motion.npcs.resize(proto::kMaxNpcsPerState);
+  // Out of a whole list (not shared, or out of range): new again if it
+  // comes back. A partial list says nothing of the others.
+  if (!partial)
+    std::erase_if(m_sent, [&](const auto &sent) { return !listed.contains(sent.first); });
   return motion;
 }
 
 proto::NpcEntry Dequantize(const proto::NpcMotion &motion, const proto::NpcMove &move) {
-  float yaw = static_cast<float>(move.yaw) / 65536.f * kTwoPi;
-  if (yaw > std::numbers::pi_v<float>)
-    yaw -= kTwoPi;
   return {.npc = move.npc,
           .position = {motion.origin.x + move.offset[0] * NpcCoder::kStep,
                        motion.origin.y + move.offset[1] * NpcCoder::kStep,
                        motion.origin.z + move.offset[2] * NpcCoder::kStep},
-          .yaw = yaw,
-          .detected = move.detected};
+          .yaw = Yaw(move.yaw),
+          .detected = move.detected,
+          .velocity = Metres(move.velocity)};
 }
 
-proto::NpcStates NpcBook::Apply(const proto::NpcMotion &motion,
-                                const std::map<proto::NpcId, proto::NpcSpawn> &known) {
-  for (const auto &move : motion.npcs) {
-    if (move.flags & kNpcUnlisted)
-      m_npcs.erase(move.npc);
-    else
-      m_npcs[move.npc] = Dequantize(motion, move);
-  }
+proto::NpcStates Read(const proto::NpcMotion &motion) {
   proto::NpcStates states{.seq = motion.seq, .timeUs = motion.timeUs};
-  for (const auto &[npc, entry] : m_npcs)
-    if (known.contains(npc) && states.npcs.size() < proto::kMaxNpcsPerState)
-      states.npcs.push_back(entry);
+  states.npcs.reserve(motion.npcs.size());
+  for (const auto &move : motion.npcs)
+    states.npcs.push_back(Dequantize(motion, move));
   return states;
 }
 
-void NpcBook::Note(const proto::NpcStates &states) {
-  m_npcs.clear();
-  for (const auto &entry : states.npcs)
-    m_npcs[entry.npc] = entry;
+namespace {
+template <class Message, class List>
+std::vector<Message> SplitList(Message message, List Message::*list, std::size_t per) {
+  std::vector<Message> out;
+  auto &all = message.*list;
+  if (all.size() <= per) {
+    out.push_back(std::move(message));
+    return out;
+  }
+  for (std::size_t from = 0; from < all.size(); from += per) {
+    Message part = message;
+    auto &entries = part.*list;
+    entries.assign(all.begin() + static_cast<std::ptrdiff_t>(from),
+                   all.begin() + static_cast<std::ptrdiff_t>(std::min(all.size(), from + per)));
+    out.push_back(std::move(part));
+  }
+  return out;
+}
+} // namespace
+
+std::vector<proto::NpcMotion> Split(proto::NpcMotion motion) {
+  return SplitList(std::move(motion), &proto::NpcMotion::npcs, kNpcsPerMotion);
 }
 
-void NpcBook::Seed(const proto::NpcSpawn &spawn) {
-  m_npcs.try_emplace(
-      spawn.npc, proto::NpcEntry{.npc = spawn.npc, .position = spawn.position, .yaw = spawn.yaw});
+std::vector<proto::NpcStates> Split(proto::NpcStates states) {
+  return SplitList(std::move(states), &proto::NpcStates::npcs, kNpcsPerStates);
+}
+
+void NpcVelocities::Fill(proto::NpcStates &states) {
+  // Two reads further apart than this say nothing of its pace now; nearer
+  // than this, the game's own frame jitter is most of it.
+  constexpr std::uint64_t kMaxGapUs = 400'000, kMinGapUs = 8'000;
+  // Faster is a teleport (a hand-over, a quest moving it), not a pace.
+  constexpr float kMaxSpeed = 40.f;
+  for (auto &entry : states.npcs) {
+    auto &last = m_last[entry.npc];
+    if (entry.velocity == proto::Vec3{} && last.timeUs != 0 && states.timeUs > last.timeUs) {
+      const auto gap = states.timeUs - last.timeUs;
+      if (gap < kMinGapUs)
+        continue; // read twice in a frame: the first stands
+      if (gap <= kMaxGapUs) {
+        const float seconds = static_cast<float>(gap) / 1e6f;
+        const proto::Vec3 v{(entry.position.x - last.position.x) / seconds,
+                            (entry.position.y - last.position.y) / seconds,
+                            (entry.position.z - last.position.z) / seconds};
+        if (Length(v) <= kMaxSpeed)
+          entry.velocity = v;
+      }
+    }
+    last = {entry.position, states.timeUs};
+  }
 }
 } // namespace tandem::netcode

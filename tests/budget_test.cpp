@@ -1,7 +1,8 @@
 // The bandwidth budget (docs/architecture/netcode.md): typical sessions
 // played by two (or four) real endpoints over loopback UDP, as the games
-// send (30 Hz states and poses, the host's NPCs at 10 Hz, events as they
-// come), measured on the wire (ENet's datagrams, IP and UDP headers
+// send (30 Hz states and poses, the host's NPCs at 10 Hz and those within
+// 35 m of a V at 30 Hz, events as they come), measured on the wire (ENet's
+// datagrams, IP and UDP headers
 // included), each way. The budget holds for the compact wire; the legacy
 // wire (Endpoint::SetCompact(false)) is measured alongside for the record.
 
@@ -27,11 +28,12 @@ using namespace tandem;
 
 namespace {
 // What a link may carry each way in a two-player session; the host's side
-// of a fight with 24 NPCs may take more (netcode.md, Budget).
+// of a fight with 24 NPCs, or of a dense street, may take more (netcode.md,
+// Budget).
 constexpr double kBudgetKbps = 256.0;
 constexpr double kFightDownKbps = 384.0;
 
-enum class Play { OnFoot, Standing, Fight, Driving, Apart, Scene };
+enum class Play { OnFoot, Standing, Fight, Driving, Apart, Scene, Crowd };
 
 const char *NameOf(Play play) {
   switch (play) {
@@ -45,6 +47,8 @@ const char *NameOf(Play play) {
     return "driving, a passenger";
   case Play::Scene:
     return "a scene, 3 actors, camera";
+  case Play::Crowd:
+    return "a dense street, 96 NPCs";
   default:
     return "apart (500 m)";
   }
@@ -93,7 +97,7 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
   const auto warmUp = start + 1'000'000;
   const auto end = warmUp + static_cast<std::uint64_t>(seconds * 1e6);
   std::uint64_t nextFrame = start, nextNpcs = start, nextEvent = start;
-  std::uint32_t frame = 0, sceneFrame = 0;
+  std::uint32_t frame = 0, sceneFrame = 0, npcFrame = 0;
   std::optional<net::Traffic> before;
   std::uint64_t measuredFrom = 0;
   for (std::size_t i = 0; i < all.size(); ++i)
@@ -163,21 +167,36 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
         face[track * 10] = 0.5f + 0.5f * std::sin(3.f * s + static_cast<float>(track));
       host->SendRigTracks(1, proto::kRigFace, 0x77, rest, face);
     }
-    if (play == Play::Fight && now >= nextNpcs) {
-      nextNpcs += 100'000;
+    // The host's NPCs as Npcs.reds sends them: every one 10 times a second,
+    // those within 35 m of a V on the frames between (netcode.md, NPC
+    // motion). A fight: 24 around the Vs, half walking; a dense street: 96
+    // over 150 m by 9 (45 near), half walking.
+    if ((play == Play::Fight || play == Play::Crowd) && npcFrame != frame) {
+      npcFrame = frame;
+      const bool whole = now >= nextNpcs;
+      if (whole)
+        nextNpcs += 100'000;
       const float s = static_cast<float>(now - start) / 1e6f;
+      const proto::NpcId count = play == Play::Fight ? 24 : 96;
       proto::NpcStates states;
-      for (proto::NpcId npc = 1; npc <= 24; ++npc) {
+      for (proto::NpcId npc = 1; npc <= count; ++npc) {
         if (frame < 5)
           host->SendNpcSpawn({.npc = npc, .record = 0x1234 + npc, .appearance = 0x55});
         const float walk = npc % 2 ? 1.5f * s : 0.f;
+        const proto::Vec3 at = play == Play::Fight
+                                   ? proto::Vec3{10.f + static_cast<float>(npc) + walk, 20.f, 0.f}
+                                   : proto::Vec3{-75.f + static_cast<float>(npc % 32) * 4.7f + walk,
+                                                 -4.5f + static_cast<float>(npc / 32) * 4.5f, 0.f};
+        if (!whole && std::hypot(at.x, at.y) > 35.f)
+          continue;
         states.npcs.push_back({.npc = npc,
-                               .position = {10.f + static_cast<float>(npc) + walk, 20.f, 0.f},
+                               .position = at,
                                .yaw = 0.1f * static_cast<float>(npc) + (npc % 2 ? 0.2f * s : 0.f),
                                .detected = static_cast<std::uint8_t>(npc % 5 == 0 ? 2 : 0)});
       }
-      host->SendNpcStates(states);
-      host->SendNpcAwareness({.entries = {{1, 2, 100}, {2, 2, 120}, {3, 2, 40}, {4, 2, 255}}});
+      host->SendNpcStates(states, !whole);
+      if (whole && play == Play::Fight)
+        host->SendNpcAwareness({.entries = {{1, 2, 100}, {2, 2, 120}, {3, 2, 40}, {4, 2, 255}}});
     }
     if (play == Play::Fight && now >= nextEvent) {
       // Twice a second: a guest's strike, the NPC's health and animation,
@@ -222,8 +241,8 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
 } // namespace
 
 TEST_CASE("typical sessions stay within the bandwidth budget, each way") {
-  for (const auto play :
-       {Play::OnFoot, Play::Standing, Play::Fight, Play::Driving, Play::Apart, Play::Scene}) {
+  for (const auto play : {Play::OnFoot, Play::Standing, Play::Fight, Play::Driving, Play::Apart,
+                          Play::Scene, Play::Crowd}) {
     CAPTURE(NameOf(play));
     const auto legacy = Run(play, false);
     const auto compact = Run(play, true);
@@ -232,10 +251,11 @@ TEST_CASE("typical sessions stay within the bandwidth budget, each way") {
                         NameOf(play), legacy.upKbps, legacy.downKbps, compact.upKbps,
                         compact.downKbps, compact.summary));
     // The fullest row, stream by stream (the numbers of netcode.md's table).
-    if (play == Play::Fight)
+    const bool npcs = play == Play::Fight || play == Play::Crowd;
+    if (npcs)
       MESSAGE(std::format("{}, every stream:\n{}", NameOf(play), compact.table));
     CHECK(compact.upKbps < kBudgetKbps);
-    CHECK(compact.downKbps < (play == Play::Fight ? kFightDownKbps : kBudgetKbps));
+    CHECK(compact.downKbps < (npcs ? kFightDownKbps : kBudgetKbps));
     CHECK(compact.upKbps <= legacy.upKbps * 1.05);
   }
 }
