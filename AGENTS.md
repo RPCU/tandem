@@ -110,7 +110,7 @@ build slots) and copies the DLL, `.pdb` and `tandem-peer` back; then
   for N alternatives, GBs of compiler memory per translation unit
   (`docs/architecture/testing.md`, "Compile memory").
 - High-rate messages stay small (`PlayerState` < 64 bytes is tested). A
-  stream sent every frame or tick goes in `tests/budget_test.cpp` (64
+  stream sent every frame or tick goes in `tests/budget_test.cpp` (256
   kbit/s each way) with a relevance rate; compact wire forms are encoded
   and decoded inside `Endpoint` (`docs/architecture/netcode.md`).
 - `Hello`'s first two fields (magic, version) never move: a host reads them

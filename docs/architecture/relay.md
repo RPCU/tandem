@@ -84,7 +84,7 @@ per source and in all, and nothing new is answered to strangers:
   own) and `--max-open-sessions` (192) in all, under `--max-sessions` (256).
   Refusals: 9 source busy, 4 too many sessions.
 - **Bandwidth**: a token bucket per guest link and direction (`--open-kbps`
-  128, twice tandem's 64 kbit/s budget; `--open-burst-kb` 32), bytes
+  512, twice tandem's 256 kbit/s budget; `--open-burst-kb` 128), bytes
   refilled at the rate since the last datagram, O(1) and allocation-free;
   the guest's upload bucket is taken under the lock its rate window already
   takes, the download one under the guest's. Excess is dropped and counted
