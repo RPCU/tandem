@@ -5,15 +5,35 @@
 //
 // The numbers are tandem/regions.hpp's: keep them the same.
 
+// What our player sees now: within 50 m of our V and in the camera's
+// frustum. The switch from our own crowd to the owner's copies is made out
+// of sight (an NPC or a car that pops in or out before the player's eyes).
+public abstract class TandemSight {
+  public static func Seen(game: GameInstance, object: ref<GameObject>, height: Float, radius: Float) -> Bool {
+    let player = GetPlayer(game);
+    if !IsDefined(player) || !IsDefined(object) || Vector4.Distance(player.GetWorldPosition(), object.GetWorldPosition()) > 50.0 {
+      return false;
+    }
+    return GameInstance.GetCameraSystem(game).IsInCameraFrustum(object, height, radius);
+  }
+}
+
 public abstract class TandemRegionRules {
-  // A region: this far around a V (TandemNpcs.Range).
+  // A region: this far around a V (whose crowd and streets these are).
   public static func Radius() -> Float {
     return 60.0;
   }
 
+  // What a game shares of its NPCs around its V, and holds back of its own
+  // inside a higher-ranked linked player's (TandemNpcs.Range): both
+  // screens show the same people within it.
+  public static func Share() -> Float {
+    return 100.0;
+  }
+
   // An owner stops sharing an NPC farther than this from its V.
   public static func Lose() -> Float {
-    return 90.0;
+    return 130.0;
   }
 
   // Our crowd goes off when our V is this deep in a higher-ranked linked

@@ -175,7 +175,13 @@ public class TandemNpcs {
   private let m_noStreetSeats: Bool;
   // When our V was last seen mounted (FollowSeat waits 5 s after it).
   private let m_rodeAt: Float;
+  // No proxy seated before this (one a second, game-wide: FollowSeat).
+  private let m_seatGateAt: Float;
   private let m_noSeatHold: Bool;
+  // (test: npc seats mount) proxies seated with the mounting facility again:
+  // off, every seated proxy waits out of sight (FollowSeat, §13.154).
+  private let m_seatsMount: Bool;
+  private let m_seatsOffSaid: Bool;
   private let m_seatWaits: Int32;
   // (test: npc hide off) our own NPCs held back keep their looks.
   private let m_noHide: Bool;
@@ -183,6 +189,12 @@ public class TandemNpcs {
   private let m_fadeAll: Bool;
   private let m_faded: Int32;
   private let m_freshAt: array<Float>;
+  // (npc list) NPCs that came or went in sight (TandemSight): proxies whose
+  // body came, our own we held back, proxies that left; and our own held
+  // back later because they were in sight.
+  private let m_popIn: Int32;
+  private let m_popOut: Int32;
+  private let m_popWaited: Int32;
   // Host: guests' status effects waiting for their puppet (the instigator).
   private let m_pendingEffects: array<TandemNpcEvent>;
   private let m_pendingSince: array<Float>;
@@ -274,7 +286,12 @@ public class TandemNpcs {
   }
 
   public static func Range() -> Float {
-    return 60.0;
+    return TandemRegionRules.Share();
+  }
+
+  // What one NpcStates carries (protocol.hpp kMaxNpcsPerState).
+  public static func MaxShared() -> Int32 {
+    return 128;
   }
 
   public func Start(game: GameInstance) -> Void {
@@ -736,6 +753,15 @@ public class TandemNpcs {
       ArrayPush(this.m_freshIds, id);
       ArrayPush(this.m_freshAt, this.m_now);
     } else if this.m_now - this.m_freshAt[i] >= 1.0 {
+      // Not before the player's eyes: it walks on (unannounced) until it is
+      // out of sight, 20 s at most, then fades.
+      let seen = TandemSight.Seen(this.m_game, npc, 1.8, 0.5);
+      if seen && this.m_now - this.m_freshAt[i] < 20.0 {
+        if this.m_now - this.m_freshAt[i] < 1.2 {
+          this.m_popWaited += 1;
+        }
+        return;
+      }
       ArrayErase(this.m_freshIds, i);
       ArrayErase(this.m_freshAt, i);
       this.Suppress(npc);
@@ -754,8 +780,16 @@ public class TandemNpcs {
       vendors.Keep(npc);
     }
     TandemNative.LogDebug(s"npcs: holding back our own \(EntityID.ToDebugString(id)) \(TDBID.ToStringDEBUG(npc.GetRecordID()))");
+    let seen = TandemSight.Seen(this.m_game, npc, 1.8, 0.5);
+    if seen {
+      this.m_popOut += 1;
+    }
     TandemProxies.Pacify(npc);
-    if !this.m_noHide {
+    if !this.m_noHide && seen {
+      // In sight all the same (a twin that gives way, 20 s up): faded out.
+      TandemVisibility.Fade(this.m_game, npc, false, 0.6);
+      this.m_faded += 1;
+    } else if !this.m_noHide {
       // HideIrreversibly on an NPC that holds a weapon took the game down a
       // moment later, three times in three (0xc0000005 at +0x253048: a
       // component with no owner told of the visibility change; gangers and
@@ -954,9 +988,9 @@ public class TandemNpcs {
       // (the radius), is not a remote player's puppet, a proxy or one we
       // hold back, and no higher-ranked linked player's region covers it.
       let ours = IsDefined(known);
-      if !ours && ArraySize(ids) < 64 && !riding && !npc.IsDead() && !this.IsPuppet(id) && !this.IsProxyEntity(id) && !TandemLedger.IsBody(id) && !ArrayContains(this.m_hiddenIds, id) && Vector4.Distance(npc.GetWorldPosition(), here) <= TandemNpcs.Range() {
+      if !ours && ArraySize(ids) < TandemNpcs.MaxShared() && !riding && !npc.IsDead() && !this.IsPuppet(id) && !this.IsProxyEntity(id) && !TandemLedger.IsBody(id) && !ArrayContains(this.m_hiddenIds, id) && Vector4.Distance(npc.GetWorldPosition(), here) <= TandemNpcs.Range() {
         let unplaced = false;
-        let by = hides ? TandemRegionRules.CoveredBy(npc.GetWorldPosition(), TandemRegionRules.Radius(), unplaced) : 0u;
+        let by = hides ? TandemRegionRules.CoveredBy(npc.GetWorldPosition(), TandemRegionRules.Share(), unplaced) : 0u;
         if unplaced && !this.m_assumeTogether {
           // We do not know yet whether a higher-ranked player's region
           // covers it: neither announced nor held back this round.
@@ -1001,13 +1035,13 @@ public class TandemNpcs {
           ours = true;
         }
       }
-      // One we run stays ours past what one message carries (64): it is
+      // One we run stays ours past what one message carries (MaxShared): it is
       // left out of this round's states, not dropped.
       if ours && !riding && !npc.IsDead() {
         known.seen = true;
       }
       // The dead are handled below.
-      if ours && ArraySize(ids) < 64 && !riding && !npc.IsDead() {
+      if ours && ArraySize(ids) < TandemNpcs.MaxShared() && !riding && !npc.IsDead() {
         // Taken over a moment ago: did its brain come back?
         if known.wokeAt > 0.0 && this.m_now - known.wokeAt >= 1.5 {
           known.wokeAt = 0.0;
@@ -1232,6 +1266,10 @@ public class TandemNpcs {
     if !IsDefined(player) {
       return;
     }
+    if Equals(command, "npc list") {
+      this.ListReport(player);
+      return;
+    }
     let watched = this.Watched(player);
     if StrBeginsWith(command, "npc hide ") {
       this.m_noHide = Equals(command, "npc hide off");
@@ -1242,7 +1280,8 @@ public class TandemNpcs {
     if StrBeginsWith(command, "npc seats ") {
       this.m_noStreetSeats = Equals(command, "npc seats off");
       this.m_noSeatHold = Equals(command, "npc seats nohold");
-      TandemNative.Log(s"npc seats: proxies seated in shared vehicles \(!this.m_noStreetSeats)");
+      this.m_seatsMount = Equals(command, "npc seats mount");
+      TandemNative.Log(s"npc seats: proxies seated in shared vehicles \(!this.m_noStreetSeats), mounted \(this.m_seatsMount)");
       return;
     }
     if StrBeginsWith(command, "npc sense ") {
@@ -1279,6 +1318,80 @@ public class TandemNpcs {
       }
     }
     TandemNative.Log(s"npc parity: \(said) NPC(s) of ours notice a V or are hostile to one");
+  }
+
+  // (test: `npc list`, tools/npc-compare.py) every NPC our game has within
+  // 200 m of our V: the ones we run and share, the proxies of the others'
+  // (with a body or not), what the others share that we show no proxy of,
+  // and our own we do not share, with why and whether they are in sight.
+  private func ListReport(player: ref<PlayerPuppet>) -> Void {
+    let here = player.GetWorldPosition();
+    TandemNative.Log(s"npc list: our V at \(here.X) \(here.Y) \(here.Z)");
+    let ours = 0;
+    for known in this.m_known {
+      let body = GameInstance.FindEntityByID(this.m_game, known.id) as ScriptedPuppet;
+      if IsDefined(body) {
+        let at = body.GetWorldPosition();
+        TandemNative.Log(s"npc list: \(known.npc) ours \(TDBID.ToStringDEBUG(known.record)) at \(at.X) \(at.Y) \(at.Z) \(known.dead ? "dead" : known.down ? "down" : "alive")");
+      } else {
+        TandemNative.Log(s"npc list: \(known.npc) ours \(TDBID.ToStringDEBUG(known.record)) no body");
+      }
+      ours += 1;
+    }
+    let proxies = 0;
+    for proxy in this.m_proxies {
+      let body = this.ProxyBody(proxy.id) as ScriptedPuppet;
+      if IsDefined(body) {
+        let at = body.GetWorldPosition();
+        let state = proxy.dead ? "dead" : proxy.down ? "down" : proxy.seatWaits ? "held" : proxy.ready ? "alive" : "loading";
+        TandemNative.Log(s"npc list: \(proxy.npc) proxy \(TDBID.ToStringDEBUG(proxy.record)) at \(at.X) \(at.Y) \(at.Z) \(state)\(proxy.native ? " native" : "")");
+      } else {
+        TandemNative.Log(s"npc list: \(proxy.npc) proxy \(TDBID.ToStringDEBUG(proxy.record)) no body (\(proxy.seenAt > 0.0 ? "lost" : "spawning"))");
+      }
+      proxies += 1;
+    }
+    let unshown = 0;
+    let shared = TandemSync.SharedNpcs();
+    for npc in shared {
+      if !IsDefined(this.FindProxy(npc.npc)) && !IsDefined(this.FindNpc(npc.npc)) {
+        let since = this.MissingSince(npc.npc, this.m_now);
+        TandemNative.Log(s"npc list: \(npc.npc) shared \(TDBID.ToStringDEBUG(npc.record)) at \(npc.x) \(npc.y) \(npc.z) no proxy (\(this.m_now - since) s)");
+        unshown += 1;
+      }
+    }
+    let own = 0;
+    let inSight = 0;
+    let metro = this.OnMetro();
+    let around = player.GetNPCsAroundObject(200.0);
+    for npc in around {
+      let id = npc.GetEntityID();
+      if !this.IsPuppet(id) && !this.IsProxyEntity(id) && !IsDefined(this.Find(id)) {
+        let at = npc.GetWorldPosition();
+        let hidden = ArrayContains(this.m_hiddenIds, id);
+        let why = "cap or unplaced";
+        if hidden {
+          why = "held back";
+        } else if ArrayContains(this.m_freshIds, id) {
+          why = "fresh";
+        } else if npc.IsDead() {
+          why = "dead";
+        } else if TandemLedger.IsBody(id) {
+          why = "a session body";
+        } else if metro {
+          why = "metro";
+        } else if Vector4.Distance(at, here) > TandemNpcs.Range() {
+          why = "beyond the share range";
+        } else if this.RidesUnshared(npc) {
+          why = "rides an unshared vehicle";
+        }
+        TandemNative.Log(s"npc list: own \(TDBID.ToStringDEBUG(npc.GetRecordID())) at \(at.X) \(at.Y) \(at.Z) unshared (\(why)) \(hidden ? "hidden" : "shown")");
+        own += 1;
+        if !hidden {
+          inSight += 1;
+        }
+      }
+    }
+    TandemNative.Log(s"npc list: \(ours) ours, \(proxies) proxies, \(unshown) shared without a proxy, \(own) own unshared (\(inSight) in sight) within 200 m; in sight within 50 m since the start: \(this.m_popIn) came, \(this.m_popOut) went, \(this.m_popWaited) of ours held back later for it");
   }
 
   private func IsPuppet(id: EntityID) -> Bool {
@@ -1523,6 +1636,12 @@ public class TandemNpcs {
         let npc = this.ProxyBody(proxy.id) as ScriptedPuppet;
         if IsDefined(npc) && proxy.seenAt <= 0.0 {
           proxy.seenAt = now;
+          // In sight: faded in rather than popped in.
+          if TandemSight.Seen(this.m_game, npc, 1.8, 0.5) {
+            this.m_popIn += 1;
+            TandemVisibility.Fade(this.m_game, npc, false, 0.0);
+            TandemVisibility.Fade(this.m_game, npc, true, 0.6);
+          }
           // Brain off at once: a proxy never acts on its own.
           TandemProxies.Pacify(npc);
           // The host's NPC's level and scale first: its health is a share
@@ -1608,7 +1727,15 @@ public class TandemNpcs {
       this.m_rodeAt = this.m_now;
     }
     let riding = mounted || this.m_rodeAt > 0.0 && this.m_now - this.m_rodeAt < 5.0;
-    if riding || (this.m_noStreetSeats && TandemStreet.IsStreetSeat(proxy.seatOwner)) {
+    // Nor with our V on foot: two games went down the same way with our V
+    // on foot, 3 to 13 s after drivers were seated in street cars (2026-11-23,
+    // the 100 m share seating ten a minute). No proxy is mounted until the
+    // cause is found: the others' cars have nobody at the wheel here.
+    if !this.m_seatsMount && !this.m_seatsOffSaid {
+      this.m_seatsOffSaid = true;
+      TandemNative.Log("npcs: proxies are not seated in vehicles (engine/npcs.md §13.154): drivers and passengers of the others' cars wait out of sight");
+    }
+    if riding || !this.m_seatsMount || (this.m_noStreetSeats && TandemStreet.IsStreetSeat(proxy.seatOwner)) {
       if !proxy.seatWaits {
         proxy.seatWaits = true;
         this.m_seatWaits += 1;
@@ -1649,6 +1776,20 @@ public class TandemNpcs {
       proxy.seatRetryAt = now + 0.5;
       return;
     }
+    // One at a time: three proxies seated in one tick, our V on foot, took
+    // the game down 13 s later the same way as above (2026-11-23, 0xc0000005
+    // at +0x2AE4A10, eleven seats in 13 s with the 100 m share).
+    // Nor into a street car's body that came less than 2 s ago (bodies
+    // spawned round it in the seconds before that crash).
+    if street && IsDefined(traffic) && traffic.ShownFor(TandemStreet.CarOfSeat(proxy.seatOwner)) < 2.0 {
+      proxy.seatRetryAt = now + 0.5;
+      return;
+    }
+    if now < this.m_seatGateAt && now >= this.m_seatGateAt - 1.0 {
+      proxy.seatRetryAt = this.m_seatGateAt;
+      return;
+    }
+    this.m_seatGateAt = now + 1.0;
     TandemVehicles.Seat(game, npc, car, slot);
     if street && IsDefined(traffic) {
       traffic.MarkSeated(TandemStreet.CarOfSeat(proxy.seatOwner));
@@ -2136,6 +2277,9 @@ public class TandemNpcs {
         this.m_anims.Drop(npc);
         TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
         let body = this.ProxyBody(proxy.id) as GameObject;
+        if IsDefined(body) && !proxy.dead && TandemSight.Seen(this.m_game, body, 1.8, 0.5) {
+          this.m_popOut += 1;
+        }
         if proxy.native {
           this.Dispose(proxy);
         } else if EntityID.IsDefined(proxy.seatedIn) && IsDefined(body) {

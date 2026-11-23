@@ -174,8 +174,10 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   default): where another game runs the street (our V inside a
   higher-ranked player's region, or that game running our area), our own
   crowd's vehicles and our other dynamic cars there (a parked crowd car;
-  not a placed one, a quest's, the police's or a wreck) are taken out of
-  our world at once with whoever sits in them (`entEntity.Dispose`,
+  not a placed one, a quest's, nor a police car with its crew aboard;
+  wrecks and parked police cars included since 2026-11-23, and our own
+  parked ones we had shared before that game's region came over us) are
+  taken out of our world at once with whoever sits in them (`entEntity.Dispose`,
   `TandemWheels.Dispose`; `TandemTraffic.Remove`; never one with a player
   or a puppet aboard). Density 0 does not stop the traffic, a crowd null
   area (`overlap = area`) did not either (measured in a ride: 7 to 10 held
@@ -202,10 +204,24 @@ Appended to the protocol (`protocol.hpp`); no existing message changed.
   every vehicle another game runs (`vehicles.md`, "How a copy is moved":
   teleports by default, a kinematic body with `vehicle_move = kinematic`);
   one at rest is left alone.
-- **Occupants** are NPCs of the owner, shared by the existing NPC range
-  (60 m): beyond it a car's proxy has nobody at the wheel, which at that
-  distance is behind a windscreen. Inside it the driver is an NPC proxy
-  seated with `NpcSeat`, and costs what any NPC costs.
+- **Occupants** are NPCs of the owner, shared by the NPC range (100 m,
+  `regions::kShare`). **They are not seated on the other games for now**:
+  seating an NPC proxy with the mounting facility takes the game down
+  (`engine/npcs.md` §13.154; twice on 2026-11-23 with our V on foot, 3 to
+  13 s after drivers were seated), so every proxy the owner says is seated
+  waits out of sight and the others' cars drive with nobody at the wheel
+  (`npc seats mount` turns the mounts back on, for a test). `npc-compare`
+  counts them as "its proxy is held".
+- **The look** is the owner's: a proxy takes the appearance its owner
+  announced when its body is first shown (a body reused from another proxy,
+  our own instance of a placed car, a wreck), the wreck's too (an
+  overturned wreck was yellow on one screen and red on its owner's,
+  2026-11-23). A vehicle whose record changes under the same entity (the
+  crowd reusing a body) is gone and announced again. `street-compare`
+  compares record and appearance of every vehicle on both games.
+- **The share's cap** is 96 vehicles of ours (`TandemTraffic.MaxShared`,
+  48 before: a Kabuki crossing had 71 of ours within the range, most of
+  them parked, and 23 went unshared).
 
 ## Traffic lights
 

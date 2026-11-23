@@ -1779,10 +1779,11 @@ public class TandemSystem extends ScriptableSystem {
       if IsDefined(this.m_traffic) {
         this.m_traffic.LanesReport();
       }
-    } else if Equals(command, "npc parity") || StrBeginsWith(command, "npc sense ") || StrBeginsWith(command, "npc seats ") || StrBeginsWith(command, "npc hide ") {
+    } else if Equals(command, "npc parity") || Equals(command, "npc list") || StrBeginsWith(command, "npc sense ") || StrBeginsWith(command, "npc seats ") || StrBeginsWith(command, "npc hide ") {
       // (test) "npc parity": how far each NPC we run is in detecting each V
       // (ours against the puppets'); "npc sense player|npc": the puppets'
-      // visible object as a player's, or as the NPC body's (the default).
+      // visible object as a player's, or as the NPC body's (the default);
+      // "npc list": every NPC as we have it (tools/npc-compare.py).
       if IsDefined(this.m_npcs) {
         this.m_npcs.SenseCommand(command, this);
       }

@@ -37,9 +37,14 @@ scenarios at the end are the in-game checks to run.
 
 ## 1. The rules in one page
 
-- **A region** is the 60 m around a V (`regions::kRadius`, the sharing range
-  NPCs always had). Each game simulates the NPCs it spawned around its own
+- **A region** is the 60 m around a V (`regions::kRadius`: whose crowd and
+  streets these are). Each game simulates the NPCs it spawned around its own
   V: crowd, gangs, vendors, police. That is the single-player game, left on.
+  It **shares** them out to 100 m (`regions::kShare`, `TandemNpcs.Range`),
+  and holds back its own new ones within 100 m of a higher-ranked linked V,
+  so both screens show the same people within 100 m of either V (at 60 m,
+  each game's own crowd beyond it was on its screen only: 14 of 34 NPCs
+  one-sided in a ride, 2026-11-23).
 - **Two players are linked** when their Vs are closer than 150 m, and stay
   linked until they are farther than 190 m apart (hysteresis). The host
   computes the links from the positions it relays anyway and tells everyone
@@ -84,14 +89,15 @@ scenarios at the end are the in-game checks to run.
 
 `core/include/tandem/regions.hpp`.
 
-| Constant   | Value | Meaning                                                             |
-| ---------- | ----- | ------------------------------------------------------------------- |
-| `kRadius`  | 60 m  | a region: what a game shares around its V (`TandemNpcs.Range`)      |
-| `kLinkIn`  | 150 m | two Vs closer than this: linked                                     |
-| `kLinkOut` | 190 m | linked Vs farther than this: unlinked                               |
-| `kKeep`    | 80 m  | an owner keeps its NPC while its V is within this of it             |
-| `kTake`    | 55 m  | another linked player may take an NPC over when its V is this close |
-| `kLose`    | 90 m  | an owner stops sharing an NPC farther than this from its V          |
+| Constant   | Value | Meaning                                                                        |
+| ---------- | ----- | ------------------------------------------------------------------------------ |
+| `kRadius`  | 60 m  | a region: whose crowd, streets and lights these are                            |
+| `kShare`   | 100 m | what a game shares of its NPCs, and holds back of its own (`TandemNpcs.Range`) |
+| `kLinkIn`  | 150 m | two Vs closer than this: linked                                                |
+| `kLinkOut` | 190 m | linked Vs farther than this: unlinked                                          |
+| `kKeep`    | 80 m  | an owner keeps its NPC while its V is within this of it                        |
+| `kTake`    | 55 m  | another linked player may take an NPC over when its V is this close            |
+| `kLose`    | 130 m | an owner stops sharing an NPC farther than this from its V                     |
 
 `kLinkIn` is two radii plus 30 m: proxies of the other player's NPCs first
 appear at least 90 m away, where the game's own crowd pops in too. `kTake <
@@ -674,13 +680,18 @@ See the tags in [`../research/engine/regions.md`](../research/engine/regions.md)
    the street are held back and kept from spawning (§6, "The overlap, held
    back") and removed from our world (`overlap_despawn = remove`,
    `entEntity.Dispose`; measured 2026-11-22: none left within 100 m of a
-   riding guest).
+   riding guest), and so are our own parked cars, wrecks and parked police
+   cars there, those we already shared included (on foot too: an overturned
+   wreck stood in both worlds, yellow on one screen and red, burning, on
+   the other, 2026-11-23).
 6. **The epoch fence** covers requests aimed at the host's world only; a
    hit in flight at a guest owner whose world was just rebuilt is dropped
    by that guest because it no longer owns the NPC.
 7. **Bandwidth**: an owner with 64 NPCs sends about 13 kB/s of states to
    the host while linked with anyone; the host relays it to each linked
-   guest.
+   guest. One message carries 128 (`proto::kMaxNpcsPerState`, 64 before
+   the 100 m share: a Kabuki crossing had 78 within it); measured at 64
+   walking NPCs, `NpcMotion` was 42 kbit/s up (2026-11-23).
 
 ## 14. The death ledger
 
