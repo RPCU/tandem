@@ -386,8 +386,8 @@ never sees a zebra. [2.5-static]
 
 All read in the exe, nothing run. The community system's crowd is the
 object at `gameCommunitySystem +0xD0` (`ChangeDensityModifier`, hash
-509682613, writes its `+0x720`); its vtable (`0x14307DFF0`) has the
-request functions at `+0x30` and `+0x38`. [2.5-static]
+509682613, writes its `+0x720`); its vtable (`0x14307E008`, read live) has the
+request functions at `+0x18` and `+0x20`. [2.5-verified]
 
 - **Crowd managers** at `+0x640`, inline, their count (u32) at `+0x650`
   (room for two). A manager's update (`0x140430858`) runs only while its
