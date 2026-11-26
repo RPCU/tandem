@@ -14,6 +14,7 @@
 #include "tandem/presence.hpp"
 #include "tandem/session.hpp"
 
+#include <RED4ext/Scripting/Natives/Generated/ent/EntityID.hpp>
 #include <RedLib.hpp>
 
 #include <algorithm>
