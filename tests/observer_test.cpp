@@ -55,8 +55,7 @@ TEST_CASE("observer: the registry's lines, respawns, one-sided copies and errors
 }
 
 TEST_CASE("observer: the frame judged at a tick") {
-  // The session's first tick: the engine frames before it (the save's
-  // loading screen, one of 1370 ms) are not its frame.
+  // No tick before: nothing to judge.
   CHECK(observer::FrameToJudgeUs(0, 5'000'000, 900, 1'370'000) == 0);
   // A tick after a tick: the gap between them.
   CHECK(observer::FrameToJudgeUs(1'000'000, 1'016'000, 1, 16'000) == 16'000);

@@ -51,17 +51,17 @@ data name them.
 
 ## Triggers and captures
 
-| Trigger                 | From                                                                                                                                                                                                                                              | Severity    |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| `stall`                 | the writer: in a session, the game thread's frame stamp (`Runtime::LastGameFrameUs`) 30 s old and no engine frame for 1 s                                                                                                                         | 95          |
-| `degraded`              | `degraded: ID is OFF…` (85), `is off:` (55), `player N's game runs without:` (45); not a chosen one                                                                                                                                               | 45 to 85    |
-| `fallback`              | `degraded: fallback ID…` (a repeat too)                                                                                                                                                                                                           | 30          |
-| `respawn`               | the fallbacks `proxy respawned`, `street body respawned`                                                                                                                                                                                          | 40          |
-| `one-sided`             | `resync: asking…` (a digest differed), `[script] consistency:` (orphan, missing proxy), `street: check: … no longer shared`                                                                                                                       | 40          |
-| `error`, `script-error` | an error line; a `[script]` line saying ` failed` or `error`                                                                                                                                                                                      | 60, 35      |
-| `drift`                 | the puppet controller: a remote V's body `observer_drift_m` (5) from its owner's transform for 1 s                                                                                                                                                | 30 + metres |
-| `frame`                 | `TakeEvents`: a frame over `observer_frame_ms` (50), under 2 s (longer: a loading screen); a gap that held 3 engine frames or more is a pause, timed by its longest engine frame; a session's first tick judges none (`observer::FrameToJudgeUs`) | 20 + ms/10  |
-| `manual`                | `cmd observer capture [REASON]`                                                                                                                                                                                                                   | 50          |
+| Trigger                 | From                                                                                                                                                                                                                                                                    | Severity    |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `stall`                 | the writer: in a session, the game thread's frame stamp (`Runtime::LastGameFrameUs`) 30 s old and no engine frame for 1 s                                                                                                                                               | 95          |
+| `degraded`              | `degraded: ID is OFF…` (85), `is off:` (55), `player N's game runs without:` (45); not a chosen one                                                                                                                                                                     | 45 to 85    |
+| `fallback`              | `degraded: fallback ID…` (a repeat too)                                                                                                                                                                                                                                 | 30          |
+| `respawn`               | the fallbacks `proxy respawned`, `street body respawned`                                                                                                                                                                                                                | 40          |
+| `one-sided`             | `resync: asking…` (a digest differed), `[script] consistency:` (orphan, missing proxy), `street: check: … no longer shared`                                                                                                                                             | 40          |
+| `error`, `script-error` | an error line; a `[script]` line saying ` failed` or `error`                                                                                                                                                                                                            | 60, 35      |
+| `drift`                 | the puppet controller: a remote V's body `observer_drift_m` (5) from its owner's transform for 1 s                                                                                                                                                                      | 30 + metres |
+| `frame`                 | `TakeEvents`: a frame over `observer_frame_ms` (50), under 2 s (longer: a loading screen); a gap that held 3 engine frames or more is a pause, timed by its longest engine frame; a session's first tick is timed from the session's start (`observer::FrameToJudgeUs`) | 20 + ms/10  |
+| `manual`                | `cmd observer capture [REASON]`                                                                                                                                                                                                                                         | 50          |
 
 Log lines come through `log.hpp` (`log::Observe`): every line, debug ones
 too whatever `log` says (formatted for the observer when the level would
@@ -98,9 +98,14 @@ after our menu closed, the first frame took … ms, the longest …`).
   reported their longest as its own (frames of 1861 and 1370 ms at "session:
   starting as host", 2026-11-26; `BeginSession` took 1 ms of script, the
   first tick came 81 ms after it, and the minute's `perf:` line said 4.37 ms
-  at most a tick). That tick judges nothing now; the engine frames before
-  it are dropped. The first `perf:` line's rates were over 1 s instead of
-  its minute (`5061/s`); they are over the time since the first use now.
+  at most a tick; the quest phases' first runs 1.9 s before the start, the
+  load still on). The session's start is now the first tick's previous one
+  (`Observer::SessionStarted`): the engine frames before it are dropped,
+  the frame it began in counts from it (`Runtime::MarkEngineFrames`), and
+  the first tick says `observer: the session's first tick … ms after its
+start, … engine frame(s) between, the longest … ms`. The first `perf:`
+  line's rates were over 1 s instead of its minute (`5061/s`); they are
+  over the time since the first use now.
 - **Screenshot**: none. The plugin cannot take one cheaply (a D3D12
   swap chain under Proton); each capture says so. `tools/game.sh shot` by
   hand.

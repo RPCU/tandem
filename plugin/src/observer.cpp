@@ -281,10 +281,15 @@ void Observer::Frame() {
   // A gap that held several of the engine's frames is a pause menu or a
   // loading screen holding the script tick (a 682 ms pause read as a frame
   // of 682 ms, 2026-11-23): its longest engine frame is the frame time.
-  // Taken at every tick, a session's first too: the engine frames before
-  // that one are the load's, never judged (observer::FrameToJudgeUs).
+  // A session's first tick judges from the session's start: the engine
+  // frames before it are the load's (SessionStarted, MarkEngineFrames).
   const auto engine = Runtime::Get().TakeEngineFrames();
   const auto gap = observer::FrameToJudgeUs(previous, now, engine.count, engine.longestUs);
+  if (std::exchange(m_firstTick, false) && previous)
+    log::Info("observer: the session's first tick {:.0f} ms after its start, {} engine frame(s) "
+              "between, the longest {:.0f} ms",
+              static_cast<double>(now - previous) / 1000.0, engine.count,
+              static_cast<double>(engine.longestUs) / 1000.0);
   // Over 2 s is a loading screen or a pause: the stall watch's, not a frame.
   if (gap > std::uint64_t{m_settings.frameMs} * 1000 && gap < 2'000'000) {
     const auto ms = static_cast<float>(gap) / 1000.f;
@@ -339,7 +344,11 @@ void Observer::SessionStarted(std::string what) {
   if (!On())
     return;
   const auto us = net::NowUs();
-  m_lastFrameUs = 0;
+  // The session's first tick is judged from here, the frames before are the
+  // load's (2026-11-26: a loading frame of 1370 ms read as the start's).
+  m_lastFrameUs = us;
+  m_firstTick = true;
+  Runtime::Get().MarkEngineFrames(us);
   std::lock_guard _(m_lock);
   m_trail.Reset();
   m_remote.clear();

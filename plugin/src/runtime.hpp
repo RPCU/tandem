@@ -817,6 +817,14 @@ public:
     return {m_engineFrames.exchange(0, std::memory_order_relaxed),
             m_engineLongestUs.exchange(0, std::memory_order_relaxed)};
   }
+  // A session starts at `us`: the engine frames counted before are
+  // dropped (the save's loading screen), and the frame it started in
+  // counts only from it (a loading frame of 1370 ms was read as the
+  // session start's, 2026-11-26).
+  void MarkEngineFrames(std::uint64_t us) {
+    m_engineMarkUs.store(us, std::memory_order_relaxed);
+    TakeEngineFrames();
+  }
 
   // Puppets: which entity draws which player. Read lock-free on the animation
   // thread (by entity hash only), written on the game thread.
@@ -944,6 +952,7 @@ private:
   std::atomic_bool m_vehicleSmoothing{true}; // sync::RenderClock (test: off)
   std::atomic<std::uint64_t> m_lastFrameUs{0};
   std::atomic<std::uint64_t> m_lastEngineFrameUs{0};
+  std::atomic<std::uint64_t> m_engineMarkUs{0}; // MarkEngineFrames
   std::atomic<std::uint32_t> m_engineFrames{0};
   std::atomic<std::uint64_t> m_engineLongestUs{0};
   // After our pause menu closes: the engine's frames left to time (0: none),

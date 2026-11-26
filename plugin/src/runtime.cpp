@@ -855,7 +855,9 @@ void Runtime::NoteEngineFrame() {
   const auto last = m_lastEngineFrameUs.exchange(now, std::memory_order_relaxed);
   if (last == 0 || now < last)
     return;
-  const auto gap = now - last;
+  // The frame a session started in counts from its start (MarkEngineFrames).
+  const auto mark = m_engineMarkUs.load(std::memory_order_relaxed);
+  const auto gap = mark > last && mark < now ? now - mark : now - last;
   m_engineFrames.fetch_add(1, std::memory_order_relaxed);
   auto longest = m_engineLongestUs.load(std::memory_order_relaxed);
   while (gap > longest &&
