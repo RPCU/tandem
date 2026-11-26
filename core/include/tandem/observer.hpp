@@ -58,13 +58,13 @@ struct Hit {
 double DriftSeverity(float metres);
 double FrameSeverity(float ms);
 // The frame to judge at a script tick, in us (0: none): `previousUs` the
-// last tick (0: this is the session's first), `nowUs` this one, and the
-// engine's frames between them (`engineFrames`, the longest
-// `engineLongestUs`). A gap that held 3 engine frames or more is a pause
-// menu or a loading screen holding the script tick: its longest engine
-// frame is the frame. The session's first tick judges nothing: the engine
-// frames counted before it are the save's loading screen (a loading frame
-// of 1370 ms read as the session start's, 2026-11-26).
+// last tick (a session's first: the session's start; 0: none), `nowUs`
+// this one, and the engine's frames between them (`engineFrames`, the
+// longest `engineLongestUs`). A gap that held 3 engine frames or more is a
+// pause menu or a loading screen holding the script tick: its longest
+// engine frame is the frame. The engine frames before a session's start
+// are the save's loading screen, never given here (a loading frame of
+// 1370 ms read as the session start's, 2026-11-26).
 std::uint64_t FrameToJudgeUs(std::uint64_t previousUs, std::uint64_t nowUs,
                              std::uint32_t engineFrames, std::uint64_t engineLongestUs);
 

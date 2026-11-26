@@ -132,6 +132,7 @@ private:
   std::uint64_t m_lastRowUs[observer::kTriggers]{};
   std::uint32_t m_unrowed[observer::kTriggers]{};
   std::uint64_t m_lastFrameUs{}; // game thread
+  bool m_firstTick{};            // game thread: the session's first tick is to come
   bool m_stalled{};              // the writer's: a stall capture for this silence
   std::uint64_t m_stalledSinceUs{};
 
