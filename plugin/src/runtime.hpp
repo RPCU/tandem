@@ -668,6 +668,7 @@ public:
   // Host, game -> net: a shared NPC's hit reaction, in order with the rest
   // of the NPC outbox (presence.hpp keeps the guests' side).
   void SubmitNpcReaction(const proto::NpcReaction &reaction);
+  void SubmitNpcVoice(const proto::NpcVoice &voice);
   void PushNpcAnims(const proto::NpcAnims &anims);
   std::vector<proto::NpcAnim> TakeNpcAnims();
   void PushNpcShot(const proto::NpcShot &shot);

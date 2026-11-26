@@ -130,6 +130,36 @@ std::vector<proto::NpcReaction> PresenceState::TakeReactions() {
   return std::exchange(m_reactions, {});
 }
 
+void PresenceState::PushVoice(const proto::NpcVoice &voice, std::uint64_t nowUs) {
+  std::lock_guard _(m_lock);
+  if (m_voices.size() < 128)
+    m_voices.push_back({voice, nowUs});
+}
+
+std::vector<proto::NpcVoice> PresenceState::TakeVoices(std::uint64_t nowUs) {
+  std::lock_guard _(m_lock);
+  consistency::DropStale(m_voices, nowUs, proto::kNpcVoiceMaxAgeUs);
+  std::vector<proto::NpcVoice> out;
+  for (auto &voice : std::exchange(m_voices, {}))
+    out.push_back(voice.value);
+  return out;
+}
+
+void PresenceState::QueueLocalVoice(const LocalVoice &voice, std::uint64_t nowUs) {
+  std::lock_guard _(m_lock);
+  if (m_localVoices.size() < 128)
+    m_localVoices.push_back({voice, nowUs});
+}
+
+std::vector<PresenceState::LocalVoice> PresenceState::TakeLocalVoices(std::uint64_t nowUs) {
+  std::lock_guard _(m_lock);
+  consistency::DropStale(m_localVoices, nowUs, proto::kNpcVoiceMaxAgeUs);
+  std::vector<LocalVoice> out;
+  for (auto &voice : std::exchange(m_localVoices, {}))
+    out.push_back(voice.value);
+  return out;
+}
+
 void PresenceState::Flinch(proto::PlayerId player, float strength, const proto::Vec3 &direction,
                            const proto::Vec3 &forward, std::uint64_t nowUs) {
   std::lock_guard _(m_flinchLock);
@@ -163,6 +193,8 @@ void PresenceState::Reset() {
     m_remote.clear();
     m_cues.clear();
     m_reactions.clear();
+    m_voices.clear();
+    m_localVoices.clear();
     m_statusRemote.clear();
     ++m_statusChanges;
   }

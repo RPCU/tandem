@@ -21,7 +21,7 @@ minute; last: only side by side).
 <!-- prettier-ignore -->
 | # | What | Status | Owner, mechanism (evidence) | What a player notices | Checker |
 | --- | --- | --- | --- | --- | --- |
-| 1 | NPC voices: combat barks, pain, civilians' chatter and screams | different | a proxy plays its owner's states but "not the brain's side effects: senses, voice, squads" (`npcs.md`, Inside the plugin); only scene lines are replayed (`scene-replay.md`) | the partner's enemies fight in silence: no "there he is", no pain cries; a street the other game runs is mute around its people | not readable (audio) |
+| 1 | NPC voices: combat barks, pain, civilians' chatter and screams | partly (not run in game) | the owner's word on each line its NPC's script starts (`NpcVoice`, `npcs.md` "Voices"), said by every proxy's own voice; lines the engine starts without the script call are each game's (none on a proxy); scene lines are replayed (`scene-replay.md`) | — once heard; a bark the engine starts natively is missing on the partner's proxy | not readable (audio) |
 | 2 | Traffic, parked cars, car colours and lights, traffic and walk lights, pop-in, one-sided collisions | partly | area owner's (`traffic.md`); traffic lights and the owner's looks and headlights on proxies are on branch `rides-b` (`TrafficLights`, `npc list`), being fixed on instances a/c | cars appear, differ in colour, lights disagree, a car hit on one screen only | `street-compare.py`, spawned |
 | 3 | Corpses: where they lie and their pose | partly | a death is the owner's word; every game ragdolls its own proxy (`regions.md` §5: hit reactions and ragdolls "every game plays them on its proxies"); a ledger body is laid down with no death played (`regions.md` §14: "a place of death, not a ragdoll's pose") | the same body sprawled another way, metres apart after a blast, a fall or a car; a body that slid down stairs on one screen only | placed, spawned (position) |
 | 4 | Physics props and debris: bins, crates, cones, cans, car parts, limbs | different | no owner, no sync (`world.md`, open: "which ones … is to decide"); each game's physics pushes its own; a destroyed car's parts fly per game (`traffic.md`, Explosions) | a bin knocked over on one screen stands on the other; debris lies elsewhere; the partner walks through a crate that is not there for it | not readable (no targeting component) |
@@ -57,10 +57,9 @@ view, time bubbles (`time.md`), a V's own body (`players.md`).
 
 ### The gaps, in order
 
-1. **Proxies are mute** (row 1): the owner's barks and pain are not
-   replayed. The game's own way exists on the proxy itself (its voice
-   component plays a context when told, as `presence.md` does for the
-   puppet's voices); what is missing is the owner's word on which line.
+1. **Proxies are mute** (row 1): built (`NpcVoice`, protocol 23, not run
+   in game): the owner's script-started lines on every proxy's own voice.
+   Left: lines the engine starts natively, and hearing it.
 2. **Traffic and the street** (row 2): the other agent's work.
 3. **Corpse poses** (row 3): the owner's body comes to rest; its rest
    pose (hips and the ragdoll's end) is not sent. A pose stream exists for

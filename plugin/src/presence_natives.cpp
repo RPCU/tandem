@@ -1,7 +1,8 @@
 // What scripts/tandem/Presence.reds, PartyHud.reds and Reactions use:
 // `TandemPresence` static functions and its structs. Declared on the script
 // side in scripts/tandem/PresenceNatives.reds: keep the two in sync
-// (tools/check-natives.py reads both). All of these run on the game thread.
+// (tools/check-natives.py reads both). All of these run on the game thread,
+// but QueueNpcVoice and IsNpcProxy (any thread: they only queue and read).
 
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
@@ -69,6 +70,25 @@ struct TandemNpcReaction {
   float x{}, y{}, z{};
 };
 static_assert(alignof(TandemNpcReaction) <= 8, "the script VM aligns struct locals to 8");
+
+// A voice line the game started on one of our entities (NpcVoices.reds),
+// queued by the wrap of GameObject.PlayVoiceOver.
+struct TandemLocalVoice {
+  Red::EntityID entity;
+  Red::CName context;
+  float delay{}; // seconds
+  bool inVehicle{};
+};
+static_assert(alignof(TandemLocalVoice) <= 8, "the script VM aligns struct locals to 8");
+
+// A voice line of an NPC we show (proto::NpcVoice).
+struct TandemNpcVoice {
+  std::uint32_t npc{};
+  Red::CName context;
+  float delay{}; // seconds
+  bool inVehicle{};
+};
+static_assert(alignof(TandemNpcVoice) <= 8, "the script VM aligns struct locals to 8");
 
 // Where a partner is from our camera (presence::Bearing).
 struct TandemBearing {
@@ -251,6 +271,55 @@ struct TandemPresence : Red::IScriptable {
     return out;
   }
 
+  // ---- NPC voices (NpcVoices.reds; npcs.md, "Voices") ----
+  // Any thread: the wrap of GameObject.PlayVoiceOver may run on a job
+  // thread. It only queues; the tick sends what our shared NPCs said.
+  static void QueueNpcVoice(Red::EntityID entity, Red::CName context, float delay, bool inVehicle) {
+    if (entity.hash == 0 || context.hash == 0)
+      return;
+    PresenceState::Get().QueueLocalVoice(
+        {.entity = entity.hash,
+         .context = context.hash,
+         .delayMs = static_cast<std::uint16_t>(
+             std::clamp(delay * 1000.f, 0.f, static_cast<float>(proto::kNpcVoiceMaxDelayMs))),
+         .flags = static_cast<std::uint8_t>(inVehicle ? proto::kVoiceInVehicle : 0)},
+        net::NowUs());
+  }
+  // Any thread, lock-free: the entity is our proxy of another game's NPC,
+  // whose voice is its owner's word (NpcVoice), not its own game's.
+  static bool IsNpcProxy(Red::EntityID entity) {
+    return Runtime::Get().PuppetPlayer(entity.hash) >= kNpcPuppetBase;
+  }
+  // Game thread: the lines queued since the last ask (a second old: dropped).
+  static Red::DynArray<TandemLocalVoice> TakeLocalNpcVoices() {
+    Red::DynArray<TandemLocalVoice> out;
+    for (const auto &v : PresenceState::Get().TakeLocalVoices(net::NowUs()))
+      out.EmplaceBack(TandemLocalVoice{Red::EntityID(v.entity), Red::CName(v.context),
+                                       static_cast<float>(v.delayMs) / 1000.f,
+                                       (v.flags & proto::kVoiceInVehicle) != 0});
+    return out;
+  }
+  // Game thread: one of our shared NPCs said a line (proto::NpcVoice).
+  static void SendNpcVoice(std::uint32_t npc, Red::CName context, float delay, bool inVehicle) {
+    if (context.hash == 0)
+      return;
+    Runtime::Get().SubmitNpcVoice(
+        {.npc = npc,
+         .context = context.hash,
+         .delayMs = static_cast<std::uint16_t>(
+             std::clamp(delay * 1000.f, 0.f, static_cast<float>(proto::kNpcVoiceMaxDelayMs))),
+         .flags = static_cast<std::uint8_t>(inVehicle ? proto::kVoiceInVehicle : 0)});
+  }
+  // Game thread: the lines of the NPCs we show since the last ask.
+  static Red::DynArray<TandemNpcVoice> TakeNpcVoices() {
+    Red::DynArray<TandemNpcVoice> out;
+    for (const auto &v : PresenceState::Get().TakeVoices(net::NowUs()))
+      out.EmplaceBack(TandemNpcVoice{v.npc, Red::CName(v.context),
+                                     static_cast<float>(v.delayMs) / 1000.f,
+                                     (v.flags & proto::kVoiceInVehicle) != 0});
+    return out;
+  }
+
   // The party HUD (presence.hpp): what the partner's entry says
   // (presence::Status: 0 up, 1 down, 2 out, 3 elsewhere, 4 scene, 5 menu).
   static std::int32_t Status(std::int32_t life, std::int32_t place, std::int32_t tier,
@@ -344,6 +413,20 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcReaction, "TandemNpcReaction", {
   RTTI_PROPERTY(z);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemLocalVoice, "TandemLocalVoice", {
+  RTTI_PROPERTY(entity);
+  RTTI_PROPERTY(context);
+  RTTI_PROPERTY(delay);
+  RTTI_PROPERTY(inVehicle);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcVoice, "TandemNpcVoice", {
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(context);
+  RTTI_PROPERTY(delay);
+  RTTI_PROPERTY(inVehicle);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemBearing, "TandemBearing", {
   RTTI_PROPERTY(distance);
   RTTI_PROPERTY(angle);
@@ -371,6 +454,11 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemPresence, "TandemPresence", {
   RTTI_METHOD(Flinch);
   RTTI_METHOD(SendNpcReaction);
   RTTI_METHOD(TakeNpcReactions);
+  RTTI_METHOD(QueueNpcVoice);
+  RTTI_METHOD(IsNpcProxy);
+  RTTI_METHOD(TakeLocalNpcVoices);
+  RTTI_METHOD(SendNpcVoice);
+  RTTI_METHOD(TakeNpcVoices);
   RTTI_METHOD(Status);
   RTTI_METHOD(Bearing);
   RTTI_METHOD(Project);

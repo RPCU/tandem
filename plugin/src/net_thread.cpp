@@ -833,6 +833,8 @@ struct NetThread::Impl {
                 runtime.PushNpcShot(e.shot);
               } else if constexpr (std::is_same_v<E, events::HostNpcReaction>) {
                 PresenceState::Get().PushReaction(e.reaction);
+              } else if constexpr (std::is_same_v<E, events::HostNpcVoice>) {
+                PresenceState::Get().PushVoice(e.voice, net::NowUs());
               } else if constexpr (std::is_same_v<E, events::RemotePresence>) {
                 PresenceState::Get().PushRemote(e.presence);
               } else if constexpr (std::is_same_v<E, events::RemoteCue>) {
@@ -1274,6 +1276,8 @@ struct NetThread::Impl {
           endpoint->SendNpcShot(*shot);
         else if (const auto *reaction = std::get_if<proto::NpcReaction>(&message))
           endpoint->SendNpcReaction(*reaction);
+        else if (const auto *voice = std::get_if<proto::NpcVoice>(&message))
+          endpoint->SendNpcVoice(*voice);
         else if (const auto *hit = std::get_if<proto::PlayerHit>(&message);
                  hit && !endpoint->SendPlayerHit(*hit))
           log::Info("hit on player {} dropped: not in the session, not our NPC's, or its game "

@@ -233,8 +233,8 @@ the first group session.
   ready: the states as NPCStatesComponent applies its own (anim features
   under the component's own names, the `combatLocomotion`/`inCrouch`/
   `inCover` wrappers the controller unlocks, the blackboard, combat mode;
-  not the brain's side effects: senses, voice, squads, the local V's
-  combat state), the weapon in the proxy's hand, a look-at of head and
+  not the brain's side effects: senses, squads, the local V's combat
+  state; its barks come as the owner's word, Voices), the weapon in the proxy's hand, a look-at of head and
   chest at the target, the reload sounds when the upper body enters and
   leaves `Reload`, and a shot as the weapon's own effects (flash, report,
   shells). A workspot is played from a `WorkspotResourceComponent` every
@@ -370,6 +370,40 @@ same|differs, on its first tick: same`, debug) and every 2 s within
   entity of each placed NPC it announces (`NpcPlaced`); the other games
   find their own copy by it (twins), and its death goes into the session's
   ledger: dead in every game until the session ends.
+
+## Voices
+
+`scripts/tandem/NpcVoices.reds`, `proto::NpcVoice` (protocol 23; not yet
+run in game). An NPC's barks start in the game's scripts through
+`GameObject.PlayVoiceOver` (70 callers in 2.50: `OnHit`'s
+`vo_any_damage_hit`, the hit reaction component's pain by zone, death
+(`stlh_death`, `start_dead`), combat start, the squad's warnings, fear,
+grenade throws, grapples, curious grunts): a voice context, asked of the
+NPC's own voice. A proxy has no brain to start them.
+
+- **The owner**: a wrap of `PlayVoiceOver` queues each line started on an
+  NPC (a native that only queues: a hit's or a reaction's may run on a job
+  thread); the tick sends those of our shared NPCs (`SharedNpcOf`,
+  `TandemOwn.Entity`) as `NpcVoice`: the context's CName hash, the delay,
+  whether it plays in a vehicle. Event channel, after the NPC's spawn; to
+  the games linked with the owner, as `NpcReaction`. At most one line an
+  NPC in 0.3 s and 10 a second in all (`kNpcVoiceGapUs`,
+  `kNpcVoicesPerSecond`: a crowd's panic asks for dozens).
+- **Every other game**: its proxy asks its own voice for the same context
+  (`PlayVoiceOver`, `Scripts:TandemNpcVoice`, the owner's delay): the
+  proxy's record's voice set, in that player's language, placed in 3D by
+  the audio system. A line older than 1 s on arrival is dropped
+  (`kNpcVoiceMaxAgeUs`, `consistency::DropStale`).
+- **One voice an NPC**: on a proxy, a line its own game starts (its local
+  hit, a replayed reaction) is left unsaid (`TandemPresence.IsNpcProxy`,
+  lock-free): the owner's line says it.
+- **Not covered**: lines the engine starts without the script call
+  (behaviour-tree voice nodes, scene and community lines: those of a
+  scene are `scene-replay.md`'s), and `answeringEntityID` (a squad's
+  reply to another NPC: sent with none).
+- To hear in game: the proxy says the line the owner's NPC said, once, in
+  the guest's language; nothing doubled when the guest shoots a proxy
+  (`presence-npc-voices` checks the path; ears check the rest).
 
 ## When an NPC's animation is read
 
