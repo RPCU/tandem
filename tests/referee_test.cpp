@@ -9,6 +9,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 using namespace std::chrono_literals;
@@ -1246,6 +1247,22 @@ TEST_CASE("referee: an NPC's voice line is its owner's word, about an NPC it sho
   for (std::uint64_t i = 0; i < 200; ++i)
     host.Received(2, proto::NpcVoice{.npc = ours, .context = 0x99}, kSecond + i * 1000);
   CHECK(Broke(host, "rate.over-budget"));
+}
+
+TEST_CASE("referee: a body's rest is of an NPC we were told of, never ours back") {
+  auto guest = Guest();
+  guest.Received(1, proto::NpcSpawn{.npc = 7, .record = 1}, kSecond);
+  guest.Received(1, proto::NpcGone{.npc = 7, .reason = proto::kGoneDead}, kSecond);
+  guest.Received(1, proto::CorpsePose{.pose = {.npc = 7}, .position = {1.f, 2.f, 3.f}}, kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1, proto::CorpsePose{.pose = {.npc = 8}}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"ids.unknown-npc"});
+  guest.Received(1, proto::CorpsePose{.pose = {.npc = 7}, .yaw = std::nanf("")}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.not-finite"});
+  const auto ours = regions::MakeNpcId(2, 1);
+  guest.Sent(1, proto::NpcSpawn{.npc = ours, .record = 2}, kSecond);
+  guest.Received(1, proto::CorpsePose{.pose = {.npc = ours}}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
 }
 
 TEST_CASE("referee: what a game runs without is its own word, passed on, never back") {
