@@ -393,6 +393,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-look-not-received", "a player sent no look: a stand-in body");
     this.Text("Tandem-Degraded-Id-stand-in-look", "a player's look could not be applied: a stand-in body");
     this.Text("Tandem-Degraded-Id-wanted-stars", "a wanted partner's stars in the game's own art (shown as a number)");
+    this.Text("Tandem-Degraded-Id-corpse-pose", "a body lying as its owner's lies (it lies as its own fall left it)");
     this.Text("Tandem-Degraded-Id-body-incomplete", "a player's body is missing a part");
     this.Text("Tandem-Degraded-Id-workspot-not-entered", "an NPC could not take its work spot");
     this.Text("Tandem-Degraded-Id-workspot-unread", "what an NPC sits or leans on, read for the others");
@@ -961,6 +962,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-look-not-received", "un joueur n'a envoyé aucune apparence : corps de substitution");
     this.Text("Tandem-Degraded-Id-stand-in-look", "l'apparence d'un joueur n'a pas pu être appliquée : corps de substitution");
     this.Text("Tandem-Degraded-Id-wanted-stars", "les étoiles d'un partenaire recherché dans le style du jeu (affichées en chiffre)");
+    this.Text("Tandem-Degraded-Id-corpse-pose", "un corps couché comme celui de son propriétaire (il reste comme sa chute l'a laissé)");
     this.Text("Tandem-Degraded-Id-body-incomplete", "il manque un élément au corps d'un joueur");
     this.Text("Tandem-Degraded-Id-workspot-not-entered", "un PNJ n'a pas pu prendre son poste d'activité");
     this.Text("Tandem-Degraded-Id-workspot-unread", "ce sur quoi un PNJ est assis ou appuyé, lu pour les autres");

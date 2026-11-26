@@ -7,10 +7,13 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "combat.hpp"
+#include "engine/posestream.hpp"
 #include "log.hpp"
 #include "presence.hpp"
 #include "runtime.hpp"
 
+#include "tandem/pose.hpp"
 #include "tandem/presence.hpp"
 #include "tandem/session.hpp"
 
@@ -90,6 +93,14 @@ struct TandemNpcVoice {
   bool inVehicle{};
 };
 static_assert(alignof(TandemNpcVoice) <= 8, "the script VM aligns struct locals to 8");
+
+// A body at rest another game told (proto::CorpsePose): where it lies.
+struct TandemCorpse {
+  std::uint32_t npc{};
+  float x{}, y{}, z{};
+  float yaw{}; // radians
+};
+static_assert(alignof(TandemCorpse) <= 8, "the script VM aligns struct locals to 8");
 
 // Where a partner is from our camera (presence::Bearing).
 struct TandemBearing {
@@ -311,6 +322,45 @@ struct TandemPresence : Red::IScriptable {
              std::clamp(delay * 1000.f, 0.f, static_cast<float>(proto::kNpcVoiceMaxDelayMs))),
          .flags = static_cast<std::uint8_t>(inVehicle ? proto::kVoiceInVehicle : 0)});
   }
+  // ---- bodies at rest (Corpses.reds; regions.md, "Corpses") ----
+  // Owner, game thread: the next pose read of the body is its rest's (the
+  // scene actors' read, engine/posestream.cpp).
+  static void ReadCorpse(std::uint32_t npc, Red::Handle<Red::ent::Entity> entity) {
+    if (npc == 0 || !entity)
+      return;
+    Runtime::Get().ReadCorpse(npc);
+    engine::SetPoseActorSource(npc, entity);
+  }
+  // Owner: the read came: sent with its place (true), and the read let go.
+  static bool SendCorpse(std::uint32_t npc, Red::Vector4 position, float yaw) {
+    const auto read = Runtime::Get().TakeCorpseRead(npc);
+    if (!read)
+      return false;
+    engine::SetPoseActorSource(npc, {});
+    Combat::Get().Send(proto::CorpsePose{.pose = pose::ForActor(npc, *read),
+                                         .position = {position.X, position.Y, position.Z},
+                                         .yaw = yaw});
+    return true;
+  }
+  // Owner: the read never came (a body the stream cannot read): let go.
+  static void StopCorpseRead(std::uint32_t npc) {
+    Runtime::Get().ForgetCorpse(npc);
+    engine::SetPoseActorSource(npc, {});
+  }
+  // Every other game: the bodies told since the last ask.
+  static Red::DynArray<TandemCorpse> TakeCorpses() {
+    Red::DynArray<TandemCorpse> out;
+    for (const auto &c : Runtime::Get().TakeCorpseArrivals())
+      out.EmplaceBack(TandemCorpse{c.pose.npc, c.position.x, c.position.y, c.position.z, c.yaw});
+    return out;
+  }
+  // Our copy drawn in the owner's rest pose (no entity: let go, forgotten).
+  static void BindCorpse(std::uint32_t npc, Red::Handle<Red::ent::Entity> entity) {
+    engine::BindPoseActor(npc, entity);
+    if (!entity)
+      Runtime::Get().ForgetCorpse(npc);
+  }
+
   // Game thread: the lines of the NPCs we show since the last ask.
   static Red::DynArray<TandemNpcVoice> TakeNpcVoices() {
     Red::DynArray<TandemNpcVoice> out;
@@ -428,6 +478,14 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcVoice, "TandemNpcVoice", {
   RTTI_PROPERTY(inVehicle);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemCorpse, "TandemCorpse", {
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
+  RTTI_PROPERTY(yaw);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemBearing, "TandemBearing", {
   RTTI_PROPERTY(distance);
   RTTI_PROPERTY(angle);
@@ -460,6 +518,11 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemPresence, "TandemPresence", {
   RTTI_METHOD(TakeLocalNpcVoices);
   RTTI_METHOD(SendNpcVoice);
   RTTI_METHOD(TakeNpcVoices);
+  RTTI_METHOD(ReadCorpse);
+  RTTI_METHOD(SendCorpse);
+  RTTI_METHOD(StopCorpseRead);
+  RTTI_METHOD(TakeCorpses);
+  RTTI_METHOD(BindCorpse);
   RTTI_METHOD(Status);
   RTTI_METHOD(Bearing);
   RTTI_METHOD(Project);
