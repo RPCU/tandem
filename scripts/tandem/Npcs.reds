@@ -1201,6 +1201,8 @@ public class TandemNpcs {
           let by = this.KillerOf(npc, known, player);
           TandemNative.SendNpcGone(known.npc, 3, by);
           TandemNative.Log(s"npcs: \(known.npc) knocked out (by player \(by))");
+          // Its body's rest, once it settles (Corpses.reds).
+          TandemCorpses.Watch(this.m_game, known.npc, known.id);
           if by != this.m_you {
             this.PayAssist(player, known.id);
           }
@@ -1220,6 +1222,7 @@ public class TandemNpcs {
             known.dead = true;
             let killer = this.KillerOf(body, known, player);
             TandemNative.SendNpcGone(known.npc, 1, killer);
+            TandemCorpses.Watch(this.m_game, known.npc, known.id);
             this.m_anims.Forget(known.npc);
             this.m_scaling.Forget(known.npc);
             TandemNative.Log(s"npcs: \(known.npc) died (killer: player \(killer))");

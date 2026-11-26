@@ -212,8 +212,9 @@ version 5, the host runs 6`, nothing on the guest's screen (a session
   their game has no Phantom Liberty …"). A host whose own game lacks it
   (only possible with `compat = off`) refuses everyone, with the words the
   other way round. Final, like a version refusal.
-- **`kProtocolVersion` is 23** since an NPC's voice lines go to the
-  other games (`NpcVoice`, appended, 2026-11-26; 22: `PlayerMotion` and
+- **`kProtocolVersion` is 24** since a body's rest goes to the other
+  games (`CorpsePose`, appended, 2026-11-26; 23: an NPC's voice lines,
+  `NpcVoice`; 22: `PlayerMotion` and
   `VehicleMotion` carry the state sent before them; 21: an NPC's velocity,
   `NpcMotion` from every owner; 20: `TrafficLights`; 19: every game says
   what it runs without (`Degraded`, appended; bumped all the same: a game of 18 would stay

@@ -180,6 +180,7 @@ names of `engine-access.md`.
 | `look not received` | degraded | fallback | `System.reds` `StandIn` ("no look received") | a stand-in body; the mock player's case (allowed in every scenario) |
 | `stand-in look` | degraded | fallback | `System.reds` `StandIn` (a look that has no body, still no look) | a stand-in body, or hidden |
 | `wanted stars` | degraded | fallback | `PartyHud.reds` `Wanted` (the game's wanted bar not found on the HUD) | a wanted partner's level written in its party entry, not drawn as the game's stars (`police.md`) |
+| `corpse pose` | degraded | fallback | `Corpses.reds` (the owner: the body's pose never read; a copy: more than 6 drawn near us) | the copy lies as its own ragdoll left it (`regions.md`, "Corpses") |
 | `body incomplete` | degraded | fallback | `Body.reds` (no donor, no visible object, no Character extension) | the puppet glides, or NPCs do not see it |
 | `workspot not entered` | degraded | fallback | `NpcAnims.reds` `Step`, `Enter` (no component, the resource refused) | the proxy stands |
 | `workspot unread` | degraded | fallback | `NpcAnims.reds` `NoteUnread` (owner: in a workspot whose instance has no resource, §13.134; or seated 3 s in a vehicle not shared, its seat unsent) | its copies stand where it sits |
