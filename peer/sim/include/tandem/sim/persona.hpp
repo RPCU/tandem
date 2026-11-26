@@ -45,13 +45,14 @@ struct Persona {
   std::string what;
   // How likely each goal is picked when it is possible (0: never).
   std::array<float, static_cast<std::size_t>(Goal::Count)> weights{};
-  float keep{4.f};    // metres it stays from its partner when following
-  float region{0.f};  // metres from the partner where it lives (0: with them)
-  float tempo{1.f};   // how fast it goes from one thing to the next
-  bool helps{true};   // revives its partner, takes their fights
-  bool comes{true};   // accepts regroup offers
-  bool answers{true}; // answers the host's calls, suggests at hubs
-  bool hostile{};     // fights NPCs that are not in a fight
+  float keep{4.f};     // metres it stays from its partner when following
+  float region{0.f};   // metres from the partner where it lives (0: with them)
+  float tempo{1.f};    // how fast it goes from one thing to the next
+  bool helps{true};    // revives its partner, takes their fights
+  bool comes{true};    // accepts regroup offers
+  bool answers{true};  // answers the host's calls, suggests at hubs
+  bool hostile{};      // fights NPCs that are not in a fight
+  float givesUpDown{}; // seconds down, unrevived, before it is out (0: waits)
   // Chaos: legal, at the worst time.
   bool worstMoments{};        // acts as others load, as NPCs die, as holds change
   double leaveEverySeconds{}; // leaves and joins again this often (0: never)

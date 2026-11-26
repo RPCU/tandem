@@ -769,6 +769,9 @@ void SimV::Tick(std::uint64_t nowUs, const Scene &scene, Outbox &out) {
       m_aloneDownUs = nowUs;
     else if (nowUs - m_aloneDownUs > 3 * kSecond)
       SetLife(p::Life::Out, nowUs, out);
+    if (m_self.life == p::Life::Down && m_persona.givesUpDown > 0.f &&
+        nowUs - m_lifeUs > static_cast<std::uint64_t>(m_persona.givesUpDown * 1e6f))
+      SetLife(p::Life::Out, nowUs, out);
   } else if (m_self.life == p::Life::Out && nowUs - m_lifeUs > 10 * kSecond) {
     m_health = 100.f;
     SetLife(p::Life::Up, nowUs, out);
