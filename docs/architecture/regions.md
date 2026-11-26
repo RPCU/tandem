@@ -316,7 +316,8 @@ Since then (2026-11-19, the checks that still read "the host"): NPC levels
 (`NpcLevel`: each owner scales its own NPCs to the session's level and
 says so, [`progression.md`](progression.md)), a V's block or parry of an
 NPC's attack (`Defended`, to the owner), hit reactions and ragdolls
-(`NpcReaction`, from the owner; every game plays them on its proxies), an
+(`NpcReaction`, from the owner; every game plays them on its proxies), a
+body's rest (`CorpsePose`, below, "Corpses"), an
 NPC's grenades (`Throw`, from the owner's game only), the Relic's marks,
 one-punch slow motion and instant dismemberment (`Outcomes.reds`, on
 the NPC's owner), a way out of combat (`Stealth.reds`, on the owner), a
@@ -325,6 +326,37 @@ downed partner dropped from every game's own NPCs' threats
 game). What still reads `IsHost()` there means the session's host: its
 world's devices and turrets, scene actors, difficulty and rules,
 companions, the session lost.
+
+### Corpses
+
+`scripts/tandem/Corpses.reds`, `proto::CorpsePose` (protocol 24; not yet
+run in game). A death is its owner's word, and every game ragdolls its own
+copy: the same body came to rest another way on each screen. The owner's
+body is the truth.
+
+- **The owner**: each shared NPC it reports dead or knocked out is
+  watched; once still (under 2 cm for 1 s, or 8 s after it fell), its pose
+  is read once with the scene actors' read (`TandemPresence.ReadCorpse`,
+  `engine::SetPoseActorSource`, diverted from the scene stream by
+  `Runtime::ReadCorpse`) and sent with the entity's place and heading
+  (`SendCorpse`), an `IsCombat` message: the corpse's owner's word, as its
+  wounds (`Endpoint::SpeaksFor`), to the games linked with it. A body
+  whose pose is not read within 2 s (not the humanoid rig): `corpse pose`
+  fallback.
+- **Every other game**: its copy is laid where the owner's lies when it
+  is more than 0.3 m off (the teleportation facility), and drawn in the
+  owner's pose by the scene actors' write, held (`BindCorpse`,
+  `Runtime::ActorPoseOf` returns the corpse's pose when no scene streams
+  that NPC) while the copy is there. Six at most at once: a seventh lets
+  go of the farthest beyond 50 m, else stays as its ragdoll left it
+  (`corpse pose`).
+- **Not kept**: a game that links later, or joins, sees its own ragdoll's
+  rest (as before); the ledger's bodies are still "a place of death" (§14).
+  Idempotent: a repeat lays the body the same way.
+- **To prove in game**: whether the actor read after the entity job sees a
+  ragdoll's settled bones, and whether the commit's write shows over the
+  copy's own ragdoll (both measured on scene actors only, never on a
+  ragdoll); `corpse-rest` checks the path, eyes the rest.
 
 ## 6. Crowd density
 

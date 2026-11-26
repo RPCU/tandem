@@ -616,7 +616,9 @@ decline`, `busy KIND|off`, `busy report`, `apartment report`. Scenarios
   hit reaction every N s (twitch, impact, stagger, knockdown, ragdoll, its
   end), `host --voice-npcs N` one say a voice line every N s (`NpcVoice`:
   `start_combat`, `enemy_warning`, `vo_any_damage_hit`,
-  `hit_reaction_heavy`, `fear_beg`, `stlh_death`); `--status REC@FROM-TO[,REC@FROM-TO]` puts status effects on its V
+  `hit_reaction_heavy`, `fear_beg`, `stlh_death`), `host --corpse-npcs
+N` one die every N s and its body's rest follow 1 s later
+  (`CorpsePose`, a neutral pose where it stood); `--status REC@FROM-TO[,REC@FROM-TO]` puts status effects on its V
   from FROM to TO s after another player is there (no TO: kept), sent as
   `StatusVisuals` for the others' puppet of it to show. Presence, cues,
   status visuals, non-twitch reactions and NPC voice lines it hears are

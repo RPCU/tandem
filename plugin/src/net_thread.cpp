@@ -596,6 +596,9 @@ struct NetThread::Impl {
                 // Another game's traffic lights: Lights.reds (TandemStreet).
                 else if (const auto *lights = std::get_if<proto::TrafficLights>(&e.message))
                   runtime.PushLights(*lights);
+                // A body's rest: drawn on our copy (Corpses.reds).
+                else if (const auto *corpse = std::get_if<proto::CorpsePose>(&e.message))
+                  runtime.PushCorpsePose(*corpse);
                 else
                   Combat::Get().PushInbound(e.message);
               } else if constexpr (std::is_same_v<E, events::Trade>) {

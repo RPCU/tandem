@@ -85,6 +85,16 @@ public native struct TandemNpcVoice {
   native let inVehicle: Bool;
 }
 
+// A body at rest another game told (proto::CorpsePose).
+public native struct TandemCorpse {
+  native let npc: Uint32;
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  // radians
+  native let yaw: Float;
+}
+
 public native struct TandemBearing {
   native let distance: Float;
   // radians: 0 ahead, positive to the right
@@ -122,6 +132,14 @@ public native class TandemPresence extends IScriptable {
   public static native func TakeLocalNpcVoices() -> array<TandemLocalVoice>;
   public static native func SendNpcVoice(npc: Uint32, context: CName, delay: Float, inVehicle: Bool) -> Void;
   public static native func TakeNpcVoices() -> array<TandemNpcVoice>;
+  // Bodies at rest (Corpses.reds). Owner: read a body's pose once, send it
+  // with its place when read, or let the read go. Every other game: the
+  // bodies told, and a copy drawn in its owner's pose (null: let go).
+  public static native func ReadCorpse(npc: Uint32, entity: ref<Entity>) -> Void;
+  public static native func SendCorpse(npc: Uint32, position: Vector4, yaw: Float) -> Bool;
+  public static native func StopCorpseRead(npc: Uint32) -> Void;
+  public static native func TakeCorpses() -> array<TandemCorpse>;
+  public static native func BindCorpse(npc: Uint32, entity: ref<Entity>) -> Void;
   public static native func Status(life: Int32, place: Int32, tier: Int32, storyFlags: Int32, paused: Bool, flags: Int32) -> Int32;
   public static native func Bearing(camera: Vector4, forward: Vector4, halfFov: Float, target: Vector4) -> TandemBearing;
   public static native func Project(camera: Vector4, forward: Vector4, right: Vector4, halfFov: Float, vertical: Bool, aspect: Float, target: Vector4) -> TandemScreenPoint;

@@ -132,6 +132,7 @@ public class TandemPresenceSync {
   private let m_hud: ref<TandemPartyHud>;
   private let m_reactions: ref<TandemReactionsSync>;
   private let m_voices: ref<TandemNpcVoices>;
+  private let m_corpses: ref<TandemCorpses>;
   private let m_status: ref<TandemStatusVisuals>;
   private let m_hitsTaken: ref<TandemHitsTaken>;
 
@@ -149,6 +150,8 @@ public class TandemPresenceSync {
     this.m_reactions.Start(game);
     this.m_voices = new TandemNpcVoices();
     this.m_voices.Start(game);
+    this.m_corpses = new TandemCorpses();
+    this.m_corpses.Start(game);
     this.m_status = new TandemStatusVisuals();
     this.m_status.Start(game);
     this.m_hitsTaken = new TandemHitsTaken();
@@ -188,6 +191,7 @@ public class TandemPresenceSync {
     this.m_hud = null;
     this.m_reactions = null;
     this.m_voices = null;
+    this.m_corpses = null;
     this.m_status = null;
     this.m_hitsTaken = null;
   }
@@ -213,6 +217,9 @@ public class TandemPresenceSync {
     if IsDefined(this.m_hitsTaken) {
       this.m_hitsTaken.End();
     }
+    if IsDefined(this.m_corpses) {
+      this.m_corpses.End();
+    }
   }
 
   public func Hud() -> ref<TandemPartyHud> {
@@ -221,6 +228,10 @@ public class TandemPresenceSync {
 
   public func Reactions() -> ref<TandemReactionsSync> {
     return this.m_reactions;
+  }
+
+  public func Corpses() -> ref<TandemCorpses> {
+    return this.m_corpses;
   }
 
   public func Status() -> ref<TandemStatusVisuals> {
@@ -492,6 +503,9 @@ public class TandemPresenceSync {
     }
     if IsDefined(this.m_voices) {
       this.m_voices.Tick(system);
+    }
+    if IsDefined(this.m_corpses) {
+      this.m_corpses.Tick(system);
     }
     if IsDefined(this.m_status) && you != 0u {
       this.m_status.SendOurs(now);
@@ -1157,6 +1171,9 @@ public class TandemPresenceSync {
     }
     if IsDefined(this.m_voices) {
       this.m_voices.Report();
+    }
+    if IsDefined(this.m_corpses) {
+      this.m_corpses.Report();
     }
     if IsDefined(this.m_status) {
       this.m_status.Report();
