@@ -300,6 +300,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Party-Johnny", "As Johnny");
     this.Text("Tandem-Party-OtherBody", "As someone else");
     this.Text("Tandem-Party-Elsewhere", "Elsewhere");
+    this.Text("Tandem-Party-Wanted", "Wanted {1}/5");
     this.Text("Tandem-Status-Recorder", "Recorder: {1}");
     this.Text("Tandem-Common-On", "on");
     this.Text("Tandem-Common-Off", "off");
@@ -373,6 +374,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-record-substituted", "something from another player's mods is shown otherwise here");
     this.Text("Tandem-Degraded-Id-look-not-received", "a player sent no look: a stand-in body");
     this.Text("Tandem-Degraded-Id-stand-in-look", "a player's look could not be applied: a stand-in body");
+    this.Text("Tandem-Degraded-Id-wanted-stars", "a wanted partner's stars in the game's own art (shown as a number)");
     this.Text("Tandem-Degraded-Id-body-incomplete", "a player's body is missing a part");
     this.Text("Tandem-Degraded-Id-workspot-not-entered", "an NPC could not take its work spot");
     this.Text("Tandem-Degraded-Id-workspot-unread", "what an NPC sits or leans on, read for the others");
@@ -513,6 +515,8 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-World-WeatherIsHost", "Another mod changes your weather: in co-op the host's weather stays");
     this.Text("Tandem-Time-ModSlow", "A mod slowed time: shared as a time bubble around you");
     this.Text("Tandem-Marker-Description", "Another V, in your city");
+    this.Text("Tandem-Marker-Wanted", "Wanted by the NCPD: {1} of 5 stars");
+    this.Text("Tandem-Marker-WantedSearching", "Wanted by the NCPD: {1} of 5 stars, out of their sight");
     this.Text("Tandem-Marker-Distance", "{1}  {2}");
     this.Text("Tandem-Marker-Metres", "{1}M");
     this.Text("Tandem-Marker-Kilometres", "{1}KM");
@@ -868,6 +872,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Party-Johnny", "Dans la peau de Johnny");
     this.Text("Tandem-Party-OtherBody", "Dans la peau d'un autre");
     this.Text("Tandem-Party-Elsewhere", "Ailleurs");
+    this.Text("Tandem-Party-Wanted", "Recherché {1}/5");
     this.Text("Tandem-Status-Recorder", "Enregistreur : {1}");
     this.Text("Tandem-Common-On", "oui");
     this.Text("Tandem-Common-Off", "non");
@@ -937,6 +942,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-record-substituted", "un élément des mods d'un autre joueur est affiché autrement ici");
     this.Text("Tandem-Degraded-Id-look-not-received", "un joueur n'a envoyé aucune apparence : corps de substitution");
     this.Text("Tandem-Degraded-Id-stand-in-look", "l'apparence d'un joueur n'a pas pu être appliquée : corps de substitution");
+    this.Text("Tandem-Degraded-Id-wanted-stars", "les étoiles d'un partenaire recherché dans le style du jeu (affichées en chiffre)");
     this.Text("Tandem-Degraded-Id-body-incomplete", "il manque un élément au corps d'un joueur");
     this.Text("Tandem-Degraded-Id-workspot-not-entered", "un PNJ n'a pas pu prendre son poste d'activité");
     this.Text("Tandem-Degraded-Id-workspot-unread", "ce sur quoi un PNJ est assis ou appuyé, lu pour les autres");
@@ -1071,6 +1077,8 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-World-WeatherIsHost", "Un autre mod change votre météo : en coop, la météo de l'hôte reste");
     this.Text("Tandem-Time-ModSlow", "Un mod a ralenti le temps : partagé comme une bulle de temps autour de vous");
     this.Text("Tandem-Marker-Description", "Un autre V, dans votre ville");
+    this.Text("Tandem-Marker-Wanted", "Recherché par le NCPD : {1} étoiles sur 5");
+    this.Text("Tandem-Marker-WantedSearching", "Recherché par le NCPD : {1} étoiles sur 5, hors de leur vue");
     this.Text("Tandem-Marker-Distance", "{1}  {2}");
     this.Text("Tandem-Marker-Metres", "{1}M");
     this.Text("Tandem-Marker-Kilometres", "{1}KM");

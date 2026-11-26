@@ -119,6 +119,13 @@ public class TandemPartyEntry {
   // The nameplate over the puppet.
   public let plate: ref<inkVerticalPanel>;
   public let plateName: ref<inkText>;
+  // A wanted partner's stars beside the name (police.md, "The partner's
+  // stars"); the game's own art once taken from its wanted bar.
+  public let stars: ref<inkHorizontalPanel>;
+  public let starImages: array<ref<inkImage>>;
+  public let starsArt: Bool;
+  public let wanted: Int32;
+  public let wantedState: Int32;
   // What it shows, as last logged.
   public let status: Int32;
   public let health: Int32;
@@ -184,6 +191,9 @@ public class TandemPartyHud {
   private let m_force: array<Int32>;
   // The game's HUD modules (Scan).
   private let m_scannedAt: Float;
+  // The game's wanted bar's star art (its atlas), once found on the HUD.
+  private let m_starArt: Bool;
+  private let m_starAtlas: ResRef;
   private let m_boss: wref<inkWidget>;
   private let m_modules: array<wref<inkWidget>>;
   private let m_modulesLogged: Int32;
@@ -411,9 +421,36 @@ public class TandemPartyHud {
     root.Reparent(this.m_root);
     entry.root = root;
 
-    // The name, as the game writes a character's over its bar.
+    // The name, as the game writes a character's over its bar, and beside
+    // it a wanted partner's stars (the game's wanted bar's own).
+    let title = new inkHorizontalPanel();
+    title.SetName(n"title");
+    title.SetFitToContent(true);
+    title.SetInteractive(false);
+    title.Reparent(root);
     entry.name = TandemPartyHud.Text(n"name", 38, n"Medium", n"", player);
-    entry.name.Reparent(root);
+    entry.name.Reparent(title);
+    let stars = new inkHorizontalPanel();
+    stars.SetName(n"stars");
+    stars.SetFitToContent(true);
+    stars.SetVAlign(inkEVerticalAlign.Center);
+    stars.SetMargin(new inkMargin(16.0, 0.0, 0.0, 0.0));
+    stars.SetInteractive(false);
+    stars.SetVisible(false);
+    stars.Reparent(title);
+    entry.stars = stars;
+    let i = 0;
+    while i < 5 {
+      let star = new inkImage();
+      star.SetName(n"star");
+      star.SetSize(new Vector2(30.0, 30.0));
+      star.SetMargin(new inkMargin(0.0, 0.0, 4.0, 0.0));
+      star.SetInteractive(false);
+      star.Reparent(stars);
+      ArrayPush(entry.starImages, star);
+      i += 1;
+    }
+    entry.wanted = -1;
 
     // The health bar: a dim track and its fill.
     let track = new inkCanvas();
@@ -486,6 +523,62 @@ public class TandemPartyHud {
     ArrayPush(this.m_entries, entry);
     TandemNative.Log(s"hud: entry for player \(player) (\(TandemPartyHud.NameOf(player)))");
     return entry;
+  }
+
+  // ---- a wanted partner's stars (police.md, "The partner's stars") ----
+
+  // The star art of the game's own wanted bar: the atlas of its first
+  // star's icon (StarController's star_active part).
+  private func TakeStarArt(bar: ref<WantedBarGameController>) -> Void {
+    if this.m_starArt {
+      return;
+    }
+    let icon = bar.TandemStarIcon();
+    if !IsDefined(icon) {
+      return;
+    }
+    let atlas = icon.textureAtlas;
+    if ResourceAsyncRef.IsEmpty(atlas) {
+      return;
+    }
+    this.m_starAtlas = ResourceAsyncRef.GetPath(atlas);
+    this.m_starArt = true;
+    TandemNative.Log(s"hud: a wanted partner's stars in the game's own art (its wanted bar's atlas, part \(NameToString(icon.GetTexturePart())))");
+  }
+
+  // The partner's stars beside its name, as the game draws its own: red
+  // while the police see them, grey while they search, fading in and out
+  // when about to give up (EStarState). Its level (0: not wanted).
+  private func Wanted(entry: ref<TandemPartyEntry>, player: Uint32, now: Float) -> Int32 {
+    let stage = Clamp(TandemStreet.HeatStage(player), 0, 5);
+    let state = stage > 0 ? TandemStreet.HeatState(player) : 0;
+    if this.m_starArt && !entry.starsArt {
+      for star in entry.starImages {
+        star.SetAtlasResource(this.m_starAtlas);
+        star.SetTexturePart(n"star_active");
+      }
+      entry.starsArt = true;
+    }
+    let changed = stage != entry.wanted || state != entry.wantedState;
+    if changed {
+      entry.wanted = stage;
+      entry.wantedState = state;
+      let style = state == 2 || state == 3 ? n"MainColors.Grey" : n"MainColors.Red";
+      let i = 0;
+      for star in entry.starImages {
+        star.SetVisible(i < stage);
+        TandemPartyHud.Tint(star, style, 0u);
+        i += 1;
+      }
+      if stage > 0 && !this.m_starArt {
+        TandemDegraded.Fallback("wanted stars", s"player \(player): the game's wanted bar was not found on the HUD, its level written instead");
+      }
+      TandemNative.Log(s"hud: player \(player) wanted: \(stage) star(s), state \(state), \(this.m_starArt ? "drawn with the game's star art" : "written")");
+    }
+    entry.stars.SetVisible(stage > 0 && this.m_starArt);
+    // About to give up: the stars fade in and out, as the game's blink.
+    entry.stars.SetOpacity(state == 3 ? 0.4 + 0.6 * AbsF(SinF(now * 3.0)) : 1.0);
+    return stage;
   }
 
   public static func NameOf(player: Uint32) -> String {
@@ -603,6 +696,8 @@ public class TandemPartyHud {
           this.m_boss = module.GetRootWidget();
         } else if IsDefined(module as DamageDigitsGameController) {
           host = module as DamageDigitsGameController;
+        } else if IsDefined(module as WantedBarGameController) {
+          this.TakeStarArt(module as WantedBarGameController);
         } else if IsDefined(module as healthbarWidgetGameController) || IsDefined(module as MinimapContainerController) || IsDefined(module as QuestTrackerGameController) {
           ArrayPush(this.m_modules, module.GetRootWidget());
         }
@@ -1128,6 +1223,10 @@ public class TandemPartyHud {
       entry.name.SetText(TandemPartyHud.NameOf(player));
       entry.bar.SetSize(new Vector2(TandemPartyHud.BarWidth() * ClampF(health, 0.0, 1.0), 10.0));
       let text = TandemPartyHud.StateText(status, place, left);
+      let stage = this.Wanted(entry, player, now);
+      if StrLen(text) == 0 && stage > 0 && !this.m_starArt {
+        text = TandemText.F("Party-Wanted", s"\(stage)");
+      }
       entry.state.SetText(text);
       entry.state.SetVisible(StrLen(text) > 0);
 
@@ -1368,4 +1467,21 @@ public class TandemPartyHud {
       this.Log(entry, TandemPartyHud.StateText(entry.status, 0, -1.0, true));
     }
   }
+}
+
+// The game's wanted bar's first star icon (its art for a wanted partner's
+// stars: TandemPartyHud.TakeStarArt).
+@addMethod(WantedBarGameController)
+public func TandemStarIcon() -> wref<inkImage> {
+  if ArraySize(this.starsWidget) == 0 {
+    return null;
+  }
+  let first = this.starsWidget[0];
+  let star = inkWidgetRef.GetController(first) as StarController;
+  return IsDefined(star) ? star.TandemIcon() : null;
+}
+
+@addMethod(StarController)
+public func TandemIcon() -> wref<inkImage> {
+  return inkWidgetRef.Get(this.m_icon) as inkImage;
 }
