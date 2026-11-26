@@ -61,7 +61,7 @@ watch)
   # Every 30 s: the game seen running, then gone: fetched.
   was=0
   while [ ! -f "$state/stop" ]; do
-    if ssh -o ConnectTimeout=5 "$host" "pgrep -f 'steamapps/common/Cyberpunk 2077/bin/x64/Cyberpunk2077[.]exe' >/dev/null" 2>/dev/null; then
+    if ssh -o ConnectTimeout=5 "$host" "pgrep -f 'steamapps.common.Cyberpunk 2077.bin.x64.Cyberpunk2077[.]exe' >/dev/null" 2>/dev/null; then
       was=1
     elif [ "$was" = 1 ]; then
       was=0
@@ -90,7 +90,7 @@ fetch)
 status)
   ssh "$host" "grep -v '^;' '$plugin/tandem.ini' | grep -E '^(role|log|recorder|observer|vehicle_move) '" || true
   if [ -n "$(runner)" ]; then echo "companion: running"; else echo "companion: stopped"; fi
-  ssh "$host" "pgrep -f 'steamapps/common/Cyberpunk 2077/bin/x64/Cyberpunk2077[.]exe' >/dev/null && echo 'game: running' || echo 'game: not running'"
+  ssh "$host" "pgrep -f 'steamapps.common.Cyberpunk 2077.bin.x64.Cyberpunk2077[.]exe' >/dev/null && echo 'game: running' || echo 'game: not running'"
   ;;
 restore)
   ssh "$host" "cd '$plugin' && [ -f tandem.ini.player ] && cp tandem.ini.player tandem.ini && echo 'your own tandem.ini is back'"
