@@ -278,13 +278,13 @@ void Observer::Frame() {
   const auto now = net::NowUs();
   const auto previous = std::exchange(m_lastFrameUs, now);
   m_frames.fetch_add(1, std::memory_order_relaxed);
-  auto gap = previous ? now - previous : 0;
   // A gap that held several of the engine's frames is a pause menu or a
   // loading screen holding the script tick (a 682 ms pause read as a frame
   // of 682 ms, 2026-11-23): its longest engine frame is the frame time.
+  // Taken at every tick, a session's first too: the engine frames before
+  // that one are the load's, never judged (observer::FrameToJudgeUs).
   const auto engine = Runtime::Get().TakeEngineFrames();
-  if (engine.count > 2)
-    gap = engine.longestUs;
+  const auto gap = observer::FrameToJudgeUs(previous, now, engine.count, engine.longestUs);
   // Over 2 s is a loading screen or a pause: the stall watch's, not a frame.
   if (gap > std::uint64_t{m_settings.frameMs} * 1000 && gap < 2'000'000) {
     const auto ms = static_cast<float>(gap) / 1000.f;

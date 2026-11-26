@@ -54,6 +54,20 @@ TEST_CASE("observer: the registry's lines, respawns, one-sided copies and errors
   CHECK(observer::FrameSeverity(400.f) > observer::FrameSeverity(60.f));
 }
 
+TEST_CASE("observer: the frame judged at a tick") {
+  // The session's first tick: the engine frames before it (the save's
+  // loading screen, one of 1370 ms) are not its frame.
+  CHECK(observer::FrameToJudgeUs(0, 5'000'000, 900, 1'370'000) == 0);
+  // A tick after a tick: the gap between them.
+  CHECK(observer::FrameToJudgeUs(1'000'000, 1'016'000, 1, 16'000) == 16'000);
+  CHECK(observer::FrameToJudgeUs(1'000'000, 1'080'000, 2, 70'000) == 80'000);
+  // A pause menu held the script tick over 104 engine frames: the longest
+  // of them is the frame, not the pause.
+  CHECK(observer::FrameToJudgeUs(1'000'000, 1'682'000, 104, 22'000) == 22'000);
+  // A clock that went back judges nothing.
+  CHECK(observer::FrameToJudgeUs(2'000'000, 1'000'000, 1, 0) == 0);
+}
+
 TEST_CASE("observer: every trigger kind has a name, and the name gives it back") {
   for (std::size_t i = 0; i < observer::kTriggers; ++i) {
     const auto kind = static_cast<Trigger>(i);

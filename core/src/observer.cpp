@@ -101,6 +101,13 @@ std::optional<Trigger> TriggerNamed(std::string_view name) {
 double DriftSeverity(float metres) { return 30.0 + std::min(60.0, static_cast<double>(metres)); }
 double FrameSeverity(float ms) { return 20.0 + std::min(60.0, static_cast<double>(ms) / 10.0); }
 
+std::uint64_t FrameToJudgeUs(std::uint64_t previousUs, std::uint64_t nowUs,
+                             std::uint32_t engineFrames, std::uint64_t engineLongestUs) {
+  if (previousUs == 0 || nowUs < previousUs)
+    return 0;
+  return engineFrames > 2 ? engineLongestUs : nowUs - previousUs;
+}
+
 std::optional<Hit> Classify(char level, std::string_view line) {
   const auto hit = [&](Trigger kind, double severity) {
     return Hit{.kind = kind, .detail = std::string(line), .severity = severity};
