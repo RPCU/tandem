@@ -2586,6 +2586,45 @@ TEST_CASE("an NPC's hit reactions reach the guests' proxies; only the host sends
   CHECK_FALSE(hostHeard);
 }
 
+TEST_CASE("a body's rest is said by its corpse's owner alone, for the games that show it") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  host->SendNpcSpawn({.npc = 7, .record = 1});
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(guest, error);
+  std::vector<proto::CorpsePose> heard;
+  bool sent = false, hostHeard = false;
+  const Seen watch = [&](std::size_t i, const auto &events) {
+    if (guest->IsJoined() && !sent) {
+      sent = true;
+      host->SendNpcGone({.npc = 7, .reason = proto::kGoneDead});
+      // The guest speaks for no body of the host's; ours: said.
+      CHECK_FALSE(guest->SendCombat(proto::CorpsePose{.pose = {.npc = 7}, .position = {9, 9, 9}}));
+      CHECK(host->SendCombat(
+          proto::CorpsePose{.pose = {.npc = 7, .hips = {0, 0, 90}}, .position = {1, 2, 3}}));
+    }
+    for (const auto &event : events)
+      if (const auto *combat = std::get_if<events::Combat>(&event))
+        if (const auto *rest = std::get_if<proto::CorpsePose>(&combat->message)) {
+          if (i == 1)
+            heard.push_back(*rest);
+          else
+            hostHeard = true;
+        }
+  };
+  REQUIRE(Pump({host.get(), guest.get()}, [&](std::size_t i, const auto &events) {
+    watch(i, events);
+    return !heard.empty();
+  }));
+  PumpFor({host.get(), guest.get()}, 200ms, watch);
+  REQUIRE(heard.size() == 1);
+  CHECK(heard[0].position == proto::Vec3{1, 2, 3});
+  CHECK(heard[0].pose.hips[2] == 90);
+  CHECK_FALSE(hostHeard);
+}
+
 TEST_CASE("an NPC's voice lines reach the linked games' proxies, one an NPC at a time") {
   const auto port = NextPort();
   std::string error;

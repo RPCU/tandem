@@ -216,6 +216,8 @@ TANDEM_SAID_BY(Either, HackTraced)
 TANDEM_SAID_BY(Either, TrafficLights)
 // An NPC's voice line: its owner's word (OwnedBy), as its reactions.
 TANDEM_SAID_BY(Either, NpcVoice)
+// A body's rest: its owner's word (the host checks whose, as a wound's).
+TANDEM_SAID_BY(Either, CorpsePose)
 #undef TANDEM_SAID_BY
 
 // A new message without its SaidBy line above fails here ("incomplete type").
@@ -890,6 +892,10 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::NpcVoice>) {
           // A context, a delay within its bound, flags this version knows.
           inRange = p::Fits(m);
+        } else if constexpr (std::is_same_v<M, p::CorpsePose>) {
+          // An NPC named, a place and a heading.
+          finite = Finite(m.position) && std::isfinite(m.yaw);
+          inRange = m.pose.npc != 0;
         } else if constexpr (std::is_same_v<M, p::Waypoint>) {
           // A place on the map, of a kind this version knows (Objective: v9).
           finite = Finite(m.position);
@@ -1499,6 +1505,12 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
           // same channel), and only while it is shown to us.
           NeedNpc(m.npc, name);
           NeedShown(m.npc, name);
+        } else if constexpr (std::is_same_v<M, p::CorpsePose>) {
+          // The body of an NPC we were told of, and never one of ours back.
+          NeedNpc(m.pose.npc, name);
+          if (OwnerOf(m.pose.npc) == m_self)
+            Add("authority.own-state-back",
+                std::format("the host sent us npc {}'s body, which our game runs", m.pose.npc));
         } else if constexpr (std::is_same_v<M, p::NpcSeat>) {
           if (m.owner != p::kNoPlayer)
             NeedNpc(m.npc, name);

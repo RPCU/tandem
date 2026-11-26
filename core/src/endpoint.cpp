@@ -1568,6 +1568,12 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
         NotePaint(*paint, out);
       return;
     }
+    // A body's rest: another owner's, never our own back.
+    if (const auto *corpse = std::get_if<proto::CorpsePose>(&message)) {
+      if (!SpeaksFor(corpse->pose.npc))
+        out.push_back(events::Combat{message});
+      return;
+    }
     // Another game's traffic lights (an owner's word): never our own back.
     if (const auto *lights = std::get_if<proto::TrafficLights>(&message)) {
       if (lights->owner != m_you && lights->owner != proto::kNoPlayer)
@@ -4240,11 +4246,14 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     mine.player = player;
     if (RouteToOwner(mine.npc, mine, player))
       out.push_back(events::Combat{mine});
-  } else if (const auto *wound = std::get_if<proto::NpcWound>(&message)) {
-    // An owner's word on its NPC (wounds, poise): for who sees it.
-    const auto corpse = m_corpseOwner.find(wound->npc);
-    if (NpcOwner(wound->npc) != player &&
-        !(corpse != m_corpseOwner.end() && corpse->second == player))
+  } else if (std::holds_alternative<proto::NpcWound>(message) ||
+             std::holds_alternative<proto::CorpsePose>(message)) {
+    // An owner's word on its NPC (wounds, poise, its body's rest): for who
+    // sees it.
+    const auto *wound = std::get_if<proto::NpcWound>(&message);
+    const auto npc = wound ? wound->npc : std::get_if<proto::CorpsePose>(&message)->pose.npc;
+    const auto corpse = m_corpseOwner.find(npc);
+    if (NpcOwner(npc) != player && !(corpse != m_corpseOwner.end() && corpse->second == player))
       return;
     if (const auto peer = PeerOf(player))
       ShareNpc(message, player, *peer);
@@ -4672,6 +4681,13 @@ bool Endpoint::SendCombat(proto::Message message) {
   // An owner's word on its NPC: wounds and poise.
   if (const auto *wound = std::get_if<proto::NpcWound>(&message)) {
     if (!SpeaksFor(wound->npc))
+      return false;
+    SayNpc(message);
+    return true;
+  }
+  // ...and where its body came to rest.
+  if (const auto *corpse = std::get_if<proto::CorpsePose>(&message)) {
+    if (!proto::Fits(*corpse) || !SpeaksFor(corpse->pose.npc))
       return false;
     SayNpc(message);
     return true;
