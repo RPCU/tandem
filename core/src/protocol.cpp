@@ -61,6 +61,11 @@ bool Fits(const Degraded &degraded) {
   return true;
 }
 
+bool Fits(const NpcVoice &voice) {
+  return voice.context != 0 && voice.delayMs <= kNpcVoiceMaxDelayMs &&
+         (voice.flags & ~kVoiceFlags) == 0;
+}
+
 bool Fits(const TrafficLights &lights) {
   if (lights.lights.size() > kMaxLights)
     return false;
@@ -558,6 +563,8 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *degraded = std::get_if<Degraded>(&message); degraded && !Fits(*degraded))
     return std::nullopt;
+  if (const auto *voice = std::get_if<NpcVoice>(&message); voice && !Fits(*voice))
+    return std::nullopt;
   if (const auto *lights = std::get_if<TrafficLights>(&message); lights && !Fits(*lights))
     return std::nullopt;
   // A live vendor names its NPC; a dead one only its entity.
@@ -918,7 +925,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "CarPaint",
                                    "HitTaken",
                                    "Degraded",
-                                   "TrafficLights"};
+                                   "TrafficLights",
+                                   "NpcVoice"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

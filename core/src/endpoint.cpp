@@ -1994,6 +1994,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
           [&](const proto::NpcReaction &reaction) {
             out.push_back(events::HostNpcReaction{reaction});
           },
+          [&](const proto::NpcVoice &voice) { out.push_back(events::HostNpcVoice{voice}); },
           [&](const proto::Pause &pause) {
             if (pause.player != m_you && NotePaused(pause.player, pause.paused))
               out.push_back(events::PauseChanged{pause});
@@ -2783,6 +2784,29 @@ void Endpoint::SendNpcReaction(const proto::NpcReaction &reaction) {
   if (!IsJoined() || m_ended || !m_npcs.contains(reaction.npc) || !OwnsNpc(reaction.npc))
     return;
   SayNpc(reaction);
+}
+
+void Endpoint::SendNpcVoice(const proto::NpcVoice &voice) {
+  Record(voice);
+  // The NPC's owner's word, as its reactions (regions.md): only an NPC the
+  // others were told of, so its spawn goes first on the same channel.
+  if (!IsJoined() || m_ended || !proto::Fits(voice) || !OwnsNpc(voice.npc))
+    return;
+  // A voice says one line at a time, and a crowd's panic asks for many: one
+  // an NPC within kNpcVoiceGapUs, kNpcVoicesPerSecond in all.
+  const auto now = net::NowUs();
+  while (!m_voicesSent.empty() && now - m_voicesSent.front() > 1'000'000)
+    m_voicesSent.pop_front();
+  const auto last = m_voiceAt.find(voice.npc);
+  if (m_voicesSent.size() >= proto::kNpcVoicesPerSecond ||
+      (last != m_voiceAt.end() && now - last->second < proto::kNpcVoiceGapUs))
+    return;
+  if (m_voiceAt.size() > 256)
+    std::erase_if(m_voiceAt,
+                  [&](const auto &entry) { return now - entry.second >= proto::kNpcVoiceGapUs; });
+  m_voiceAt[voice.npc] = now;
+  m_voicesSent.push_back(now);
+  SayNpc(voice);
 }
 
 void Endpoint::SendNpcShot(const proto::NpcShot &shot) {

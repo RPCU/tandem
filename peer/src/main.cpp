@@ -522,6 +522,7 @@ struct Options {
   int meleeSeconds{0};
   int menuAtSeconds{-1};
   int reactNpcsSeconds{0};
+  int voiceNpcsSeconds{0};
   std::string holdRecord;     // what our V holds in its right hand ("": nothing said)
   std::string holdLeftRecord; // ...and in its left (--hold-left: dual wielding)
   int holsterAtSeconds{-1};   // put it away N s in, for 5 s (-1: never)
@@ -752,6 +753,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     does (\"mods: unknown ... shown as ...\") and told\n"
          "  --react-npcs N     host: every N seconds one of the NPCs it sends plays a hit\n"
          "                     reaction (twitch, impact, stagger, knockdown, ragdoll, its end)\n"
+         "  --voice-npcs N     host: every N seconds one of the NPCs it sends says a voice\n"
+         "                     line (a callout, a pain cry, a fear bark, a death cry: NpcVoice)\n"
          "  --hack-npcs N      join: upload a quickhack on one of the host's NPCs every N\n"
          "                     seconds (1.5 s upload), then land its effect\n"
          "  --hack-action REC  --hack-npcs: the quickhack (default QuickHack.BlindHack)\n"
@@ -1703,6 +1706,8 @@ Options Parse(int argc, char **argv) {
       options.menuAtSeconds = Number<int>(value);
     else if (flag == "--react-npcs")
       options.reactNpcsSeconds = std::max(1, Number<int>(value));
+    else if (flag == "--voice-npcs")
+      options.voiceNpcsSeconds = std::max(1, Number<int>(value));
     else if (flag == "--hold")
       options.holdRecord = value;
     else if (flag == "--hold-left")
@@ -4498,8 +4503,9 @@ int main(int argc, char **argv) {
   }
   std::vector<std::uint64_t> statusShown;
   auto nextShot = std::chrono::steady_clock::now();
-  // Presence: --melee, --hurt, --menu-at, --react-npcs.
-  auto nextMelee = nextShot, nextHurt = nextShot, nextReaction = nextShot;
+  // Presence: --melee, --hurt, --menu-at, --react-npcs, --voice-npcs.
+  auto nextMelee = nextShot, nextHurt = nextShot, nextReaction = nextShot, nextVoice = nextShot;
+  std::size_t voiceStep = 0;
   // --charge: when the current charge began, the step last said and when.
   auto nextCharge = nextShot, chargeSaid = nextShot;
   std::optional<std::chrono::steady_clock::time_point> chargeFrom;
@@ -5058,6 +5064,9 @@ int main(int argc, char **argv) {
                 Log("npc {} reacts: type {} (direction {}, intensity {}, part {}), by player {}",
                     e.reaction.npc, e.reaction.type, e.reaction.direction, e.reaction.intensity,
                     e.reaction.bodyPart, e.reaction.by);
+            } else if constexpr (std::is_same_v<E, tandem::events::HostNpcVoice>) {
+              Log("npc {} says voice context {:#x} (after {} ms)", e.voice.npc, e.voice.context,
+                  e.voice.delayMs);
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteStealth>) {
               Log("player {} stealth: flags {:#x}, visibility {:.2f}, camo {:#x}", e.stealth.player,
                   e.stealth.flags, e.stealth.visibility, e.stealth.camo);
@@ -8014,6 +8023,19 @@ int main(int argc, char **argv) {
                                  .bodyPart = 4,
                                  .way = {0.f, -3.f, 1.f}});
       Log("npc {} plays hit reaction {}", npc, type);
+    }
+    // --voice-npcs: one of the NPCs we share says the next voice line (the
+    // game's own contexts: GameObject.PlayVoiceOver's callers).
+    if (options.voiceNpcsSeconds && options.host && endpoint->Players().size() > 1 &&
+        !endpoint->SharedNpcs().empty() && now >= nextVoice) {
+      nextVoice = now + std::chrono::seconds(options.voiceNpcsSeconds);
+      constexpr std::string_view kLines[] = {"start_combat",      "enemy_warning",
+                                             "vo_any_damage_hit", "hit_reaction_heavy",
+                                             "fear_beg",          "stlh_death"};
+      const auto line = kLines[voiceStep++ % std::size(kLines)];
+      const auto npc = endpoint->SharedNpcs().begin()->first;
+      endpoint->SendNpcVoice({.npc = npc, .context = tandem::mods::NameHash(line)});
+      Log("npc {} says {}", npc, line);
     }
     // Replay, once someone is there to see it, at the recording's pace.
     if (options.host && replayNext < replay.size() && endpoint->Players().size() > 1) {

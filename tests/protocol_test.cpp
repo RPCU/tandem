@@ -1,3 +1,4 @@
+#include "tandem/consistency.hpp"
 #include "tandem/protocol.hpp"
 
 #include <doctest/doctest.h>
@@ -1519,6 +1520,22 @@ TEST_CASE("presence, cues and NPC reactions round-trip, on the right channels, a
   CHECK(std::string_view(NameOf(Presence{})) == "Presence");
   CHECK(std::string_view(NameOf(Cue{})) == "Cue");
   CHECK(std::string_view(NameOf(NpcReaction{})) == "NpcReaction");
+}
+
+TEST_CASE("an NPC's voice line is a small reliable one-shot with a known context") {
+  const NpcVoice line{
+      .npc = 12, .context = 0x1234'5678'9abc'def0ULL, .delayMs = 500, .flags = kVoiceInVehicle};
+  RoundTrips(line);
+  // After its NPC's spawn, on the same channel: the receiver knows whose.
+  CHECK(ChannelOf(line) == Channel::Event);
+  CHECK(Encode(line).size() < 24);
+  CHECK(tandem::consistency::IsOneShot(line));
+  CHECK(std::string_view(NameOf(line)) == "NpcVoice");
+  // No context, a delay past its bound, flags this version does not know.
+  CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12, .context = 1, .delayMs = kNpcVoiceMaxDelayMs + 1}))
+                  .has_value());
+  CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12, .context = 1, .flags = 2})).has_value());
 }
 
 TEST_CASE("throws, their ends, the session's rules and a defence survive encoding") {

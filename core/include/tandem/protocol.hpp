@@ -47,7 +47,8 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // (no book), and a list longer than a datagram in several (netcode.md).
 // 22: PlayerMotion and VehicleMotion carry the state sent before them
 // (`before`): a receiver that lost it puts it back (netcode.md, Loss).
-inline constexpr std::uint16_t kProtocolVersion = 22;
+// 23: NpcVoice appended (an NPC's voice lines, npcs.md "Voices").
+inline constexpr std::uint16_t kProtocolVersion = 23;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3385,6 +3386,33 @@ struct TrafficLights {
 // knows.
 bool Fits(const TrafficLights &lights);
 
+// One of an NPC's voice lines as its owner's game starts it (appended,
+// protocol 23; npcs.md, "Voices"; Event channel, after its spawn): a
+// bark (a callout, a pain or death cry, a civilian's fear), by the voice
+// context the game asked of the NPC's voice (GameObject.PlayVoiceOver, its
+// CName's hash). Every proxy of it says the same context through its own
+// voice (its record's voice set, in that player's language), after the
+// owner's delay. Owner to the games linked with it, as NpcReaction. A
+// one-shot: a receiver drops one older than kNpcVoiceMaxAgeUs (a loading
+// screen, a stall: a cry a second late is worth nothing). An owner sends
+// one line an NPC within kNpcVoiceGapUs and kNpcVoicesPerSecond in all (a
+// voice says one line at a time; a crowd's panic asks for dozens).
+inline constexpr std::uint8_t kVoiceInVehicle = 1; // canPlayInVehicle
+inline constexpr std::uint8_t kVoiceFlags = kVoiceInVehicle;
+inline constexpr std::uint16_t kNpcVoiceMaxDelayMs = 10'000;
+inline constexpr std::uint64_t kNpcVoiceMaxAgeUs = 1'000'000;
+inline constexpr std::uint64_t kNpcVoiceGapUs = 300'000;
+inline constexpr std::size_t kNpcVoicesPerSecond = 10;
+struct NpcVoice {
+  NpcId npc{};
+  std::uint64_t context{}; // the voice context's CName hash (never 0)
+  std::uint16_t delayMs{}; // the owner's delay before it plays
+  std::uint8_t flags{};    // kVoice*
+  friend bool operator==(const NpcVoice &, const NpcVoice &) = default;
+};
+// A context, a delay within kNpcVoiceMaxDelayMs, flags this version knows.
+bool Fits(const NpcVoice &voice);
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -3407,7 +3435,7 @@ using MessageVariant = std::variant<
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
-    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights>;
+    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,

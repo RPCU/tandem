@@ -2586,6 +2586,48 @@ TEST_CASE("an NPC's hit reactions reach the guests' proxies; only the host sends
   CHECK_FALSE(hostHeard);
 }
 
+TEST_CASE("an NPC's voice lines reach the linked games' proxies, one an NPC at a time") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  host->SendNpcSpawn({.npc = 7, .record = 1});
+  host->SendNpcSpawn({.npc = 8, .record = 1});
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(guest, error);
+  std::vector<proto::NpcVoice> heard;
+  bool sent = false, hostHeard = false;
+  const Seen watch = [&](std::size_t i, const auto &events) {
+    if (guest->IsJoined() && !sent) {
+      sent = true;
+      // An NPC never announced (9), a line with no context, the second line
+      // of one NPC within the gap, and a guest's line about the host's NPC:
+      // none goes.
+      host->SendNpcVoice({.npc = 9, .context = 1});
+      host->SendNpcVoice({.npc = 7});
+      host->SendNpcVoice({.npc = 7, .context = 0x51, .delayMs = 250});
+      host->SendNpcVoice({.npc = 7, .context = 0x52});
+      host->SendNpcVoice({.npc = 8, .context = 0x53, .flags = proto::kVoiceInVehicle});
+      guest->SendNpcVoice({.npc = 7, .context = 0x54});
+    }
+    for (const auto &event : events) {
+      if (const auto *v = std::get_if<events::HostNpcVoice>(&event); v && i == 1)
+        heard.push_back(v->voice);
+      hostHeard |= i == 0 && Has<events::HostNpcVoice>(events);
+    }
+  };
+  REQUIRE(Pump({host.get(), guest.get()}, [&](std::size_t i, const auto &events) {
+    watch(i, events);
+    return heard.size() >= 2;
+  }));
+  // Nothing else comes: what was refused is not sent later.
+  PumpFor({host.get(), guest.get()}, 300ms, watch);
+  REQUIRE(heard.size() == 2);
+  CHECK(heard[0] == proto::NpcVoice{.npc = 7, .context = 0x51, .delayMs = 250});
+  CHECK(heard[1] == proto::NpcVoice{.npc = 8, .context = 0x53, .flags = proto::kVoiceInVehicle});
+  CHECK_FALSE(hostHeard);
+}
+
 TEST_CASE("enemy scaling: the host's rule reaches every game, late joiners too, said once") {
   const auto port = NextPort();
   std::string error;
