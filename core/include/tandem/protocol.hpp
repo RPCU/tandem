@@ -3417,7 +3417,7 @@ bool Fits(const NpcVoice &voice);
 // Where and how a dead or knocked-out NPC's body came to rest (appended,
 // protocol 24; regions.md §5, "Corpses"; Event channel, an IsCombat
 // message: the corpse's owner's word, as its wounds). Its owner sends it
-// once, when the body has settled (still for 1 s, or 8 s after it fell):
+// once, when the body has settled (3 s after the fall and still for 1 s, or 8 s after):
 // the entity's place and heading and its body pose (an ActorPose, the scene
 // actors' coding: hips and the body rig's bones). Every game that shows it
 // lays its own copy there, in that pose, over its own ragdoll's. State, not

@@ -3,7 +3,7 @@
 // A death is its owner's word, and every game ragdolls its own copy: the
 // same body came to rest another way on each screen, metres apart after a
 // blast, a fall or a car. The owner's body is the truth: once it has
-// settled (still for 1 s, or 8 s after it fell), its owner reads its pose
+// settled (3 s after it fell and still for 1 s, or 8 s after), its owner reads its pose
 // with the scene actors' read (engine/posestream.cpp) and sends it with the
 // body's place and heading, once. Every game that shows it lays its copy
 // there and draws it in that pose (the scene actors' write, held), for as
@@ -124,7 +124,8 @@ public class TandemCorpses {
           watch.last = at;
           watch.stillSince = now;
         }
-        if now - watch.stillSince >= 1.0 || now - watch.since >= 8.0 {
+        // 3 s at least: the entity may stand still while its ragdoll falls.
+        if (now - watch.since >= 3.0 && now - watch.stillSince >= 1.0) || now - watch.since >= 8.0 {
           TandemPresence.ReadCorpse(watch.npc, body);
           watch.reading = true;
           watch.readAt = now;
