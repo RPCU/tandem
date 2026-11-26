@@ -335,7 +335,7 @@ copy: the same body came to rest another way on each screen. The owner's
 body is the truth.
 
 - **The owner**: each shared NPC it reports dead or knocked out is
-  watched; once still (under 2 cm for 1 s, or 8 s after it fell), its pose
+  watched; once still (3 s after the fall, under 2 cm for 1 s; or 8 s after), its pose
   is read once with the scene actors' read (`TandemPresence.ReadCorpse`,
   `engine::SetPoseActorSource`, diverted from the scene stream by
   `Runtime::ReadCorpse`) and sent with the entity's place and heading
@@ -356,7 +356,9 @@ body is the truth.
 - **To prove in game**: whether the actor read after the entity job sees a
   ragdoll's settled bones, and whether the commit's write shows over the
   copy's own ragdoll (both measured on scene actors only, never on a
-  ragdoll); `corpse-rest` checks the path, eyes the rest.
+  ragdoll), and whether a body thrown farther than 4 m from its entity's
+  place (the hips' range, `kPoseHipsScale`) is drawn right; `corpse-rest`
+  checks the path, eyes the rest.
 
 ## 6. Crowd density
 
