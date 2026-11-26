@@ -282,10 +282,21 @@ Built in this change:
 6. **Cars and the AV** for a remote V (above, 4 and 5): scripts only,
    compiled, not run.
 
+7. **The partner's stars** (`Markers.reds`, `PartyHud.reds`; not yet
+   run in game): from its `Heat` (`TandemStreet.HeatStage`, `HeatState`).
+   Its marker (world, minimap, map) flashes the police lights' red and
+   blue while the police see it, its colour and grey while they search;
+   the map's tooltip says "Wanted by the NCPD: N of 5 stars" (out of their
+   sight while they search). Its party entry has its stars beside the
+   name, in the game's own art: the atlas of the game's wanted bar's first
+   star (`WantedBarGameController`, `StarController`'s `star_active`, read
+   through Codeware's `inkImage.textureAtlas`), red, grey while searched,
+   fading in and out when about to be dropped. The wanted bar not found on
+   the HUD: the level is written in the entry ("Wanted 3/5"), registered
+   as the `wanted stars` fallback. Scenario `police-partner-stars`.
+
 Not built:
 
-- The partner's stars on screen (a marker on the wanted partner, or its
-  level in the co-op roster). The level is there (`TandemStreet.HeatStage`).
 - Roadblocks for a wanted guest in another game's area (above).
 - Security areas and their own alarm (a guest trespassing in a host's
   restricted area) are not looked at here.

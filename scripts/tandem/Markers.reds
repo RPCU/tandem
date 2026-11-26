@@ -31,6 +31,9 @@ public class TandemMarker {
   public let mappin: NewMappinID;
   // Not shown for now: the player is in another world (Elsewhere.reds).
   public let suppressed: Bool;
+  // Their wanted level and star state as last logged (police.md).
+  public let wanted: Int32;
+  public let wantedState: Int32;
 }
 
 public class TandemMarkersTick extends DelayCallback {
@@ -76,6 +79,35 @@ public class TandemMarkers extends ScriptableSystem {
       case 8u: return new HDRColor(0.55, 0.75, 1.0, 1.0); // sky blue
       default: return new HDRColor(1.0, 1.0, 1.0, 1.0); // nobody's
     }
+  }
+
+  // A player's icon as it is drawn now: their colour, or while they are
+  // wanted (police.md, "The partner's stars") the police lights' red and
+  // blue in turn while the police see them, and their colour and the stars'
+  // grey in turn while the police search (EStarState: the game greys its
+  // own stars then).
+  public static func TintOf(player: Uint32) -> HDRColor {
+    let own = TandemMarkers.ColorOf(player);
+    if TandemStreet.HeatStage(player) <= 0 {
+      return own;
+    }
+    let now = EngineTime.ToFloat(GameInstance.GetEngineTime(GetGameInstance()));
+    let first = (Cast<Int32>(now * 2.0) % 2) == 0;
+    let state = TandemStreet.HeatState(player);
+    if state == 2 || state == 3 {
+      return first ? own : new HDRColor(0.55, 0.55, 0.55, 1.0);
+    }
+    return first ? new HDRColor(1.0, 0.24, 0.27, 1.0) : new HDRColor(0.27, 0.53, 1.0, 1.0);
+  }
+
+  // A wanted player's line on the world map (empty: not wanted).
+  public static func WantedText(player: Uint32) -> String {
+    let stage = TandemStreet.HeatStage(player);
+    if player == 0u || stage <= 0 {
+      return "";
+    }
+    let state = TandemStreet.HeatState(player);
+    return TandemText.F(state == 2 || state == 3 ? "Marker-WantedSearching" : "Marker-Wanted", s"\(stage)");
   }
 
   // Ours or a ping's or a waypoint's (Comms.reds): drawn the same way.
@@ -235,6 +267,13 @@ public class TandemMarkers extends ScriptableSystem {
     let shown = TandemSettings.Markers();
     for marker in this.m_markers {
       let body = entities.GetEntity(marker.puppet) as GameObject;
+      let stage = TandemStreet.HeatStage(marker.player);
+      let state = stage > 0 ? TandemStreet.HeatState(marker.player) : 0;
+      if stage != marker.wanted || state != marker.wantedState {
+        marker.wanted = stage;
+        marker.wantedState = state;
+        TandemNative.Log(s"marker: player \(marker.player) wanted \(stage) (state \(state)): \(stage > 0 ? "drawn in the police's colours" : "its own colour")");
+      }
       if !shown {
         if marker.mappin.value != 0ul {
           this.Unregister(marker);
@@ -373,7 +412,7 @@ protected func Update() -> Void {
   wrappedMethod();
   let player = TandemMarkers.PlayerOf(this.GetMappin());
   if player != 0u {
-    inkWidgetRef.SetTintColor(this.iconWidget, TandemMarkers.ColorOf(player));
+    inkWidgetRef.SetTintColor(this.iconWidget, TandemMarkers.TintOf(player));
   }
 }
 
@@ -407,7 +446,7 @@ protected cb func OnUpdate() -> Bool {
   if player != 0u {
     // A player's marker in their colour (a ping's is its sender's: Comms.reds,
     // UpdateIcon; tinting it here made it white).
-    inkWidgetRef.SetTintColor(this.iconWidget, TandemMarkers.ColorOf(player));
+    inkWidgetRef.SetTintColor(this.iconWidget, TandemMarkers.TintOf(player));
   }
   // One name over a player: none with nameplates = off, the nameplate's
   // where it shows (PartyHud.reds), else the marker's. Pings keep theirs.
@@ -457,7 +496,11 @@ private final func UpdateTooltip(tooltipType: WorldMapTooltipType, controller: w
     let name = TandemMarkers.NameOf(mappin);
     if NotEquals(name, "") && IsDefined(this.m_tooltipController) {
       let description = TandemComms.DescriptionOf(mappin);
-      this.m_tooltipController.TandemTitle(name, NotEquals(description, "") ? description : TandemText.Get("Marker-Description"));
+      let wanted = TandemMarkers.WantedText(TandemMarkers.PlayerOf(mappin));
+      if StrLen(description) == 0 {
+        description = StrLen(wanted) > 0 ? wanted : TandemText.Get("Marker-Description");
+      }
+      this.m_tooltipController.TandemTitle(name, description);
     }
   }
 }
