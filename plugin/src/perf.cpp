@@ -17,6 +17,9 @@ static_assert(std::size(kWorkNames) == static_cast<std::size_t>(Work::Count));
 
 Perf &Perf::Get() {
   static Perf perf;
+  // The first report's rates are over the time since the first use (they
+  // were over 1 s: "5061/s" for a minute's ticks, 2026-11-26).
+  [[maybe_unused]] static const bool started = (perf.m_reportedUs.store(net::NowUs()), true);
   return perf;
 }
 

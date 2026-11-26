@@ -57,6 +57,16 @@ struct Hit {
 // Severity of a drift of `metres` and of a frame of `ms`.
 double DriftSeverity(float metres);
 double FrameSeverity(float ms);
+// The frame to judge at a script tick, in us (0: none): `previousUs` the
+// last tick (0: this is the session's first), `nowUs` this one, and the
+// engine's frames between them (`engineFrames`, the longest
+// `engineLongestUs`). A gap that held 3 engine frames or more is a pause
+// menu or a loading screen holding the script tick: its longest engine
+// frame is the frame. The session's first tick judges nothing: the engine
+// frames counted before it are the save's loading screen (a loading frame
+// of 1370 ms read as the session start's, 2026-11-26).
+std::uint64_t FrameToJudgeUs(std::uint64_t previousUs, std::uint64_t nowUs,
+                             std::uint32_t engineFrames, std::uint64_t engineLongestUs);
 
 // A log line (its text as written, without the time; `level` 'E', 'W', 'I'
 // or 'D') that is a trigger, or none. The observer's own lines never are.
