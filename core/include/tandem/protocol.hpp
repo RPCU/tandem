@@ -48,7 +48,8 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 22: PlayerMotion and VehicleMotion carry the state sent before them
 // (`before`): a receiver that lost it puts it back (netcode.md, Loss).
 // 23: NpcVoice appended (an NPC's voice lines, npcs.md "Voices").
-inline constexpr std::uint16_t kProtocolVersion = 23;
+// 24: CorpsePose appended (a body's rest, regions.md §5).
+inline constexpr std::uint16_t kProtocolVersion = 24;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3413,6 +3414,23 @@ struct NpcVoice {
 // A context, a delay within kNpcVoiceMaxDelayMs, flags this version knows.
 bool Fits(const NpcVoice &voice);
 
+// Where and how a dead or knocked-out NPC's body came to rest (appended,
+// protocol 24; regions.md §5, "Corpses"; Event channel, an IsCombat
+// message: the corpse's owner's word, as its wounds). Its owner sends it
+// once, when the body has settled (still for 1 s, or 8 s after it fell):
+// the entity's place and heading and its body pose (an ActorPose, the scene
+// actors' coding: hips and the body rig's bones). Every game that shows it
+// lays its own copy there, in that pose, over its own ragdoll's. State, not
+// a one-shot: a repeat lays the body the same way.
+struct CorpsePose {
+  ActorPose pose; // pose.npc: the NPC; seq and timeUs unused
+  Vec3 position;  // the entity's world position
+  float yaw{};    // its heading, radians
+  friend bool operator==(const CorpsePose &, const CorpsePose &) = default;
+};
+// An NPC, finite numbers.
+bool Fits(const CorpsePose &corpse);
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -3435,7 +3453,7 @@ using MessageVariant = std::variant<
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
-    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice>;
+    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
@@ -3452,8 +3470,9 @@ bool IsStory(const Message &message);
 // a level (PlayerLevel … NpcLevel), a car's lending or paint (CarLend, CarPaint), what a
 // game runs without (Degraded), an NPC's
 // scale (NpcScale), a vendor (NpcVendor), a placed NPC (NpcPlaced), a
-// death of the ledger (NpcDeath), a street race (Race), or what a proxy
-// cannot do (WeakSpotHit, HackTraced): one path in endpoint.hpp too.
+// death of the ledger (NpcDeath), a street race (Race), what a proxy
+// cannot do (WeakSpotHit, HackTraced), or a body's rest (CorpsePose): one
+// path in endpoint.hpp too.
 bool IsCombat(const Message &message);
 // A trade message (Trade, TradeOffer, TradeCommit): one path as well.
 bool IsTrade(const Message &message);

@@ -524,6 +524,7 @@ struct Options {
   int menuAtSeconds{-1};
   int reactNpcsSeconds{0};
   int voiceNpcsSeconds{0};
+  int corpseNpcsSeconds{0};
   std::string holdRecord;     // what our V holds in its right hand ("": nothing said)
   std::string holdLeftRecord; // ...and in its left (--hold-left: dual wielding)
   int holsterAtSeconds{-1};   // put it away N s in, for 5 s (-1: never)
@@ -756,6 +757,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     reaction (twitch, impact, stagger, knockdown, ragdoll, its end)\n"
          "  --voice-npcs N     host: every N seconds one of the NPCs it sends says a voice\n"
          "                     line (a callout, a pain cry, a fear bark, a death cry: NpcVoice)\n"
+         "  --corpse-npcs N    host: every N seconds one of the NPCs it sends dies, and 1 s\n"
+         "                     later its body's rest is said where it stood (CorpsePose)\n"
          "  --hack-npcs N      join: upload a quickhack on one of the host's NPCs every N\n"
          "                     seconds (1.5 s upload), then land its effect\n"
          "  --hack-action REC  --hack-npcs: the quickhack (default QuickHack.BlindHack)\n"
@@ -1709,6 +1712,8 @@ Options Parse(int argc, char **argv) {
       options.reactNpcsSeconds = std::max(1, Number<int>(value));
     else if (flag == "--voice-npcs")
       options.voiceNpcsSeconds = std::max(1, Number<int>(value));
+    else if (flag == "--corpse-npcs")
+      options.corpseNpcsSeconds = std::max(2, Number<int>(value));
     else if (flag == "--hold")
       options.holdRecord = value;
     else if (flag == "--hold-left")
@@ -3863,6 +3868,9 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
                        w->wound, w->player);
   if (const auto *p = std::get_if<proto::NpcPoise>(&message))
     return std::format("npc {} poise {:.0f}%", p->npc, p->poise * 100.f);
+  if (const auto *rest = std::get_if<proto::CorpsePose>(&message))
+    return std::format("npc {}'s body at rest at ({:.1f}, {:.1f}, {:.1f})", rest->pose.npc,
+                       rest->position.x, rest->position.y, rest->position.z);
   if (const auto *d = std::get_if<proto::Difficulty>(&message))
     return std::format("the session plays at difficulty {}", d->level);
   if (const auto *a = std::get_if<proto::AreaHit>(&message))
@@ -4439,8 +4447,12 @@ int main(int argc, char **argv) {
   std::vector<std::uint64_t> statusShown;
   auto nextShot = std::chrono::steady_clock::now();
   // Presence: --melee, --hurt, --menu-at, --react-npcs, --voice-npcs.
-  auto nextMelee = nextShot, nextHurt = nextShot, nextReaction = nextShot, nextVoice = nextShot;
+  auto nextMelee = nextShot, nextHurt = nextShot, nextReaction = nextShot, nextVoice = nextShot,
+       nextCorpse = nextShot;
   std::size_t voiceStep = 0;
+  // --corpse-npcs: the bodies whose rest is due, and when.
+  std::vector<std::pair<tandem::proto::CorpsePose, std::chrono::steady_clock::time_point>>
+      corpsesDue;
   // --charge: when the current charge began, the step last said and when.
   auto nextCharge = nextShot, chargeSaid = nextShot;
   std::optional<std::chrono::steady_clock::time_point> chargeFrom;
@@ -7972,6 +7984,28 @@ int main(int argc, char **argv) {
       endpoint->SendNpcVoice({.npc = npc, .context = tandem::mods::NameHash(line)});
       Log("npc {} says {}", npc, line);
     }
+    // --corpse-npcs: one of the NPCs we share dies; its body's rest (a
+    // neutral pose where it stood) 1 s later, as a game's settled body.
+    if (options.corpseNpcsSeconds && options.host && endpoint->Players().size() > 1 &&
+        !endpoint->SharedNpcs().empty() && now >= nextCorpse) {
+      nextCorpse = now + std::chrono::seconds(options.corpseNpcsSeconds);
+      const auto [npc, spawn] = *endpoint->SharedNpcs().begin();
+      endpoint->SendNpcGone(
+          {.npc = npc, .reason = tandem::proto::kGoneDead, .killer = endpoint->You()});
+      Log("npc {} died (--corpse-npcs)", npc);
+      corpsesDue.push_back(
+          {{.pose = tandem::pose::ForActor(npc, tandem::pose::Pack(tandem::pose::Pose{})),
+            .position = spawn.position},
+           now + std::chrono::seconds(1)});
+    }
+    for (auto it = corpsesDue.begin(); it != corpsesDue.end();)
+      if (now >= it->second) {
+        if (endpoint->SendCombat(it->first))
+          Log("npc {} at rest: its pose sent", it->first.pose.npc);
+        it = corpsesDue.erase(it);
+      } else {
+        ++it;
+      }
     // Replay, once someone is there to see it, at the recording's pace.
     if (options.host && replayNext < replay.size() && endpoint->Players().size() > 1) {
       const auto nowUs = tandem::net::NowUs();
