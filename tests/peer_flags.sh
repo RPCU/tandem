@@ -55,7 +55,7 @@ declare -A value=(
   ["--region-at"]="1,2,3"
   ["--traffic"]=4 ["--traffic-at"]=30 ["--traffic-vehicle"]=Vehicle.x ["--wreck-at"]=10 ["--ram-traffic"]=3 ["--steal-at"]=12 ["--steal-driven"]=--check
   ["--heat"]=3 ["--heat-at"]=5 ["--heat-for"]=20 ["--crime-at"]=8
-  ["--hurt"]=4 ["--hurt-hit"]=npc ["--melee"]=5 ["--menu-at"]=10 ["--react-npcs"]=3
+  ["--hurt"]=4 ["--hurt-hit"]=npc ["--melee"]=5 ["--menu-at"]=10 ["--react-npcs"]=3 ["--voice-npcs"]=3
   ["--hold"]=Items.x ["--hold-left"]=Items.x ["--holster-at"]=10
   ["--level"]=30 ["--npc-level"]=25 ["--lend"]=owner ["--unlock-vehicle"]=Vehicle.x ["--vendor"]="Character.x@1,2,3#1a2b3c4d5e6f7788" ["--vendor-dies"]=10 ["--trade-offer"]=--check ["--trade-accept"]=--check
   ["--trade-give"]=Items.CommonMaterial1:2 ["--trade-money"]=100 ["--trade-asks"]=50
