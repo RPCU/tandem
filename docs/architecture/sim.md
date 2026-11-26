@@ -14,7 +14,7 @@ library; tests in `tests/referee_test.cpp` and `tests/sim_test.cpp`).
 | world | `world.hpp` | the host's NPCs, time of day, weather and its answers to guests |
 | story | `story.hpp` | a scripted quest, played by a director that waits for the guests |
 | V | `player.hpp`, `motion.hpp` | the simulated player and how it moves |
-| personas | `persona.hpp` | companion, loner, chaos, speedrunner |
+| personas | `persona.hpp` | companion, loner, chaos, speedrunner, partner |
 | game | `game.hpp` | one simulated game (endpoint, referee, models), `RunPair`, the command line |
 | coverage | `coverage.hpp` | which message types crossed the wire, which feature paths were taken |
 
@@ -137,6 +137,7 @@ without recordings (or crouched), a plain walk at the game's speeds (1.5,
 | `loner` | 400 m away in its own region (as host, sharing the NPCs around itself), drives, fast travels | never comes to regroup offers, never revives |
 | `chaos` | everything, twice as fast; hits right after a world is rebuilt, grabs what just died or someone else holds, lets go early | leaves and joins again every 45 s, half the time with no goodbye; 40 ms, 60 ms jitter, 15% loss, 5% reordered each way |
 | `speedrunner` | fast travel, cars, the metro, Sandevistan | — |
+| `partner` | as `companion`, but never goes down, pauses, hacks a car, calls or goes elsewhere: the bot of the player's own sessions (`tools/play-session.sh`), so it never stops their game (a V down blocks waiting) | — |
 
 ## Running it
 

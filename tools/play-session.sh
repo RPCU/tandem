@@ -35,7 +35,7 @@ while [ ! -f .cache/play-sim/stop ]; do
   [ -n "$addr" ] || addr=$(getent ahostsv4 anya.local | awk 'NR == 1 { print $1 }')
   [ -n "$addr" ] || { sleep 5; continue; }
   n=$((n + 1))
-  build/linux/peer/tandem-peer sim --role join "$addr:27450" --persona companion --seed "$n" --minutes 240 >>".cache/play-sim/sim-$n.log" 2>&1
+  build/linux/peer/tandem-peer sim --role join "$addr:27450" --persona partner --seed "$n" --minutes 240 >>".cache/play-sim/sim-$n.log" 2>&1
   sleep 15
 done
 E

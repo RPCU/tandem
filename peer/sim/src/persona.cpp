@@ -88,6 +88,25 @@ const std::vector<Persona> &Personas() {
                              {Goal::LootQuest, 0.5f}});
     speedrunner.tempo = 1.5f;
     out.push_back(std::move(speedrunner));
+    // The companion of the player's own sessions (tools/play-session.sh):
+    // nothing that stops the real player's game. No going down (a down V
+    // blocks waiting), no pause (it pauses everyone), no car hacks, calls or
+    // other worlds.
+    out.push_back(Make("partner", "plays along with a real player without getting in the way",
+                       {{Goal::Follow, 6.f},
+                        {Goal::Wander, 1.f},
+                        {Goal::Fight, 8.f},
+                        {Goal::Hack, 3.f},
+                        {Goal::Sandevistan, 2.f},
+                        {Goal::Takedown, 3.f},
+                        {Goal::Drive, 1.f},
+                        {Goal::Ride, 4.f},
+                        {Goal::FastTravel, 0.5f},
+                        {Goal::Regroup, 0.5f},
+                        {Goal::Metro, 0.3f},
+                        {Goal::Camo, 1.f},
+                        {Goal::DropItem, 1.f},
+                        {Goal::LootQuest, 0.5f}}));
     return out;
   }();
   return personas;
