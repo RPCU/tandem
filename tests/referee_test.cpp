@@ -1219,6 +1219,35 @@ TEST_CASE("referee: traffic lights are another game's word, never ours back") {
   CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
 }
 
+TEST_CASE("referee: an NPC's voice line is its owner's word, about an NPC it shows us") {
+  auto guest = Guest();
+  guest.Received(1, proto::NpcSpawn{.npc = 7, .record = 1}, kSecond);
+  guest.Received(1, proto::NpcVoice{.npc = 7, .context = 0x99}, kSecond);
+  CHECK(Rules(guest).empty());
+  // An NPC never announced; a line with no context.
+  guest.Received(1, proto::NpcVoice{.npc = 8, .context = 0x99}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"ids.unknown-npc"});
+  guest.Received(1, proto::NpcVoice{.npc = 7}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  // Gone from our view: its owner's lines are for the games that show it.
+  guest.Received(1, proto::NpcGone{.npc = 7, .reason = proto::kGoneAway}, 2 * kSecond);
+  guest.Received(1, proto::NpcVoice{.npc = 7, .context = 0x99}, 5 * kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.not-shared"});
+
+  // A guest speaks for its own NPCs only, and no faster than a voice can.
+  auto host = Host();
+  const auto ours = regions::MakeNpcId(2, 1);
+  host.Received(2, proto::NpcSpawn{.npc = ours, .record = 1}, kSecond);
+  host.Received(2, proto::NpcVoice{.npc = ours, .context = 0x99}, kSecond);
+  CHECK(Rules(host).empty());
+  const auto theirs = regions::MakeNpcId(3, 1);
+  host.Received(2, proto::NpcVoice{.npc = theirs, .context = 0x99}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.not-owner"});
+  for (std::uint64_t i = 0; i < 200; ++i)
+    host.Received(2, proto::NpcVoice{.npc = ours, .context = 0x99}, kSecond + i * 1000);
+  CHECK(Broke(host, "rate.over-budget"));
+}
+
 TEST_CASE("referee: what a game runs without is its own word, passed on, never back") {
   auto guest = Guest();
   guest.Received(

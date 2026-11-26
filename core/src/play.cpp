@@ -497,6 +497,7 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
                              std::is_same_v<M, proto::NpcHealth> ||
                              std::is_same_v<M, proto::NpcAnims> ||
                              std::is_same_v<M, proto::NpcShot> ||
+                             std::is_same_v<M, proto::NpcVoice> ||
                              std::is_same_v<M, proto::NpcPoise> ||
                              std::is_same_v<M, proto::NpcLevel> ||
                              std::is_same_v<M, proto::NpcScale> ||
@@ -554,6 +555,8 @@ void ApplyHost(Endpoint &endpoint, const proto::Message &message, proto::PlayerI
           endpoint.SendNpcAnims(m);
         else if constexpr (std::is_same_v<M, proto::NpcShot>)
           endpoint.SendNpcShot(m);
+        else if constexpr (std::is_same_v<M, proto::NpcVoice>)
+          endpoint.SendNpcVoice(m);
         else if constexpr (std::is_same_v<M, proto::NpcHackState>)
           endpoint.SendNpcHackState(m);
         else if constexpr (std::is_same_v<M, proto::NpcStatus>)

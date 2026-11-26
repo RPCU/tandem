@@ -55,6 +55,8 @@ public:
     float noiseHz{40.f}, throwPathHz{24.f};
     // A turret in a player's hands (5 a second while held).
     float turretHandsHz{12.f};
+    // NPC voice lines: 10 a second an owner, three owners relayed by a host.
+    float npcVoiceHz{32.f};
     float eventsHz{400.f};      // every reliable message together (hint)
     float bytesPerSecond{2e5f}; // everything together (hint)
     // At the game's digests (3 s); Attach raises it for an endpoint whose

@@ -271,6 +271,10 @@ struct RemoteStatusVisuals {
 struct HostNpcReaction {
   proto::NpcReaction reaction;
 };
+// One of a shown NPC's voice lines, as its owner started it: said by its proxy.
+struct HostNpcVoice {
+  proto::NpcVoice voice;
+};
 // How far the host's NPCs are in noticing each guest (guests only).
 struct HostNpcAwareness {
   proto::NpcAwareness awareness;
@@ -655,7 +659,7 @@ using SessionEventVariant = std::variant<
     events::RemoteStatusVisuals, events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom,
     events::TrafficGive, events::TrafficTake, events::TrafficOwnerChanged, events::Fractured,
     events::DeviceFired, events::TurretHeld, events::LinkDeclined, events::TurretRefused,
-    events::TrafficHacked, events::RemoteHitTaken>;
+    events::TrafficHacked, events::RemoteHitTaken, events::HostNpcVoice>;
 // Its copies, moves and conversions compiled in session_event.cpp only, as
 // proto::Message's (tandem/closed_variant.hpp).
 using SessionEvent = ClosedVariant<SessionEventVariant>;
@@ -753,6 +757,8 @@ public:
   void SendNpcShot(const proto::NpcShot &shot);
   // Host only: a shared NPC's hit reaction, for the guests' proxies.
   void SendNpcReaction(const proto::NpcReaction &reaction);
+  // An NPC of ours says a voice line (a bark), for the linked games' proxies.
+  void SendNpcVoice(const proto::NpcVoice &voice);
   // Guest only: we hit one of the host's NPCs.
   void SendNpcHit(const proto::NpcHit &hit);
   void SendNpcEffect(const proto::NpcEffect &effect);
@@ -1877,6 +1883,10 @@ private:
   std::uint64_t m_epochAtUs{};
   // Host: whom each NPC last shot at with an NpcShotAt, and when.
   std::map<proto::NpcId, std::pair<proto::PlayerId, std::uint64_t>> m_shotAt;
+  // Our NPCs' voice lines sent (SendNpcVoice): when each NPC last spoke,
+  // and the last second's lines.
+  std::map<proto::NpcId, std::uint64_t> m_voiceAt;
+  std::deque<std::uint64_t> m_voicesSent;
   // Host: digests (when the next round is due, guests owed one sooner) and
   // each guest's last resync, for its cooldown.
   std::uint32_t m_digestSeq{};

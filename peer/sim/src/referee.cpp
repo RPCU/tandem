@@ -214,6 +214,8 @@ TANDEM_SAID_BY(Either, Race)
 TANDEM_SAID_BY(Either, WeakSpotHit)
 TANDEM_SAID_BY(Either, HackTraced)
 TANDEM_SAID_BY(Either, TrafficLights)
+// An NPC's voice line: its owner's word (OwnedBy), as its reactions.
+TANDEM_SAID_BY(Either, NpcVoice)
 #undef TANDEM_SAID_BY
 
 // A new message without its SaidBy line above fails here ("incomplete type").
@@ -239,8 +241,9 @@ std::vector<p::NpcId> OwnedBy(const p::Message &m) {
                       std::is_same_v<M, p::NpcStatus> || std::is_same_v<M, p::PlayerHit> ||
                       std::is_same_v<M, p::PlayerHack> || std::is_same_v<M, p::NpcCue> ||
                       std::is_same_v<M, p::NpcShotAt> || std::is_same_v<M, p::NpcActionReply> ||
-                      std::is_same_v<M, p::NpcReaction> || std::is_same_v<M, p::NpcScale> ||
-                      std::is_same_v<M, p::NpcLevel> || std::is_same_v<M, p::NpcPlaced>)
+                      std::is_same_v<M, p::NpcReaction> || std::is_same_v<M, p::NpcVoice> ||
+                      std::is_same_v<M, p::NpcScale> || std::is_same_v<M, p::NpcLevel> ||
+                      std::is_same_v<M, p::NpcPlaced>)
           return {x.npc};
         else if constexpr (std::is_same_v<M, p::NpcDeath>)
           // Its owner's report names its NPC; the host's word names none.
@@ -884,6 +887,9 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::NpcReaction>) {
           finite = std::isfinite(m.angle) && Finite(m.way);
           inRange = m.type <= p::kReactionMax;
+        } else if constexpr (std::is_same_v<M, p::NpcVoice>) {
+          // A context, a delay within its bound, flags this version knows.
+          inRange = p::Fits(m);
         } else if constexpr (std::is_same_v<M, p::Waypoint>) {
           // A place on the map, of a kind this version knows (Objective: v9).
           finite = Finite(m.position);
@@ -984,6 +990,8 @@ void Referee::CheckRate(p::PlayerId from, const p::Message &message, std::size_t
     budget = limits.throwPathHz;
   else if (std::holds_alternative<p::TurretHands>(message))
     budget = limits.turretHandsHz;
+  else if (std::holds_alternative<p::NpcVoice>(message))
+    budget = limits.npcVoiceHz;
   if (budget > 0.f) {
     // A relayed player's states count against that player.
     auto copy = message;
@@ -1486,6 +1494,11 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
             NeedNpc(anim.npc, name);
             NeedShown(anim.npc, name);
           }
+        } else if constexpr (std::is_same_v<M, p::NpcVoice>) {
+          // A line of an NPC we were told of (its spawn goes first, on the
+          // same channel), and only while it is shown to us.
+          NeedNpc(m.npc, name);
+          NeedShown(m.npc, name);
         } else if constexpr (std::is_same_v<M, p::NpcSeat>) {
           if (m.owner != p::kNoPlayer)
             NeedNpc(m.npc, name);

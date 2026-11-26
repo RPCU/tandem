@@ -814,6 +814,14 @@ bool Endpoint::OnOwnerMessage(net::PeerId peer, proto::PlayerId player,
               out.push_back(events::HostNpcReaction{reaction});
             return true;
           },
+          [&](const proto::NpcVoice &voice) {
+            if (!owns(voice.npc))
+              return true;
+            ShareNpc(voice, player, peer);
+            if (here)
+              out.push_back(events::HostNpcVoice{voice});
+            return true;
+          },
           [&](const proto::NpcShot &shot) {
             if (!owns(shot.npc))
               return true;
