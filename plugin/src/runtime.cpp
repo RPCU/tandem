@@ -1477,6 +1477,11 @@ void Runtime::SubmitNpcReaction(const proto::NpcReaction &reaction) {
   m_npcOutbox.push_back(reaction);
 }
 
+void Runtime::SubmitNpcVoice(const proto::NpcVoice &voice) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(voice);
+}
+
 void Runtime::PushNpcAnims(const proto::NpcAnims &anims) {
   std::lock_guard _(m_lock);
   for (const auto &anim : anims.npcs)

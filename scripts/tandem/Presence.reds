@@ -131,6 +131,7 @@ public class TandemPresenceSync {
   private let m_ricochetsSaid: Int32;
   private let m_hud: ref<TandemPartyHud>;
   private let m_reactions: ref<TandemReactionsSync>;
+  private let m_voices: ref<TandemNpcVoices>;
   private let m_status: ref<TandemStatusVisuals>;
   private let m_hitsTaken: ref<TandemHitsTaken>;
 
@@ -146,6 +147,8 @@ public class TandemPresenceSync {
     this.m_hud.Start(game);
     this.m_reactions = new TandemReactionsSync();
     this.m_reactions.Start(game);
+    this.m_voices = new TandemNpcVoices();
+    this.m_voices.Start(game);
     this.m_status = new TandemStatusVisuals();
     this.m_status.Start(game);
     this.m_hitsTaken = new TandemHitsTaken();
@@ -184,6 +187,7 @@ public class TandemPresenceSync {
     }
     this.m_hud = null;
     this.m_reactions = null;
+    this.m_voices = null;
     this.m_status = null;
     this.m_hitsTaken = null;
   }
@@ -485,6 +489,9 @@ public class TandemPresenceSync {
     }
     if IsDefined(this.m_reactions) {
       this.m_reactions.Tick(now, system);
+    }
+    if IsDefined(this.m_voices) {
+      this.m_voices.Tick(system);
     }
     if IsDefined(this.m_status) && you != 0u {
       this.m_status.SendOurs(now);
@@ -1147,6 +1154,9 @@ public class TandemPresenceSync {
     }
     if IsDefined(this.m_reactions) {
       this.m_reactions.Report();
+    }
+    if IsDefined(this.m_voices) {
+      this.m_voices.Report();
     }
     if IsDefined(this.m_status) {
       this.m_status.Report();

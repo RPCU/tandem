@@ -8,6 +8,7 @@
 // (tandem/presence.hpp) and the flinch laid over its pose. Each piece says
 // which threads touch it.
 
+#include "tandem/consistency.hpp"
 #include "tandem/presence.hpp"
 #include "tandem/protocol.hpp"
 
@@ -47,6 +48,22 @@ public:
   std::vector<proto::HitTaken> TakeHitsTaken(std::uint64_t nowUs);
   void PushReaction(const proto::NpcReaction &reaction);
   std::vector<proto::NpcReaction> TakeReactions();
+  // The voice lines of NPCs we show (NpcVoice); one kNpcVoiceMaxAgeUs old
+  // is not said (consistency::DropStale).
+  void PushVoice(const proto::NpcVoice &voice, std::uint64_t nowUs);
+  std::vector<proto::NpcVoice> TakeVoices(std::uint64_t nowUs);
+
+  // ---- any thread (the voice wrap may run on a job thread) -> game thread ----
+  // A voice line the game started on one of our entities (NpcVoices.reds):
+  // its entity, context and delay; the tick sends those of our shared NPCs.
+  struct LocalVoice {
+    std::uint64_t entity{};
+    std::uint64_t context{};
+    std::uint16_t delayMs{};
+    std::uint8_t flags{};
+  };
+  void QueueLocalVoice(const LocalVoice &voice, std::uint64_t nowUs);
+  std::vector<LocalVoice> TakeLocalVoices(std::uint64_t nowUs);
   void PushStatusVisuals(const proto::StatusVisuals &visuals);
   // Another player's set as last heard (empty: none, or never heard), and a
   // count that moves on every change, so scripts look only then.
@@ -75,6 +92,8 @@ private:
   std::vector<proto::HitTaken> m_localHitsTaken;                        // m_lock
   std::vector<std::pair<proto::HitTaken, std::uint64_t>> m_hitsTaken;   // m_lock
   std::vector<proto::NpcReaction> m_reactions;                          // m_lock
+  std::vector<consistency::Timed<proto::NpcVoice>> m_voices;            // m_lock
+  std::vector<consistency::Timed<LocalVoice>> m_localVoices;            // m_lock
   std::vector<std::uint64_t> m_statusSent;                              // game thread
   std::optional<std::vector<std::uint64_t>> m_statusLocal;              // m_lock
   std::map<proto::PlayerId, std::vector<std::uint64_t>> m_statusRemote; // m_lock

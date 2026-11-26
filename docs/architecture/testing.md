@@ -608,10 +608,13 @@ decline`, `busy KIND|off`, `busy report`, `apartment report`. Scenarios
   shared NPC, or by the other V), `--menu-at N` is "in a menu" N s in, for 5 s (both as
   `Presence`); `host --react-npcs N` has one of the NPCs it sends play a
   hit reaction every N s (twitch, impact, stagger, knockdown, ragdoll, its
-  end); `--status REC@FROM-TO[,REC@FROM-TO]` puts status effects on its V
+  end), `host --voice-npcs N` one say a voice line every N s (`NpcVoice`:
+  `start_combat`, `enemy_warning`, `vo_any_damage_hit`,
+  `hit_reaction_heavy`, `fear_beg`, `stlh_death`); `--status REC@FROM-TO[,REC@FROM-TO]` puts status effects on its V
   from FROM to TO s after another player is there (no TO: kept), sent as
   `StatusVisuals` for the others' puppet of it to show. Presence, cues,
-  status visuals and non-twitch reactions it hears are logged.
+  status visuals, non-twitch reactions and NPC voice lines it hears are
+  logged.
 - **Traffic** (any mode): each report has a `traffic:` line (kbit/s each
   way with headers, datagrams/s, the largest message types), `--traffic-report`
   the whole table, the exit the whole run's; `--legacy-wire` sends as

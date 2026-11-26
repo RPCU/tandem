@@ -36,6 +36,7 @@ still see or hear.
   | `Presence` | Event, kept for late joiners | < 16 | a V's health (a byte) and flags (in a menu, photo mode, in combat); at once on a loss or a flag, else 5 Hz at most |
   | `Cue` | State (a late one is worthless) | < 32 | where a shot's bullet ended (`Trace`), and where a ricochet of it hit (`Ricochet`); that a melee swing landed, and where; a tech weapon's charge (`Charge`: its step, how charged; on each change and every 0.25 s while it lasts, so a lost end ends by itself 1.2 s later). `Ricochet` and `Charge` came with protocol 13 |
   | `NpcReaction` | State for a twitch, else Event | < 40 | host only: the hit reaction one of its NPCs starts, as the animation feature the game filled |
+  | `NpcVoice` | Event (protocol 23) | < 24 | an NPC's owner: a voice line its NPC's script started, said by every proxy's own voice (`npcs.md`, Voices) |
   | `StatusVisuals` | Event, kept for late joiners | < 160 | the status effects that show on a V (burning, shock, a heal's glow…): their record ids, the whole set on every change, at most 16 |
 
 - **Played by the game's own rules.** Every sound is queued on the puppet
@@ -445,6 +446,7 @@ Scenarios (`tools/scenario.sh NAME`), each checking the game's log:
 | `names-prompt` | the pause menu's Host this game asks for a name while it is V; a bad one asked again; a good one saved, then hosting |
 | `names-duplicate` | two mock players named V and v beside our V: shown as V (2) and v (3), each told its own, markers and HUD entries under those names |
 | `presence-reactions` | as a guest: impact, stagger, knockdown, ragdoll and its end on a proxy |
+| `presence-npc-voices` | as a guest: the host's NPCs' voice lines said by our proxies (`NpcVoice`) |
 | `presence-ricochet` | a partner's shots: the drawn bullet and the weapon's trail from the muzzle, each ricochet's leg on from the shot's end |
 | `presence-charge` | a partner charges a tech rifle: its charge effects and glow on the puppet's weapon, full, released with the shot, never left on |
 | `presence-akimbo` | a dual wielding partner: both pistols in the puppet's hands (the game's own slots, `test query held puppet`), the left hand's shot, bullet and ricochet from the left weapon, both away when holstered and back when drawn |
