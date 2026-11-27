@@ -1170,7 +1170,7 @@ public class TandemNpcs {
         }
         this.Notice(known.npc, npc, watched, mask);
         if sampling {
-          this.m_anims.Sample(npc, known.npc, this.m_you);
+          this.m_anims.Sample(npc, known.npc, this.m_you, EntityID.IsDefined(known.seatVehicle));
         }
         let health = pools.GetStatPoolValue(Cast<StatsObjectID>(id), gamedataStatPoolType.Health, true) / 100.0;
         let protect = TandemNpcs.Protected(npc) ? 1 : 0;

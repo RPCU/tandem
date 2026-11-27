@@ -196,9 +196,12 @@ public class TandemNpcAnimSent {
   // The round of events it was last read in (several events in a tick: one
   // read).
   public let round: Int32;
-  // In a workspot whose instance we could not read (not sent): said once
-  // as a fallback each time it starts.
+  // In a workspot whose instance we could not read (not sent), or seated
+  // in a vehicle whose seat is not sent: said once as a fallback each time
+  // it starts.
   public let unread: Bool;
+  // Since when it sits in a vehicle (0: it does not).
+  public let mountedAt: Float;
 }
 
 // A guest's view of one proxy: the host's latest state, and what of it is
@@ -619,7 +622,8 @@ public class TandemNpcAnims {
   // differs from what was sent; a state, a weapon or a workspot found
   // there is one the events missed, and logged. In between: only whom an
   // NPC out of Relaxed is after.
-  public func Sample(npc: ref<ScriptedPuppet>, id: Uint32, you: Uint32) -> Void {
+  // `seated`: its seat is sent (Npcs.ShareSeat: NpcSeat, its vehicle shared).
+  public func Sample(npc: ref<ScriptedPuppet>, id: Uint32, you: Uint32, seated: Bool) -> Void {
     let sent = this.FindSent(id);
     if !IsDefined(sent) {
       sent = new TandemNpcAnimSent();
@@ -629,11 +633,11 @@ public class TandemNpcAnims {
       ArrayPush(this.m_sent, sent);
       this.m_first += 1;
       this.Send(sent.anim);
-      this.NoteUnread(npc, sent);
+      this.NoteUnread(npc, sent, seated);
       return;
     }
     if this.m_slow {
-      this.NoteUnread(npc, sent);
+      this.NoteUnread(npc, sent, seated);
     }
     let settling = sent.settleAt > 0.0;
     if this.m_slow || (settling && this.m_now >= sent.settleAt) {
@@ -687,11 +691,31 @@ public class TandemNpcAnims {
 
   // An NPC of ours sits, leans or smokes in a workspot we cannot read: its
   // proxies stand. A fallback, said each time it starts (the 2 s poll).
-  private func NoteUnread(npc: ref<ScriptedPuppet>, sent: ref<TandemNpcAnimSent>) -> Void {
-    let unread = (sent.anim.flags & 2) == 0 && GameInstance.GetWorkspotSystem(this.m_game).IsActorInWorkspot(npc);
+  // A vehicle's seat is a workspot too, whose instance holds no resource
+  // (§13.134: a driver "in a workspot not sent", 2026-11-26): never read as
+  // one, it is the seat path's (NpcSeat, Npcs.ShareSeat), sent once its
+  // vehicle is shared (Traffic.reds) or is the one carrying our V. Unsent
+  // 3 s after it sat down (its vehicle not shared: the share full, or not
+  // one the street shares), its proxies stand where it sits: the fallback.
+  private func NoteUnread(npc: ref<ScriptedPuppet>, sent: ref<TandemNpcAnimSent>, seated: Bool) -> Void {
+    let unread = false;
+    let why = "";
+    if VehicleComponent.IsMountedToVehicle(this.m_game, npc) {
+      if sent.mountedAt <= 0.0 {
+        sent.mountedAt = this.m_now;
+      }
+      unread = !seated && this.m_now - sent.mountedAt >= 3.0;
+      why = "it sits in a vehicle not shared, its seat not sent";
+    } else {
+      sent.mountedAt = 0.0;
+      unread = (sent.anim.flags & 2) == 0 && GameInstance.GetWorkspotSystem(this.m_game).IsActorInWorkspot(npc);
+      if unread {
+        let spot = TandemActivity.Workspot(npc.GetEntityID());
+        why = s"it is in a workspot not sent: \(TandemNpcAnims.SpotStateName(spot.state))";
+      }
+    }
     if unread && !sent.unread {
-      let spot = TandemActivity.Workspot(npc.GetEntityID());
-      TandemDegraded.Fallback("workspot unread", s"npc \(sent.npc) (\(TDBID.ToStringDEBUG(npc.GetRecordID()))) is in a workspot not sent: \(TandemNpcAnims.SpotStateName(spot.state))");
+      TandemDegraded.Fallback("workspot unread", s"npc \(sent.npc) (\(TDBID.ToStringDEBUG(npc.GetRecordID()))): \(why)");
     }
     sent.unread = unread;
   }
@@ -700,6 +724,9 @@ public class TandemNpcAnims {
   // told: `spot P` (its workspot's resource), `spot unread` (in one we
   // cannot read: not sent), `spot none`.
   public func ActivityOf(npc: ref<ScriptedPuppet>) -> String {
+    if VehicleComponent.IsMountedToVehicle(this.m_game, npc) {
+      return "spot seat";
+    }
     if !GameInstance.GetWorkspotSystem(this.m_game).IsActorInWorkspot(npc) {
       return "spot none";
     }
@@ -810,7 +837,8 @@ public class TandemNpcAnims {
     // The game's own instance map (TandemActivity.Workspot): Codeware's
     // GetWorkspotInstance hashes the key otherwise and found none of the
     // 48 NPCs in workspots at kabuki-market (npcs-anims-host, 2026-11-21).
-    if GameInstance.GetWorkspotSystem(this.m_game).IsActorInWorkspot(npc) {
+    // A seat is the seat path's (NoteUnread), never a workspot to play.
+    if !VehicleComponent.IsMountedToVehicle(this.m_game, npc) && GameInstance.GetWorkspotSystem(this.m_game).IsActorInWorkspot(npc) {
       let spot = TandemActivity.Workspot(npc.GetEntityID());
       if spot.state == 1 {
         anim.workspot = spot.path;
