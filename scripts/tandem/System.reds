@@ -492,6 +492,8 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(devices) {
       devices.Begin();
     }
+    // Its time beside "in game" (the observer's first tick: observer.md).
+    TandemNative.Log("session: our systems begun");
   }
 
   private final func OnPlayerDetach(request: ref<PlayerDetachRequest>) -> Void {

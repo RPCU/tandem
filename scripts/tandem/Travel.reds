@@ -255,6 +255,13 @@ public class TandemTravel {
     this.m_now = now;
     this.m_world = TandemClock.World(this.m_game);
     this.m_you = you;
+    // A fast travel of ours under way: its loading screen is next, and the
+    // engine's frames may stop behind it, its own controllers' signs with
+    // them (a 30 s fast travel read as a crash, 2026-11-27): the sign from
+    // here, each tick until the screen is over (Loading.reds).
+    if this.m_trip && !this.m_loadingEnded {
+      TandemNative.LoadingSign();
+    }
     for item in TandemNative.TakeRegroups() {
       if item.kind == 1 {
         this.Offered(item);

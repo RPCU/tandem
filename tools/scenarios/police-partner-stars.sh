@@ -3,7 +3,6 @@
 ensure join
 host_world - --mode idle --body female --heat 3 --heat-at 15 --heat-for 20
 expect 'in the session as player' 30
-expect 'hud: a wanted partner.s stars in the game.s own art' 30
 expect_peer 'police: our wanted level 3 \(seen\)' 40
 expect 'marker: player 1 wanted 3 \(state 1\): drawn in the police.s colours' 10
 expect 'hud: player 1 wanted: 3 star\(s\), state 1, drawn with the game.s star art' 10

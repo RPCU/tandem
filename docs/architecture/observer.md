@@ -116,7 +116,12 @@ after our menu closed, the first frame took … ms, the longest …`).
   (`Observer::SessionStarted`): the engine frames before it are dropped,
   the frame it began in counts from it (`Runtime::MarkEngineFrames`), and
   the first tick says `observer: the session's first tick … ms after its
-start, … engine frame(s) between, the longest … ms`. The first `perf:`
+start, … engine frame(s) between, the longest … ms`. Measured on
+  instance a (2026-11-27): 85 ms, 0 engine frames between: a session that
+  starts at a load starts inside the frame the game attaches our V in, its
+  own attach work there; ours is `BeginSession`, 20 ms (`session: our
+systems begun`). That tick, with no engine frame between, is said and
+  not judged. The first `perf:`
   line's rates were over 1 s instead of its minute (`5061/s`); they are
   over the time since the first use now.
 - **Screenshot**: none. The plugin cannot take one cheaply (a D3D12
