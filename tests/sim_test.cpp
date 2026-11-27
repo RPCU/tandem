@@ -2,11 +2,16 @@
 // then simulated games against each other over loopback, refereed.
 
 #include "tandem/sim/game.hpp"
+#include "tandem/sim/looks.hpp"
 
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <filesystem>
+#include <format>
+#include <fstream>
 #include <iostream>
+#include <random>
 #include <sstream>
 
 using namespace std::chrono_literals;
@@ -154,4 +159,32 @@ TEST_CASE("sim: simulated games against each other break no rule") {
     CHECK(coverage.FeaturesHit() > 10);
     CHECK(coverage.Hits("npc.spawn") > 0);
   }
+}
+
+// tandem-peer sim's V: a real V's saved body keys (male first), random
+// clothes of its seed; no keys, no body to say.
+TEST_CASE("sim look: the saved body keys, male by default") {
+  const auto dir = std::filesystem::temp_directory_path() /
+                   std::format("tandem-looks-test-{}", std::random_device{}());
+  std::filesystem::create_directories(dir);
+  CHECK_FALSE(sim::SavedBody(dir).has_value());
+  std::ofstream(sim::LookKeysFile(dir, proto::Body::Female))
+      << "00000000000000aa 00000000000000bb\n";
+  CHECK(sim::SavedBody(dir) == proto::Body::Female);
+  std::ofstream(sim::LookKeysFile(dir, proto::Body::Male))
+      << "0000000000000001 0000000000000002\n0000000000000003 0000000000000004\n";
+  CHECK(sim::SavedBody(dir) == proto::Body::Male);
+  const auto keys = sim::LoadLookKeys(sim::LookKeysFile(dir, proto::Body::Male));
+  REQUIRE(keys.size() == 2);
+  CHECK(keys[1].resource == 3);
+  CHECK(keys[1].definition == 4);
+  std::string picked;
+  const auto look = sim::RandomLook(proto::Body::Male, 7, keys, {}, &picked);
+  CHECK(look.body == proto::Body::Male);
+  CHECK(look.look == keys);
+  CHECK(look.items.size() >= 4);
+  CHECK(look.hints.size() == look.items.size());
+  CHECK(look == sim::RandomLook(proto::Body::Male, 7, keys));
+  CHECK_FALSE(picked.empty());
+  std::filesystem::remove_all(dir);
 }

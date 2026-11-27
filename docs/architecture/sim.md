@@ -142,8 +142,14 @@ without recordings (or crouched), a plain walk at the game's speeds (1.5,
 ## Running it
 
 - `tandem-peer sim --role host|join [ADDRESS[:PORT]] --persona P --seed N
---minutes M [--story FILE] [--play-dir DIR] [--pace X] [--no-link]` (or
-  `task sim -- …`): one simulated game against the real one. It logs its
+--minutes M [--story FILE] [--play-dir DIR] [--pace X] [--no-link]
+[--body female|male] [--look-keys DIR]` (or
+  `task sim -- …`): one simulated game against the real one. Its V wears a
+  real V's body, the keys `tandem-peer` saved from a look heard
+  (`~/.cache/tandem/looks/<body>.keys`, `tandem/sim/looks.hpp`; the body:
+  `--body`, else male when `male.keys` is saved, else female), in random
+  clothes of its persona (the same at every rejoin); without keys it logs
+  `sim: look: … no keys` and the game puts a stand-in body on it. It logs its
   goals, the session, the referee's findings and its own checks, and at the
   end the coverage report and `sim summary: … N violation(s)`; it exits 1 on
   a violation or a failed check.

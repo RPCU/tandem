@@ -40,6 +40,8 @@ struct GameOptions {
   std::filesystem::path playDir{"recordings/play"};
   float pace{1.f};  // goals and leaves this many times faster
   bool shape{true}; // the persona's own link, through net::Shaper
+  // Our V's look (SimV::Config::look); tandem-peer sim: a real V's (looks.hpp).
+  proto::Appearance look{.body = proto::Body::Female};
   // Every line worth a log: findings, goals, the session.
   std::function<void(const std::string &)> log;
 };
