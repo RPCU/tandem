@@ -68,6 +68,9 @@ public class TandemPuppet {
   public let group: CName;
   // Teleports the movement controller asked for (SnapPuppet).
   public let snaps: Int32;
+  // An arrival from afar (a fast travel, a join, a respawn) is not a pop:
+  // hidden as it jumps, faded in at its new place from this time (0: none).
+  public let arrivalAt: Float;
   // Consistency (CheckPuppets): since when its player is not in the session.
   public let orphanSince: Float;
 }
@@ -3296,6 +3299,8 @@ public class TandemSystem extends ScriptableSystem {
     }
     this.RemovePuppet(player);
     let game = this.GetGameInstance();
+    // An arrival's hide belonged to the old body (its fade-in time with it).
+    TandemVisibility.Show(game, player, n"arrival", 0.0);
     let local = GetPlayer(game);
     if !IsDefined(local) {
       return;
@@ -3407,6 +3412,11 @@ public class TandemSystem extends ScriptableSystem {
       if puppet.controlled && TandemNative.TakeSnap(puppet.player) {
         this.SnapPuppet(puppet);
       }
+      if puppet.arrivalAt > 0.0 && this.Now() >= puppet.arrivalAt {
+        puppet.arrivalAt = 0.0;
+        TandemVisibility.Show(this.GetGameInstance(), puppet.player, n"arrival", TandemSystem.ArrivalFade());
+        TandemNative.Log(s"player \(puppet.player): arrived, faded in");
+      }
       if !puppet.grouped {
         this.Group(puppet);
       }
@@ -3424,6 +3434,17 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     let angles = Quaternion.ToEulerAngles(body.GetWorldOrientation());
+    // From afar (a fast travel, a join's arrival, a respawn): out of sight
+    // for the jump, then in with the animation system's fade, the way the
+    // game's own phantoms appear (Scenes.reds Ghost; a V's body has no
+    // phantom component, so no effect of its own), never a pop.
+    let from = body.GetWorldPosition();
+    let jump = Vector4.Distance(from, position);
+    if jump > TandemSystem.ArrivalJump() && !TandemStory.SpectateWatching() {
+      TandemVisibility.Hide(game, puppet.player, n"arrival", 0.0);
+      puppet.arrivalAt = this.Now() + 0.4;
+      TandemNative.Log(s"player \(puppet.player): arriving from \(Cast<Int32>(jump)) m away: hidden for the jump");
+    }
     GameInstance.GetTeleportationFacility(game).Teleport(body, position, angles);
     puppet.snaps += 1;
     if puppet.snaps <= 10 {
@@ -4234,6 +4255,16 @@ public class TandemSystem extends ScriptableSystem {
   // jump of its owner's); nearer, it is moved.
   public static func SnapDistance() -> Float {
     return 8.0;
+  }
+
+  // A puppet's jump longer than this is an arrival (SnapPuppet), faded in
+  // over ArrivalFade seconds.
+  public static func ArrivalJump() -> Float {
+    return 25.0;
+  }
+
+  public static func ArrivalFade() -> Float {
+    return 0.8;
   }
 
   // The path of this run, read once and said once (tandem.ini vehicle_move,
