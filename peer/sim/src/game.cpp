@@ -1,10 +1,12 @@
 #include "tandem/sim/game.hpp"
+#include "tandem/sim/looks.hpp"
 
 #include <algorithm>
 #include <charconv>
 #include <csignal>
 #include <format>
 #include <iostream>
+#include <optional>
 #include <thread>
 
 namespace tandem::sim {
@@ -29,8 +31,9 @@ volatile std::sig_atomic_t g_stop = 0;
 
 Game::Game(GameOptions options, Coverage &coverage)
     : m_options(std::move(options)), m_coverage(coverage), m_persona(PersonaOr(m_options.persona)),
-      m_random(m_options.seed), m_v(m_persona, {.host = m_options.host, .pace = m_options.pace},
-                                    m_random.Fork(), &coverage, &m_motion) {
+      m_random(m_options.seed),
+      m_v(m_persona, {.host = m_options.host, .pace = m_options.pace, .look = m_options.look},
+          m_random.Fork(), &coverage, &m_motion) {
   if (m_options.name.empty())
     m_options.name = std::format("{}-{}", m_persona.name, m_options.seed);
   std::string motionLog;
@@ -529,6 +532,11 @@ int SimUsage(std::string_view error) {
                "  --play-dir DIR     real play to stitch the V's moves from (default\n"
                "                     recordings/play)\n"
                "  --pace X           goals, leaves and waits X times faster (default 1)\n"
+               "  --body B           sim: female | male, a real V's body from --look-keys in\n"
+               "                     random clothes (default: male when male.keys is saved,\n"
+               "                     else female)\n"
+               "  --look-keys DIR    where female.keys / male.keys are kept (default\n"
+               "                     ~/.cache/tandem/looks; tandem-peer saves them)\n"
                "  --no-link          no bad link, whatever the persona's\n"
                "  --seeds K          sim-fuzz: K pairs (default 10), personas by seed, from\n"
                "                     --first N (default 1)\n"
@@ -552,6 +560,8 @@ int SimMain(std::string_view command, const std::vector<std::string_view> &args)
   std::uint64_t seeds = 10, first = 1;
   bool roleGiven = false, quiet = false;
   std::string pairHost, pairGuest; // sim-fuzz --pair HOST:GUEST
+  std::optional<proto::Body> body; // sim --body
+  std::string lookKeys;            // sim --look-keys
   for (std::size_t i = 0; i < args.size(); ++i) {
     const auto flag = args[i];
     if (flag == "--help" || flag == "-h")
@@ -608,6 +618,11 @@ int SimMain(std::string_view command, const std::vector<std::string_view> &args)
       options.storyFile = std::string(value);
     } else if (flag == "--play-dir") {
       options.playDir = std::string(value);
+    } else if (flag == "--body") {
+      ok = value == "female" || value == "male";
+      body = value == "male" ? proto::Body::Male : proto::Body::Female;
+    } else if (flag == "--look-keys") {
+      lookKeys = std::string(value);
     } else if (flag == "--pace") {
       ok = number(options.pace) && options.pace > 0.f;
     } else if (flag == "--seeds") {
@@ -666,6 +681,23 @@ int SimMain(std::string_view command, const std::vector<std::string_view> &args)
 
   if (!roleGiven)
     return SimUsage("sim needs --role host or --role join");
+  // Our V's look: a real V's body keys (saved by tandem-peer from a look
+  // heard) in random clothes; without keys the game puts a
+  // stand-in body on the puppet, and says so.
+  const auto keysDir = LookKeysDir(lookKeys);
+  const auto worn = body ? *body : SavedBody(keysDir).value_or(proto::Body::Female);
+  const auto keysFile = LookKeysFile(keysDir, worn);
+  std::string picked;
+  // The clothes by persona, not by seed: the same V at every rejoin
+  // (tools/play-session.sh counts its runs in --seed).
+  options.look = RandomLook(worn, static_cast<unsigned>(CName(options.persona)),
+                            LoadLookKeys(keysFile), {}, &picked);
+  if (options.look.look.empty())
+    Log("sim: look: {} body, no keys in {} (the game shows a stand-in body):{}",
+        worn == proto::Body::Male ? "male" : "female", keysFile.string(), picked);
+  else
+    Log("sim: look: {} body, {} keys from {}:{}", worn == proto::Body::Male ? "male" : "female",
+        options.look.look.size(), keysFile.string(), picked);
   Coverage coverage;
   options.log = [](const std::string &line) { Log("{}", line); };
   Game game(options, coverage);

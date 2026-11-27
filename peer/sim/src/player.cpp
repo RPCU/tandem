@@ -84,8 +84,11 @@ std::uint64_t SimV::Seconds(float low, float high) {
 }
 
 void SimV::Introduce(Outbox &out) const {
-  // A look of its own (no clothes needed: the puppet's body is enough here).
-  out.push_back({p::Appearance{.body = m_config.body}});
+  // A look of its own (Config::look: by default the body alone).
+  auto look = m_config.look;
+  look.player = {};
+  look.revision = 0;
+  out.push_back({std::move(look)});
   out.push_back({p::Held{.right = m_held}});
   if (m_self.life != p::Life::Up)
     out.push_back({p::Vitals{.life = m_self.life}});

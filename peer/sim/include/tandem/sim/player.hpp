@@ -31,7 +31,9 @@ public:
     bool host{};
     float pace{1.f};                            // goals this many times faster (tests)
     proto::Vec3 start{-915.f, 1879.5f, 36.19f}; // the test field
-    proto::Body body{proto::Body::Female};
+    // The look sent (tandem-peer sim: a real V's body keys and random
+    // clothes, looks.hpp); the default: the body alone, a stand-in on it.
+    proto::Appearance look{.body = proto::Body::Female};
     std::string car{"Vehicle.v_standard2_archer_hella_player"};
     std::string gun{"Items.Preset_Lexington_Default"};
     std::string blade{"Items.Preset_Katana_Default"};

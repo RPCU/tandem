@@ -146,6 +146,7 @@
 #include "tandem/scene.hpp"
 #include "tandem/shaping.hpp"
 #include "tandem/sim/game.hpp"
+#include "tandem/sim/looks.hpp"
 #include "tandem/sim/referee.hpp"
 #include "tandem/traffic.hpp"
 #include "tandem/vehicle_combat.hpp"
@@ -3760,39 +3761,9 @@ private:
 };
 } // namespace
 
-// The body keys of a real V (face, body, arms: the game's appearance keys,
-// a resource path hash and a name hash each), one file per body type:
-// "RESOURCE DEFINITION" in hex, one key a line. Saved from every look heard
-// with keys (a game's own V: 15 of them), so a random look wears a real
-// body; a file may also be written by hand.
-std::filesystem::path LookKeysDir(const std::string &option) {
-  if (!option.empty())
-    return option;
-  if (const char *cache = std::getenv("XDG_CACHE_HOME"); cache && *cache)
-    return std::filesystem::path(cache) / "tandem" / "looks";
-  if (const char *home = std::getenv("HOME"); home && *home)
-    return std::filesystem::path(home) / ".cache" / "tandem" / "looks";
-  return "looks";
-}
-
-std::filesystem::path LookKeysFile(const std::filesystem::path &dir, tandem::proto::Body body) {
-  return dir / (body == tandem::proto::Body::Male ? "male.keys" : "female.keys");
-}
-
-std::vector<tandem::proto::AppearanceKey> LoadLookKeys(const std::filesystem::path &file) {
-  std::vector<tandem::proto::AppearanceKey> keys;
-  std::ifstream in(file);
-  for (std::string resource, definition; in >> resource >> definition;) {
-    try {
-      keys.push_back({std::stoull(resource, nullptr, 16), std::stoull(definition, nullptr, 16)});
-    } catch (const std::exception &) {
-      return {};
-    }
-  }
-  if (keys.size() > tandem::proto::kMaxAppearanceKeys)
-    keys.resize(tandem::proto::kMaxAppearanceKeys);
-  return keys;
-}
+using tandem::sim::LoadLookKeys;
+using tandem::sim::LookKeysDir;
+using tandem::sim::LookKeysFile;
 
 void SaveLookKeys(const std::filesystem::path &file,
                   const std::vector<tandem::proto::AppearanceKey> &keys) {
@@ -3807,48 +3778,12 @@ void SaveLookKeys(const std::filesystem::path &file,
     Log("look: {} body keys saved to {}", keys.size(), file.string());
 }
 
-// A look of our own: a real V body of ours when its keys are known (else
-// none: the game puts a stand-in body on the puppet) and one random piece
-// per slot from clothing records the game's own scripts name (their
-// crafting specs end in _Crafting; the item is the same name without it).
+// A look of our own (tandem/sim/looks.hpp), logged.
 tandem::proto::Appearance
 RandomLook(tandem::proto::Body body, unsigned seed, std::vector<tandem::proto::AppearanceKey> keys,
            const std::vector<std::pair<std::string, tandem::proto::RecordHint>> &extra = {}) {
-  static const std::vector<std::vector<std::string_view>> slots = {
-      {"Items.FormalShirt_01_rich_06", "Items.FormalShirt_02_basic_03",
-       "Items.LooseShirt_01_rich_02", "Items.Fixer_01_Set_TShirt"},
-      {"Items.Jacket_19_basic_04", "Items.Jacket_20_basic_01", "Items.Jacket_01_rich_01",
-       "Items.Jacket_17_rich_06", "Items.Coat_01_basic_03", "Items.Coat_04_rich_02",
-       "Items.FormalJacket_02_basic_02", "Items.FormalJacket_04_basic_02"},
-      {"Items.Pants_02_basic_01", "Items.Pants_04_basic_01", "Items.Pants_08_rich_01",
-       "Items.FormalPants_02_rich_01", "Items.FormalPants_03_rich_02",
-       "Items.FormalSkirt_01_rich_01", "Items.FormalSkirt_02_rich_03"},
-      {"Items.Boots_03_basic_02", "Items.Boots_07_basic_01", "Items.Boots_09_rich_01",
-       "Items.CasualShoes_01_basic_01", "Items.CasualShoes_02_basic_01",
-       "Items.CasualShoes_05_basic_03", "Items.FormalShoes_01_rich_02",
-       "Items.FormalShoes_03_rich_01"},
-      // Head and face: sometimes nothing.
-      {"", "", "Items.Cap_02_basic_01", "Items.Cap_03_rich_02", "Items.Hat_02_rich_02",
-       "Items.Hat_03_basic_02"},
-      {"", "", "Items.Glasses_01_basic_03", "Items.Glasses_03_basic_06"},
-  };
-  std::mt19937 random(seed);
-  tandem::proto::Appearance look{.body = body, .look = std::move(keys)};
   std::string picked;
-  for (const auto &slot : slots) {
-    const auto name = slot[random() % slot.size()];
-    if (name.empty())
-      continue;
-    look.items.push_back(TweakDBID(name));
-    look.hints.push_back({});
-    picked += std::format(" {}", name.substr(6));
-  }
-  // --look-piece: pieces a mod would add, with their hint (the slot's type).
-  for (const auto &[name, hint] : extra) {
-    look.items.push_back(TweakDBID(name));
-    look.hints.push_back(hint);
-    picked += std::format(" {} (a mod's)", name);
-  }
+  auto look = tandem::sim::RandomLook(body, seed, std::move(keys), extra, &picked);
   Log("our look: random (seed {}), {} body keys:{}", seed, look.look.size(), picked);
   return look;
 }

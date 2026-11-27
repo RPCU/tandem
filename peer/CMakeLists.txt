@@ -10,7 +10,8 @@ add_library(tandem_sim STATIC
   sim/src/player.cpp
   sim/src/world.cpp
   sim/src/story.cpp
-  sim/src/game.cpp)
+  sim/src/game.cpp
+  sim/src/looks.cpp)
 target_include_directories(tandem_sim PUBLIC sim/include)
 target_link_libraries(tandem_sim PUBLIC tandem_core)
 
