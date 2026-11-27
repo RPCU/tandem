@@ -249,7 +249,13 @@ the first group session.
   it held 3 s; out sooner is a `workspot not entered` fallback, never a
   loop (a seated NPC seen sitting, standing, sitting again, 2026-11-23). A
   workspot the host cannot read (`workspot unread`) is a fallback too.
-  `npc list` gives each NPC's activity (`spot P|unread|none`, a proxy's
+  A vehicle's seat is a workspot whose instance holds no resource
+  (§13.134): never read or sent as a workspot, it goes by the seat path
+  (`NpcSeat`, `Npcs.ShareSeat`) once its vehicle is shared or carries our
+  V (a driver sampled before its car was announced said `workspot
+unread`, 2026-11-26); still unsent 3 s after it sat down (its vehicle
+  not shared), `workspot unread` says so.
+  `npc list` gives each NPC's activity (`spot P|unread|none`, and `spot seat`; a proxy's
   `said` and `replays`); `npc-compare` counts those not the same on both
   games and, over several lists, those that flickered.
   Scenarios `npcs-anims` (guest of a replay with `--anims`),

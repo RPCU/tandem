@@ -182,7 +182,7 @@ names of `engine-access.md`.
 | `wanted stars` | degraded | fallback | `PartyHud.reds` `Wanted` (the game's wanted bar not found on the HUD) | a wanted partner's level written in its party entry, not drawn as the game's stars (`police.md`) |
 | `body incomplete` | degraded | fallback | `Body.reds` (no donor, no visible object, no Character extension) | the puppet glides, or NPCs do not see it |
 | `workspot not entered` | degraded | fallback | `NpcAnims.reds` `Step`, `Enter` (no component, the resource refused) | the proxy stands |
-| `workspot unread` | degraded | fallback | `NpcAnims.reds` `NoteUnread` (owner: in a workspot whose instance has no resource, §13.134) | its copies stand where it sits |
+| `workspot unread` | degraded | fallback | `NpcAnims.reds` `NoteUnread` (owner: in a workspot whose instance has no resource, §13.134; or seated 3 s in a vehicle not shared, its seat unsent) | its copies stand where it sits |
 | `scene camera missing` | degraded | fallback | `Scenes.reds`, `Spectate.reds` | our own eyes stay |
 | `carried by placement` | degraded | fallback | `Spectate.reds`, `Transit.reds` | our V placed in the car a few times a second |
 | `revive ended by hand` | degraded | fallback | `Revive.reds` `CheckUp` | the death effects ended by hand |
