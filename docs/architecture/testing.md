@@ -394,8 +394,9 @@ RRGGBB[,RRGGBB][@HUE]` gives the car a custom paint (`CarPaint`: its
   with a two-seat car (`--vehicle Vehicle.v_sport2_porsche_911turbo`, the
   NPC driving, the mock player beside it) `scene-ride-full` and
   `scene-ride-follow`. As a guest, `--ride-along` answers a scene ride
-  with seats by riding along (`Transit` `Along`, carried with the car,
-  out beside it at the end): the host's side of a ride along.
+  with seats by riding along (`Transit` `Along`, out beside it at the
+  end): an older game's carry, which no game sends since 2026-11-27 and
+  the others no longer hide a puppet for.
 - **metro** — stands beside your V, then rides the NCART (`--metro-at`,
   `--metro-for`): a straight line 8 m up at 20 m/s, skipping (ten times
   faster) for 3 s halfway, then off at the end. Scenario `metro`.

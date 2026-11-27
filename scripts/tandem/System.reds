@@ -2439,10 +2439,8 @@ public class TandemSystem extends ScriptableSystem {
     let owner = 0u;
     let car: wref<VehicleObject>;
     // On the NCART no seat is sent: every game rides its own train
-    // (Transit.reds says where we are). Nor when we ride along, carried
-    // by a copy's trunk body slot: no seat of anyone's (Transit Along).
-    let along = IsDefined(this.m_transit) && this.m_transit.CarriedBy() != 0u;
-    if !along && VehicleComponent.GetVehicle(game, player, car) && IsDefined(car) && !TandemTransit.IsMetro(game, player, car) {
+    // (Transit.reds says where we are).
+    if VehicleComponent.GetVehicle(game, player, car) && IsDefined(car) && !TandemTransit.IsMetro(game, player, car) {
       record = car.GetRecordID();
       VehicleComponent.GetMountedSlotName(game, player, slot);
       // A copy: its owner's car (driven or parked: a partner's car we ride
