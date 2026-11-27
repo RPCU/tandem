@@ -65,8 +65,10 @@ public class TandemTravel {
     return 150.0;
   }
 
-  public static func PointMetres() -> Float {
-    return 1500.0;
+  // A hop longer than this goes behind the fast travel's loading screen
+  // (HiddenJoin), never as a visible jump.
+  public static func PlainHopMetres() -> Float {
+    return 40.0;
   }
 
   // How far our V may be taken in a moment, with nothing to explain it,
@@ -104,7 +106,7 @@ public class TandemTravel {
   // The offer on screen, and the phone key while it is.
   private let m_offer: ref<TandemTravelOffer>;
   // A guest: when our V was last beside the host (TakenAlong), and the
-  // host's offer we follow without a question once the curtain is black.
+  // host's offer we follow without a question, on the next tick.
   private let m_besideHostAt: Float;
   private let m_along: ref<TandemTravelOffer>;
   private let m_listening: Bool;
@@ -244,7 +246,7 @@ public class TandemTravel {
         marker = arrival.marker;
       }
     }
-    return this.Join(player, 0u, at, TandemNative.RemoteYaw(player), point, marker);
+    return this.Join(player, 0u, at, TandemNative.RemoteYaw(player), point, marker, false);
   }
 
   // ---- every tick (TandemSystem, once the world plays) ----
@@ -389,9 +391,8 @@ public class TandemTravel {
 
   // The host was taken somewhere else (reason 3) while we stood beside it:
   // shared play resumes there, so we go along at once, with no question
-  // (the user's rule, 2026-11-21): black first (Curtain.reds), then the
-  // game's own way there (Join: a fast travel's loading screen, else a hop
-  // behind the black). Not when the game's fast travel locks hold us (the
+  // (the user's rule, 2026-11-21), the game's own way: a fast travel's
+  // loading screen (Join, every hop hidden). Not when the game's fast travel locks hold us (the
   // offer then, as before), nor across a gate our own story keeps closed.
   private func TakenAlong(e: TandemRegroup, offer: ref<TandemTravelOffer>) -> Bool {
     if e.reason != 3 || this.m_now - this.m_besideHostAt > 8.0 {
@@ -411,21 +412,12 @@ public class TandemTravel {
       return false;
     }
     this.m_along = offer;
-    let curtain = story.Curtain();
-    if IsDefined(curtain) {
-      curtain.Close(0.3);
-    }
     TandemNative.Log(s"travel: the host was taken from beside us: going along (offer \(e.offer))");
     return true;
   }
 
   private func FollowAlong() -> Void {
     if !IsDefined(this.m_along) {
-      return;
-    }
-    let story = TandemStorySystem.Get(this.m_game);
-    let curtain = IsDefined(story) ? story.Curtain() : null;
-    if IsDefined(curtain) && !curtain.IsClosed() {
       return;
     }
     let offer = this.m_along;
@@ -438,11 +430,7 @@ public class TandemTravel {
       yaw = offer.yaw;
     }
     at.W = 1.0;
-    let joined = this.Join(offer.player, offer.offer, at, yaw, offer.point, offer.marker);
-    if IsDefined(curtain) {
-      // A fast travel's loading screen takes over: lifted behind it.
-      curtain.Open(0.4, joined ? 1.0 : 0.0);
-    }
+    let joined = this.Join(offer.player, offer.offer, at, yaw, offer.point, offer.marker, true);
     if !joined {
       this.Show(offer);
     }
@@ -760,7 +748,7 @@ public class TandemTravel {
       yaw = offer.yaw;
     }
     at.W = 1.0;
-    if !this.Join(offer.player, offer.offer, at, yaw, offer.point, offer.marker) {
+    if !this.Join(offer.player, offer.offer, at, yaw, offer.point, offer.marker, false) {
       TandemNative.SendRegroupAnswer(offer.player, offer.offer, false);
       return false;
     }
@@ -778,7 +766,8 @@ public class TandemTravel {
 
   // ---- getting there ----
 
-  private func Join(player: Uint32, offer: Uint32, at: Vector4, yaw: Float, point: TweakDBID, marker: Uint64) -> Bool {
+  // `along`: taken along (TakenAlong), every move hidden.
+  private func Join(player: Uint32, offer: Uint32, at: Vector4, yaw: Float, point: TweakDBID, marker: Uint64, along: Bool) -> Bool {
     let local = GetPlayer(this.m_game);
     let travel = this.FastTravel();
     if !IsDefined(local) || !IsDefined(travel) || this.m_trip {
@@ -808,18 +797,28 @@ public class TandemTravel {
       TandemNative.Log(s"travel: joining \(name) by \(this.PointName(point))'s marker (not on our map)");
       return true;
     }
-    if distance > TandemTravel.HopMetres() {
-      let nearest = this.NearestOwnPoint(at);
-      if IsDefined(nearest) {
-        this.BeginTrip(nearest.GetPointRecord(), TandemNative.NodeRefHash(nearest.GetMarkerRef()), player);
-        this.RequestFastTravel(local, nearest);
-        TandemNative.Log(s"travel: joining \(name) by our fast travel to \(this.PointName(nearest.GetPointRecord())), then a hop");
-        return true;
-      }
-      TandemNative.Log(s"travel: joining \(name): no fast travel point of ours near them, teleporting");
+    // Not at a point of ours (on foot, a quest's spot), or a long hop: to
+    // them behind the fast travel's loading screen, in one move (before: a
+    // fast travel to our nearest point, then a visible hop of up to 150 m).
+    if distance > TandemTravel.PlainHopMetres() || (along && distance > 4.0) {
+      this.HiddenJoin(local, player, at, yaw);
+      return true;
     }
     this.Hop(player);
     return true;
+  }
+
+  // Beside `player` at `at` behind the fast travel's loading screen (the
+  // arrival's way, TeleportHidden); the last metres after it as an
+  // arrival's (Arrived).
+  private func HiddenJoin(local: ref<PlayerPuppet>, player: Uint32, at: Vector4, yaw: Float) -> Void {
+    let distance = Vector4.Distance(local.GetWorldPosition(), at);
+    this.m_joinAt = at;
+    this.m_joinYaw = yaw;
+    this.m_arriving = true;
+    this.BeginTrip(TDBID.None(), 0ul, player);
+    this.TeleportHidden(local, this.Behind(at, yaw), yaw);
+    TandemNative.Log(s"travel: joining \(this.NameOf(player)) behind the fast travel's loading screen (\(RoundF(distance)) m)");
   }
 
   // Vanilla's own fast travel to a point we know.
@@ -872,11 +871,17 @@ public class TandemTravel {
     }
     let spot = this.Behind(at, yaw);
     let gap = Vector4.Distance(local.GetWorldPosition(), spot);
-    if gap > 4.0 {
+    // Far (they walked on during our loading screen): behind the fast
+    // travel's loading screen again, never a visible jump.
+    let hidden = gap > TandemTravel.PlainHopMetres();
+    if hidden {
+      this.TeleportHidden(local, spot, yaw);
+    } else if gap > 4.0 {
       this.Expect();
       GameInstance.GetTeleportationFacility(this.m_game).Teleport(local, spot, TandemYawAngles(Rad2Deg(yaw)));
     }
-    TandemNative.Log(s"travel: arrived next to \(this.NameOf(player)) (\(gap) m hop)");
+    let how = hidden ? ", behind the fast travel's loading screen" : "";
+    TandemNative.Log(s"travel: arrived next to \(this.NameOf(player)) (\(gap) m hop\(how))");
   }
 
   // Two metres behind a player at `at` facing `yaw`. The game's forward is
@@ -916,31 +921,6 @@ public class TandemTravel {
       }
     }
     return null;
-  }
-
-  // Ours on the world map nearest to `at`, within PointMetres.
-  private func NearestOwnPoint(at: Vector4) -> ref<FastTravelPointData> {
-    let travel = this.FastTravel();
-    if !IsDefined(travel) {
-      return null;
-    }
-    let mappins = GameInstance.GetMappinSystem(this.m_game);
-    let best: ref<FastTravelPointData>;
-    let bestDistance = TandemTravel.PointMetres();
-    // (redscript 0.5 has no continue)
-    for known in travel.GetFastTravelPoints() {
-      if IsDefined(known) && known.ShouldShowMappinOnWorldMap() {
-        let mappin = mappins.GetMappin(known.mappinID);
-        if IsDefined(mappin) {
-          let distance = Vector4.Distance(mappin.GetWorldPosition(), at);
-          if distance < bestDistance {
-            best = known;
-            bestDistance = distance;
-          }
-        }
-      }
-    }
-    return best;
   }
 
   // Ours, more than 500 m away (the test command "travel").
