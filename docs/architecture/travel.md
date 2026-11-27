@@ -19,9 +19,14 @@
   travel to the same point when we know it (`PerformFastTravelRequest`: its
   loading screen and streaming); else vanilla's steps to that point's
   marker (`TeleportToNode`, `NotifyFastTravelStart`) without adding the
-  point to our map; else, more than 150 m away, our fast travel point
-  nearest to them (within 1.5 km) and then a hop; else the hop alone, 2 m
-  behind them, facing their way. The game's fast travel locks (combat, a
+  point to our map; else (2026-11-27, not yet run in game), more than
+  40 m away, straight to 2 m behind them, facing their way, **behind the
+  fast travel's loading screen** (`HiddenJoin`: the arrival's
+  `TeleportHidden`, one move; before, a fast travel to our point nearest
+  to them within 1.5 km, then a visible hop of up to 150 m); within 40 m
+  the hop alone. The last metres after a loading screen are a hop too,
+  behind another loading screen when they walked on more than 40 m
+  (scenario `regroup-hidden`). The game's fast travel locks (combat, a
   vehicle, quests) block joining too. The regroup action: a player's marker
   on the world map, held like a fast travel point ("Join NAME"), joins them
   the same way; so does the player's "Join NAME" row in the game's phone,
@@ -58,9 +63,10 @@
   (`tools/game.sh cmd regroup jump X Y Z`: such a teleport). **A guest that
   stood beside the host** (grouped, within 40 m in the last 8 s:
   `NoteBeside`) is not asked: it goes along at once (`TakenAlong`, the
-  user's rule of 2026-11-21: shared play resumes with no prompt), behind a
-  black of its own (`Curtain.reds`), then the join's usual way (the fast
-  travel's loading screen, or a hop under the black); the game's fast
+  user's rule of 2026-11-21: shared play resumes with no prompt), the
+  join's usual way with every move behind the fast travel's loading
+  screen, any hop over 4 m too (2026-11-27: no black of our own,
+  `Curtain.reds`, before it any more); the game's fast
   travel locks, or a story gate between the two (`StoryWorld.reds`), keep
   the offer as before. Not yet run in game (by hand: the mock player sends
   no reason 3).
