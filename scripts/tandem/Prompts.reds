@@ -351,13 +351,17 @@ public class TandemPrompts {
       i -= 1;
     }
     // The key went down on the game's prompt holding our choice and no
-    // choice event came: the press is taken by hand, and that body's
+    // choice event came (Revive's: the key still held): the press is taken
+    // by hand, and that body's
     // prompts are drawn from now on.
     if this.m_keyDownAt >= 0.0 && now - this.m_keyDownAt >= 0.5 {
       let since = this.m_keyDownAt;
       this.m_keyDownAt = -1.0;
       for b in this.m_bodies {
-        if now - this.m_eventAt > 1.0 && IsDefined(b.body) && !b.drawn && b.kind != 0 && b.shown && b.shownSince <= since {
+        // Revive's choice is a hold (Choice1_Hold, 0.3 s): a tap lets go
+        // before it and asks nothing.
+        let held = b.kind != 1 || this.m_keyHeld;
+        if now - this.m_eventAt > 1.0 && held && IsDefined(b.body) && !b.drawn && b.kind != 0 && b.shown && b.shownSince <= since {
           this.Pressed(b);
           this.Fallback(b, "the key was pressed on the game's prompt and no choice event came within 0.5 s (the press taken by hand)");
           return;

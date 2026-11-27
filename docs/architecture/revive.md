@@ -26,7 +26,8 @@
   puppet is outlined through walls (vanilla multiplayer's look,
   `ForceVisionAppearance`) with a notice; its body carries "Revive" as
   the game's own interaction ([`prompts.md`](prompts.md): the game's range
-  and look-at, "[F] Revive", the choice event the press), or, on a body
+  and look-at, "[Hold F] Revive" with its hold ring, the choice event the
+  completed hold), or, on a body
   that does not take it, in a seat, or with `native_prompts = off`,
   within 2 m the prompt we draw (`UIInteractions.InteractionChoiceHub`,
   "[Hold F] Revive"); holding `Choice1` for 10 s with the HUD progress bar

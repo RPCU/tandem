@@ -109,11 +109,15 @@ The fallbacks (`TandemPrompts.Carry`, `Tick`):
 - **Revive** comes before Trade on one body. On a downed player lying in
   the open; one **in a seat keeps the drawn prompt** and its rules (the
   door we face, the car stopped, `KeepFromCar`): the look-at would be the
-  car's. The choice event is the press: the 10 s hold starts if the key is
-  still down, and its release is the input listener's (`Revive.reds`
-  `OnAction`, which tells `TandemPrompts.KeyIs`). The prompt reads "[F]
-  Revive", not "[Hold F]": the record's key is a press (no hold action's
-  name is known, §13.153).
+  car's. The record's key is a hold (`action = "Choice1_Hold"`, the
+  game's `inputContexts.xml`: `InteractionActions`, a 0.3 s hold of
+  `Choice1`), so the prompt reads "[Hold F] Revive" with the game's own
+  hold ring (2026-11-27, not yet run in game). Its choice event
+  (`BUTTON_HOLD_COMPLETE`) starts the 10 s revive with the key still
+  down; the release is the input listener's (`Revive.reds` `OnAction`,
+  which tells `TandemPrompts.KeyIs`). A tap asks nothing: the "no choice
+  event within 0.5 s" fallback takes a Revive press only while the key
+  is still held.
 - **Vendor**: on the proxy the scan found (`Nearest`: in reach, in front;
   `VendorPrompts`), offered every tick between scans; `TakePress` opens
   (`TandemVendors.Open`, which says why a shop stays shut).
@@ -158,6 +162,6 @@ NAME (released)`).
 5. `vendor-guest` with the default: "Trade" on the proxy (vanilla's own
    `ReturnTalk` choice replaced in the same event), the shop opening on the
    key.
-6. A hold action for Revive ("[Hold F]"): the `action` of
-   `Interactions.TandemRevive`, once a hold action's name is read from the
-   game's `inputContexts.xml`.
+6. Revive's hold ("[Hold F]", its ring filling in 0.3 s, then the 10 s
+   bar): `prompts: revive pressed … (BUTTON_HOLD_COMPLETE, …)`; a tap
+   neither starts it nor falls back to drawn prompts.
