@@ -284,7 +284,10 @@ void Observer::Frame() {
   // A session's first tick judges from the session's start: the engine
   // frames before it are the load's (SessionStarted, MarkEngineFrames).
   const auto engine = Runtime::Get().TakeEngineFrames();
-  const auto gap = observer::FrameToJudgeUs(previous, now, engine.count, engine.longestUs);
+  // Nor is a gap the game's loading screen held (a fast travel's frames
+  // read as a slow one under 2 s): its signs (Runtime::NoteLoadingSign).
+  const auto gap = observer::FrameToJudgeUs(previous, now, engine.count, engine.longestUs,
+                                            Runtime::Get().LoadingSignUs());
   if (std::exchange(m_firstTick, false) && previous)
     log::Info("observer: the session's first tick {:.0f} ms after its start, {} engine frame(s) "
               "between, the longest {:.0f} ms",
@@ -468,10 +471,11 @@ void Observer::WatchStall(std::uint64_t now) {
   }
   const auto silent = now - last;
   // A pause menu or a loading screen holds the script tick while the
-  // engine's frames run on (Runtime::EngineFramesRun): no stall, whatever
-  // its length (the watchdog's "paused" rows say it). A stall is the
-  // engine's frames silent too.
-  if (!m_stalled && silent > kStallUs && !Runtime::Get().EngineFramesRun(now)) {
+  // engine's frames run on: no stall, whatever its length (the watchdog's
+  // "paused" rows say it); nor the game's own loading screen while the
+  // engine's frames stop behind it, up to observer::kLoadingStallUs
+  // (Runtime::HeldNotStalled). A stall is the engine's frames silent too.
+  if (!m_stalled && silent > kStallUs && !Runtime::Get().HeldNotStalled(now)) {
     m_stalled = true;
     m_stalledSinceUs = last;
     std::lock_guard _(m_lock);

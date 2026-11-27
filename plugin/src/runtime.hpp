@@ -800,13 +800,20 @@ public:
   // The engine's own frame (RED4ext's Running state update, main.cpp): it
   // goes on in a pause menu and behind a loading screen, where the script
   // tick above waits (Pause.reds counts a paused menu's frames from it), and
-  // stops with a crash or a hang. Within the last second: the game runs.
+  // stops with a crash or a hang (and for seconds behind a loading screen,
+  // the world streaming). Within the last second: the game runs
+  // (HeldNotStalled, below).
   void NoteEngineFrame();
   static constexpr std::uint32_t kAfterPauseFrames = 30;
-  bool EngineFramesRun(std::uint64_t now) const {
-    const auto last = m_lastEngineFrameUs.load(std::memory_order_relaxed);
-    return last != 0 && (now <= last || now - last < 1'000'000);
-  }
+  // The game's loading screen (tandem/observer.hpp LoadingShown): a sign
+  // of it, from its controllers' script (Loading.reds; any thread, an
+  // atomic store only); shown now; held, not stalled (the engine's frames
+  // run, or a loading screen within observer::kLoadingStallUs: the
+  // watchdog's "paused", no stall capture).
+  void NoteLoadingSign() { m_loadingSignUs.store(net::NowUs(), std::memory_order_relaxed); }
+  std::uint64_t LoadingSignUs() const { return m_loadingSignUs.load(std::memory_order_relaxed); }
+  bool LoadingShown(std::uint64_t now) const;
+  bool HeldNotStalled(std::uint64_t now) const;
   // The engine's frames since the last call, and the longest of them (us):
   // a script tick's gap that held many is a pause, not a long frame (the
   // observer's frame trigger, Observer::Frame).
@@ -953,7 +960,8 @@ private:
   std::atomic_bool m_vehicleSmoothing{true}; // sync::RenderClock (test: off)
   std::atomic<std::uint64_t> m_lastFrameUs{0};
   std::atomic<std::uint64_t> m_lastEngineFrameUs{0};
-  std::atomic<std::uint64_t> m_engineMarkUs{0}; // MarkEngineFrames
+  std::atomic<std::uint64_t> m_engineMarkUs{0};  // MarkEngineFrames
+  std::atomic<std::uint64_t> m_loadingSignUs{0}; // NoteLoadingSign
   std::atomic<std::uint32_t> m_engineFrames{0};
   std::atomic<std::uint64_t> m_engineLongestUs{0};
   // After our pause menu closes: the engine's frames left to time (0: none),

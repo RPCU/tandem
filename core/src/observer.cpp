@@ -102,10 +102,28 @@ double DriftSeverity(float metres) { return 30.0 + std::min(60.0, static_cast<do
 double FrameSeverity(float ms) { return 20.0 + std::min(60.0, static_cast<double>(ms) / 10.0); }
 
 std::uint64_t FrameToJudgeUs(std::uint64_t previousUs, std::uint64_t nowUs,
-                             std::uint32_t engineFrames, std::uint64_t engineLongestUs) {
+                             std::uint32_t engineFrames, std::uint64_t engineLongestUs,
+                             std::uint64_t loadingSignUs) {
   if (previousUs == 0 || nowUs < previousUs)
     return 0;
+  if (loadingSignUs != 0 && loadingSignUs + kLoadingQuietUs >= previousUs)
+    return 0;
   return engineFrames > 2 ? engineLongestUs : nowUs - previousUs;
+}
+
+bool LoadingShown(std::uint64_t loadingSignUs, std::uint64_t lastTickUs, std::uint64_t nowUs) {
+  if (loadingSignUs == 0)
+    return false;
+  if (lastTickUs <= loadingSignUs)
+    return true;
+  return nowUs <= loadingSignUs || nowUs - loadingSignUs < kLoadingQuietUs;
+}
+
+bool HeldNotStalled(std::uint64_t lastEngineFrameUs, bool loadingShown, std::uint64_t nowUs) {
+  if (lastEngineFrameUs == 0)
+    return loadingShown;
+  const auto silent = nowUs <= lastEngineFrameUs ? 0 : nowUs - lastEngineFrameUs;
+  return silent < 1'000'000 || (loadingShown && silent < kLoadingStallUs);
 }
 
 std::optional<Hit> Classify(char level, std::string_view line) {

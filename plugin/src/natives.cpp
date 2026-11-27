@@ -1,7 +1,7 @@
 // What redscript can call: `TandemNative` static functions and the
 // `TandemEvent` struct. Declared on the script side in scripts/tandem/Natives.reds:
-// keep the two in sync. All of these run on the game thread, but HookRan and
-// OnGameThread (threads.hpp), which any thread calls.
+// keep the two in sync. All of these run on the game thread, but HookRan,
+// OnGameThread (threads.hpp) and LoadingSign, which any thread calls.
 
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
@@ -2061,6 +2061,10 @@ struct TandemNative : Red::IScriptable {
   }
   // tools/game.sh cmd threads, and a session's end: the hooks seen so far.
   static void ThreadsReport() { threads::Report(); }
+  // Any thread: the game's loading screen shows (Loading.reds): the
+  // watchdog and the observer take it as a pause (Runtime::NoteLoadingSign,
+  // an atomic store).
+  static void LoadingSign() { Runtime::Get().NoteLoadingSign(); }
 
   // ---- frame cost and fairness (docs/architecture/netcode.md) ----
   // The script tick's section `section` begins (perf.hpp kTickSections; 0:
@@ -2546,6 +2550,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(OnGameThread);
   RTTI_METHOD(HookRan);
   RTTI_METHOD(ThreadsReport);
+  RTTI_METHOD(LoadingSign);
   RTTI_METHOD(PerfMark);
   RTTI_METHOD(PerfReport);
   RTTI_METHOD(InReach);

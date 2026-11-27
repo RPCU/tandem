@@ -51,17 +51,17 @@ data name them.
 
 ## Triggers and captures
 
-| Trigger                 | From                                                                                                                                                                                                                                                                    | Severity    |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| `stall`                 | the writer: in a session, the game thread's frame stamp (`Runtime::LastGameFrameUs`) 30 s old and no engine frame for 1 s                                                                                                                                               | 95          |
-| `degraded`              | `degraded: ID is OFF…` (85), `is off:` (55), `player N's game runs without:` (45); not a chosen one                                                                                                                                                                     | 45 to 85    |
-| `fallback`              | `degraded: fallback ID…` (a repeat too)                                                                                                                                                                                                                                 | 30          |
-| `respawn`               | the fallbacks `proxy respawned`, `street body respawned`                                                                                                                                                                                                                | 40          |
-| `one-sided`             | `resync: asking…` (a digest differed), `[script] consistency:` (orphan, missing proxy), `street: check: … no longer shared`                                                                                                                                             | 40          |
-| `error`, `script-error` | an error line; a `[script]` line saying ` failed` or `error`                                                                                                                                                                                                            | 60, 35      |
-| `drift`                 | the puppet controller: a remote V's body `observer_drift_m` (5) from its owner's transform for 1 s                                                                                                                                                                      | 30 + metres |
-| `frame`                 | `TakeEvents`: a frame over `observer_frame_ms` (50), under 2 s (longer: a loading screen); a gap that held 3 engine frames or more is a pause, timed by its longest engine frame; a session's first tick is timed from the session's start (`observer::FrameToJudgeUs`) | 20 + ms/10  |
-| `manual`                | `cmd observer capture [REASON]`                                                                                                                                                                                                                                         | 50          |
+| Trigger                 | From                                                                                                                                                                                                                                                                                                           | Severity    |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `stall`                 | the writer: in a session, the game thread's frame stamp (`Runtime::LastGameFrameUs`) 30 s old and no engine frame for 1 s (120 s behind the game's loading screen)                                                                                                                                             | 95          |
+| `degraded`              | `degraded: ID is OFF…` (85), `is off:` (55), `player N's game runs without:` (45); not a chosen one                                                                                                                                                                                                            | 45 to 85    |
+| `fallback`              | `degraded: fallback ID…` (a repeat too)                                                                                                                                                                                                                                                                        | 30          |
+| `respawn`               | the fallbacks `proxy respawned`, `street body respawned`                                                                                                                                                                                                                                                       | 40          |
+| `one-sided`             | `resync: asking…` (a digest differed), `[script] consistency:` (orphan, missing proxy), `street: check: … no longer shared`                                                                                                                                                                                    | 40          |
+| `error`, `script-error` | an error line; a `[script]` line saying ` failed` or `error`                                                                                                                                                                                                                                                   | 60, 35      |
+| `drift`                 | the puppet controller: a remote V's body `observer_drift_m` (5) from its owner's transform for 1 s                                                                                                                                                                                                             | 30 + metres |
+| `frame`                 | `TakeEvents`: a frame over `observer_frame_ms` (50), under 2 s (longer: a loading screen); a gap that held 3 engine frames or more is a pause, timed by its longest engine frame; a session's first tick is timed from the session's start; none behind the game's loading screen (`observer::FrameToJudgeUs`) | 20 + ms/10  |
+| `manual`                | `cmd observer capture [REASON]`                                                                                                                                                                                                                                                                                | 50          |
 
 Log lines come through `log.hpp` (`log::Observe`): every line, debug ones
 too whatever `log` says (formatted for the observer when the level would
@@ -80,10 +80,23 @@ registry's summary, the recorder's state.
   the game (`testing.md`), so the stall trigger is the crash's capture,
   written by the observer's own thread; a stall that comes back (a hang
   that ended) adds a `watchdog` row saying so. A pause menu or a loading
-  screen is no stall: the engine's frames run on (`Runtime::EngineFramesRun`,
-  RED4ext's Running state update) while the script tick waits; the
-  watchdog's row says `paused` (six pause menus, up to 47 s, were ranked
-  the worst moments as crashes, 2026-11-23).
+  screen is no stall: the engine's frames run on (RED4ext's Running state
+  update; `Runtime::EngineFramesRun` until 2026-11-27, now
+  `Runtime::HeldNotStalled`) while the script tick waits; the watchdog's row says `paused`
+  (six pause menus, up to 47 s, were ranked the worst moments as crashes,
+  2026-11-23).
+- **The game's loading screen** (`scripts/tandem/Loading.reds`): its three
+  controllers (the save's, the fallback, the fast travel's) give a sign
+  (`TandemNative.LoadingSign`, `Runtime::NoteLoadingSign`, an atomic) when
+  one starts, at each progress the engine gives it, and every 0.25 s while
+  it shows. Shown while the game thread has not ticked since its newest
+  sign, and 1.5 s after it (`observer::LoadingShown`, `kLoadingQuietUs`):
+  a pause even with the engine's frames stopped behind it (the world
+  streaming), up to 120 s of them silent (`kLoadingStallUs`; then a stall
+  all the same: `observer::HeldNotStalled`, the watchdog's `paused (the
+game's loading screen)`); and no gap it held is judged a frame
+  (`FrameToJudgeUs`'s sign: a fast travel's frames read as a slow frame
+  under 2 s, a loading screen over 30 s as a stall).
 - **Context**: a player who left goes from it (`Observer::Forget`; one
   gone 20 min stayed, "as it said 1287.9 s before", 2026-11-23).
 - **Short pauses**: a pause menu under 2 s held the script tick for its
@@ -165,6 +178,7 @@ of quest phases.
   resources with a dump of the game's data.
 - Seen in game 2026-11-23 (scenario `pause-own`): a 5.8 s pause menu says
   `paused`, then `back`; the frames after each close 33 ms (the instance's
-  30 fps), the longest of 30 34 ms. Not yet seen: that RED4ext's Running
-  state update goes on behind every loading screen (else a loading screen
-  over 30 s is still a stall).
+  30 fps), the longest of 30 34 ms. Not yet seen: the loading screen's
+  signs (`Loading.reds`) at a fast travel and their end within 1.5 s of
+  the screen's (a controller that lived on past its screen would hold
+  every frame unjudged).

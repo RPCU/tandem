@@ -65,6 +65,30 @@ TEST_CASE("observer: the frame judged at a tick") {
   CHECK(observer::FrameToJudgeUs(1'000'000, 1'682'000, 104, 22'000) == 22'000);
   // A clock that went back judges nothing.
   CHECK(observer::FrameToJudgeUs(2'000'000, 1'000'000, 1, 0) == 0);
+  // A fast travel's loading screen between the ticks (its sign at 3 s):
+  // its 1.6 s engine frame is no slow frame; nor the gap of the tick just
+  // after it, within 1.5 s of its last sign; one later is judged.
+  CHECK(observer::FrameToJudgeUs(1'000'000, 9'000'000, 40, 1'600'000, 3'000'000) == 0);
+  CHECK(observer::FrameToJudgeUs(4'000'000, 4'300'000, 1, 300'000, 3'000'000) == 0);
+  CHECK(observer::FrameToJudgeUs(4'600'000, 4'900'000, 1, 300'000, 3'000'000) == 300'000);
+}
+
+TEST_CASE("observer: a loading screen is a pause, not a stall") {
+  constexpr std::uint64_t s = 1'000'000;
+  // No sign: no loading screen.
+  CHECK_FALSE(observer::LoadingShown(0, 5 * s, 6 * s));
+  // A sign after the last tick: shown, however long the tick waits.
+  CHECK(observer::LoadingShown(10 * s, 9 * s, 60 * s));
+  // Ticks again after it: shown 1.5 s more, then over.
+  CHECK(observer::LoadingShown(10 * s, 11 * s, 11 * s));
+  CHECK_FALSE(observer::LoadingShown(10 * s, 11 * s, 12 * s));
+  // The engine's frames run: held (a pause menu), loading screen or not.
+  CHECK(observer::HeldNotStalled(99 * s, false, 99 * s + 500'000));
+  // Stopped for 40 s: a stall, unless behind a loading screen.
+  CHECK_FALSE(observer::HeldNotStalled(60 * s, false, 100 * s));
+  CHECK(observer::HeldNotStalled(60 * s, true, 100 * s));
+  // Behind a loading screen, 2 minutes without an engine frame: a stall.
+  CHECK_FALSE(observer::HeldNotStalled(60 * s, true, 181 * s));
 }
 
 TEST_CASE("observer: every trigger kind has a name, and the name gives it back") {

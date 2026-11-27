@@ -20,6 +20,7 @@ CallPolice < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
 DamageSystem < IDamageSystem < IReplicatedGameSystem < IGameSystem < IScriptable
 DeathDecisions < HighLevelTransition < DefaultTransition < StateFunctor < IScriptable
 DeathDecisionsWithResurrection < HighLevelTransition < DefaultTransition < StateFunctor < IScriptable
+DefaultLoadingScreenLogicController < ILoadingLogicController < inkLogicController < inkILogicController < IScriptable
 DestructibleMasterDevice < InteractiveMasterDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 DestructibleMasterLight < DestructibleMasterDevice < InteractiveMasterDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 DestructibleRoadSign < BaseDestructibleDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
@@ -43,7 +44,9 @@ HighLevelTransition < DefaultTransition < StateFunctor < IScriptable
 HitReactionComponent < AIMandatoryComponents < AIRelatedComponents < ScriptableComponent < GameComponent < IComponent < IScriptable
 ImmediateExitWithForceEvents < ExitingEventsBase < VehicleEventsTransition < VehicleTransition < DefaultTransition < StateFunctor < IScriptable
 InVehicleCombatDecorator < AIVehicleTaskAbstract < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
+InitialLoadingScreenLogicController < ILoadingLogicController < inkLogicController < inkILogicController < IScriptable
 Inventory < GameComponent < IComponent < IScriptable
+LoadingScreenLogicController < ILoadingLogicController < inkLogicController < inkILogicController < IScriptable
 MappinUIUtils
 MarketSystem < IMarketSystem < ScriptableSystem < IScriptableSystem < IScriptable
 MeleeAttackGenericEvents < MeleeEventsTransition < MeleeTransition < DefaultTransition < StateFunctor < IScriptable
