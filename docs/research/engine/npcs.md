@@ -381,3 +381,40 @@ within 20 s of every ride, five rides in five, at one of two places.
   upright through their seat or put out of it on one game. tandem sets the
   override on seating (`TandemNpcs.FollowSeat`), the stance `Vehicle` and
   no workspot while seated (`TandemNpcAnims`). [2.5-static]
+
+### 13.159 Where an NPC's voice line starts: one event on the entity, whoever asks (2026-11-27, 2.50 exe read and scripts)
+
+- Script `SoundPlayVo` is the engine's **`entGameplayVOEvent`** (`0x68`
+  bytes, vtable `0x1430a5800`, type `0x144c51158`; fields `voContext`
+  `+0x40`, `isQuest` `+0x48`, `ignoreFrustumCheck`, `ignoreDistanceCheck`,
+  `ignoreGlobalVoLimitCheck` `+0x4c`, `debugInitialContext` `+0x50`,
+  `answeringEntityId` `+0x58`, `overridingVoiceoverContext` `+0x60`; the
+  rest Codeware's `Base/Addons/SoundPlayVo.reds`). `GameObject.PlayVoiceOver`
+  (`final.reds (2.50)`, the 70 callers) builds one and queues it on the
+  entity, or through the delay system when it waits; `PlayImpactSound`
+  (`:109870`, `battlecry_01`) and `TriggerFearRunningVO` (`:484975`,
+  `fear_run`, `pedestrian_hit`) queue their own without it.
+  [2.5-verified, scripts]
+- The engine's own starts: three virtual functions side by side in one
+  vtable (`0x143040808`, slots 5 to 7; set at `0x1402bec9b`, no RTTI name)
+  build a VO event and hand it to `0x1401a6790`, which queues it on the
+  entity of the component at their `+0x20` (`component +0x50`, then
+  `0x1401a67b0`, the same call `entEntity.QueueEvent` (`0x1401a671c`)
+  makes): slot 5 (`0x14099f618` → `0x14099f67c`) and slot 6
+  (`0x142d076ec` → `0x142b427b8`) an `entGameplayVOEvent`, slot 7
+  (`0x140503458` → `0x140503538`) an **`entTriggerVOEvent`** (`0x80`
+  bytes, vtable `0x14305d210`: `triggerBaseName` `+0x40`,
+  `triggerVariationIndex`, `triggerVariationNumber`, `debugInitialContext`
+  `+0x68`, `answeringEntityIDHash` `+0x70`; imported by Codeware). Other
+  builders of `entGameplayVOEvent`: `0x142486b48`, `0x1425ddece`,
+  `0x142b42aec` (callers not named). [2.5-verified, exe read; which
+  engine paths reach the three slots (behaviour, animation `animAnimEvent_GameplayVo`,
+  reactions) is not named]
+- So a script event handler on the NPC's class (`cb func` taking
+  `ref<SoundPlayVo>`) sees every gameplay line asked of the NPC's voice,
+  at the moment it is asked, whoever started it; the voice itself is the
+  NPC's `scnVoicesetComponent` (`0x2f8` bytes, vtable `0x143041ee0`).
+  Not seen in game yet. [2.5-untested]
+- Not through these events: scene lines (`scnDialogLine`, scene-replay's)
+  and the quest node `questPlayVoiceset_NodeType` (whether it queues an
+  `entGameplayVOEvent`, its `isQuest`, is not read). [unverified]
