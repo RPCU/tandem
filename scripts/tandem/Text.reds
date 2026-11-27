@@ -156,6 +156,17 @@ public class TandemText {
     if !shown {
       return;
     }
+    // News (not a question, not something gone wrong, not a life): the
+    // game's own side notification, as its "can't save now" (the
+    // UIInGameNotificationQueue's generic one, its own 5 s). The rest: the
+    // HUD's warning line.
+    if TandemText.IsNews(key, kind, seconds) {
+      let toast = new UIInGameNotificationEvent();
+      toast.m_notificationType = UIInGameNotificationType.GenericNotification;
+      toast.m_title = text;
+      GameInstance.GetUISystem(game).QueueEvent(toast);
+      return;
+    }
     let message: SimpleScreenMessage;
     message.isShown = true;
     message.duration = seconds;
@@ -165,6 +176,13 @@ public class TandemText {
       .GetBlackboardSystem(game)
       .Get(GetAllBlackboardDefs().UI_Notifications)
       .SetVariant(GetAllBlackboardDefs().UI_Notifications.WarningMessage, ToVariant(message), true);
+  }
+
+  // A notice shown as news (TandemText.Say): neutral, neither a question
+  // nor something gone wrong (Importance 2), nor a life (Revive-), and not
+  // one to read longer than the side notification's 5 s (the join code).
+  public static func IsNews(key: String, kind: SimpleMessageType, seconds: Float) -> Bool {
+    return Equals(kind, SimpleMessageType.Neutral) && seconds <= 5.0 && TandemText.Importance(key) < 2 && !StrBeginsWith(key, "Revive-");
   }
 
   // 2: asks for an answer or went wrong (always shown), 1: the session and

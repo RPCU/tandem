@@ -20,7 +20,13 @@ places) and what comes from another game are data, not text.
   C". A key the merged texts do not know (texts loaded before Codeware saw
   us) falls back to the English package, so a text is never empty.
 - **Notices** (`TandemText.Notice`, `NoticeAs` with a type and a duration,
-  `NoticeReason`): the HUD's warning line, the game's own short message
+  `NoticeReason`), by kind (2026-11-27, not yet run in game): news (a
+  neutral notice of `Importance` under 2, not a `Revive-` one, 5 s or
+  less: a join, a leave, a regroup's word, a loot) is the game's own side
+  notification (`UIInGameNotificationEvent`, `GenericNotification`, its
+  title our text: the toast of its "can't save now"); a question,
+  something gone wrong, a life or a text to read longer (the join code) is
+  the HUD's warning line, the game's own short message
   (`UI_Notifications.WarningMessage`). Every notice is logged in English
   with its key, `coop notice: NAME joined the session
 [Session-PlayerJoined]`: scenarios read the log whatever the game's
