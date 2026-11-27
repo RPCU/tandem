@@ -1,4 +1,4 @@
-# The pause menu's co-op settings: a page of groups, each a page of one-line rows; a change keeps the cursor on its row, Back goes to the groups (the shots: rows on one line inside the panel, the description apart from the status)
+# The pause menu's co-op settings: a page of groups, each a page of one-line rows; a change keeps the cursor on its row, Back and Esc go to the groups (the shots: rows on one line inside the panel, the description apart from the status)
 # shellcheck shell=bash disable=SC2317,SC2154
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female
@@ -35,10 +35,9 @@ pause 1
 shot settings-advanced
 cmd coop pick interface
 expect 'coop: pause menu: no item interface' 10
-# (Esc, the simulated key 1, closes the whole pause menu here, not a page:
-# to look at by hand.)
+# Esc (the simulated key 1) goes up a page, as the game's own sub-pages do.
 mark
-cmd coop pick back
+$game key 1 >/dev/null
 expect 'coop: pause menu page settings: \[Session\]' 10
 cmd coop pick interface
 expect 'coop: pause menu page settings: \[Notices: [a-z]*\]' 10

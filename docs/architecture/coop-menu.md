@@ -216,8 +216,12 @@ yet run in game**).
   `tandem.ini` is in place lands in that one. Tests: `coop settings` logs
   them all, `coop set KEY VALUE` changes one (scenario `settings`).
 - The pause menu's page seen in game 2026-11-23 (English; scenario
-  `settings-page`, its shots). Esc (the simulated key) there closed the
-  whole pause menu instead of going up a page: to look at by hand. French
+  `settings-page`, its shots). Esc in the pause menu is the menu
+  scenario's, not the controller's input: `MenuScenario_PauseMenu.OnBack`
+  closes the whole menu from `pause_menu`, whatever the page, so it asks
+  the pause menu first (`OnTandemBack`, `TandemBackAnswer`): one of our
+  pages goes up a page, a popup's Esc is swallowed, the root page closes
+  as the game's (the scenario's Esc step: not yet run in game). French
   lengths not seen. Not done: the Mod Settings mod's page (it keeps
   its own saved values, which would compete with tandem.ini's: one source of
   truth was kept). **Mod Settings: not used, by decision 2026-11-19**

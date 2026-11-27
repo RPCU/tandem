@@ -52,6 +52,7 @@ MenuScenario_ArcadeMinigame < MenuScenario_BaseMenu < inkMenuScenario < IScripta
 MenuScenario_BaseMenu < inkMenuScenario < IScriptable
 MenuScenario_CharacterCustomizationMirror < MenuScenario_BaseMenu < inkMenuScenario < IScriptable
 MenuScenario_HubMenu < MenuScenario_BaseMenu < inkMenuScenario < IScriptable
+MenuScenario_PauseMenu < MenuScenario_BaseMenu < inkMenuScenario < IScriptable
 MenuScenario_NetworkBreach < MenuScenario_BaseMenu < inkMenuScenario < IScriptable
 MenuScenario_Storage < MenuScenario_BaseMenu < inkMenuScenario < IScriptable
 MenuScenario_TimeSkip < MenuScenario_BaseMenu < inkMenuScenario < IScriptable
