@@ -79,6 +79,16 @@
   30 m of the host it stays where it landed (no visible hop), else the last
   metres as a regroup's. One notice: "Joined NAME's session". No
   `RegroupAnswer`: the host already hears "NAME joined the session".
+- **Seen arriving** (`System.reds` `SnapPuppet`, 2026-11-27, not yet run
+  in game; scenario `arrival-fade`): a partner's puppet whose body is put
+  more than 25 m from where it was (a join's arrival, a fast travel, a
+  regroup, a respawn) is hidden for the jump (`TandemVisibility` reason
+  `arrival`) and fades in at its new place 0.4 s later over 0.8 s, with
+  the animation system's fade: the way the game's phantoms appear
+  (`scene-replay.md`, Johnny: his phantom component's effect, then that
+  fade; a V's body has no phantom component, so no effect of its own).
+  Not while we watch the host's view (`Spectate.reds`). Log: `player N:
+arriving from M m away: hidden for the jump`, then `arrived, faded in`.
 
 ## Open problems
 
