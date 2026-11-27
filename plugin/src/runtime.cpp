@@ -15,6 +15,7 @@
 #include "story.hpp"
 
 #include "tandem/names.hpp"
+#include "tandem/observer.hpp"
 #include "tandem/report.hpp"
 #include "tandem/session.hpp"
 #include "tandem/settings.hpp"
@@ -848,6 +849,15 @@ void Runtime::SubmitLocalPaused(bool paused) {
   // give the world back without a hitch.
   if (!paused)
     m_afterPauseFrames.store(kAfterPauseFrames, std::memory_order_relaxed);
+}
+
+bool Runtime::LoadingShown(std::uint64_t now) const {
+  return observer::LoadingShown(LoadingSignUs(), LastGameFrameUs(), now);
+}
+
+bool Runtime::HeldNotStalled(std::uint64_t now) const {
+  return observer::HeldNotStalled(m_lastEngineFrameUs.load(std::memory_order_relaxed),
+                                  LoadingShown(now), now);
 }
 
 void Runtime::NoteEngineFrame() {

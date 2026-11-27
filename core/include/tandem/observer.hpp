@@ -65,8 +65,30 @@ double FrameSeverity(float ms);
 // engine frame is the frame. The engine frames before a session's start
 // are the save's loading screen, never given here (a loading frame of
 // 1370 ms read as the session start's, 2026-11-26).
+// A sign of the game's loading screen (`loadingSignUs`, its newest: 0
+// none) within kLoadingQuietUs before `previousUs`, or after it: the gap
+// is the loading screen's (a fast travel's frames read as a slow frame
+// under 2 s), none is judged.
 std::uint64_t FrameToJudgeUs(std::uint64_t previousUs, std::uint64_t nowUs,
-                             std::uint32_t engineFrames, std::uint64_t engineLongestUs);
+                             std::uint32_t engineFrames, std::uint64_t engineLongestUs,
+                             std::uint64_t loadingSignUs = 0);
+
+// The game's own loading screen (scripts/tandem/Loading.reds: the loading
+// screen's controllers, a sign at their start, at each progress the engine
+// gives them and every 0.25 s while their widget lives). Shown while the
+// game thread has not ticked since its newest sign, and for
+// kLoadingQuietUs after it. The watchdog and the observer take it as a
+// pause, as the pause menu: the script tick waits behind it, and the
+// engine's frames may stop for seconds while the world streams (a loading
+// screen of 30 s read as a stall). Up to kLoadingStallUs of engine
+// frames silent behind it: past that, a stall all the same.
+inline constexpr std::uint64_t kLoadingQuietUs = 1'500'000;
+inline constexpr std::uint64_t kLoadingStallUs = 120'000'000;
+bool LoadingShown(std::uint64_t loadingSignUs, std::uint64_t lastTickUs, std::uint64_t nowUs);
+// The game is paused, not stalled: the engine's frames run (their newest
+// `lastEngineFrameUs`, within the last second), or a loading screen is
+// shown and they stopped less than kLoadingStallUs ago.
+bool HeldNotStalled(std::uint64_t lastEngineFrameUs, bool loadingShown, std::uint64_t nowUs);
 
 // A log line (its text as written, without the time; `level` 'E', 'W', 'I'
 // or 'D') that is a trigger, or none. The observer's own lines never are.

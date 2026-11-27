@@ -597,6 +597,9 @@ public native class TandemNative extends IScriptable {
   public static native func HookRan(name: CName)
   // tools/game.sh cmd threads, and a session's end: the hooks seen so far.
   public static native func ThreadsReport()
+  // Any thread: the game's loading screen shows (Loading.reds): the
+  // watchdog and the observer take it as a pause.
+  public static native func LoadingSign()
   public static native func PerfMark(section: Int32)
   public static native func PerfReport()
   public static native func InReach(player: Uint32, npc: Uint32, puppetAt: Vector4, npcAt: Vector4, limit: Float) -> Bool

@@ -409,15 +409,19 @@ struct NetThread::Impl {
       stall::NetBeat(stall::kPass);
       // Watchdog (runtime.hpp): one line when the game thread stops ticking,
       // one when it comes back. A pause menu or a loading screen stops the
-      // script tick while the engine's frames run on: that is "paused"; a
-      // crash or a hang stops both: "silent".
+      // script tick while the engine's frames run on: that is "paused"; so
+      // is the game's own loading screen while the engine's frames stop
+      // behind it (the world streaming, up to observer::kLoadingStallUs:
+      // Runtime::HeldNotStalled); a crash or a hang stops both: "silent".
       if (const auto last = runtime.LastGameFrameUs(); last) {
         const auto now = net::NowUs();
-        const bool framesRun = runtime.EngineFramesRun(now);
+        const bool framesRun = runtime.HeldNotStalled(now);
         if (!silentSinceUs && now - last > 5'000'000) {
           silentSinceUs = last;
           silencePaused = framesRun;
-          if (framesRun)
+          if (framesRun && runtime.LoadingShown(now))
+            log::Info("watchdog: game thread paused for 5 s (the game's loading screen)");
+          else if (framesRun)
             log::Info("watchdog: game thread paused for 5 s (a pause menu or a loading screen: "
                       "the engine's frames run)");
           else
