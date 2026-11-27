@@ -247,7 +247,15 @@ the first group session.
   host's NPC stays (its spot keeps it there): a copy out of its workspot
   by itself goes back in at the host's entry (`TandemSpot` `replays`), once
   it held 3 s; out sooner is a `workspot not entered` fallback, never a
-  loop (a seated NPC seen sitting, standing, sitting again, 2026-11-23). A
+  loop (a seated NPC seen sitting, standing, sitting again, 2026-11-23).
+  The copy is jumped to its entry again every 6 s; one whose tree ran to
+  its exit sooner (an entry's sequence under 6 s) is jumped at 0.6 of the
+  time it ran from then on, not under 1.5 s (`TandemSpot.period`). And a
+  proxy takes no stimulus of its own game (`ShouldEventBeProcessed`,
+  `Stealth.reds`): a fear or a flinch in its workspot played the
+  workspot's reaction and its exit while its owner sat on. Those two were
+  what the code left for the 1 in 90 copies that still stood up or
+  flickered (kabuki-market, PR #118); not yet run in game. A
   workspot the host cannot read (`workspot unread`) is a fallback too.
   `npc list` gives each NPC's activity (`spot P|unread|none`, a proxy's
   `said` and `replays`); `npc-compare` counts those not the same on both

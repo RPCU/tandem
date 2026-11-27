@@ -98,6 +98,24 @@ public final static func ReactOnPlayerStealthStim(owner: wref<GameObject>, targe
   return wrappedMethod(owner, target);
 }
 
+// A proxy reacts to nothing of its own: what its game's stimuli would make
+// it do (a fear reaction in its workspot, a flinch, a look) is its owner's
+// NPC's to decide and to say (its anims, its workspot: NpcAnims.reds). A
+// proxy that took a stimulus of its game played the workspot's reaction and
+// its exit while its owner sat on (the seated copies that still stood up by
+// themselves, 1 in 90, 2026-11-23). Every stimulus goes through this gate
+// first, the crowd's and the others' (ReactionManagerComponent.OnStimuliEvent,
+// final.reds (2.50):67915).
+// job thread safe: it reads (a lock-free native) and changes nothing
+@wrapMethod(ReactionManagerComponent)
+private final func ShouldEventBeProcessed(stimEvent: ref<StimuliEvent>) -> Bool {
+  let owner = this.GetOwner();
+  if TandemNative.IsStarted() && IsDefined(owner) && TandemPresence.IsNpcProxy(owner.GetEntityID()) {
+    return false;
+  }
+  return wrappedMethod(stimEvent);
+}
+
 // A stimulus tagged PlayerOnly is dropped unless its source, or the attack's
 // instigator it names, is a player (final.reds:145046). A puppet's movement
 // noise names none: for the length of that judgement our own V is lent as
