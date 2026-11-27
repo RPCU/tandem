@@ -554,7 +554,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Transit-Follow", "Follow");
     this.Text("Tandem-Transit-Following", "Following {1}: join them when the ride is over");
     this.Text("Tandem-Transit-YouRide", "You ride with {1}");
-    this.Text("Tandem-Transit-RidingAlong", "Riding along with {1}");
+    this.Text("Tandem-Transit-Full", "No seat for you in {1}'s ride: follow it, and join them when it is over");
     this.Text("Tandem-Transit-RideOver", "the ride is over");
     // Fast travel and regroup.
     this.Text("Tandem-Travel-OnTheWay", "{1} is on the way");
@@ -1115,7 +1115,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Transit-Follow", "Suivre");
     this.Text("Tandem-Transit-Following", "Vous suivez {1} : rejoignez-le à la fin du trajet");
     this.Text("Tandem-Transit-YouRide", "Vous voyagez avec {1}");
-    this.Text("Tandem-Transit-RidingAlong", "En route avec {1}");
+    this.Text("Tandem-Transit-Full", "Pas de place pour vous dans le véhicule de {1} : suivez-le, et rejoignez-le à la fin du trajet");
     this.Text("Tandem-Transit-RideOver", "le trajet est terminé");
     this.Text("Tandem-Travel-OnTheWay", "{1} arrive");
     this.Text("Tandem-Travel-Stays", "{1} reste sur place");

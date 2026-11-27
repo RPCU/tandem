@@ -434,7 +434,7 @@ into the others as `{1}` or `{2}`.
 | `Transit-Follow` | Follow | Suivre | Transit.reds |
 | `Transit-Following` | Following {1}: join them when the ride is over | Vous suivez {1} : rejoignez-le à la fin du trajet | Transit.reds |
 | `Transit-YouRide` | You ride with {1} | Vous voyagez avec {1} | Transit.reds |
-| `Transit-RidingAlong` | Riding along with {1} | En route avec {1} | Transit.reds |
+| `Transit-Full` | No seat for you in {1}'s ride: follow it, and join them when it is over | Pas de place pour vous dans le véhicule de {1} : suivez-le, et rejoignez-le à la fin du trajet | Transit.reds |
 | `Transit-RideOver` | the ride is over | le trajet est terminé | Transit.reds |
 
 ### Fast travel and regroup

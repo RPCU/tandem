@@ -184,7 +184,7 @@ names of `engine-access.md`.
 | `workspot not entered` | degraded | fallback | `NpcAnims.reds` `Step`, `Enter` (no component, the resource refused) | the proxy stands |
 | `workspot unread` | degraded | fallback | `NpcAnims.reds` `NoteUnread` (owner: in a workspot whose instance has no resource, §13.134; or seated 3 s in a vehicle not shared, its seat unsent) | its copies stand where it sits |
 | `scene camera missing` | degraded | fallback | `Scenes.reds`, `Spectate.reds` | our own eyes stay |
-| `carried by placement` | degraded | fallback | `Spectate.reds`, `Transit.reds` | our V placed in the car a few times a second |
+| `carried by placement` | degraded | fallback | `Spectate.reds` | our V placed in the car a few times a second |
 | `revive ended by hand` | degraded | fallback | `Revive.reds` `CheckUp` | the death effects ended by hand |
 | `race watched` | degraded | fallback | `Races.reds` `Place` | not in the race car in time: we watch |
 | `v slowed as entity` | degraded | fallback | `Time.reds` `SlowSelf` | our V slowed as an entity |

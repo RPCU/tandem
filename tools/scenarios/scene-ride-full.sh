@@ -1,31 +1,18 @@
-# As a guest: the host's two-seat quest car (an NPC drives, the host beside it) has no seat for us; asked, we ride along hidden, and get out beside it when the scene ends
+# As a guest: the host's two-seat quest car (an NPC drives, the host beside it) has no seat for us: a seat or nothing, so we are not asked to ride, we follow (told so), never carried unseen
 # shellcheck shell=bash disable=SC2317
-# Carried by the engine or by the 5 Hz placement (below): both are read.
-allow_fallback "carried by placement"
 ensure join
 peer host --mode drive --vehicle Vehicle.v_sport2_porsche_911turbo --seat seat_front_right --scene --driver-npc Character.Panam --body male --drive-seconds 40
 expect 'in the session as player' 30
 expect 'copy spawning' 30
 expect 'seated in seat_front_right' 30
 expect 'npcs: proxy 50001 seated in seat_front_left' 30
-# Our V on foot within 20 m of the copy: the question, then the default.
-expect 'ride: asked to ride with player 1 or follow' 30
-shot scene-ride-asked
-expect "ride: no free seat in player 1's scene ride: riding along" 15
-expect 'our ride: kind 4' 5
-# Carried by the engine (a mount to the copy's trunk body slot), or the 5 Hz fallback.
-expect 'ride: (carried by the copy|the copy has no trunk body slot)' 5
-note "carry: $(since | grep -oE 'ride: (carried by the copy|the copy has no trunk body slot)' | tail -1)"
+# Our V on foot within 20 m of the copy: no question, the notice.
+expect "ride: player 1's scene ride has no free seat: following \(no free seat\)" 30
+shot scene-ride-full
+pause 8
+reject 'ride: asked to ride with player 1 or follow'
+reject 'our ride: kind 4'
 cmd ride
-expect 'ride: .*carried by player 1' 5
-shot scene-ride-along
-# Carried along, never armed (no seat to fight from: NoWeapons, NoCombat).
-cmd wheels draw
-expect 'wheels: draw: our V is in no vehicle|wheels: draw .*no weapons true, no combat true' 5
-pause 2
-reject 'wheels: our weapons in vehicle [0-9]+: mode [1-9]'
-# The scene ends: out, beside the car, every restriction off.
+expect 'ride: seated by player 0, asked by player 0' 5
 expect_peer 'out of the car' 60
-expect "ride: out of player 1's ride along \(the ride is over\)" 10
-expect 'our ride: kind 0' 5
 reject 'watchdog: game thread silent'

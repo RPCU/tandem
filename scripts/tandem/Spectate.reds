@@ -242,15 +242,14 @@ public class TandemSpectate {
     let at = TandemNative.RemotePosition(host);
     let here = player.GetWorldPosition();
     let system = TandemSystem.Of(this.m_game);
-    let transit = IsDefined(system) ? system.Transit() : null;
     let hostCar = IsDefined(system) ? system.CarOf(host) : EntityID.FromHash(0ul);
     let hostRiding = EntityID.IsDefined(hostCar);
     // Restrictions alone (no scene, no ride its scene or quest drives:
     // Transit kind 3): where its V goes is its own free roam, never (c).
     let hostFree = story.TierOf(host) < 2 && TandemNative.RemoteTransitKind(host) != 3;
-    // Riding along in the host's copy (seated or carried) or in a car of our
-    // own: we play. Our spectating's own carry is not a ride.
-    let inVehicle = !this.m_carried && (VehicleComponent.IsMountedToVehicle(this.m_game, player) || (IsDefined(transit) && transit.CarriedBy() != 0u));
+    // Seated in the host's copy or in a car of our own: we play. Our
+    // spectating's own carry is not a ride.
+    let inVehicle = !this.m_carried && VehicleComponent.IsMountedToVehicle(this.m_game, player);
     // The host among quest interiors our game cannot load (StoryWorld.reds).
     let world = story.World();
     let cannotLoad = this.m_testMissing || (IsDefined(world) && world.CannotLoad());
@@ -378,8 +377,7 @@ public class TandemSpectate {
     if !IsDefined(system) {
       return;
     }
-    let transit = system.Transit();
-    if !this.m_carried && (VehicleComponent.IsMountedToVehicle(this.m_game, player) || (IsDefined(transit) && transit.CarriedBy() != 0u)) {
+    if !this.m_carried && VehicleComponent.IsMountedToVehicle(this.m_game, player) {
       return;
     }
     // Never across a gate our own story keeps closed (StoryWorld.reds): our

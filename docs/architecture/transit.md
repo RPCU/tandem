@@ -31,47 +31,27 @@
     walking off (30 m) or getting into a car of its own is following.
     - _Ride, a free seat_ (a passenger or gunner seat nobody holds, never
       the driver's): seated in it, as the scene seats a companion.
-    - _Ride, no free seat_ (two-seat cars: the host with Panam or Johnny
-      beside it, an NPC driving the host): **carried along**. The guest's V
-      is hidden (its own meshes and what it holds), held by the game's own
-      restrictions (no movement, no jump, no weapons, no world or vehicle
-      interaction, crouched, invulnerable), put once in the copy's cabin
-      behind the seats, and **carried by the engine**: mounted to the
-      copy's `trunk_body` slot (a slot, not a seat, and on its own copy
-      only) with its position kept (`preservePositionAfterMounting`, as
-      vanilla's trunk body mount) and silently (`silentUnmount`: no vehicle
-      state machine, as vanilla's seat switches mount the player). The
-      mounting facility moves it with the car every frame, turning with
-      it, and the world streams around it as it moves; its camera stays
-      free: it sees the ride and hears the scene (the host's lines,
-      Dialogue.reds) from where a passenger would. A copy with no such
-      slot (the mount did not hold after 0.5 s) falls back to placing V in
-      the cabin five times a second: one teleport every 200 ms, never per
-      frame (a teleport re-runs placement and streaming around V; at 5 Hz
-      and 25 m/s V trails by up to 5 m between placements, which the
-      camera shows as a step). Weighed and not used: a workspot on the
-      copy (`PlayInDevice` plays the player in a vehicle's workspots only
-      for the parked trunk sequences; a component added at runtime needs
-      Codeware's builder at assembly and nothing says a device workspot
-      follows a moving parent), and a transform binding
-      (`entHardTransformBinding` binds components inside one entity, not
-      the player to another). It sends `Transit` `Along` (the carrier), so
-      every game hides its puppet (there is no seat to show it in) and puts
-      its map marker on the car that carries it (the carrier's real car on
-      the host, its copy elsewhere), and sends no `Seat` (the trunk slot is
-      no one's seat). The game lends no camera to a V without a seat: a
-      vehicle's cameras and its scene camera mode belong to the seated V's
-      state machine (vehicle states Passenger, Scene), and only photo mode
-      has a free camera; V's own eyes, carried, are the passenger's view.
-    - _Follow_: nothing is done to the guest's V. The host's marker sits
+    - _No free seat_ (two-seat cars: the host with Panam or Johnny
+      beside it, an NPC driving the host; 2026-11-27, the user's rule: a
+      seat or nothing): the guest is not asked to ride. Within 20 m of the
+      copy it is told once "No seat for you in NAME's ride: follow it, and
+      join them when it is over" (`Transit-Full`) and follows; a seat taken
+      between the question and the answer follows the same way. Before,
+      such a guest was **carried along**: hidden, held by restrictions,
+      mounted to the copy's `trunk_body` slot (or placed in the cabin 5
+      times a second), its puppet hidden everywhere (`Transit` `Along`, kind
+      4, which no game sends any more; its notice `Transit-RidingAlong`
+      gone). As in GTA Online and Far Cry, a full
+      car cannot be entered; the restrictions a save made while carried
+      kept are still cleared when a game loads.
+    - _Follow_ (chosen, or no free seat): nothing is done to the guest's V. The host's marker sits
       on its car (Markers.reds); when the host's scene ride ends, the host
       offers everyone far from it to join (the regroup offer, "Join NAME",
       Travel.reds), so a guest left behind is brought to the destination
       if it says yes.
     - _The end, whatever ends it_: the host's ride leaves `Scene`, the copy
-      goes, the guest goes down (a downed V is never carried, nor asked),
-      or the session ends (a vanished host included, the desync work's
-      rules): every restriction off, seen again, put down beside the car.
+      goes, or the guest goes down (a downed V is never asked): out of its
+      seat.
       A game that loads clears the restrictions a save could have kept. A
       guest that vanishes is the host's PlayerLeft as always.
     - _Rejected: an extra seat on the guest's copy only._ The host's game
@@ -120,7 +100,8 @@
     Not done; NPCs driving vehicles that carry no player (chases) are the
     host's AI vehicles of the authority table, also not shared yet.
   - Not yet verified in game: scenarios `metro`, `ride`, `scene-ride`,
-    `scene-ride-full` (a two-seat car: ride along), `scene-ride-follow`;
+    `scene-ride-full` (a two-seat car: follow, not asked),
+    `scene-ride-follow` (a free back seat, follow chosen);
     `tools/game.sh cmd ride` logs our ride, the vehicle's seats and
     everyone's rides; `ride along` / `ride follow` answer the question;
     `ride npc [RECORD]` seats an NPC in our vehicle (a host test of

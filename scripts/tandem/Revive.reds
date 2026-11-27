@@ -926,9 +926,7 @@ public class TandemRevive {
     this.m_downCar = none;
     this.m_downSlot = n"None";
     let car: wref<VehicleObject>;
-    let transit = IsDefined(this.m_system) ? this.m_system.Transit() : null;
-    let along = IsDefined(transit) && transit.CarriedBy() != 0u;
-    if along || !VehicleComponent.GetVehicle(this.m_game, player, car) || !IsDefined(car) || TandemTransit.IsMetro(this.m_game, player, car) {
+    if !VehicleComponent.GetVehicle(this.m_game, player, car) || !IsDefined(car) || TandemTransit.IsMetro(this.m_game, player, car) {
       return;
     }
     let slot = n"None";
