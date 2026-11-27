@@ -1,13 +1,16 @@
 // NPC voices (docs/architecture/npcs.md, "Voices"; proto::NpcVoice).
 //
 // An NPC's barks (a callout, a warning, a pain or death cry, a civilian's
-// fear, a curious grunt) start in the game's scripts through
-// GameObject.PlayVoiceOver: a voice context, asked of the NPC's own voice,
-// which picks a line of its voice set in the player's language. A proxy has
-// no brain to start them: the owner says which context its NPC asked for,
-// and every proxy asks its own voice for the same one. One voice per NPC:
-// on a proxy, a line our own game starts (its local hit, a reaction) is left
-// unsaid; its owner's word says it.
+// fear, a curious grunt): a voice context, asked of the NPC's own voice,
+// which picks a line of its voice set in the player's language. Whoever
+// starts one (the game's scripts through GameObject.PlayVoiceOver or a
+// SoundPlayVo of their own, the delay system, the engine's own voice paths),
+// it reaches the NPC as one event, SoundPlayVo (entGameplayVOEvent, queued
+// on the entity: research §13.159). A proxy has no brain to start them: the
+// owner says which context its NPC asked for, and every proxy asks its own
+// voice for the same one. One voice per NPC: on a proxy, a line our own
+// game's scripts start (its local hit, a reaction) is left unsaid; its
+// owner's word says it.
 
 public class TandemNpcVoices {
   private let m_game: GameInstance;
@@ -61,19 +64,37 @@ public class TandemNpcVoices {
   }
 }
 
-// Every voice line the game starts (its 70 callers: OnHit, hit reactions,
-// death, combat start, warnings, fear, grenade throws, grapples). A hit's or
-// a reaction's may run on a job thread: this reads, queues through a native
-// and calls the game's; the tick does the rest. Our own lines (proxies,
-// puppets: Scripts:TandemNpcVoice, Scripts:TandemPresence) go as they are.
+// A proxy's own lines, from the game's scripts (its 70 callers of
+// PlayVoiceOver: OnHit, hit reactions, death, combat start, warnings, fear,
+// grenade throws, grapples), are left unsaid: its owner's word says them.
+// Our own lines (proxies, puppets: Scripts:TandemNpcVoice,
+// Scripts:TandemPresence) go as they are. Reads and calls the game's: a
+// hit's or a reaction's may run on a job thread.
 @wrapMethod(GameObject)
 public final static func PlayVoiceOver(self: ref<GameObject>, voName: CName, debugInitialContext: CName, opt delay: Float, opt answeringEntityID: EntityID, opt canPlayInVehicle: Bool) -> DelayID {
-  if TandemNative.IsStarted() && IsDefined(self) && IsNameValid(voName) && self.IsNPC() && NotEquals(debugInitialContext, n"Scripts:TandemNpcVoice") && NotEquals(debugInitialContext, n"Scripts:TandemPresence") {
-    let id = self.GetEntityID();
-    if TandemPresence.IsNpcProxy(id) {
-      return GetInvalidDelayID();
-    }
-    TandemPresence.QueueNpcVoice(id, voName, delay, canPlayInVehicle);
+  if TandemNative.IsStarted() && IsDefined(self) && IsNameValid(voName) && self.IsNPC() && NotEquals(debugInitialContext, n"Scripts:TandemNpcVoice") && NotEquals(debugInitialContext, n"Scripts:TandemPresence") && TandemPresence.IsNpcProxy(self.GetEntityID()) {
+    return GetInvalidDelayID();
   }
   return wrappedMethod(self, voName, debugInitialContext, delay, answeringEntityID, canPlayInVehicle);
+}
+
+// Every voice line asked of an NPC's voice, whoever started it: the event
+// the voice takes (SoundPlayVo, the engine's entGameplayVOEvent), on the
+// NPC itself. PlayVoiceOver queues it (at once, or through the delay system
+// when the line waits); so do the scripts that make their own (a battle
+// cry on impact, a fleeing civilian's fear, PlayImpactSound and
+// TriggerFearRunningVO) and the engine's own voice paths (a puppet's voice
+// interface: research §13.159). It comes when the line plays: no delay to
+// send, and it played in a vehicle when the NPC sits in one. Queued through
+// a native (an entity's events may run on a job thread); the tick sends
+// those of our shared NPCs. A proxy's never go.
+@addMethod(ScriptedPuppet)
+protected cb func OnTandemGameplayVo(evt: ref<SoundPlayVo>) -> Bool {
+  if TandemNative.IsStarted() && IsDefined(evt) && IsNameValid(evt.voContext) && this.IsNPC() && NotEquals(evt.debugInitialContext, n"Scripts:TandemNpcVoice") && NotEquals(evt.debugInitialContext, n"Scripts:TandemPresence") {
+    let id = this.GetEntityID();
+    if !TandemPresence.IsNpcProxy(id) {
+      TandemPresence.QueueNpcVoice(id, evt.voContext, 0.0, true);
+    }
+  }
+  return false;
 }

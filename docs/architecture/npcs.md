@@ -387,11 +387,17 @@ run in game). An NPC's barks start in the game's scripts through
 grenade throws, grapples, curious grunts): a voice context, asked of the
 NPC's own voice. A proxy has no brain to start them.
 
-- **The owner**: a wrap of `PlayVoiceOver` queues each line started on an
-  NPC (a native that only queues: a hit's or a reaction's may run on a job
-  thread); the tick sends those of our shared NPCs (`SharedNpcOf`,
-  `TandemOwn.Entity`) as `NpcVoice`: the context's CName hash, the delay,
-  whether it plays in a vehicle. Event channel, after the NPC's spawn; to
+- **The owner**: every line asked of an NPC's voice reaches the NPC as
+  one event, `SoundPlayVo` (the engine's `entGameplayVOEvent`), whoever
+  started it: `PlayVoiceOver` (at once or through the delay system), the
+  scripts that queue their own (a battle cry on impact, a fleeing
+  civilian's fear), and the engine's own voice paths, which queue it on
+  the entity too (research §13.159). A handler of ours on `ScriptedPuppet`
+  (`OnTandemGameplayVo`) queues each one (a native that only queues: an
+  entity's events may run on a job thread); the tick sends those of our
+  shared NPCs (`SharedNpcOf`, `TandemOwn.Entity`) as `NpcVoice`: the
+  context's CName hash, no delay (the event comes when the line plays),
+  playable in a vehicle (it played in one if the NPC sits in one). Event channel, after the NPC's spawn; to
   the games linked with the owner, as `NpcReaction`. At most one line an
   NPC in 0.3 s and 10 a second in all (`kNpcVoiceGapUs`,
   `kNpcVoicesPerSecond`: a crowd's panic asks for dozens).
@@ -400,13 +406,16 @@ NPC's own voice. A proxy has no brain to start them.
   proxy's record's voice set, in that player's language, placed in 3D by
   the audio system. A line older than 1 s on arrival is dropped
   (`kNpcVoiceMaxAgeUs`, `consistency::DropStale`).
-- **One voice an NPC**: on a proxy, a line its own game starts (its local
-  hit, a replayed reaction) is left unsaid (`TandemPresence.IsNpcProxy`,
-  lock-free): the owner's line says it.
-- **Not covered**: lines the engine starts without the script call
-  (behaviour-tree voice nodes, scene and community lines: those of a
-  scene are `scene-replay.md`'s), and `answeringEntityID` (a squad's
-  reply to another NPC: sent with none).
+- **One voice an NPC**: on a proxy, a line its own game's scripts start
+  (its local hit, a replayed reaction: `PlayVoiceOver`) is left unsaid
+  (`TandemPresence.IsNpcProxy`, lock-free): the owner's line says it; one
+  the engine itself starts on a proxy (its brain is off: rare) cannot be
+  held back from the event (a handler cannot cancel it) and is heard.
+- **Not covered**: `entTriggerVOEvent` lines (a trigger's base name and
+  variation, also queued on the entity by the engine's voice interface,
+  §13.159: `NpcVoice` has no field for them, a protocol change; which
+  lines use them is not known), scene lines (`scene-replay.md`'s), and
+  `answeringEntityID` (a squad's reply to another NPC: sent with none).
 - To hear in game: the proxy says the line the owner's NPC said, once, in
   the guest's language; nothing doubled when the guest shoots a proxy
   (`presence-npc-voices` checks the path; ears check the rest).
