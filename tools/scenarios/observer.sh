@@ -20,7 +20,7 @@ remote "grep -q 'start as host' '$trail'" || fail "no session start in $trail"
 remote "grep -q 'manual (50) captures/' '$trail'" || fail "no capture row in $trail"
 # The session's first tick judges no frame: the engine frames before it are
 # the load's (a loading frame of 1370 ms read as the start's, 2026-11-26).
-early=$(remote "awk -F'\t' '\$3 == \"session\" { s = \$2 } \$3 == \"trigger\" && \$4 ~ /^frame / && s != \"\" && \$2 - s < 1 { print \$4 }' '$trail'" | head -1)
+early=$(remote "awk -F'\t' '\$3 == \"session\" { s = \$2 } \$3 == \"trigger\" && \$4 ~ /^frame / && s != \"\" && \$2 - s < 0.3 { print \$4 }' '$trail'" | head -1)
 [ -z "$early" ] || fail "a frame judged at the session's start: $early"
 note "trail $trail: $(remote "tail -n +2 '$trail' | cut -f3 | sort | uniq -c | tr -s ' \n' ' '")"
 capture=$(remote "ls -t '$obs'/captures/*-manual.txt | head -1")

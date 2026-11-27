@@ -125,6 +125,9 @@ public class TandemTraffic {
   private let m_nearViewers: array<Vector4>;
   private let m_lastCheck: Float;
   private let m_now: Float;
+  // TandemSync.Rebuilds() as Check last saw it, and when it moved.
+  private let m_streetRebuilds: Int32;
+  private let m_rebuiltAt: Float;
   // (street list) proxies whose body came or went in sight within 50 m,
   // and rounds a removal of ours waited for being in sight.
   private let m_popIn: Int32;
@@ -986,6 +989,16 @@ public class TandemTraffic {
   // spawned; a proxy its owner no longer shares goes; a proxy whose body is
   // gone (streamed out, our fast travel) is spawned again.
   private func Check() -> Void {
+    // Our world rebuilt (a fast travel, a respawn, a time skip; as the NPCs'
+    // check, Npcs.reds): the bodies it took with it come back as the first
+    // of their kind, no fallback (15 after our own fast travel, regroup
+    // 2026-11-27).
+    let rebuilds = TandemSync.Rebuilds();
+    if rebuilds != this.m_streetRebuilds {
+      this.m_streetRebuilds = rebuilds;
+      this.m_rebuiltAt = this.m_now;
+    }
+    let rebuilt = this.m_rebuiltAt > 0.0 && this.m_now - this.m_rebuiltAt < 20.0;
     let shared = TandemStreet.Shared();
     let ids: array<Uint32>;
     for entry in shared {
@@ -1075,6 +1088,8 @@ public class TandemTraffic {
           car.goneSince = 0.0;
           if first {
             TandemNative.LogDebug(s"street: check: vehicle \(car.id)'s body asked for (put off before)");
+          } else if rebuilt && car.goneTries == 1 {
+            TandemNative.LogDebug(s"street: check: vehicle \(car.id)'s body went with our rebuilt world: spawned again");
           } else {
             TandemNative.Log(s"street: check: vehicle \(car.id)'s body was gone for \(wait) s: spawned again (\(car.goneTries) in a row)");
             TandemDegraded.Fallback("street body respawned", s"vehicle \(car.id)'s body was gone for \(wait) s (\(car.goneTries) in a row)");
