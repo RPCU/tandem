@@ -151,6 +151,7 @@ found through this table, each number once.
 | 13.157 | A Dispose during the scene's detach phase: one entity detached on two threads; a stub left pointing at a disposed entity; the dispose gate | `vehicles.md` |
 | 13.158 | The crowd's spawners: its managers, the parking-space spawner, the quest's crowd switch | `traffic-police.md` |
 | 13.159 | Where an NPC's voice line starts: one event on the entity, whoever asks | `npcs.md` |
+| 13.160 | The quest's own fade, and the game's choice widget | `story.md` |
 | 13.153 | A choice of our own on a puppet's interaction component | `story.md` |
 
 ## Top traps (one line each)
