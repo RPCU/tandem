@@ -286,13 +286,20 @@ void Observer::Frame() {
   const auto engine = Runtime::Get().TakeEngineFrames();
   // Nor is a gap the game's loading screen held (a fast travel's frames
   // read as a slow one under 2 s): its signs (Runtime::NoteLoadingSign).
-  const auto gap = observer::FrameToJudgeUs(previous, now, engine.count, engine.longestUs,
-                                            Runtime::Get().LoadingSignUs());
-  if (std::exchange(m_firstTick, false) && previous)
+  auto gap = observer::FrameToJudgeUs(previous, now, engine.count, engine.longestUs,
+                                      Runtime::Get().LoadingSignUs());
+  // A session started at a load starts in the frame the game attaches our V
+  // in, the game's own attach work in it (85 ms on instance a, ours 20 of
+  // them: "session: our systems begun", 2026-11-27): said, not judged as a
+  // frame of play. One started in play has engine frames before its tick.
+  if (std::exchange(m_firstTick, false) && previous) {
     log::Info("observer: the session's first tick {:.0f} ms after its start, {} engine frame(s) "
               "between, the longest {:.0f} ms",
               static_cast<double>(now - previous) / 1000.0, engine.count,
               static_cast<double>(engine.longestUs) / 1000.0);
+    if (engine.count == 0)
+      gap = 0;
+  }
   // Over 2 s is a loading screen or a pause: the stall watch's, not a frame.
   if (gap > std::uint64_t{m_settings.frameMs} * 1000 && gap < 2'000'000) {
     const auto ms = static_cast<float>(gap) / 1000.f;

@@ -727,6 +727,10 @@ public class TandemNpcAnims {
       unread = (sent.anim.flags & 2) == 0 && GameInstance.GetWorkspotSystem(this.m_game).IsActorInWorkspot(npc);
       if unread {
         let spot = TandemActivity.Workspot(npc.GetEntityID());
+        // Found (its resource read): not sent yet, the poll's next state
+        // sends it (a driver getting out of its car entered one between two
+        // samples: "x3 … not sent: found", traffic-host 2026-11-27).
+        unread = spot.state != 1;
         why = s"it is in a workspot not sent: \(TandemNpcAnims.SpotStateName(spot.state))";
       }
     }
