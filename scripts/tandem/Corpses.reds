@@ -275,3 +275,34 @@ public class TandemCorpses {
     return EngineTime.ToFloat(GameInstance.GetEngineTime(this.m_game));
   }
 }
+
+// (test) "test query corpses kill": the test gangers ("npc spawn") die, each
+// thrown its own way (a ragdoll with an impulse) by our V: bodies for two
+// games to compare. "test query corpses": the report.
+public class TandemCorpsesTest {
+  public static func Command(game: GameInstance, command: String) -> Void {
+    if !StrBeginsWith(command, "test query corpses kill") {
+      let corpses = TandemCorpses.Of(game);
+      if IsDefined(corpses) {
+        corpses.Report();
+      }
+      return;
+    }
+    let ids = GameInstance.GetDynamicEntitySystem().GetTaggedIDs(n"Tandem.Test");
+    let player = GetPlayer(game);
+    let n = 0;
+    for id in ids {
+      let npc = GameInstance.FindEntityByID(game, id) as NPCPuppet;
+      if IsDefined(npc) && !npc.IsDead() {
+        npc.Kill(player, false, false);
+        let at = npc.GetWorldPosition();
+        let angle = Cast<Float>(n) * 2.1;
+        let way = new Vector4(CosF(angle) * 6.0, SinF(angle) * 6.0, 3.0, 0.0);
+        npc.QueueEvent(CreateForceRagdollEvent(n"tandem_test"));
+        GameInstance.GetDelaySystem(game).DelayEvent(npc, CreateRagdollApplyImpulseEvent(at, way, 5.0), 0.1, false);
+        n += 1;
+      }
+    }
+    TandemNative.Log(s"corpse test: \(n) ganger(s) killed and thrown");
+  }
+}
