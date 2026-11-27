@@ -949,6 +949,11 @@ public class TandemCoopMenu {
     if e.IsHandled() || !e.IsAction(n"back") {
       return 0;
     }
+    return this.BackPressed();
+  }
+
+  // The same for a back that is no input event (the pause menu's scenario).
+  public func BackPressed() -> Int32 {
     if IsDefined(this.inputToken) || this.swallowBack > 0 {
       this.swallowBack = 0;
       return 1;
@@ -1497,20 +1502,57 @@ protected cb func OnMenuItemActivated(index: Int32, target: ref<ListItemControll
   return true;
 }
 
-@wrapMethod(PauseMenuGameController)
-protected cb func OnGlobalRelease(e: ref<inkPointerEvent>) -> Bool {
-  if IsDefined(this.m_tandem) {
-    let back = this.m_tandem.Back(e);
-    if back > 0 {
-      e.Handle();
-      if back == 2 {
-        this.PlaySound(n"Button", n"OnPress");
-        this.TandemUp();
-      }
+// Esc in the pause menu is not the controller's input: the menu scenario
+// takes it (MenuScenario_PauseMenu.OnBack, GoBack), which closes the whole
+// pause menu from pause_menu, whatever the page. The scenario asks the
+// pause menu first (TandemBackAnswer, below): one of our pages goes up a
+// page, as the game's own sub-pages go back to pause_menu.
+public class TandemBackAnswer extends IScriptable {
+  public let taken: Bool;
+}
+
+@wrapMethod(MenuScenario_PauseMenu)
+protected cb func OnBack() -> Bool {
+  if Equals(this.m_currMenuName, n"pause_menu") && Equals(this.m_prevMenuName, n"None") {
+    let answer = new TandemBackAnswer();
+    let menus = this.GetMenusState();
+    if IsDefined(menus) {
+      menus.DispatchEvent(n"pause_menu", n"OnTandemBack", answer);
+    }
+    if answer.taken {
       return true;
     }
   }
-  return wrappedMethod(e);
+  return wrappedMethod();
+}
+
+@wrapMethod(PauseMenuGameController)
+protected cb func OnSetMenuEventDispatcher(menuEventDispatcher: wref<inkMenuEventDispatcher>) -> Bool {
+  let result = wrappedMethod(menuEventDispatcher);
+  if IsDefined(menuEventDispatcher) {
+    menuEventDispatcher.RegisterToEvent(n"OnTandemBack", this, n"OnTandemBack");
+  }
+  return result;
+}
+
+// The scenario's Esc on one of our pages (0: not ours, the menu closes; 1:
+// a popup had it; 2: up a page).
+@addMethod(PauseMenuGameController)
+protected cb func OnTandemBack(userData: ref<IScriptable>) -> Bool {
+  let answer = userData as TandemBackAnswer;
+  if !IsDefined(this.m_tandem) || !IsDefined(answer) {
+    return false;
+  }
+  let back = this.m_tandem.BackPressed();
+  if back == 0 {
+    return false;
+  }
+  answer.taken = true;
+  if back == 2 {
+    this.PlaySound(n"Button", n"OnPress");
+    this.TandemUp();
+  }
+  return true;
 }
 
 // Exit (to the main menu, to the desktop) while our V's session gains are
