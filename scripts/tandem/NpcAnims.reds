@@ -244,9 +244,16 @@ public class TandemSpot {
   public let leftAt: Float;
   public let lastPlace: Vector4;
   public let sampledAt: Float;
+  // How often it is jumped to its entry again (0: the default, 6 s);
+  // shorter once its tree ran to its exit sooner (Step, state 2).
+  public let period: Float;
 
   public func Playing() -> Bool {
     return this.state == 1 || this.state == 2;
+  }
+
+  public func Period() -> Float {
+    return this.period > 0.0 ? this.period : 6.0;
   }
 
   public func Step(game: GameInstance, body: ref<ScriptedPuppet>, hold: Uint32, want: Uint64, entry: Int32, now: Float, label: String) -> Void {
@@ -293,7 +300,7 @@ public class TandemSpot {
         // (22 copies stood up by themselves in 70 s, 2026-11-23). Jumped to
         // the same entry again before it can (the game's own blend), as the
         // owner's spot keeps the owner there.
-        if now - this.jumpedAt >= 6.0 || now < this.jumpedAt {
+        if now - this.jumpedAt >= this.Period() || now < this.jumpedAt {
           this.jumpedAt = now;
           workspots.SendJumpCommandEnt(body, this.entry, false);
         }
@@ -314,7 +321,16 @@ public class TandemSpot {
           // reaches the exit; the owner's stays, its spot kept by its AI):
           // the copy stood up while the owner sat, and sat again at the
           // owner's next entry. Back in at the owner's entry, as the spot
-          // keeps the owner's NPC there.
+          // keeps the owner's NPC there. A tree that reached its exit sooner
+          // than the keep-alive jump (an entry's sequence under 6 s: the
+          // 1 in 90 copies that still stood up by themselves, 2026-11-23)
+          // is jumped again sooner from now on: at 0.6 of the time it ran
+          // (read twice a second), not under 1.5 s.
+          let ran = now - this.jumpedAt;
+          if ran > 0.0 && ran < this.Period() {
+            this.period = MaxF(1.5, ran * 0.6);
+            TandemNative.LogDebug(s"\(label) workspot \(this.path) ran to its exit \(ran) s after its jump: jumped every \(this.period) s");
+          }
           this.replays += 1;
           this.state = 0;
           let path = this.path;
@@ -1040,7 +1056,7 @@ public class TandemNpcAnims {
     if spot.state != 2 || proxy.seated || want != spot.path || proxy.anim.workspotEntry != spot.entry {
       return true;
     }
-    return now - spot.checkedAt >= 0.5 || now - spot.jumpedAt >= 6.0 || now < spot.checkedAt;
+    return now - spot.checkedAt >= 0.5 || now - spot.jumpedAt >= spot.Period() || now < spot.checkedAt;
   }
 
   // The proxy is gone or dead: nothing more to follow.
