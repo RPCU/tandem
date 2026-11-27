@@ -9,9 +9,15 @@
 // the record's caption, here a key of scripts/tandem/Text.reds (Codeware's
 // localization, English and French). Without these records the scripts draw
 // the prompts themselves, as before ("prompts: no record ...").
+//
+// Revive is held: Choice1_Hold (inputContexts.xml's InteractionActions, a
+// 0.3 s hold of the interaction key), so the game's prompt reads "[Hold F]"
+// with its own hold ring, and its choice event (BUTTON_HOLD_COMPLETE) starts
+// the 10 s revive with the key still down.
 
 Interactions.TandemRevive : Interactions.Open {
   name = "TandemRevive";
+  action = "Choice1_Hold";
   caption = "LocKey#Tandem-Revive-Prompt";
 }
 
