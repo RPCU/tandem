@@ -214,7 +214,14 @@ public class TandemCorpses {
     }
     let at = new Vector4(shown.x, shown.y, shown.z, 1.0);
     let apart = Vector4.Distance(body.GetWorldPosition(), at);
-    if apart > 0.3 {
+    // Its own ragdoll off: our copy's physics would drop it again where its
+    // own fall goes (a body the owner's lies on a bin lay on the ground
+    // beside it, 1.1 m lower, 2026-11-27); the owner's pose holds it.
+    let npc = body as NPCPuppet;
+    if IsDefined(npc) && npc.IsRagdolling() {
+      body.QueueEvent(CreateDisableRagdollEvent(n"tandem_corpse"));
+    }
+    if apart > 0.15 {
       GameInstance.GetTeleportationFacility(this.m_game).Teleport(body, at, TandemYawAngles(Rad2Deg(shown.yaw)));
       this.m_placed += 1;
     }
@@ -222,7 +229,7 @@ public class TandemCorpses {
     shown.id = id;
     shown.bound = true;
     this.m_drawn += 1;
-    let line = s"corpse: proxy \(shown.npc) drawn in its owner's rest pose (\(FloatToStringPrec(apart, 2)) m from where its owner's lies\(apart > 0.3 ? ": laid there" : ""))";
+    let line = s"corpse: proxy \(shown.npc) drawn in its owner's rest pose (\(FloatToStringPrec(apart, 2)) m from where its owner's lies\(apart > 0.15 ? ": laid there" : ""))";
     if this.m_drawn == 1 {
       TandemNative.Log(line + " (the first body)");
     } else {
