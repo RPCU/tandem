@@ -88,6 +88,11 @@ public class TandemTestQuery {
       TandemParity.Command(game, system, command);
       return;
     }
+    // "test query corpses [kill]": Corpses.reds.
+    if StrBeginsWith(command, "test query corpses") {
+      TandemCorpsesTest.Command(game, command);
+      return;
+    }
     let words = StrSplit(command, " ");
     let count = ArraySize(words);
     // (Padded: every word read below exists.)
