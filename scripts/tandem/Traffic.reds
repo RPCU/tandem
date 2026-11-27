@@ -584,6 +584,14 @@ public class TandemTraffic {
   // A vehicle of our own world we do not share stands within 5 m, or the
   // body of another proxy within 2.5 m (copies spawned onto each other
   // flickered and burnt on one game, 2026-11-23).
+  // A shared car beyond our streaming (250 m): its body would stream out
+  // again; asked for when our V comes near (after our fast travel, cars 770 m
+  // behind were spawned again every few seconds, regroup 2026-11-27).
+  private func FarFromUs(car: ref<TandemCar>) -> Bool {
+    let player = GetPlayer(this.m_game);
+    return IsDefined(player) && Vector4.Distance(player.GetWorldPosition(), new Vector4(car.x, car.y, car.z, 1.0)) > 250.0;
+  }
+
   private func OwnNear(at: Vector4) -> Bool {
     for vehicle in this.m_live {
       if IsDefined(vehicle) && !IsDefined(this.FindBody(vehicle.GetEntityID())) && Vector4.Distance(vehicle.GetWorldPosition(), at) < 5.0 {
@@ -1063,7 +1071,7 @@ public class TandemTraffic {
           car.goneSince = 0.0;
         } else if car.goneSince == 0.0 {
           car.goneSince = this.m_now;
-        } else if this.OwnNear(new Vector4(car.x, car.y, car.z, 1.0)) || !EntityID.IsDefined(car.body) && !this.MaySpawn() {
+        } else if this.OwnNear(new Vector4(car.x, car.y, car.z, 1.0)) || !EntityID.IsDefined(car.body) && !this.MaySpawn() || this.FarFromUs(car) {
           // Ours still stands there (see OnSpawn), or this moment's spawns
           // are spent: after it.
           car.goneSince = this.m_now;

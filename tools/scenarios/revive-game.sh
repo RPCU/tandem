@@ -8,6 +8,9 @@ cmd revive fresh
 expect 'revive fresh: no recent revive' 5
 expect_peer 'our V is down \(--go-down\)' 20
 expect 'revive: tandem-peer is down' 5
+# The game's own hold prompt on the body, "[Hold F] Revive" with its ring.
+pause 2
+shot revive-hold-prompt
 cmd revive hold
 expect 'revive: reviving tandem-peer \(test hold\)' 5
 expect_peer 'player 1 starts reviving us' 5

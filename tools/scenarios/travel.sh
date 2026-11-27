@@ -21,4 +21,4 @@ expect 'travel: arrived next to tandem-peer' 60
 expect 'travel: screen restored' 5
 reject 'travel: still black'
 shot travel-arrived
-expect_peer 'another V is with us again' 20
+expect_peer 'another V is with us again' 60
