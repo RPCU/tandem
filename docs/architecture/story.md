@@ -80,40 +80,45 @@
     every hub. No story voice yet.
   - _Choices together_ (2026-11-21, **not yet run in game**): each
     player's cursor is marked on the others' hubs, on the option it is on:
-    a chip and the player's name in their colour (`TandemMarkers.ColorOf`),
+    the player's name in the game's own option tag (the box before an
+    option's text, as its lifepath and attribute tags: `[NAME] text`, which
+    `DialogHubLogicController.UpdateDialogHubData` splits and gives each
+    option's `DialogChoiceLogicController`; no panel of ours; beside a tag the
+    option has, after the text when the option's tags are caption parts),
     "NAME suggests" once they suggest it. On the host's hub, every guest's;
-    on a guest's, the host's and the other guests'. Live: a cursor move is
-    a `ChoiceCursor` (`kCursorHover`), already sent both ways and relayed by
-    the host (no protocol change); each game also says where its cursor
-    starts when a hub opens (the host its `SelectedIndex`, a guest 0). The
-    host still decides alone, nothing waits. The suggestion's notice
-    ("NAME suggests: OPTION", `Dialogue-Suggests`) is shown only when the
-    host's hub is not on screen (a menu, the HUD hidden). How: no wrap; the
-    story tick (10 per second) finds the game's `dialogWidgetGameController`
-    on the HUD layer and gives each option's `DialogChoiceLogicController`
-    its markers (a panel of ours put in the row that holds the option's
-    text, else at the option's right edge), redrawn only when they change,
-    again after the game respawns a hub's options. A hub of ours (a
-    guest's stand-in, the host's test hub) is **held on the widget**: the
-    game takes a hub it did not make off the `UIInteractions` board a frame
-    later (13 ms) and the widget hears the board a frame late, so a hub only
-    written to the board was never drawn (both screens, 2026-11-21). The
-    widget keeps it (`TandemHold`, a wrap of its `OnInteractionsChanged`
-    puts it back among the hubs it draws at every redraw, the active one
-    unless a hub of the game's is) until `TandemRelease`; the story tick
-    asks again while an option is missing (the game spawns one per update).
-    Log: `choice: hub N drawn by the game's choice widget`, and
-    `choice: marks not drawn on …: WHY` once per reason. To see in game: where
-    the panel sits in the option's row, the font size against the game's,
-    the options of a timed hub. Test: `tandem-peer join --hover N` (the
-    mock's cursor on option N of every hub), the story verb `hover ID
-INDEX` (the mock host's). The host's test hub (`cmd story hub`) is held
-    until `story hub close` (the test reset drops it). Scenarios (run
-    2026-11-21: no hub on either screen, so no mark; the hold is not run
-    in game yet, nor `tools/game.sh launches 6` for its wrap):
-    `dialogue-marks-host` (the mock guest's cursor marked on our hub;
-    `story-host` its suggestion's, without the notice), `dialogue-marks-guest` (the mock host's cursor
-    marked on ours, following it).
+    on a guest's, the host's and the other guests'. A player's own cursor
+    is the widget's own selection. Live: a cursor move is a `ChoiceCursor`
+    (`kCursorHover`), already sent both ways and relayed by the host (no
+    protocol change); each game also says where its cursor starts when a
+    hub opens (the host its `SelectedIndex`, a guest 0). The host still
+    decides alone, nothing waits. The suggestion's notice ("NAME suggests:
+    OPTION", `Dialogue-Suggests`) is shown only when the host's hub is not
+    on screen (a menu, the HUD hidden). How: the game's choice widget
+    (`dialogWidgetGameController`, found on the HUD layer by the story tick,
+    10 per second) draws its copy of the `UIInteractions` board's hubs
+    (`m_data`) and shows its root only while that copy has one
+    (`m_AreDialogsOpen`). Two wraps of it (`UpdateDialogsData` keeps the
+    board's hubs, `OnInteractionsChanged` rebuilds what it draws from them
+    and ours before every redraw) put in, never on the board: the tags, and
+    a hub of ours (a guest's stand-in, the host's test hub) **held on the
+    widget**, open and active unless a hub of the game's is. The game takes
+    a hub it did not make off the board a frame later (13 ms), so a hub
+    only written to the board was never drawn (both screens, 2026-11-21);
+    the first hold put it among the hubs but left `m_AreDialogsOpen` false,
+    so the redraw hid the root it had just drawn it into. Held until
+    `TandemRelease`; the story tick holds again while an option is missing
+    (the game spawns them asynchronously) or the root is hidden. Log:
+    `choice: hub N drawn by the game's choice widget`, and `choice: marks
+not drawn on …: WHY` once per reason. To see in game: the tag against
+    the game's own, the options of a timed hub. Test: `tandem-peer join
+--hover N` (the mock's cursor on option N of every hub), the story verb
+    `hover ID INDEX` (the mock host's). The host's test hub (`cmd story
+hub`) is held until `story hub close` (the test reset drops it).
+    Scenarios (the 2026-11-21 run, before the fix: no hub on either
+    screen): `dialogue-marks-host` (the mock guest's cursor marked on our
+    hub; `story-host` its suggestion's, without the notice),
+    `dialogue-marks-guest` (the mock host's cursor marked on ours,
+    following it).
   - _Scenes_: each game sends its V's scene tier (`StoryState`). A guest
     within 30 m of the host in a tier 3+ scene has its weapons lowered, tier
     4+ also invulnerable; a guest further than 100 m from a tier 4+ scene
