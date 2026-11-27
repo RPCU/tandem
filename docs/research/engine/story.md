@@ -1041,3 +1041,34 @@ What `revive.md`'s "No far respawn out of a locked quest area" reads
   `m_isFastTravelEnabledOnMap` is set by `FastTravelMenuToggledEvent` from
   `OnEnterFastTravelMenu` / `OnExitFastTravelMenu` (`:50131`): true only
   while the fast travel menu is open at a terminal.
+
+### 13.160 The quest's own fade, and the game's choice widget (2026-11-27, read in the 2.50 exe and final.reds; not run)
+
+For `docs/architecture/parity.md` rows 1 and 3. F is `final.reds (2.50)`.
+
+- **The quest fade** is a node of the render fx manager:
+  `questSetFadeInOut_NodeType` (parent `questIRenderFxManagerNodeType`,
+  size 0x48; `fadeColor: Color` at 56, `duration: Float` at 60, `fadeIn:
+Bool` at 64; vtable 0x143179a18), held by a
+  `questRenderFxManagerNodeDefinition` (`type` handle at 72). Its vtable
+  holds only the type getter and the destructor (0x14120ce68); the only
+  code referencing its class is its RTTI registration (0x1416a0c60,
+  0x142410bd0). What applies the fade is the definition's runtime node
+  instance, not in RTTI: still to find (from the definition's
+  instance-creating slot), before a guest can fade the game's way
+  instead of `Curtain.reds`. [2.5-verified offline]
+- **The choice widget** (`dialogWidgetGameController`, F:405469) draws
+  `m_data`, its copy of `UIInteractions.DialogChoiceHubs`, and ends each
+  redraw (`OnInteractionsChanged`) in `m_root.SetVisible(m_AreDialogsOpen)`,
+  set by `InteractionUIBase.OnDialogsData` (F:277754) from the board. A
+  hub put in `m_data` by script while the board holds none is drawn and
+  then hidden by the same redraw. An option's tag is the "[TAG] text"
+  prefix of its `localizedName`, split by
+  `DialogHubLogicController.UpdateDialogHubData` (F:405765), unless its
+  caption parts carry tags (`GetCaptionTagsFromArray`, F:400197).
+  [2.5-verified offline]
+- **Input**: `ChoiceScrollUp`, `ChoiceScrollDown` and `ChoiceApply` are
+  in the `InteractionActions` context, which `UIExploration` includes
+  (`r6/config/inputContexts.xml`); `Choice1_Hold` is a 0.3 s hold of
+  `Choice1` (`<hold action="Choice1_Hold" timeout="0.3" />`).
+  [2.5-verified offline]
