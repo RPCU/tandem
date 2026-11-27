@@ -140,6 +140,11 @@ void PuppetController::GetDeltaTransform(RED4ext::Vector4 &position,
   // (NPC proxies send no movement: they stay on the ground and their
   // scripts place them.)
   if (step.snap && player < kNpcPuppetBase) {
+    // The jump is the game thread's teleport (SnapPuppet), which hides a
+    // body coming from afar and fades it in: moved here too, the body was
+    // already there when it looked, and a 770 m arrival popped in
+    // (arrival-fade, 2026-11-27).
+    position = {0.f, 0.f, 0.f, 0.f};
     Runtime::Get().RequestSnap(player);
     if (m_placer.Snaps() <= 10 || m_placer.Snaps() % 10 == 0)
       log::Debug("puppet {}: body {:.2f} m from target ({}, {:+.2f} m up): teleport #{}", player,
