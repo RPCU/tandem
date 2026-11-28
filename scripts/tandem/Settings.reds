@@ -1,92 +1,74 @@
 // The co-op menu's settings page (docs/architecture/coop-menu.md,
-// "Settings"): tandem.ini's keys the player may change, each saved there as
-// it changes (TandemNative.SetSetting) and applied at once where that is
-// safe (the link's default and pings by the plugin's comms, in a session too); what a running session was set up with (the name, the relay, the
-// story) waits for the session's end, the hooks installed at launch (quest
-// freeze, scene privacy) for a restart. The page lists groups (GroupNames),
-// each a page of short one-line rows; what the row under the cursor does,
-// and when a change takes effect, is the description beside the list.
-// Tests: `tools/game.sh cmd coop settings` logs them, `coop set KEY VALUE`
-// changes one.
+// "Settings"): one short page, kept to what a player decides. The host's
+// rules (friendly fire, enemy scaling, level gap) are the host's to set for
+// everyone: a guest in a session has no row for them, its status says the
+// host's (HostRulesLine). The others only change one's own screen: the
+// name, the notices, markers, names and party list. Each change is saved to
+// tandem.ini (TandemNative.SetSetting) and applied at once (the name: from
+// the next session). Every other key stays in tandem.ini alone, at its
+// default (IniKeys: the test commands still set them). What the row under
+// the cursor does, and when a change takes effect, is the description
+// beside the list. Tests: `tools/game.sh cmd coop settings` logs them,
+// `coop set KEY VALUE` changes one.
 
 public class TandemSettings {
   // In the page's order. kind: 0 on/off, 1 a choice, 2 typed. when: 0 at
-  // once, 1 from the next session, 2 after a restart. (relay_token is not
-  // here: relays are open, a token is set in tandem.ini alone.)
+  // once, 1 from the next session, 2 after a restart.
   public static func Keys() -> array<String> {
-    return [
-      "name", "friendly_fire", "enemy_scaling", "level_gap", "notices", "markers", "nameplates", "party_hud", "link", "pings", "recorder",
-      "relay", "code", "direct", "story", "quest_freeze", "scene_privacy", "time_host", "race_car"
-    ];
+    return ["name", "friendly_fire", "enemy_scaling", "level_gap", "notices", "markers", "nameplates", "party_hud"];
   }
 
   private static func Labels() -> array<String> {
-    return [
-      "Settings-Name", "Settings-FriendlyFire", "Settings-EnemyScaling", "Settings-LevelGap", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-PartyHud", "Settings-Link", "Settings-Pings", "Settings-Recorder",
-      "Settings-Relay", "Settings-Code", "Settings-Direct", "Settings-Story", "Settings-QuestFreeze", "Settings-ScenePrivacy", "Settings-TimeHost", "Settings-RaceCar"
-    ];
+    return ["Settings-Name", "Settings-FriendlyFire", "Settings-EnemyScaling", "Settings-LevelGap", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-PartyHud"];
   }
 
-  // What each one does, shown under the page for the row the cursor is on.
+  // What each one does, shown beside the page for the row the cursor is on.
   private static func Abouts() -> array<String> {
-    return [
-      "Settings-About-Name", "Settings-About-FriendlyFire", "Settings-About-EnemyScaling", "Settings-About-LevelGap", "Settings-About-Notices", "Settings-About-Markers", "Settings-About-Nameplates", "Settings-About-PartyHud", "Settings-About-Link", "Settings-About-Pings", "Settings-About-Recorder",
-      "Settings-About-Relay", "Settings-About-Code", "Settings-About-Direct", "Settings-About-Story", "Settings-About-QuestFreeze", "Settings-About-ScenePrivacy", "Settings-About-TimeHost", "Settings-About-RaceCar"
-    ];
+    return ["Settings-About-Name", "Settings-About-FriendlyFire", "Settings-About-EnemyScaling", "Settings-About-LevelGap", "Settings-About-Notices", "Settings-About-Markers", "Settings-About-Nameplates", "Settings-About-PartyHud"];
   }
 
   private static func Kinds() -> array<Int32> {
-    return [2, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 2, 1, 1, 0, 0, 0, 1, 1];
+    return [2, 0, 0, 1, 1, 0, 1, 0];
   }
 
   private static func Whens() -> array<Int32> {
-    return [1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 2, 2, 1, 0];
+    return [1, 0, 0, 0, 0, 0, 0, 0];
   }
 
-  // The page lists these groups, each opening its own rows, so that no list
-  // runs past the menu's panel (the game's settings have their tabs).
-  private static func GroupNames() -> array<String> {
-    return ["Settings-Group-Session", "Settings-Group-Gameplay", "Settings-Group-Interface", "Settings-Group-Sharing", "Settings-Group-Advanced"];
+  // The host's rules (proto::Rules, sent to every game as they change): rows
+  // of the page on a host and out of a session (they apply to the sessions
+  // it hosts), left out on a guest in a session.
+  public static func HostRules() -> array<String> {
+    return ["friendly_fire", "enemy_scaling", "level_gap"];
   }
 
-  private static func GroupAbouts() -> array<String> {
-    return ["Settings-Group-About-Session", "Settings-Group-About-Gameplay", "Settings-Group-About-Interface", "Settings-Group-About-Sharing", "Settings-Group-About-Advanced"];
+  // tandem.ini's keys off the page, at their defaults for every player
+  // (technical or rarely changed: plugin/src/config.hpp says each): `coop
+  // settings` logs them, `coop set` changes them (the scenarios).
+  public static func IniKeys() -> array<String> {
+    return ["link", "pings", "recorder", "relay", "code", "direct", "story", "quest_freeze", "scene_privacy", "time_host", "race_car"];
   }
 
-  // Each setting's group (1: the first of GroupNames).
-  private static func Groups() -> array<Int32> {
-    return [1, 1, 1, 1, 3, 3, 3, 3, 4, 4, 5, 5, 5, 5, 1, 2, 2, 2, 2];
-  }
-
-  public static func GroupCount() -> Int32 {
-    let names = TandemSettings.GroupNames();
-    return ArraySize(names);
-  }
-
-  // A group's text key ("" for none).
-  public static func GroupKey(group: Int32) -> String {
-    let names = TandemSettings.GroupNames();
-    return group >= 1 && group <= ArraySize(names) ? names[group - 1] : "";
-  }
-
-  public static func GroupAbout(group: Int32) -> String {
-    let abouts = TandemSettings.GroupAbouts();
-    return group >= 1 && group <= ArraySize(abouts) ? TandemText.Get(abouts[group - 1]) : "";
-  }
-
-  // The keys of a group, in the page's order.
-  public static func KeysOf(group: Int32) -> array<String> {
+  // The rows the page shows now.
+  public static func Rows() -> array<String> {
     let keys = TandemSettings.Keys();
-    let groups = TandemSettings.Groups();
-    let found: array<String>;
-    let i = 0;
-    while i < ArraySize(keys) {
-      if groups[i] == group {
-        ArrayPush(found, keys[i]);
+    let guest = TandemSettings.IsGuest();
+    let rows: array<String>;
+    for key in keys {
+      if !guest || !TandemSettings.IsHostRule(key) {
+        ArrayPush(rows, key);
       }
-      i += 1;
     }
-    return found;
+    return rows;
+  }
+
+  private static func IsGuest() -> Bool {
+    return TandemNative.IsStarted() && !TandemNative.IsHost();
+  }
+
+  public static func IsHostRule(key: String) -> Bool {
+    let rules = TandemSettings.HostRules();
+    return ArrayContains(rules, key);
   }
 
   private static func IndexOf(key: String) -> Int32 {
@@ -112,23 +94,8 @@ public class TandemSettings {
     if Equals(key, "notices") {
       return ["all", "important", "minimal"];
     }
-    if Equals(key, "time_host") {
-      return ["full", "bubble"];
-    }
-    if Equals(key, "race_car") {
-      return ["own", "copy"];
-    }
     if Equals(key, "nameplates") {
       return ["near", "always", "off"];
-    }
-    if Equals(key, "direct") {
-      return ["auto", "off"];
-    }
-    if Equals(key, "code") {
-      return ["new", "keep"];
-    }
-    if Equals(key, "link") {
-      return ["auto", "ask", "off"];
     }
     if Equals(key, "level_gap") {
       return ["8", "5", "12", "off"];
@@ -140,23 +107,8 @@ public class TandemSettings {
     if Equals(key, "notices") {
       return ["Settings-Notices-All", "Settings-Notices-Important", "Settings-Notices-Minimal"];
     }
-    if Equals(key, "time_host") {
-      return ["Settings-TimeHost-Full", "Settings-TimeHost-Bubble"];
-    }
-    if Equals(key, "race_car") {
-      return ["Settings-RaceCar-Own", "Settings-RaceCar-Copy"];
-    }
     if Equals(key, "nameplates") {
       return ["Settings-Nameplates-Near", "Settings-Nameplates-Always", "Common-Off"];
-    }
-    if Equals(key, "direct") {
-      return ["Settings-Direct-Auto", "Common-Off"];
-    }
-    if Equals(key, "code") {
-      return ["Settings-Code-New", "Settings-Code-Keep"];
-    }
-    if Equals(key, "link") {
-      return ["Settings-Link-Auto", "Settings-Link-Ask", "Common-Off"];
     }
     if Equals(key, "level_gap") {
       return ["Settings-LevelGap-Eight", "Settings-LevelGap-Five", "Settings-LevelGap-Twelve", "Common-Off"];
@@ -164,30 +116,39 @@ public class TandemSettings {
     return ["Common-On", "Common-Off"];
   }
 
-  // Friendly fire and enemy scaling are the host's rules for the whole
-  // session (proto::Rules, docs/architecture/combat.md, npcs.md): a guest's
-  // page shows the host's and cannot change them; its own tandem.ini's
-  // count when it hosts.
+  // A guest in a session plays by the host's rules: the host said them
+  // (proto::Rules); its own tandem.ini's count when it hosts.
   public static func IsHostsRule(key: String) -> Bool {
-    return (Equals(key, "friendly_fire") || Equals(key, "enemy_scaling")) && TandemNative.IsStarted() && !TandemNative.IsHost();
+    return TandemSettings.IsHostRule(key) && TandemSettings.IsGuest();
   }
 
-  // The host's value of one of its rules, as tandem.ini writes it.
+  // The session's value of one of the host's rules, as tandem.ini writes it.
   private static func HostsValue(key: String) -> String {
     if Equals(key, "enemy_scaling") {
       return TandemProgress.EnemyScaling() ? "on" : "off";
     }
+    if Equals(key, "level_gap") {
+      let gap = TandemFight.LevelGap();
+      return gap > 0 ? s"\(gap)" : "off";
+    }
     return TandemFight.FriendlyFire() ? "on" : "off";
+  }
+
+  // A guest's status line: the host's rules, read only ("Host's rules:
+  // friendly fire off, enemy scaling on, level gap 8").
+  public static func HostRulesLine(english: Bool) -> String {
+    let gap = TandemFight.LevelGap();
+    let fire = TandemText.FE(english, "Rule-FriendlyFire", TandemText.T(english, TandemFight.FriendlyFire() ? "Common-On" : "Common-Off"));
+    let scaling = TandemText.FE(english, "Rule-EnemyScaling", TandemText.T(english, TandemProgress.EnemyScaling() ? "Common-On" : "Common-Off"));
+    let levels = TandemText.FE(english, "Rule-LevelGap", gap > 0 ? s"\(gap)" : TandemText.T(english, "Common-Off"));
+    return TandemText.FE(english, "Status-HostRules", fire + ", " + scaling + ", " + levels);
   }
 
   // What the value is, in words.
   public static func ValueText(key: String) -> String {
     let value = TandemSettings.IsHostsRule(key) ? TandemSettings.HostsValue(key) : TandemNative.Setting(key);
     if TandemSettings.Kind(key) == 2 {
-      if StrLen(value) == 0 {
-        return TandemText.Get("Settings-NotSet");
-      }
-      return Equals(key, "relay_token") ? TandemText.Get("Settings-TokenSet") : value;
+      return StrLen(value) == 0 ? TandemText.Get("Settings-NotSet") : value;
     }
     let values = TandemSettings.Choices(key);
     let texts = TandemSettings.ChoiceTexts(key);
@@ -215,13 +176,14 @@ public class TandemSettings {
     return TandemText.F("Settings-Item", TandemSettings.Title(key), value);
   }
 
-  // When a change takes effect, if not at once ("" then).
+  // When a change takes effect, if not at once ("" then); for a host's
+  // rule, that it is everyone's.
   public static func Note(key: String, inSession: Bool) -> String {
     let i = TandemSettings.IndexOf(key);
     if i < 0 {
       return "";
     }
-    if TandemSettings.IsHostsRule(key) {
+    if TandemSettings.IsHostRule(key) {
       return TandemText.Get("Settings-HostsRule");
     }
     let whens = TandemSettings.Whens();
@@ -285,6 +247,7 @@ public class TandemSettings {
   }
 
   // Change it and save it (false: not a value of it; the plugin logs why).
+  // A guest in a session leaves the host's rules alone: they are the host's.
   public static func Set(key: String, value: String) -> Bool {
     if TandemSettings.IsHostsRule(key) {
       TandemNative.Log(s"coop: setting \(key) refused: the host's rule while we are its guest");
@@ -340,8 +303,13 @@ public class TandemSettings {
       return true;
     }
     if Equals(command, "coop settings") {
-      for key in TandemSettings.Keys() {
-        let value = Equals(key, "relay_token") ? (StrLen(TandemNative.Setting(key)) > 0 ? "set" : "") : TandemNative.Setting(key);
+      let keys = TandemSettings.Keys();
+      let others = TandemSettings.IniKeys();
+      for other in others {
+        ArrayPush(keys, other);
+      }
+      for key in keys {
+        let value = TandemNative.Setting(key);
         if TandemSettings.IsHostsRule(key) {
           value = s"\(TandemSettings.HostsValue(key)) (the host's)";
         }

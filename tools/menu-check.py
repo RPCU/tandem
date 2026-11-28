@@ -3,11 +3,13 @@
 
 Checks scripts/tandem against plugin/src/config.cpp and core/src/settings.cpp:
 
-- Settings.reds' Keys(), Labels(), Abouts(), Kinds(), Whens() and Groups()
-  have one entry per setting, in the same order; no key twice; every group
-  (GroupNames(), GroupAbouts()) named in both languages and not empty;
-- every setting is one tandem.ini's parser takes (ApplySetting) and the page
-  may save (settings::IsEditable);
+- Settings.reds' Keys(), Labels(), Abouts(), Kinds() and Whens() have one
+  entry per setting, in the same order; no key twice; one short page (at
+  most MAX_ROWS rows, no groups: the user, 2026-11-28);
+- HostRules() are rows of the page, the host's rules sent in proto::Rules
+  (friendly_fire, enemy_scaling, level_gap); IniKeys() are not rows;
+- every setting, and every IniKeys() key, is one tandem.ini's parser takes
+  (ApplySetting) and the page may save (settings::IsEditable);
 - every label, description and choice text is a key of Text.reds in English
   and French; Choices() and ChoiceTexts() name page keys and pair up;
 - no two of the menu's entries (Menu-* texts) read the same, nor as one of
@@ -28,6 +30,10 @@ root = pathlib.Path(__file__).resolve().parent.parent
 scripts = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else root / "scripts" / "tandem"
 CONFIG = root / "plugin" / "src" / "config.cpp"
 EDITABLE = root / "core" / "src" / "settings.cpp"
+# The page's rows at most: one short page, no groups (2026-11-28).
+MAX_ROWS = 10
+# The host's rules, as proto::Rules carries them to every game.
+HOST_RULES = ["friendly_fire", "enemy_scaling", "level_gap"]
 
 # The game's own entries in its main and pause menus, and the Mod Settings
 # mod's (English, lower case).
@@ -80,7 +86,7 @@ def main():
     texts = packages((scripts / "Text.reds").read_text())
     english, french = texts.get("TandemTextEnglish", {}), texts.get("TandemTextFrench", {})
 
-    arrays = {n: array_of(settings, n) for n in ("Keys", "Labels", "Abouts", "Kinds", "Whens", "Groups")}
+    arrays = {n: array_of(settings, n) for n in ("Keys", "Labels", "Abouts", "Kinds", "Whens")}
     for name, values in arrays.items():
         if values is None:
             errors.append(f"Settings.reds: no {name}()")
@@ -106,24 +112,21 @@ def main():
             if v not in allowed:
                 errors.append(f"Settings.reds: {key}'s {name[:-1].lower()} {v} is not 0, 1 or 2")
 
-    # The groups the page lists: each named and described in both
-    # languages, each setting in one of them, none empty.
-    names, abouts = array_of(settings, "GroupNames") or [], array_of(settings, "GroupAbouts") or []
-    if not names or len(names) != len(abouts):
-        errors.append(f"Settings.reds: GroupNames() has {len(names)} entries, GroupAbouts() {len(abouts)}: one per group")
-    for text in names + abouts:
-        for lang, table in (("English", english), ("French", french)):
-            if text not in table:
-                errors.append(f"Settings.reds: group text {text} is not a key of Text.reds in {lang}")
-    for v in sorted({v for v in names if names.count(v) > 1}):
-        errors.append(f"Settings.reds: {v} used twice in GroupNames()")
-    groups = arrays["Groups"]
-    for key, g in zip(keys, groups):
-        if not g.isdigit() or not 1 <= int(g) <= len(names):
-            errors.append(f"Settings.reds: {key}'s group {g} is not 1 to {len(names)}")
-    for i in range(1, len(names) + 1):
-        if str(i) not in groups:
-            errors.append(f"Settings.reds: group {i} ({names[i - 1]}) has no setting")
+    # One short page: no groups, a few rows; the host's rules among them.
+    if len(keys) > MAX_ROWS:
+        errors.append(f"Settings.reds: {len(keys)} settings on the page, at most {MAX_ROWS}: a technical knob stays in tandem.ini (IniKeys)")
+    if re.search(r"static func Group", settings):
+        errors.append("Settings.reds: groups again: the page is one short list")
+    host_rules = array_of(settings, "HostRules")
+    if host_rules != HOST_RULES:
+        errors.append(f"Settings.reds: HostRules() is {host_rules}, not the host's rules proto::Rules carries {HOST_RULES}")
+    for key in host_rules or []:
+        if key not in keys:
+            errors.append(f"Settings.reds: host's rule {key} is not a row of the page")
+    ini_keys = array_of(settings, "IniKeys") or []
+    for key in ini_keys:
+        if key in keys:
+            errors.append(f"Settings.reds: {key} is both a row (Keys) and tandem.ini only (IniKeys)")
 
     # Choices and their texts, key by key.
     def by_key(func):
@@ -154,7 +157,7 @@ def main():
     applied = set(re.findall(r'key == "(\w+)"', config))
     editable_body = body(EDITABLE.read_text(), r"bool IsEditable\(") or ""
     editable = set(re.findall(r'"(\w+)"', editable_body))
-    for key in keys:
+    for key in keys + ini_keys:
         if key not in applied:
             errors.append(f"Settings.reds: {key} is not a key ApplySetting takes (plugin/src/config.cpp)")
         if key not in editable:
