@@ -7,6 +7,7 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "addresses.hpp"
+#include "combat.hpp"
 #include "engine/access.hpp"
 #include "engine/animation.hpp"
 #include "engine/hooks.hpp"
@@ -931,6 +932,54 @@ struct TandemNative : Red::IScriptable {
         {.position = {position.X, position.Y, position.Z},
          .orientation = {orientation.i, orientation.j, orientation.k, orientation.r},
          .velocity = {velocity.X, velocity.Y, velocity.Z}});
+  }
+
+  // Our summoned car (Summons.reds, proto::OwnCar; docs/architecture/garage.md
+  // 1a), to everyone when it changes: its record (none: no car out), flags
+  // 1 while it drives on its own (our VehicleState stream is it then),
+  // where it stands or starts. What the wire would refuse is not said.
+  static void SendOwnCar(Red::TweakDBID vehicle, std::int32_t flags, Red::Vector4 position,
+                         Red::Quaternion orientation, TandemRecordHint hint) {
+    proto::OwnCar car{};
+    if (vehicle.value != 0)
+      car = {.vehicle = vehicle.value,
+             .flags = static_cast<std::uint8_t>(flags & 0xFF),
+             .position = {position.X, position.Y, position.Z},
+             .orientation = {orientation.i, orientation.j, orientation.k, orientation.r},
+             .hint = HintOf(hint)};
+    if (flags >= 0 && flags <= proto::kOwnCarFlags && proto::Fits(car))
+      Combat::Get().Send(car);
+    else
+      log::Info("summons: our car not said (flags {}): not what the session knows", flags);
+  }
+
+  // A partner's summoned car as the session last said it: how many times
+  // it changed here (0: never said), its record (a vanilla one of its type
+  // and size when our game lacks it; none: no car out), its flags, where it
+  // stands (W 0: no car out).
+  static std::int32_t RemoteOwnCarChanges(std::uint32_t player) {
+    return static_cast<std::int32_t>(Combat::Get().OwnCarOf(player).changes);
+  }
+
+  static Red::TweakDBID RemoteOwnCarVehicle(std::uint32_t player) {
+    const auto car = Combat::Get().OwnCarOf(player).car;
+    return car.vehicle ? Red::TweakDBID(ModRecords::Get().Resolve(mods::Kind::Vehicle, car.vehicle,
+                                                                  car.hint, player))
+                       : Red::TweakDBID();
+  }
+
+  static std::int32_t RemoteOwnCarFlags(std::uint32_t player) {
+    return Combat::Get().OwnCarOf(player).car.flags;
+  }
+
+  static Red::Vector4 RemoteOwnCarPosition(std::uint32_t player) {
+    const auto car = Combat::Get().OwnCarOf(player).car;
+    return {car.position.x, car.position.y, car.position.z, car.vehicle ? 1.f : 0.f};
+  }
+
+  static Red::Quaternion RemoteOwnCarOrientation(std::uint32_t player) {
+    const auto q = Combat::Get().OwnCarOf(player).car.orientation;
+    return {q.i, q.j, q.k, q.r};
   }
 
   static std::int32_t RemoteSeatChanges(std::uint32_t player) {
@@ -2505,6 +2554,12 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(IsJoinCode);
   RTTI_METHOD(SendSeat);
   RTTI_METHOD(SendVehicle);
+  RTTI_METHOD(SendOwnCar);
+  RTTI_METHOD(RemoteOwnCarChanges);
+  RTTI_METHOD(RemoteOwnCarVehicle);
+  RTTI_METHOD(RemoteOwnCarFlags);
+  RTTI_METHOD(RemoteOwnCarPosition);
+  RTTI_METHOD(RemoteOwnCarOrientation);
   RTTI_METHOD(RemoteSeatChanges);
   RTTI_METHOD(RemoteSeatVehicle);
   RTTI_METHOD(RemoteSeatSlot);

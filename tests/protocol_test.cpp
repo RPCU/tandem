@@ -1566,6 +1566,35 @@ TEST_CASE("an NPC's voice line is a small reliable one-shot with a known context
   CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12, .context = 1, .flags = 2})).has_value());
 }
 
+TEST_CASE("a summoned car survives encoding: reliable, small, appended, one form for none") {
+  const OwnCar arriving{.player = 2,
+                        .vehicle = 0x2a1b,
+                        .flags = kOwnCarMoving,
+                        .position = {100.f, -20.f, 7.5f},
+                        .orientation = {0.f, 0.f, 0.7071f, 0.7071f},
+                        .hint = {.type = 0x55, .size = 2}};
+  RoundTrips(arriving);
+  RoundTrips(OwnCar{.player = 2, .vehicle = 0x2a1b, .position = {4.f, 5.f, 6.f}}); // parked
+  RoundTrips(OwnCar{.player = 3});                                                 // none out
+  CHECK(Message(OwnCar{}).index() == Message(CorpsePose{}).index() + 1);           // appended
+  CHECK(std::string(NameOf(OwnCar{})) == "OwnCar");
+  CHECK(ChannelOf(OwnCar{}) == Channel::Event);
+  CHECK(IsReliable(OwnCar{}));
+  CHECK(IsCombat(OwnCar{}));
+  CHECK_FALSE(IsStory(OwnCar{}));
+  CHECK_FALSE(tandem::consistency::IsOneShot(OwnCar{}));
+  CHECK(Encode(arriving).size() <= 64);
+  // Refused on the wire: a flag of another version, no car with anything
+  // else said, a place that is no number.
+  const auto refused = [](const OwnCar &car) { return !Decode(Encode(car)).has_value(); };
+  CHECK(refused({.vehicle = 7, .flags = 4}));
+  CHECK(refused({.flags = kOwnCarMoving}));
+  CHECK(refused({.position = {1.f, 0.f, 0.f}}));
+  CHECK(refused({.vehicle = 7, .position = {std::numeric_limits<float>::infinity(), 0.f, 0.f}}));
+  CHECK(refused(
+      {.vehicle = 7, .orientation = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f, 1.f}}));
+}
+
 TEST_CASE("throws, their ends, the session's rules and a defence survive encoding") {
   RoundTrips(Throw{.player = 2,
                    .id = 9,

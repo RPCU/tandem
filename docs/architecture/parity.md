@@ -25,7 +25,7 @@ minute; last: only side by side).
 | 2 | Traffic, parked cars, car colours and lights, traffic and walk lights, pop-in, one-sided collisions | partly | area owner's (`traffic.md`); traffic lights and the owner's looks and headlights on proxies are on branch `rides-b` (`TrafficLights`, `npc list`), being fixed on instances a/c | cars appear, differ in colour, lights disagree, a car hit on one screen only | `street-compare.py`, spawned |
 | 3 | Corpses: where they lie and their pose | same (run in game 2026-11-28: copies within 0.01–0.03 m) | a death is the owner's word; every game ragdolls its own proxy, then sets its ragdoll's bodies where the owner's lie, the cut multiplayer's replicated ragdoll state (`CorpsePose`, `regions.md` §5, "Corpses"); a late linker sees its own ragdoll's; a ledger body is laid down with no death played (`regions.md` §14: "a place of death, not a ragdoll's pose") | the same body sprawled another way, metres apart after a blast, a fall or a car; a body that slid down stairs on one screen only | placed, spawned (position) |
 | 4 | Physics props and debris: bins, crates, cones, cans, car parts, limbs | different | no owner, no sync (`world.md`, open: "which ones … is to decide"); each game's physics pushes its own; a destroyed car's parts fly per game (`traffic.md`, Explosions) | a bin knocked over on one screen stands on the other; debris lies elsewhere; the partner walks through a crate that is not there for it | not readable (no targeting component) |
-| 5 | A player's summoned car (driving in, parked) | different | seen by the others "only once its owner sits in it" (`garage.md` row 1a, open) | the partner's car appears from nothing when they get in; while it drives up, nothing comes | spawned |
+| 5 | A player's summoned car (driving in, parked) | same (not run in game) | its owner's game's: said from its arrival (`OwnCar`), its moves that player's car stream, shown as its owner's car copy, the one its `Seat` later sits in (`garage.md` row 1a) | — once run; the old car after another summon stays parked on the others' screens | spawned |
 | 6 | Decals: blood, bullet holes, scorch | partly | each game draws its own: a puppet's shot is a real NPC shot on the partner's game, with its impact and decal (`presence.md` §3); a proxy's hit reactions are its owner's word, their blood each game's; scorch follows the explosion each game runs | holes roughly where the shots went; blood pools under bodies that lie elsewhere (row 3); a long fight's walls differ in detail | not readable |
 | 7 | Police: units, cars, AVs, MaxTac | same (not run in game) | area owner's NPCs and world vehicles (`police.md`, The rule) | — once run | spawned, `npc-compare.py` |
 | 8 | The wanted level shown | different (by design: heat per player) | each V's own prevention system (`police.md`); the partner's stars on its marker (police colours) and in its party entry (the game's star art), not run in game (`police.md`, "The partner's stars") | — once seen | heat (each its own) |
@@ -66,8 +66,10 @@ view, time bubbles (`time.md`), a V's own body (`players.md`).
    §13.162; `tools/scenarios/pair-corpse-pose.sh`). Left: a game that links later.
 4. **Physics props** (row 4): no owner today. A first step is the props
    a V or a car touched near both Vs, as a placed entity's transform.
-5. **The summoned car** (row 5): share it as a parked vehicle from its
-   arrival (`garage.md` 1a).
+5. **The summoned car** (row 5): built (`OwnCar`, protocol 27, not run
+   in game): seen from its arrival, driving in and parked, as its owner's
+   car copy (`garage.md` 1a). Left: run `garage-summon` and
+   `garage-summon-host`.
 6. **The partner's stars** (row 8): built (its marker in the police's
    colours, its stars in its party entry; `police.md`, "The partner's stars"), not seen yet.
 7. **Devices, glass, police** (rows 7, 11–16, 23): built, never run in

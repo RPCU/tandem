@@ -242,6 +242,13 @@ struct Options {
   // to stock (seconds after taking the seat; 0: never).
   std::optional<tandem::proto::CarPaint> paint;
   int paintOffSeconds{0};
+  // drive: our garage's car is summoned S seconds after we are together and
+  // drives in on its own (-1: we sit in it from the start); we get in S
+  // seconds after it parked (-1: never); it is summoned again S seconds
+  // after it parked (-1: never).
+  int summonSeconds{-1};
+  int summonBoardSeconds{-1};
+  int summonAgainSeconds{-1};
   int hitNpcsSeconds{0};   // join: hit one of the host's NPCs this often (0: never)
   int hitYouSeconds{0};    // host: one of its NPCs hits each guest's V this often (0: never)
   bool hitYouMelee{false}; // --hit-you: a melee hit (blockable, held for the proxy's swing)
@@ -700,6 +707,11 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --paint RRGGBB[,RRGGBB][@HUE] drive: the car carries a custom paint (CarPaint):\n"
          "                     its colour, a second one, its lights' hue in degrees\n"
          "  --paint-off-at S   --paint: back to stock paint S seconds after taking the seat\n"
+         "  --summon S         drive: our car is summoned S seconds after we meet, drives in\n"
+         "                     on its own (OwnCar, its states) and parks 4 m from us, on foot\n"
+         "  --summon-board S   --summon: we get in S seconds after it parked, then drive\n"
+         "  --summon-again S   --summon: summoned again S seconds after it parked (the same\n"
+         "                     car, from the other side)\n"
          "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
          "  --shoot-you N      host: an NPC (a replayed one) fires at each guest's V every N\n"
          "                     seconds: the guest's game fires it and decides the hit\n"
@@ -1799,6 +1811,12 @@ Options Parse(int argc, char **argv) {
       options.paint = paint;
     } else if (flag == "--paint-off-at") {
       options.paintOffSeconds = Number<int>(value);
+    } else if (flag == "--summon") {
+      options.summonSeconds = Number<int>(value);
+    } else if (flag == "--summon-board") {
+      options.summonBoardSeconds = Number<int>(value);
+    } else if (flag == "--summon-again") {
+      options.summonAgainSeconds = Number<int>(value);
     } else if (flag == "--look-keys") {
       options.lookKeys = value;
     } else if (flag == "--look") {
@@ -3655,6 +3673,13 @@ public:
   }
 
   void Park(const Vec3 &at) { m_parkedAt = at; }
+  void Unpark() { m_parkedAt.reset(); }
+  // drive: the circle's centre (where your V was first heard; none yet).
+  std::optional<Vec3> Center() {
+    if (!m_center && !m_heard.empty())
+      m_center = m_heard.back().second.position;
+    return m_center;
+  }
   void Beside(std::optional<Vec3> at) { m_beside = at; }
 
 private:
@@ -3905,6 +3930,13 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
   if (const auto *paint = std::get_if<proto::CarPaint>(&message))
     return std::format("player {}'s car is painted: {} (car {:#x})", paint->player,
                        PaintText(*paint), paint->vehicle);
+  if (const auto *car = std::get_if<proto::OwnCar>(&message))
+    return car->vehicle == 0
+               ? std::format("player {}'s summoned car: none out", car->player)
+               : std::format("player {}'s summoned car {:#x}: {} at ({:.1f}, {:.1f}, {:.1f})",
+                             car->player, car->vehicle,
+                             (car->flags & proto::kOwnCarMoving) ? "driving in" : "parked",
+                             car->position.x, car->position.y, car->position.z);
   if (const auto *s = std::get_if<proto::NpcStrike>(&message))
     return std::format("npc {} struck by player {}: {:.0f} health, {:.0f} poise, flags {:#x}, "
                        "zone {}, part {}",
@@ -4685,6 +4717,17 @@ int main(int argc, char **argv) {
   const auto startUs = tandem::net::NowUs();
   auto nextWorld = std::chrono::steady_clock::now();
   bool seated = false, parked = false, paintOff = false;
+  // --summon: our summoned car's arrival.
+  struct {
+    bool standing{}, boarded{};
+    int round{};
+    Vec3 stop, from;
+    float direction{-1.f};
+    tandem::proto::Quat facing;
+    std::optional<std::uint64_t> arrivingUs;
+    std::uint64_t sentUs{};
+    std::optional<std::chrono::steady_clock::time_point> parkedAt;
+  } summon;
   std::uint64_t seatedAtUs = 0;
   std::optional<tandem::proto::VehicleState> lastCar;
   // The last state sent, and (world ... moved) the body we hold there.
@@ -6246,7 +6289,76 @@ int main(int argc, char **argv) {
           metroSecondHalf = secondHalf;
         }
       }
-      if (options.mode == Mode::Drive && !parked) {
+      // --summon: our garage's car drives in on its own and parks by us,
+      // we on foot (OwnCar; our VehicleState stream is it while it moves);
+      // --summon-again: summoned again (the same car, moved); --summon-board:
+      // we get in (our Seat: the others' copy of it is our car's).
+      if (options.mode == Mode::Drive && options.summonSeconds >= 0 && !summon.boarded &&
+          endpoint->IsJoined()) {
+        namespace proto = tandem::proto;
+        const auto nowUs = tandem::net::NowUs();
+        const auto center = puppeteer.Center();
+        if (center && !summon.standing) {
+          summon.stop = {center->x + options.driveRadius, center->y + 4.f, center->z};
+          puppeteer.Park({summon.stop.x - 2.f, summon.stop.y - 4.f, summon.stop.z});
+          summon.standing = true;
+        }
+        const auto after = [&](std::optional<std::chrono::steady_clock::time_point> from,
+                               int seconds) {
+          return from && seconds >= 0 && now >= *from + std::chrono::seconds(seconds);
+        };
+        const auto said = [&](std::uint8_t flags, const Vec3 &at, const proto::Quat &facing) {
+          endpoint->SendCombat(proto::OwnCar{.vehicle = TweakDBID(options.vehicle),
+                                             .flags = flags,
+                                             .position = at,
+                                             .orientation = facing,
+                                             .hint = options.vehicleHint});
+        };
+        constexpr float kSummonFrom = 50.f, kSummonSpeed = 6.f;
+        const bool due = summon.round == 0 ? after(togetherSince, options.summonSeconds)
+                                           : summon.round == 1 &&
+                                                 after(summon.parkedAt, options.summonAgainSeconds);
+        if (summon.standing && !summon.arrivingUs && due) {
+          // From ahead the first time, from behind when summoned again.
+          summon.direction = summon.round == 0 ? -1.f : 1.f;
+          summon.from = {summon.stop.x, summon.stop.y - summon.direction * kSummonFrom,
+                         summon.stop.z};
+          summon.facing =
+              tandem::sync::FromYaw(summon.direction < 0 ? std::numbers::pi_v<float> : 0.f);
+          summon.arrivingUs = nowUs;
+          ++summon.round;
+          said(proto::kOwnCarMoving, summon.from, summon.facing);
+          Log("summon: our car {} drives in from {:.0f} m{}", options.vehicle, kSummonFrom,
+              summon.round > 1 ? " (summoned again)" : "");
+        }
+        if (summon.arrivingUs) {
+          const float t = static_cast<float>(nowUs - *summon.arrivingUs) / 1e6f;
+          const float along = std::min(t * kSummonSpeed, kSummonFrom);
+          proto::VehicleState car{
+              .position = {summon.from.x, summon.from.y + summon.direction * along, summon.from.z},
+              .orientation = summon.facing,
+              .velocity = {0.f, summon.direction * kSummonSpeed, 0.f}};
+          if (along >= kSummonFrom) {
+            car.velocity = {};
+            endpoint->SendLocalVehicle(car);
+            said(proto::kOwnCarArrived, car.position, summon.facing); // the game's Arrived
+            summon.arrivingUs.reset();
+            summon.parkedAt = now;
+            Log("summon: our car parked by us at ({:.1f}, {:.1f}, {:.1f})", car.position.x,
+                car.position.y, car.position.z);
+          } else if (nowUs - summon.sentUs >= 33'000) {
+            summon.sentUs = nowUs;
+            endpoint->SendLocalVehicle(car);
+          }
+        }
+        if (!summon.arrivingUs && after(summon.parkedAt, options.summonBoardSeconds) &&
+            (options.summonAgainSeconds < 0 || summon.round > 1)) {
+          summon.boarded = true;
+          puppeteer.Unpark();
+          Log("summon: we get in our car");
+        }
+      }
+      if (options.mode == Mode::Drive && !parked && (options.summonSeconds < 0 || summon.boarded)) {
         const auto nowUs = tandem::net::NowUs();
         const bool driving = options.seat == "seat_front_left";
         const auto car = puppeteer.Drive(nowUs).second;
