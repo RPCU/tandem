@@ -392,9 +392,9 @@ target's position, the target, …)`, the anim event `Shoot`, the effect
   destructible", WolvenKit's object spawner; RTTI `worldDynamicMeshNode <
 worldMeshNode`, instance `worldDynamicMeshNodeInstance`, 0x1b0 bytes) is a
   sector node with no entity: no `EntityID`, no script object, no targeting
-  component (`parity.md` row 4: "not readable"). _(inferred: most street
-  clutter, cans, bottles and bags, is of the second kind; which kind a bin,
-  a cone or a crate is was not measured.)_ [2.5-untested]
+  component (`parity.md` row 4: "not readable"). Measured since: most
+  street clutter is a third kind, `worldInstancedDestructibleMeshNode`
+  (§13.163). [2.5-untested]
 - **A body by script**: `PhysicalMeshComponent.CreatePhysicalBodyInterface(opt
 bodyIndex)` (`:209441`; `ColliderComponent` has one too, `:202652`)
   returns `PhysicalBodyInterface` (`:209478`), whose script declaration has
@@ -420,3 +420,39 @@ originInCOM, opt offset)`, `SetIsQueryable`. The game's own devices wake a
   events, is not known. [unverified]
 - A component's place: `IPlacedComponent.GetLocalToWorld()` and
   `GetInitialPosition()` (`:19992`). [2.5-untested]
+
+### 13.163 How many of the city's physics props are world nodes (2026-11-28, live RTTI read of 2.50 on instance c in Kabuki, V at (-915, 1885, 36); Ghidra; RHT's world inspector, MIT)
+
+- **Counted live** (`tools/re` scans by vtable, read-only; the whole
+  streamed set around V, not a radius): physics clutter is
+  overwhelmingly **`worldInstancedDestructibleMeshNode`**, not
+  entities and not `worldDynamicMeshNode`. Attached around V: 416 such
+  node instances holding 1,306 bodies, of which 181 nodes (818 bodies)
+  are `simulationType` Dynamic and 203 (420 bodies) Kinematic with
+  `turnDynamicOnImpulse` (they fall when hit): **1,238 bodies a touch
+  moves**. Loaded in sectors: 4,855 such nodes, 12,026 instances
+  (`instanceTransforms`, node +0xB8), 3,945 `isDestructible`. Against
+  that: `worldDynamicMeshNode` 23 nodes (15 `isDebris`), no live
+  instance; `worldPhysicalDestructionNode` 201 nodes, no live instance;
+  `entPhysicalMeshComponent` 1,963 on 436 entities, of which only 4 are
+  Dynamic and 144 leave it to their mesh (13 of those vehicles); 1,408
+  are Kinematic, on devices (100 entities), cars (39), containers (49),
+  items (17) and plain entities (75). So at most about 150 entity
+  bodies against 1,238 node bodies: **about 9 in 10 of what a V or a
+  car knocks over in a street has no entity**. Which meshes they are was
+  not read (their paths are hashes, node +0x90). [2.5-verified]
+- **Their name**: a node instance carries its node at +0x60 (a handle,
+  read on all 20 sampled) and its global node id at +0x80, the same in
+  every game (sector data; RHT's `WorldNodeInstance` layout); one body
+  is that id and its index in `instanceTransforms`. RHT reaches the
+  instances by hooking `WorldNodeInstance_Initialize`, `_Attach`,
+  `_Detach` (address-library hashes) into a registry. [2.5-verified for
+  +0x60; unverified for the rest]
+- **Their bodies**: the instance's visibility override (vtable slot
+  0xF8, `0x14299d388`, decompiled) walks an array of per-instance
+  objects at +0x150 (count +0x15C) and a bitset at +0x1D8, one bit per
+  instance (hidden or broken), and the render proxy at +0x190. What the
+  per-instance objects are (physics actors or proxies), how to read a
+  body's pose and speed or hold it kinematic, is not known: no script
+  surface, no RTTI function on the node, its instance or
+  `worldRuntimeSystemDestruction`. [unverified]
