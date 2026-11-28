@@ -334,6 +334,13 @@ Not built:
   refused for our V (REASON)" line names the input that would have given
   one), the AV's landing.
 
+- **pair-police** (two real games, `two-instances.md`, "Scenarios on two
+  games"; not yet run): the partner, a guest 12 m off our V at drake-ave,
+  is wanted at two stars by its own game (`police heat 2`). Checks that it
+  spawns nothing (`we follow`), that our units and a car come for its
+  puppet, none on our V (`0 on our V`, our health never dips, no star of
+  ours), and that they stand down with its stars.
+
 By hand, two games: a guest shoots a civilian near the host (stars on the
 guest only); the host joins the fight against the police (its own stars);
 a civilian sees the guest draw and calls it in (the guest's star, not the

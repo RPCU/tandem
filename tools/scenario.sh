@@ -66,6 +66,24 @@
 #   allow_fallback ID      ID may be in it (a fallback this scenario takes on
 #                          purpose, or cannot rule out), and the game may
 #                          tell the mock player so
+# Two real games ("# needs two games" on line 3; tools/sweep.sh leaves them
+# out unless TANDEM_PARTNER names the other game, an instance of
+# tools/instance.sh, two-instances.md "Scenarios on two games"): our game
+# hosts, the partner joins it over the game machine's loopback, on its own
+# port (TANDEM_PARTNER_PORT, default ours + 100).
+#   partner_join           the partner runs this build with co-op off, leaves
+#                          any session, is reset (test reset) and joins ours
+#   pcmd TEXT              a tandem command in the partner game
+#   pat NAME|"X Y Z [YAW]" the partner's V teleported there and settled
+#   pmark                  the partner's log marked (expect_partner reads on)
+#   expect_partner REGEX [SECS], reject_partner REGEX: its log since its mark
+#   pquery VAR WHAT [ARGS] the partner's own state (test query)
+#   compare CATEGORY [ENTITY]  both games' parity dumps at one moment
+#                          (tools/world-compare.py --instances): no
+#                          difference in CATEGORY (devices, glass, world…),
+#                          for devices only that entity's (hex) when named
+#   At the end the partner too has run no hook beside its script tick and
+#   nothing degraded the scenario did not declare; it leaves our session.
 # Every scenario also rejects the mock player's `referee:` lines: the game
 # broke a protocol or authority rule (docs/architecture/sim.md), and the game
 # log's `threads: hook NAME ran beside the script tick` lines (the thread
@@ -147,6 +165,7 @@ fail() {
   mkdir -p "$out"
   since >"$out/game.log" 2>/dev/null || true
   tail -n +$((peer_mark + 1)) "$peer_log" >"$out/peer.log" 2>/dev/null || true
+  [ -z "${partnered:-}" ] || psince >"$out/partner.log" 2>/dev/null || true
   [ -z "$piloted" ] || cp "$cache/pilot.log" "$out/pilot.log" 2>/dev/null || true
   $game shot "scenario-fail" >/dev/null 2>&1 && cp "$cache/shots/scenario-fail.png" "$out/" || true
   # The stall report (plugin/src/stall.hpp): the net thread stopped too, so
@@ -571,6 +590,137 @@ pause() {
   done
 }
 
+# ---- the partner game (two real games: the header's "Two real games") ----
+partner=${TANDEM_PARTNER:-} pdir='' pport='' pmark_file='' pmark_line=0 partnered=''
+if [ -n "$partner" ]; then
+  [ "$partner" != "$instance" ] || {
+    echo "TANDEM_PARTNER names this game ($instance): another instance plays the partner" >&2
+    exit 2
+  }
+  pport=${TANDEM_PARTNER_PORT:-$((game_port + 100))}
+  pdir=$(TANDEM_INSTANCE=$partner TANDEM_GAME_PORT=$pport $game where | sed -n 's/^dir=//p') || exit 2
+  eval "pdir=$pdir"
+fi
+pgame() { TANDEM_INSTANCE=$partner TANDEM_GAME_PORT=$pport TANDEM_PEER_OF=$partner $game "$@"; }
+pmark() {
+  read -r pmark_file pmark_line < <(remote "cd '$pdir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); echo \"\$f \$(wc -l < \"\$f\")\"")
+}
+psince() { remote "cd '$pdir'; tail -n +$((pmark_line + 1)) '$pmark_file'" | { grep -av '] \[script\] test reset: ' || true; }; }
+pcmd() {
+  local text="$*"
+  text=${text//27450/$game_port}
+  pgame cmd "$text" >/dev/null || fail "partner command not taken: $text"
+}
+partner_join() {
+  [ -n "$partner" ] || fail "no partner game: TANDEM_PARTNER=NAME (another instance, two-instances.md)"
+  local output status=0 line
+  # Started once ours plays (two starts at once trip the engine's watchdog).
+  output=$(pgame ensure off 2>&1) || status=$?
+  while IFS= read -r line; do echo "  partner: $line"; done <<<"$output"
+  [ "$status" = 0 ] || fail "the partner game ($partner) is not running this build"
+  pmark
+  pcmd coop leave
+  sleep 3
+  output=$(pgame test-reset 2>&1) || status=$?
+  echo "  partner: ${output:-test reset: no answer}"
+  [ "$status" = 0 ] || fail "the partner game is not in its test state"
+  pmark
+  partnered=1
+  pcmd coop join "127.0.0.1:$game_port"
+  expect_partner 'in the session as player [0-9]+' 30
+  expect 'joined \(player [0-9]+' 15
+  pause 3
+}
+expect_partner() {
+  local pattern=${1//27450/$game_port} timeout=${2:-30} start=$SECONDS
+  while ((SECONDS - start < timeout)); do
+    if psince | grep -qE "$pattern"; then
+      echo "  ok (partner): $pattern"
+      return 0
+    fi
+    sleep 1
+  done
+  fail "no '$pattern' in the partner's log within $timeout s"
+}
+reject_partner() {
+  local lines
+  lines=$(psince)
+  if grep -qE "$1" <<<"$lines"; then
+    fail "unexpected (partner): $(grep -E "$1" <<<"$lines" | head -1 | cut -c1-160)"
+  fi
+  echo "  ok, none (partner): $1"
+}
+pquery() {
+  local _var=$1 _asked _from _line _start=$SECONDS
+  shift
+  _asked="$*"
+  _from=$(psince | grep -cF "test query: $_asked = " || true)
+  pcmd test query "$_asked"
+  while ((SECONDS - _start < 10)); do
+    _line=$(psince | grep -F "test query: $_asked = " | sed -n "$((_from + 1))p" || true)
+    if [ -n "$_line" ]; then
+      _line=${_line%$'\r'}
+      printf -v "$_var" '%s' "${_line#*"test query: $_asked = "}"
+      echo "  partner query $_asked: ${!_var}"
+      return 0
+    fi
+    sleep 1
+  done
+  fail "no answer to the partner's 'test query $_asked' within 10 s"
+}
+# The partner's V at a spot (as `at`: within 4 m, then the world streams in).
+pat() {
+  local where x y z start=$SECONDS line
+  where=$(spot "$1") || fail "no fixture '$1' in $fixture_file"
+  read -r x y z _ <<<"$where"
+  pcmd teleport "$where"
+  while ((SECONDS - start < 60)); do
+    sleep 2
+    pcmd test query position
+    sleep 1
+    line=$(psince | grep -F 'test query: position = ' | tail -1 || true)
+    line=${line%$'\r'}
+    if [ -n "$line" ] && awk -v w="${line#*position = }" -v x="$x" -v y="$y" -v z="$z" 'BEGIN {
+      split(w, p, " "); dx = p[1] - x; dy = p[2] - y; dz = p[3] - z
+      exit !(dx * dx + dy * dy + dz * dz < 16) }'; then
+      echo "  partner at $1 ($where) in $((SECONDS - start)) s"
+      pause 5
+      return 0
+    fi
+  done
+  fail "the partner's V did not come to $1 ($where) within 60 s (last: ${line:-no position})"
+}
+# Both games' parity dumps at one moment, compared: no difference in this
+# category (devices: only ENTITY's, when given).
+compare() {
+  local category=$1 entity=${2:-} output status=0
+  [ -n "$partner" ] && [ "$instance" != main ] || fail "compare needs two instances (TANDEM_INSTANCE, TANDEM_PARTNER)"
+  output=$(python3 tools/world-compare.py --instances "$instance" "$partner" --near 60 --only "$category" ${entity:+--entity "$entity"} 2>&1) || status=$?
+  grep -E "^(== |  $category)" <<<"$output" | sed 's/^/  /' || true
+  mkdir -p "$out" && printf '%s\n' "$output" >>"$out/compare.txt"
+  if [ "$category" = devices ] && [ -n "$entity" ] && ! grep -qE '^  devices: [1-9][0-9]* on both' <<<"$output"; then
+    fail "device $entity is not followed by both games (a parity dump each)"
+  fi
+  [ "$status" = 0 ] || fail "the two games differ in $category${entity:+ ($entity)}: $(grep -m1 -E "^  $category: " <<<"$output" || tail -1 <<<"$output")"
+  echo "  ok: both games show the same $category${entity:+ of $entity}"
+}
+# The partner's end of a scenario: no hook beside its tick, nothing degraded
+# undeclared (as on_game_thread, no_silent_fallback); then it leaves.
+partner_checks() {
+  [ -n "$partnered" ] || return 0
+  local names args=() id output status=0
+  names=$(psince | sed -n 's/.*threads: hook \([^ ]*\) ran beside the script tick.*/\1/p' | sort -u | tr '\n' ' ' || true)
+  [ -z "$names" ] || fail "the partner's script hooks ran beside its script tick (testing.md): $names"
+  for id in "${degraded_expected[@]}"; do args+=(--allow "$id"); done
+  for id in "${degraded_allowed[@]}"; do args+=(--allow "$id"); done
+  output=$(pgame degraded "${args[@]}" 2>&1) || status=$?
+  if [ "$status" != 0 ]; then
+    while IFS= read -r line; do echo "  partner: $line"; done <<<"$output"
+    fail "degraded on the partner: $(grep -m1 -E '^(unexpected|missing): ' <<<"$output" || echo 'its registry could not be read')"
+  fi
+  echo "  ok: nothing degraded on the partner that was not declared"
+}
+
 # The last scenario's session ends in the game after its mock player stops:
 # "player N left", "marker: player N removed" (host), "session ended",
 # "save: leave cleaning -> solo" (guest). Those lines belong to the last
@@ -692,9 +842,15 @@ run() {
     on_game_thread
     # And the game ran on no lesser path the scenario did not declare.
     no_silent_fallback
+    partner_checks
   )
   status=$?
   set -e
+  # The partner leaves our session: the next scenario's mock player is the
+  # only other player.
+  if [ -n "$partner" ] && grep -q '^# needs two games' "$file"; then
+    pgame cmd coop leave >/dev/null 2>&1 || true
+  fi
   if [ "$status" = 0 ]; then
     echo "  PASS ($((SECONDS - start)) s)"
     return 0

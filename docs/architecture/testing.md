@@ -52,6 +52,10 @@ More than two players: `peer2 ARGS…` starts a second mock player beside
 the first (`expect_peer2` reads its log, `.cache/peer2.log`); scenario
 `three-players`. Mock players under the same `--name` are shown as "V (2)",
 "V (3)" (each logs `the session shows us as …`); scenario `names-duplicate`.
+Two real games: a scenario that says `# needs two games` plays against a
+second instance instead of a mock player (`TANDEM_PARTNER=NAME`; the
+helpers `partner_join`, `pcmd`, `pat`, `expect_partner`, `pquery`,
+`compare`: `two-instances.md`, "Scenarios on two games").
 Every scenario starts from one known state, `tools/game.sh test-reset`
 (`cmd test reset`, `scripts/tandem/TestReset.reds`), run after the last
 scenario's mock player is stopped and after any fresh start: the save
@@ -225,7 +229,8 @@ output, `NAME.log`. Build first (`tools/build.sh`, or `tools/remote.sh` and
 **Log patterns** (`tools/scenarios-patterns.py`, in `task scenarios:check`
 and CI, about 20 s): a reworded log line leaves its scenarios waiting for a
 line that never comes. Each `expect`, `reject`, `at_most` and `since | grep`
-pattern (and each `query`'s answer) must be able to match a line of the game's log, each `expect_peer`,
+pattern (and each `query`'s answer) must be able to match a line of the game's log (a partner
+game's `expect_partner`, `reject_partner` and `pquery` too), each `expect_peer`,
 `expect_peer2` and `reject_peer` one of the mock player's. The lines are
 formats collected from the sources: the scripts' string expressions (behind
 `[script] `) and `Log*`/`Once` arguments, every `std::format`-style call

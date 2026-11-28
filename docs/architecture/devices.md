@@ -571,8 +571,14 @@ hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
   the guest), `devices-camera-friendly` (turned by the guest: no V seen,
   marked), `turret-friendly`, `devices-barrel` (shot by the guest), `devices-guest` (the
   game as the guest: its own copy first, the host's word, and its world put
-  back on leaving). `DEVICES_AT="X Y Z"` names the spot; V's flat has a
-  door and lifts, a camera and a barrel need one.
+  back on leaving), `devices-media` (a station V picks, then the guest's:
+  `--device-answer station=2`). `DEVICES_AT="X Y Z"` names the spot; V's
+  flat has a door, lifts and a radio, a camera and a barrel need one.
+- **On two real games** (`two-instances.md`, "Scenarios on two games"; not
+  yet run): `pair-devices-door`, `pair-devices-lift`, `pair-devices-camera`,
+  `pair-devices-barrel`, `pair-devices-media`, `pair-glass`, `pair-turret`:
+  each acts on one game and reads the other's log, then compares both
+  games' parity dumps of that device (`compare devices ENTITY`).
 
 ## Open
 
@@ -609,7 +615,11 @@ hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
   copy appears.
 - **Automatic doors** open for the local V only: each opening is a request
   like any other, so a busy doorway makes a few messages a second; the
-  host's order still decides.
+  host's order still decides. No scenario: no fixture with one is known.
+- **An exploded barrel set quietly** (a late joiner's record, a resync)
+  while it is streamed in on our game: its state says exploded, its entity
+  stays whole until it streams in again (no blast is played for a record:
+  it would hurt our V).
 - **Datamine rewards** go to who breached. Alternative if the players
   prefer it: breach state not shared, each jacks in their own copy.
 - **Breach Protocol, not run in game**: the list is §13.60, "To verify in

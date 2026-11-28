@@ -8,7 +8,7 @@ an in-game run. Checked here:
 
 - every `--flag` a scenario passes exists in the mock player's command line
   (a "--flag" literal in peer/), in the pilot's, or in tools/;
-- the first word of every `cmd ...` is a command the scripts take (a string
+- the first word of every `cmd ...` (a partner game's `pcmd ...`) is a command the scripts take (a string
   literal that is, or begins with, that word in scripts/tandem);
 - every helper a scenario calls is a function of tools/scenario.sh (or a
   shell word);
@@ -67,7 +67,7 @@ def check_queries(where: str, line: str, queries: set, assigned: set, globals_: 
     if not words:
         return 0
     problems, what = 0, None
-    if words[0] == "query":
+    if words[0] in ("query", "pquery"):
         if len(words) < 3 or not re.fullmatch(r"[A-Za-z_]\w*", words[1]):
             print(f"{where}: query VAR WHAT [ARGS]: {' '.join(words[1:])}", file=sys.stderr)
             return 1
@@ -75,7 +75,7 @@ def check_queries(where: str, line: str, queries: set, assigned: set, globals_: 
             print(f"{where}: query {words[1]} would overwrite tools/scenario.sh's own ${words[1]}", file=sys.stderr)
             problems += 1
         what = words[2]
-    elif words[:3] == ["cmd", "test", "query"] and len(words) > 3:
+    elif words[0] in ("cmd", "pcmd") and words[1:3] == ["test", "query"] and len(words) > 3:
         what = words[3]
     if what is not None and what not in queries:
         print(f"{where}: no query '{what}' in scripts/tandem/TestQuery.reds ({', '.join(sorted(queries))})", file=sys.stderr)
@@ -119,7 +119,7 @@ def main() -> int:
         text = path.read_text()
         own = set(re.findall(r"^\s*(\w+)\(\)\s*\{", text, re.M))
         assigned = harness_vars | set(re.findall(r"(?:^|[\s;])(\w+)=", text))
-        assigned |= set(re.findall(r"^\s*query\s+(\w+)\s", text, re.M))
+        assigned |= set(re.findall(r"^\s*p?query\s+(\w+)\s", text, re.M))
         for names in re.findall(r"\bread\s+(?:-\w+\s+)*([\w ]+)", text):
             assigned |= set(names.split())
         assigned |= set(re.findall(r"\bfor\s+(\w+)\s+in\b", text))
@@ -142,7 +142,7 @@ def main() -> int:
                     if flag not in literals:
                         print(f"{where}: {flag} is no flag of tandem-peer, the pilot or tools/", file=sys.stderr)
                         problems += 1
-            if first == "cmd" and len(words) > 1:
+            if first in ("cmd", "pcmd") and len(words) > 1:
                 word = words[1].strip("'\"")
                 if re.fullmatch(r"[a-z][a-z0-9-]*", word) and word not in commands:
                     print(f"{where}: no script takes the command '{word}' (cmd {' '.join(words[1:3])})", file=sys.stderr)
