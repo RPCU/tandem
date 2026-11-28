@@ -41,13 +41,14 @@ dropped; tier 2 and 3 stay recorded and credited (never paid twice).
 | Tier | What | In the guest's own save | Risk |
 | --- | --- | --- | --- |
 | 1 | XP, level, street cred, skill progress, perk points, money, loot, crafting parts, ammo, non-quest reward items (iconics included), achievements | kept: they are in the V's running game and reach the save with the first save after the session | low |
-| 2 | gigs (`StreetStory`, `Contract`), cyberpsycho sightings, courier jobs, NCPD scanner hustles | **credited** now (recorded, never paid twice); **completed in the guest's world** only after spike C1 proves each type (stage B) | medium to high: a half-set completion soft-locks |
+| 2 | gigs (`StreetStory`, `Contract`), cyberpsycho sightings, courier jobs, NCPD scanner hustles | **credited** now (recorded, never paid twice); **completed in the guest's world** only after spike C1 proves each type (stage B, dropped); an NCPD activity the host's world finishes is shown done on a grouped guest's map for the session only (`story.md`, "Open-world activities") | medium to high: a half-set completion soft-locks |
 | 3 | main, side and minor quests; quests that unlock a vehicle or an apartment (`VehicleQuest`, `ApartmentQuest`); everything a quest decides (romance, endings) | recorded ("done in co-op with NAME"); nothing applied; quest props removed on leave; an optional skip offer much later, never for main quests | low as proposed |
 
 The tier of a quest comes from the game's own sorting, the journal's
 quest type (`JournalManager.GetQuestType`, `E§13.29`); `carry::TierOf` is
 the table. An NCPD hustle has no journal quest: it is tier 2 with kind
-`Unknown`.
+`Unknown`, keyed by its map pin's journal path hash
+(`TandemStorySystem.NoteActivity`).
 
 ### Tier 1: the V's own
 

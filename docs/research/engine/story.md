@@ -1310,3 +1310,48 @@ written yet):
   is better only for non-interactive cinematic scenes (no choice,
   randomizer or quest node; a camera of their own), where the guest would
   get the scene natively: worth a narrow version once tests 1 to 3 pass.
+
+  camera stays, registered as what it is. [unverified]
+### 13.162 An NCPD activity's pin, by its journal path, and its phase set from outside (2026-11-28, read in final.reds (2.50), Codeware's source; not run)
+
+For `docs/architecture/story.md`, "Open-world activities". F is
+`final.reds (2.50)`; CW is Codeware's `src/` (MIT).
+
+- **Which pins**: the game's own test for the NCPD scanner's pins is
+  `MinimapPOIMappinController.IsNcpdScanner` (F:434330): the variants
+  `MinorActivityVariant`, `Zzz06_NCPDGigVariant`, `GangWatchVariant`,
+  `OutpostVariant`, `HiddenStashVariant` (all drawn `map_bounty`,
+  `MappinUIUtils.MappinToTexturePart`, F:275587). [2.5-verified offline]
+- **Their identity**: each is a `PointOfInterestMappin` (F:276234) whose
+  `GetJournalPathHash()` names its `gameJournalPointOfInterestMappin`
+  entry: static journal data, the same hash in every game. Codeware reads
+  the same field (`Raw::PointOfInterestMappin::JournalHash`, +0x8C of the
+  0x100-byte `gamemappinsPointOfInterestMappin`). Codeware's
+  `MappinSystem.GetAllMappins()` lists every registered pin.
+  [2.5-verified offline] [unverified: that every NCPD pin of the map is
+  registered at once, wherever V is]
+- **Done** is the pin's phase `CompletedPhase` (0; `gamedataMappinPhase`,
+  F:1333): Codeware's `OpenWorldSystem` answers `completed` from it alone
+  (`MakeActivityState`, `GetPoiMappinPhase` by the journal hash). The map,
+  the minimap and the world pins read `IMappin.GetPhase()` at each update
+  (F:275385, F:403273, F:434194) and dim a completed one
+  (`CompletedPOIOpacity`). [2.5-verified offline]
+- **Setting it**: no script function does (`MappinSystem` has
+  `SetMappinActive`, `ChangeMappinVariant`, no phase setter, F:44139).
+  The engine's own: `MappinSystem` vtable +0x1D0 `SetPoiMappinPhase(journal
+hash, phase)` (what Codeware's activity reset calls: it keeps the phase
+  in the system's saved state), and the instance's setter
+  `PointOfInterestMappin_SetPhase` (address-library hash 803085170, `bool
+(mappin, phase)`; CW `src/Red/MappinSystem.hpp`). tandem uses the
+  instance's (by hash, no vtable slot to check) and restores every pin it
+  set before a guest's saving unlocks, whether or not the instance's phase
+  reaches the save. [unverified: the call, its effect on the drawn pin,
+  and whether the system puts the instance back from its record on a
+  stream-in: `openworld-guest` reads the phase back]
+- **The activity's scene** is a child phase of
+  `base\open_world\minor_activities\open_world_minor_activities.questphase`
+  (CW `QuestPhaseRegistry.cpp:10`) with its communities, spawners, facts
+  and loot (CW `OpenWorldSystem.cpp`, `ProcessActivity`); holding that
+  phase's nodes keeps a game from setting the scene again. A community
+  already active from the save spawns its people all the same.
+  [2.5-verified offline for the resource; the hold: unverified]
