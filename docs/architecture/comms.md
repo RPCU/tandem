@@ -390,7 +390,13 @@ busy | ignore`), `pair-phone-call` and `pair-phone-choices` (two games).
     first: the call's give way. Test commands `comms callhub` (the
     options in English, drawn or not), `comms callpick TEXT`; scenario
     `pair-phone-choices`.
-  - Not built yet: the partner's own portrait (the unknown avatar shows).
+  - The partner's portrait: a known limit, the unknown avatar shows. A
+    contact's picture is a `PhoneAvatars` record (an image in an atlas):
+    the game ships none of a player's V, and the scripts name only
+    `Avatar_Unknown` as a fallback (`InkImageUtils.RequestAvatarOrUnknown`,
+    final.reds (2.50):344579); a holocall's live picture
+    (`HudPhoneAvatarController.m_HolocallRenderTexture`) is the engine's
+    render of the caller's scene, which a puppet is not in.
 - **How, in the game's scripts** (`final.reds:408140`, wrapped, each a
   `public final func` of the HUD controller, reached from its own input
   listener on the game thread; none is a cb func or a per-entity class,
