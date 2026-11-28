@@ -173,7 +173,7 @@ two are linked: the bits a guest's request (host) or the host's live word
   record has exploded, standing whole in our world (a join, a resync), is
   given the wreck the engine gives one that streams in exploded
   (`ExplosiveDevice.TandemShowExploded`: what a whole one runs stopped,
-  then its own `ToggleVisibility(false)`, §13.167), read back (its mesh
+  then its own `ToggleVisibility(false)`, §13.173), read back (its mesh
   off) or the fallback `device not matched`; no blast is played for a
   record (it would hurt our V).
 - **An actor that vanishes.** A device is the world's, not a player's:
