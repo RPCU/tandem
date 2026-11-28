@@ -16,14 +16,15 @@ pcmd phone call V
 expect 'holocall: ringing from .*: the phone.s own call' 20
 cmd comms accept
 expect 'holocall: on the call with .*: the phone.s own call' 5
-# The same list on both, the phone's rows: trade (on), join, ask, hang up.
+# The phone's rows of each game: ours with trade (trade=on), join, ask,
+# hang up; the partner's without trade (its own tandem.ini: off).
 expect 'choice: a call.s choices shown \(4 options\)' 5
-expect_partner 'choice: a call.s choices shown \(4 options\)' 10
+expect_partner 'choice: a call.s choices shown \(3 options\)' 10
 pause 2
 cmd comms callhub
 expect 'holocall: choices with .+: Trade \| Join .+ \| Ask .+ to join you \| Hang up \(drawn true\)' 5
 pcmd comms callhub
-expect_partner 'holocall: choices with .+: Trade \| Join .+ \| Ask .+ to join you \| Hang up \(drawn true\)' 5
+expect_partner 'holocall: choices with .+: Join .+ \| Ask .+ to join you \| Hang up \(drawn true\)' 5
 shot pair-call-choices
 pgame shot pair-call-choices-partner >/dev/null && cp "$cache/shots/pair-call-choices-partner.png" "$out/" 2>/dev/null || true
 # Ours picks "Ask NAME to join you": a regroup offer on theirs, the call
