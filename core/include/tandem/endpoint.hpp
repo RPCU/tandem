@@ -837,7 +837,9 @@ public:
   // host's level for each NPC it shares.
   const std::optional<proto::SessionLevel> &SessionLevel() const { return m_sessionLevel; }
   // Host: tandem.ini `level_gap` (progress::SessionLevelOf; 0, the default
-  // here: the plain mean), taken at the next change of anyone's level.
+  // here: the plain mean), taken at the next change of anyone's level. The
+  // Rules the host sends (SendCombat) set it too, and the session's level
+  // follows at once.
   void SetLevelGap(std::uint8_t gap) { m_levelGap = gap; }
   const std::map<proto::NpcId, proto::NpcLevel> &NpcLevels() const { return m_npcLevels; }
   // How many players each NPC we know of is scaled for, as its owner said.

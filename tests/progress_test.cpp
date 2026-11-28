@@ -540,6 +540,31 @@ TEST_CASE("the host's level_gap caps the session's level for a new V") {
   }));
 }
 
+TEST_CASE("the host's rules carry its level_gap: a change applies at once, guests hear it") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  REQUIRE_MESSAGE(host, error);
+  host->SetLevelGap(8);
+  CHECK(host->SendCombat(proto::PlayerLevel{.player = 1, .level = 40}));
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  REQUIRE_MESSAGE(a, error);
+  CHECK_FALSE(a->SendCombat(proto::PlayerLevel{.level = 1}));
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t, const auto &) {
+    return a->SessionLevel() && a->SessionLevel()->players == 2;
+  }));
+  CHECK(a->SessionLevel()->level == 9);
+  // The host turns the gap off (its settings page): the plain mean, now.
+  CHECK(host->SendCombat(proto::Rules{.levelGap = 0}));
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t, const auto &) {
+    return a->SessionLevel()->level == 21 && a->Rules().levelGap == 0;
+  }));
+  CHECK(host->SessionLevel()->level == 21);
+  // A guest's own rules are not the session's: refused, nothing moves.
+  CHECK_FALSE(a->SendCombat(proto::Rules{.levelGap = 5}));
+  CHECK(a->Rules().levelGap == 0);
+}
+
 TEST_CASE("an NPC's level reaches every guest once, late joiners too, and goes with the NPC") {
   const auto port = NextPort();
   std::string error;

@@ -49,7 +49,9 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // (`before`): a receiver that lost it puts it back (netcode.md, Loss).
 // 23: NpcVoice appended (an NPC's voice lines, npcs.md "Voices").
 // 24: CorpsePose appended (a body's rest, regions.md §5).
-inline constexpr std::uint16_t kProtocolVersion = 24;
+// 25: Rules.levelGap (the host's level_gap, said to every game: a guest's
+// menu shows the host's rules, coop-menu.md).
+inline constexpr std::uint16_t kProtocolVersion = 25;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -1866,12 +1868,17 @@ struct ThrowEnd {
 // them (tandem/scaling.hpp, NpcScale; docs/architecture/npcs.md, "Enemy
 // scaling"), their health by `enemyHealth` percent per extra player.
 // (enemyHealth was added before Rules was released: no version bump.)
+// levelGap: the host's level_gap (progress::SessionLevelOf: enemies at most
+// this many levels above the lowest player; 0, the plain mean), applied by
+// the host's endpoint as it sends it, and shown on a guest's menu (v24).
 inline constexpr std::uint8_t kRuleFriendlyFire = 1, kRuleEnemyScaling = 2;
 inline constexpr std::uint8_t kRuleFlags = kRuleFriendlyFire | kRuleEnemyScaling;
 inline constexpr std::uint8_t kMaxEnemyHealth = 250; // percent per extra player
+inline constexpr std::uint8_t kMaxLevelGap = 60;
 struct Rules {
   std::uint8_t flags{};         // kRule*
   std::uint8_t enemyHealth{60}; // kRuleEnemyScaling: health percent per extra player
+  std::uint8_t levelGap{8};     // 0 to kMaxLevelGap (progress::kDefaultLevelGap)
   friend bool operator==(const Rules &, const Rules &) = default;
 };
 

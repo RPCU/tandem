@@ -40,7 +40,8 @@ std::uint32_t WorldDigest(const std::optional<proto::World> &world,
   if (rules)
     hash.Add(std::uint64_t{0xD1})
         .Add(std::uint64_t{rules->flags})
-        .Add(std::uint64_t{rules->enemyHealth});
+        .Add(std::uint64_t{rules->enemyHealth})
+        .Add(std::uint64_t{rules->levelGap});
   return hash.Value();
 }
 

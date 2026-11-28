@@ -260,6 +260,8 @@ TEST_CASE("the session's rules are part of the world digest") {
   CHECK(off != on);
   CHECK(on == consistency::WorldDigest(world, std::nullopt,
                                        proto::Rules{.flags = proto::kRuleFriendlyFire}));
+  // The level gap is a rule too.
+  CHECK(off != consistency::WorldDigest(world, std::nullopt, proto::Rules{.levelGap = 0}));
 }
 
 namespace {
