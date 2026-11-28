@@ -443,8 +443,12 @@ public class TandemDevices extends ScriptableSystem {
       return;
     }
     if report {
-      TandemNative.UseDevice(device.entity, device.cls, TandemDevices.StatusOf(ps), TandemDevices.FlagsOf(ps), TandemDevices.ValueOf(ps));
-      this.LogSome(s"devices: \(TandemDevices.Name(device)) changed here (a quest interaction that was ours): asked of the host");
+      let status = TandemDevices.StatusOf(ps);
+      let flags = TandemDevices.FlagsOf(ps);
+      let value = TandemDevices.ValueOf(ps);
+      TandemNative.UseDevice(device.entity, device.cls, status, flags, value);
+      // The same words as any change of ours, and why it waited.
+      this.LogSome(s"devices: \(TandemDevices.Name(device)) changed here (\(TandemDevices.Describe(status, flags, value))): asked of the host (a quest interaction that was ours)");
     } else {
       TandemNative.AskDevice(device.entity, device.cls, TandemDevices.StatusOf(ps), TandemDevices.FlagsOf(ps), TandemDevices.ValueOf(ps));
     }

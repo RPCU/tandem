@@ -20,7 +20,7 @@ expect 'interact: asked the host about [A-Za-z]+ \(' 10
 expect_peer "interact: player [0-9]+'s use of [0-9a-f]+: performed" 10
 expect 'interact: the host: .* performed' 10
 # Our own copy's change was not said: the host's doing is the device's word.
-reject 'devices: [0-9a-f]+ [A-Za-z]+ changed here \(a quest interaction that was ours\)'
+reject 'devices: [0-9a-f]+ [A-Za-z]+ changed here \(.*\): asked of the host \(a quest interaction that was ours\)'
 shot interact-guest-pickup
 # Performed is asked each time (a switch flips twice).
 cmd story interact use device
