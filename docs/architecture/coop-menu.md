@@ -232,10 +232,12 @@ yet run in game**).
   file the game read, `Config::file`). The harness's `tools/game.sh role`
   files swap around it: a setting changed while a test `tandem.ini` is in
   place lands in that one. Tests: `coop settings` logs them all, `coop
-  set KEY VALUE` changes one (scenario `settings`); scenarios
-  `settings-page` (the host's page, a rule reaching the guest) and
-  `settings-page-guest` (the guest's page and its "Host's rules" line;
-  not yet run in game).
+  set KEY VALUE` changes one (scenario `settings`); scenario
+  `settings-page`, unattended, both roles in one run (`ensure host`, then
+  `ensure join`): the host's page and a rule reaching the guest, then the
+  guest's page and its "Host's rules" line, shots `settings-host`,
+  `settings-changed`, `settings-guest`, one PASS or FAILED line (not yet
+  run in game).
 - The pause menu's page seen in game 2026-11-23 (English, then in
   groups; its one-page form of 2026-11-28 not yet). Esc in the pause menu is the menu
   scenario's, not the controller's input: `MenuScenario_PauseMenu.OnBack`
