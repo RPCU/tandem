@@ -595,7 +595,8 @@ class Source:
         numbers = {INT, FLOAT}
         if first + more and all(v.regex in numbers for v in first + more):
             return self.memo.setdefault(name, self.numeric(first + more))
-        # Texts are repeated; a wildcard twice at most (repeated, any line).
+        # Texts are repeated, and so is a value (a list built in a loop: the
+        # phone's actions, one label too long to follow, 2026-11-28).
         texts = [v for v in more if v.letters >= 2]
         values = [v for v in more if v not in texts]
         # (A C++ name's declarations without "=": a parameter, a binding.)
@@ -605,7 +606,7 @@ class Source:
         if texts:
             val = Val(val.regex + "(?:" + either(texts).regex + ")*", val.text + "…")
         if values:
-            val = Val(val.regex + "(?:" + either(values).regex + "){0,2}", val.text + "…")
+            val = Val(val.regex + "(?:" + either(values).regex + ")*", val.text + "…")
         if len(val.regex) > LONGEST:
             val = WILD
         self.memo[name] = val

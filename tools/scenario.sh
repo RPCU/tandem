@@ -616,6 +616,16 @@ pcmd() {
 partner_join() {
   [ -n "$partner" ] || fail "no partner game: TANDEM_PARTNER=NAME (another instance, two-instances.md)"
   local output status=0 line
+  # Dead on its death screen or in the main menu since its last load (an
+  # earlier scenario's police shot it, and it left the session down: the
+  # death the rules give, revive.md): it takes no command there, so it is
+  # stopped and started again (pair-police, 2026-11-28).
+  local dead
+  dead=$(remote "cd '$pdir'; f=\$(ls -t red4ext/logs/tandem-*.log 2>/dev/null | head -1); [ -n \"\$f\" ] && awk '/\\[script\\] playing/ { d = 0 } /revive: our V dies: death screen|\\[script\\] main menu world: not a game/ { d = 1 } END { print d + 0 }' \"\$f\"" 2>/dev/null || echo 0)
+  if [ "$dead" = 1 ]; then
+    echo "  harness: the partner is on its death screen or in the main menu: stopped, started again"
+    pgame stop >/dev/null 2>&1 || true
+  fi
   # Started once ours plays (two starts at once trip the engine's watchdog).
   output=$(pgame ensure off 2>&1) || status=$?
   while IFS= read -r line; do echo "  partner: $line"; done <<<"$output"
