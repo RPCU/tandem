@@ -16,7 +16,9 @@
   are never deleted while the game runs (deleting one that
   had someone seated in it froze the game): a car someone got out of stays
   parked (what crashed, and a guarded deletion to prove in game:
-  engine-knowledge §13.101). Puppets leave in steps over several frames (out of the seat, then
+  engine-knowledge §13.101). The one exception, that guarded deletion: a
+  partner's old summoned car, once out of sight and free for 5 s
+  (`garage.md` 1a, "Old"). Puppets leave in steps over several frames (out of the seat, then
   the body). A V downed in a seat stays in it, is revived from beside the
   car, and an out V may respawn into a partner's free seat
   ([`revive.md`](revive.md)).
