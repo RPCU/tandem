@@ -6,6 +6,7 @@
 // the host's, late joiners' too.
 
 #include "ports.hpp"
+#include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/props.hpp"
 
