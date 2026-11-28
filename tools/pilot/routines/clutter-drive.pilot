@@ -1,0 +1,19 @@
+# A drive through a street's clutter, for the clutter measurement
+# (pair-clutter): V calls its car, drives forty metres ahead slowly (the
+# pad), stops, gets out.
+limit 180
+needs veh == 0
+sim car 3 6
+if car < 0
+  act summon
+end
+until car > 0 and car < 20 timeout 40
+act mount
+until veh == 1 and seat == driver timeout 12
+wait 2
+calibrate steer
+drive ~0 ~40 speed 8
+trigger lt 1 3
+until speed < 0.5 timeout 10
+act exit
+until veh == 0 timeout 8

@@ -1,0 +1,7 @@
+# A walk through a street's clutter and back, for the clutter measurement
+# (pair-clutter): ten metres ahead of where V stands, and back.
+limit 60
+needs veh == 0
+calibrate move
+walk ~0 ~10 pace walk
+walk ~0 ~0 pace walk
