@@ -11,7 +11,8 @@ pcmd comms unlink V
 pause 2
 mark
 pmark
-pcmd comms link V
+# From its phone (the row's Call: its own call view, then on the call).
+pcmd phone call V
 expect 'holocall: ringing from .*: the phone.s own call' 20
 cmd comms accept
 expect 'holocall: on the call with .*: the phone.s own call' 5
