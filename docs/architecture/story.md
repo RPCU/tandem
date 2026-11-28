@@ -612,6 +612,22 @@ test watch|play|off`.
     `prefabs-guest`, `prefabs-host`, `gates-guest`, `dialogue-marks-host`,
     `dialogue-marks-guest`.
 
+## Story probes
+
+`tools/scenarios/story-probe-*.sh` (two games, `TANDEM_PARTNER`): the story
+checked without playing a mission. Our game hosts and drives its own quest
+systems by test command (`story call`, `story line`, `story hub`, `story
+reward`), the partner is a real guest, and each step is read back from the
+partner's own game: its call ringing and ending, the subtitle shown, the hub
+drawn and closed (a screenshot of each screen), the reward given (its money
+read before and after), its story frozen and its save locked.
+
+- `story-probe-pair`: a phone call, a line, a dialogue hub, a reward.
+- Not reached by a probe: a real cinematic's camera and cast (the scene
+  replay's own scenarios, against a recorded session), a vehicle scene, a
+  gated area's notice (`gates-guest`, mock), a quest item and a journal
+  entry of a real quest (`story-session-items`, mock), a mission's branch.
+
 ## Open problems
 
 - **What a guest brings home** (proposal 2026-11-19): `quest-carryover.md`.
