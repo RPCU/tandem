@@ -3669,7 +3669,7 @@ public:
       m_center = m_heard.back().second.position;
     const float kRadius = m_options.driveRadius;
     constexpr float kSpeed = 8.f;
-    const float angle = static_cast<float>(nowUs / 1e6) * kSpeed / kRadius;
+    const float angle = static_cast<float>(nowUs / 1e6) * kSpeed / kRadius + m_angleFrom;
     const Vec3 at{m_center->x + kRadius * std::cos(angle), m_center->y + kRadius * std::sin(angle),
                   m_center->z};
     const Vec3 velocity{-kSpeed * std::sin(angle), kSpeed * std::cos(angle), 0.f};
@@ -3688,6 +3688,20 @@ public:
 
   void Park(const Vec3 &at) { m_parkedAt = at; }
   void Unpark() { m_parkedAt.reset(); }
+  // Off again from the car parked at `car` (--summon-board): the circle goes
+  // on from there, so the car we drive is the one we got into, not a point
+  // of the circle the clock has reached (145 m off: the others' game took
+  // it for another car, garage-summon-other 2026-11-28).
+  void UnparkFrom(const Vec3 &car, std::uint64_t nowUs) {
+    m_parkedAt.reset();
+    const auto center = Center();
+    if (!center)
+      return;
+    const float kRadius = m_options.driveRadius;
+    constexpr float kSpeed = 8.f; // Drive's
+    m_angleFrom = std::atan2(car.y - center->y, car.x - center->x) -
+                  static_cast<float>(nowUs / 1e6) * kSpeed / kRadius;
+  }
   // drive: the circle's centre (where your V was first heard; none yet).
   std::optional<Vec3> Center() {
     if (!m_center && !m_heard.empty())
@@ -3699,6 +3713,7 @@ public:
 private:
   std::optional<Vec3> m_center;
   std::optional<Vec3> m_parkedAt;
+  float m_angleFrom = 0.f; // drive: where on the circle it starts (UnparkFrom)
   std::optional<Vec3> m_beside;
   std::optional<Vec3> m_station;
 
@@ -6377,7 +6392,7 @@ int main(int argc, char **argv) {
         if (!summon.arrivingUs && after(summon.parkedAt, options.summonBoardSeconds) &&
             (options.summonAgainSeconds < 0 || summon.round > 1)) {
           summon.boarded = true;
-          puppeteer.Unpark();
+          puppeteer.UnparkFrom(summon.stop, nowUs);
           Log("summon: we get in our car");
         }
       }
