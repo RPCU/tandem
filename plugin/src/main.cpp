@@ -11,6 +11,7 @@
 #include "engine/posestream.hpp"
 #include "engine/quests.hpp"
 #include "engine/scenes.hpp"
+#include "engine/scenetest.hpp"
 #include "engine/trace.hpp"
 #include "engine/vehiclemove.hpp"
 #include "installed.hpp"
@@ -296,6 +297,8 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
       engine::FeatureNotAsked(engine::feature::kQuestNodes, why);
       engine::FeatureSwitchedOff(engine::feature::kQuestFreeze, why);
     }
+    // (test) Scenes started outside their quest (engine/scenetest.cpp).
+    engine::InstallSceneTest(sdk, handle, runtime.config.sceneTest);
     // The scripted moments marked by hand (docs/architecture/scripted-moments.md,
     // "The moment list"): shipped beside the DLL, plus tandem.ini's.
     LoadMoments(PluginDirectory(handle) / "moments.txt");
@@ -338,6 +341,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     engine::RemovePoseStream(g_sdk, handle);
     engine::RemoveTrace(g_sdk, handle);
     engine::RemoveQuestFreeze(g_sdk, handle);
+    engine::RemoveSceneTest(g_sdk, handle);
     engine::RemovePoseHook();
     log::Info("tandem unloaded");
     log::g_logger = nullptr;

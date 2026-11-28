@@ -13,6 +13,7 @@
 #include "engine/prefabs.hpp"
 #include "engine/quests.hpp"
 #include "engine/scenes.hpp"
+#include "engine/scenetest.hpp"
 #include "log.hpp"
 #include "mods.hpp"
 #include "runtime.hpp"
@@ -439,6 +440,27 @@ struct TandemStory : Red::IScriptable {
   // Spike C2: log phases and their journal nodes.
   static void QuestTrace(bool on) { engine::SetQuestTrace(on); }
   static Red::CString FreezeReport() { return Red::CString(engine::QuestFreezeReport().c_str()); }
+
+  // (test) A scene started outside its quest, by the scene system's own
+  // entry (engine/scenetest.cpp; story scene play …, SceneTest.reds). Each
+  // answers the line to log.
+  static Red::CString ScenePlay(const Red::CString &path, const Red::CString &entry, bool again) {
+    return Red::CString(engine::ScenePlay(path.c_str(), entry.c_str(), again).c_str());
+  }
+  static Red::CString SceneStop() { return Red::CString(engine::SceneStop().c_str()); }
+  static Red::CString SceneInfo(const Red::CString &path) {
+    return Red::CString(engine::SceneInfo(path.c_str()).c_str());
+  }
+  static Red::CString SceneCast(bool on) { return Red::CString(engine::SceneCast(on).c_str()); }
+  static Red::CString SceneHand(std::uint64_t entity) {
+    return Red::CString(engine::SceneHand(entity).c_str());
+  }
+  static Red::DynArray<std::uint64_t> SceneCastEntities() {
+    Red::DynArray<std::uint64_t> out;
+    for (const auto entity : engine::SceneCastEntities())
+      out.EmplaceBack(entity);
+    return out;
+  }
 
   // What the session said since the last call, oldest first.
   static Red::DynArray<TandemStoryEvent> TakeEvents() {
@@ -1499,6 +1521,12 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(FreezeHeld);
   RTTI_METHOD(FreezeLost);
   RTTI_METHOD(FreezeReport);
+  RTTI_METHOD(ScenePlay);
+  RTTI_METHOD(SceneStop);
+  RTTI_METHOD(SceneInfo);
+  RTTI_METHOD(SceneCast);
+  RTTI_METHOD(SceneHand);
+  RTTI_METHOD(SceneCastEntities);
   RTTI_METHOD(Grouped);
   RTTI_METHOD(IsGrouped);
   RTTI_METHOD(QuestTrace);

@@ -186,6 +186,9 @@ struct Config {
   std::string puppetFemale{"Character.TandemPuppetWa"};
   std::string puppetMale{"Character.TandemPuppetMa"};
   bool probe{false};
+  // (test) The scene system's own entry, called by `story scene play …`
+  // (engine/scenetest.cpp): its hooks go in only when this is on.
+  bool sceneTest{false};
   bool trace{false};
   bool mirror{false};
   bool pose{true};

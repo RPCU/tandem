@@ -16,6 +16,7 @@
 #include "prefabs.hpp"
 #include "quests.hpp"
 #include "ragdoll.hpp"
+#include "scenetest.hpp"
 #include "slots.hpp"
 #include "vehiclemove.hpp"
 #include "workspots.hpp"
@@ -63,6 +64,8 @@ constexpr std::string_view kOrder[] = {
     feature::kVehicleMove,
     feature::kBodySlots,
     feature::kCrowdSpawners,
+    feature::kRagdoll,
+    feature::kSceneTest,
 };
 
 // Under g_lock: the entries in the summary's order.
@@ -242,6 +245,7 @@ void CheckAccess() {
   CheckBodySlots();
   CheckCrowdSpawners();
   CheckRagdoll();
+  CheckSceneTest();
   g_checked = true;
   const auto summary = AccessSummary();
   if (FeaturesOff().empty())
