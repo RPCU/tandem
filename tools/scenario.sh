@@ -505,6 +505,10 @@ find_spot() {
   saved=$(awk -v k="$kind" -v lo="$min" -v hi="$max" '$1 == k && $2 == lo && $3 == hi { print $4, $5, $6 }' "$file" 2>/dev/null | tail -1)
   [ -z "$saved" ] || places+=("$saved")
   while read -r place; do places+=("$place"); done < <(fixtures)
+  # Invulnerable while it searches: a try put our hosting V, alone in its
+  # session, among gangers who shot it dead (pair-devices-mine, 2026-11-28).
+  # Off again once a spot is found: a scenario may read our V's health.
+  cmd god on
   mark
   cmd fixture pins "${SPOT_TRIES:-16}"
   if await 'fixture: pins done' 10 >/dev/null; then
@@ -527,6 +531,7 @@ find_spot() {
         echo "$kind $min $max $found"
       } >"$file.new" && mv "$file.new" "$file"
       note "find_spot: $kind $found_device $found_class within $min-$max m of $found (kept in $file)"
+      cmd god off
       mark
       return 0
     fi

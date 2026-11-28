@@ -6,16 +6,22 @@
 # prop), never shown moving, and is not kinematic.
 # To look at: the prop where the host left it as soon as we arrive.
 ensure join
-at "${PROPS_AT:-kabuki-market}"
-mark
-cmd props look
-expect 'props: (looks at [0-9a-f]+|V looks at no placed entity)' 5
+# V turns at the spot until it looks at a prop (eight headings at most: a
+# fixture's own heading faced none, 2026-11-28).
+read -r px py pz _ <<<"$(spot "${PROPS_AT:-kabuki-market}")"
+for yaw in 0 45 90 135 180 225 270 315; do
+  at "$px $py $pz $yaw"
+  mark
+  cmd props look
+  expect 'props: (looks at [0-9a-f]+|V looks at no placed entity)' 5
+  since | grep -qE 'props: looks at .* kinematic false' && break
+done
 since | grep -q 'props: looks at ' ||
-  fail "V looks at no prop at ${PROPS_AT:-kabuki-market}: set PROPS_AT to a spot facing one"
+  fail "V looks at no prop at ${PROPS_AT:-kabuki-market}, whichever way it turns: set PROPS_AT to a spot facing one"
 # A body kinematic by design (a vending machine) is no physics prop: no
 # game moves it, so it proves nothing here.
 since | grep -qE 'props: looks at .* kinematic false' ||
-  fail "V looks at a kinematic body at ${PROPS_AT:-kabuki-market} ($(since | grep -oE 'props: looks at [0-9a-f]+ \([A-Za-z]+\)' | tail -1)): set PROPS_AT to a spot facing a bin, a crate or a chair"
+  fail "V looks at a kinematic body at ${PROPS_AT:-kabuki-market} ($(since | grep -oE 'props: looks at [0-9a-f]+ \([A-Za-z]+\)' | tail -1)), whichever way it turns: set PROPS_AT to a spot facing a bin, a crate or a chair"
 read -r prop px py pz < <(since | grep -oE 'props: looks at [0-9a-f]+ .* part 0 at [-0-9.]+ [-0-9.]+ [-0-9.]+' | tail -1 | awk '{ print $4, $(NF - 2), $(NF - 1), $NF }')
 note "prop $prop at $px $py $pz"
 peer host --mode front --body male --prop "$prop:$px,$py,$pz@0"
