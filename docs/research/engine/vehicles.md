@@ -815,7 +815,7 @@ a check of both functions' starts and both slots (`dispose gate` off
 otherwise, and such entities are left). A gate check of `+0x229F5C` from a
 script tick was itself racy: the scripts ran on job threads 508 to 536.
 
-### 13.162 The summoned car: its states, its events, one body per garage vehicle (2026-11-28, game 2.50, scripts and exe read; not run in game)
+### 13.165 The summoned car: its states, its events, one body per garage vehicle (2026-11-28, game 2.50, scripts and exe read; not run in game)
 
 - **The script surface** [R, `final.reds` (2.50)]: `VehicleSystem` is
   native (`SpawnActivePlayerVehicle` @ `0x1421AE2F0`, `SpawnPlayerVehicle`

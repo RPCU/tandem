@@ -113,7 +113,7 @@ Decided by the user 2026-11-19 (the recommended defaults):
     (`kOwnCarMoving`: the game's `SummonState` EnRoute, or moving), when
     the game's summon ends (Arrived or AlreadySummoned: `kOwnCarArrived`,
     every copy honks and flashes once the game's way, `HonkAndFlash`, a
-    bike put on its stand; research §13.162), and when it has stood still
+    bike put on its stand; research §13.165), and when it has stood still
     1 s elsewhere than said (where it stands).
     While it moves its transform goes as our `VehicleState` (30 Hz, the
     compact form and relevance rate of a driven car: one stream per player
