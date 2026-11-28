@@ -33,10 +33,22 @@ compile checks); nothing here has run in Cyberpunk yet. Engine facts:
   destruction, a dismemberment, a break: `traffic.md`, `combat.md`,
   `devices.md`), so it falls at the same moment, in each game's own way.
   By design, not a degradation.
-- **World dynamic meshes** (`worldDynamicMeshNode`: sector nodes with
-  physics and no entity, §13.169) have no script surface and no name a
-  script can read: not shared yet (Open). Whether the city's bins and
-  cones are entities or nodes is the first thing the in-game run tells.
+- **Props that are world nodes are not shared (known limit, decided
+  2026-11-28).** About 9 in 10 of the bodies a V or a car knocks over in
+  a street are no entity: instanced destructible meshes
+  (`worldInstancedDestructibleMeshNode`, 1,238 movable bodies around V
+  in Kabuki against about 150 entity bodies; `worldDynamicMeshNode`
+  is rare), measured live, §13.163. They have no script surface and no
+  RTTI function; their bodies are reached only through raw layouts not
+  yet measured, so sharing them would cost raw-layout work against little
+  that shows: each game moves its own copies from causes that are shared
+  already (a car copy pushes them as it drives, `vehicles.md`; shots and
+  blasts are shared), so they scatter on both screens and differ only in
+  where each comes to rest (which meshes they are was not read: their
+  paths are hashes). Whether a
+  V's puppet on foot kicks them in the other game is not known
+  (`players.md`, the collision capsule). The entity props above are
+  shared.
 
 ## The rule
 
@@ -146,10 +158,11 @@ player's word.
 
 ## Open
 
-- World dynamic meshes (§13.169): their node instances (RHT's world
-  inspector reaches them by the streaming system's node registry, MIT) and
-  their physics proxies; a name for one (its sector and node index). Until
-  then not shared.
+- World-node props (§13.163, a known limit above): what reaching them
+  would take is a name (the instance's global node id and the body's
+  index), the instances (a registry fed by the engine's node attach and
+  detach, as RHT's world inspector does, MIT) and the per-instance bodies
+  (the array at +0x150 of the node instance, its elements not yet known).
 - Whether `PhysicalCollisionEvent` reaches every placed physics entity
   (§13.169, unverified): `props-host` tells (no touch: no share).
 - Rotation speed is not sent: a tumbling prop is drawn between poses.
