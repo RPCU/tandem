@@ -38,7 +38,7 @@ compile checks); nothing here has run in Cyberpunk yet. Engine facts:
   a street are no entity: instanced destructible meshes
   (`worldInstancedDestructibleMeshNode`, 1,238 movable bodies around V
   in Kabuki against about 150 entity bodies; `worldDynamicMeshNode`
-  is rare), measured live, §13.163. They have no script surface and no
+  is rare), measured live, §13.171. They have no script surface and no
   RTTI function; their bodies are reached only through raw layouts not
   yet measured, so sharing them would cost raw-layout work against little
   that shows: each game moves its own copies from causes that are shared
@@ -153,7 +153,7 @@ player's word.
 
 ## Open
 
-- World-node props (§13.163, a known limit above): what reaching them
+- World-node props (§13.171, a known limit above): what reaching them
   would take is a name (the instance's global node id and the body's
   index), the instances (a registry fed by the engine's node attach and
   detach, as RHT's world inspector does, MIT) and the per-instance bodies

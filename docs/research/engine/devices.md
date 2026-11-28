@@ -394,7 +394,7 @@ worldMeshNode`, instance `worldDynamicMeshNodeInstance`, 0x1b0 bytes) is a
   sector node with no entity: no `EntityID`, no script object, no targeting
   component (`parity.md` row 4: "not readable"). Measured since: most
   street clutter is a third kind, `worldInstancedDestructibleMeshNode`
-  (§13.163). [2.5-untested]
+  (§13.171). [2.5-untested]
 - **A body by script**: `PhysicalMeshComponent.CreatePhysicalBodyInterface(opt
 bodyIndex)` (`:209441`; `ColliderComponent` has one too, `:202652`)
   returns `PhysicalBodyInterface` (`:209478`), whose script declaration has
@@ -421,7 +421,7 @@ originInCOM, opt offset)`, `SetIsQueryable`. The game's own devices wake a
 - A component's place: `IPlacedComponent.GetLocalToWorld()` and
   `GetInitialPosition()` (`:19992`). [2.5-untested]
 
-### 13.163 How many of the city's physics props are world nodes (2026-11-28, live RTTI read of 2.50 on instance c in Kabuki, V at (-915, 1885, 36); Ghidra; RHT's world inspector, MIT)
+### 13.171 How many of the city's physics props are world nodes (2026-11-28, live RTTI read of 2.50 on instance c in Kabuki, V at (-915, 1885, 36); Ghidra; RHT's world inspector, MIT)
 
 - **Counted live** (`tools/re` scans by vtable, read-only; the whole
   streamed set around V, not a radius): physics clutter is
