@@ -53,7 +53,9 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // menu shows the host's rules, coop-menu.md).
 // 26: LinkDecline's reasons 2-4, a call's outcomes (declined, busy, missed).
 // 27: OwnCar appended (a player's summoned car, garage.md 1a).
-inline constexpr std::uint16_t kProtocolVersion = 27;
+// 28: OpenWorldDone appended (the host's open-world activities done,
+// story.md "Open-world activities"; a game of 27 cannot read it).
+inline constexpr std::uint16_t kProtocolVersion = 28;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3483,6 +3485,25 @@ struct OwnCar {
 // Flags this version knows, finite numbers, and no car is nothing else
 // (one wire form for it, so a repeat is equal).
 bool Fits(const OwnCar &car);
+// ---- The host's open-world activities (docs/architecture/story.md,
+// "Open-world activities") ----
+//
+// The NCPD scanner activities the host's world has done (its hustles,
+// reported crimes, gang watches, outposts, hidden stashes: the map pins the
+// game's own MinimapPOIMappinController.IsNcpdScanner names): each by its
+// point-of-interest mappin's journal path hash (PointOfInterestMappin
+// .GetJournalPathHash: static journal data, the same in every game), done
+// when that mappin's phase is CompletedPhase. Host to guests, the whole set
+// on every change (sorted, no 0; empty: none), a story message: kept for
+// late joiners, in the story digest, an explicit "none" in a story resync,
+// as WorldPrefabs. A guest grouped with the host shows the host's phase on
+// its own pins and credits what it saw done; nothing reaches its save.
+inline constexpr std::size_t kMaxOpenWorldDone = 512;
+struct OpenWorldDone {
+  PlayerId player{}; // whose world (the host): set by the host's endpoint
+  std::vector<std::uint32_t> markers;
+  friend bool operator==(const OpenWorldDone &, const OpenWorldDone &) = default;
+};
 
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
@@ -3506,7 +3527,7 @@ using MessageVariant = std::variant<
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
-    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose, OwnCar>;
+    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose, OwnCar, OpenWorldDone>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
@@ -3516,7 +3537,7 @@ bool operator==(const Message &a, const Message &b);
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
 // VehicleUnlock, StoryRestrictions, QuestInteract, SceneProp, ScenePlace,
-// WorldPrefabs, StoryGates):
+// WorldPrefabs, StoryGates, OpenWorldDone):
 // endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit, Throw … Defended, ThrowPath),

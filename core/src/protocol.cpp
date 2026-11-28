@@ -659,6 +659,12 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *gates = std::get_if<StoryGates>(&message);
       gates && (gates->flags & ~kGateFlags) != 0)
     return std::nullopt;
+  if (const auto *done = std::get_if<OpenWorldDone>(&message);
+      done &&
+      (done->markers.size() > kMaxOpenWorldDone ||
+       std::ranges::adjacent_find(done->markers, std::greater_equal<>{}) != done->markers.end() ||
+       std::ranges::find(done->markers, std::uint32_t{0}) != done->markers.end()))
+    return std::nullopt;
   if (const auto *visuals = std::get_if<StatusVisuals>(&message);
       visuals && (visuals->records.size() > kMaxStatusVisuals ||
                   std::ranges::adjacent_find(visuals->records, std::greater_equal<>{}) !=
@@ -743,6 +749,7 @@ bool IsStory(const Message &message) {
          std::holds_alternative<ScenePlace>(message) ||
          std::holds_alternative<WorldPrefabs>(message) ||
          std::holds_alternative<StoryGates>(message) ||
+         std::holds_alternative<OpenWorldDone>(message) ||
          (message.index() >= kId<SceneState> && message.index() <= kId<SceneLine>) ||
          std::holds_alternative<VehicleUnlock>(message);
 }
@@ -950,7 +957,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "TrafficLights",
                                    "NpcVoice",
                                    "CorpsePose",
-                                   "OwnCar"};
+                                   "OwnCar",
+                                   "OpenWorldDone"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

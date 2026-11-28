@@ -320,11 +320,15 @@ struct Options {
   // (AIQuickHackStatusEffect.HackingInterrupted on it for 2 s; -1: never).
   double hackInterruptSeconds{-1.0};
   int hackCarSeconds{0};
-  std::string storyFile;         // host: a scripted story (tools/scenarios/story-host.story)
-  std::string restrictions;      // host: story restrictions on its V (REC[,REC]), as steps
-  double restrictAt{2.0};        // ...this long after a guest is in
-  double restrictFor{0.0};       // ...lifted after this long (0: never)
-  std::string prefabs;           // host: its quests' world prefabs (REF[,REF], hex), as a step
+  std::string storyFile;      // host: a scripted story (tools/scenarios/story-host.story)
+  std::string restrictions;   // host: story restrictions on its V (REC[,REC]), as steps
+  double restrictAt{2.0};     // ...this long after a guest is in
+  double restrictFor{0.0};    // ...lifted after this long (0: never)
+  std::string prefabs;        // host: its quests' world prefabs (REF[,REF], hex), as a step
+  std::string activities;     // host: its open-world activities done (HASH[,HASH], hex)
+  double activitiesAt{2.0};   // ...this long after a guest is in
+  std::string activitiesThen; // ...and this set later (--activities-then-at)
+  double activitiesThenAt{0.0};
   int gates{-1};                 // our story gates (proto::kGate* bits), said once in session
   bool noFastTravel{};           // host: its quest blocks fast travel (kStoryNoFastTravel)
   int answerSeconds{-1};         // join: answer the host's ringing call after this long (-1: never)
@@ -835,6 +839,12 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --prefabs REF[,REF]  host: its quests have these world prefabs loaded (node\n"
          "                     refs, hex), 2 s after a guest is in; join: logs the host's\n"
          "                     set as heard\n"
+         "  --activities HASH[,HASH]|off  host: its world has these open-world activities\n"
+         "                     done (their map pins' journal path hashes, hex), said\n"
+         "                     --activities-at S after a guest is in (default 2); join: logs\n"
+         "                     the host's set as heard\n"
+         "  --activities-then HASH[,HASH] --activities-then-at S  host: its set later (one\n"
+         "                     done with the guest: the guest credits it)\n"
          "  --no-fast-travel   host: its quest blocks fast travel (StoryState's flag), 2 s\n"
          "                     after a guest is in: a guest's V never respawns far away\n"
          "  --gates N          our story gates (1 Watson lockdown lifted, 2 Dogtown open,\n"
@@ -2056,6 +2066,14 @@ Options Parse(int argc, char **argv) {
       options.restrictFor = Number<double>(value);
     } else if (flag == "--prefabs") {
       options.prefabs = value;
+    } else if (flag == "--activities") {
+      options.activities = value;
+    } else if (flag == "--activities-at") {
+      options.activitiesAt = Number<double>(value);
+    } else if (flag == "--activities-then") {
+      options.activitiesThen = value;
+    } else if (flag == "--activities-then-at") {
+      options.activitiesThenAt = Number<double>(value);
     } else if (flag == "--gates") {
       options.gates = Number<int>(value);
     } else if (flag == "--go-down") {
@@ -2487,6 +2505,9 @@ private:
 //   prefabs REF[,REF]|off        the world prefabs the host's quests have
 //                                loaded (node refs, hex); off: none
 //   gates N                      the host's story gates (proto::kGate* bits)
+//   activities HASH[,HASH]|off   the open-world activities the host's world
+//                                has done (map pins' journal path hashes,
+//                                hex); off: none
 //   restrict REC[,REC]|off       the gameplay restrictions the host's story
 //                                has on its V now (GameplayRestriction.NoCombat:
 //                                weapons away); off: lifted
@@ -2850,6 +2871,20 @@ std::optional<tandem::proto::Message> StoryMessage(const StoryStep &step, std::u
         }
       return set;
     }
+    if (step.verb == "activities" && !a.empty()) {
+      proto::OpenWorldDone set;
+      if (a[0] != "off")
+        for (std::size_t start = 0; start <= a[0].size();) {
+          const auto comma = std::min(a[0].find(',', start), a[0].size());
+          if (comma > start)
+            set.markers.push_back(static_cast<std::uint32_t>(
+                std::stoul(a[0].substr(start, comma - start), nullptr, 16)));
+          start = comma + 1;
+        }
+      std::ranges::sort(set.markers);
+      set.markers.erase(std::unique(set.markers.begin(), set.markers.end()), set.markers.end());
+      return set;
+    }
     if (step.verb == "gates" && !a.empty())
       return proto::StoryGates{.flags = static_cast<std::uint8_t>(std::stoi(a[0]))};
     if (step.verb == "effect" && a.size() >= 2)
@@ -2941,6 +2976,14 @@ std::string Describe(const tandem::proto::Message &message) {
   }
   if (const auto *gates = std::get_if<proto::StoryGates>(&message))
     return std::format("story gates: player {} flags {}", gates->player, gates->flags);
+  if (const auto *set = std::get_if<proto::OpenWorldDone>(&message)) {
+    std::string markers;
+    for (const auto marker : set->markers)
+      markers += std::format(" {:x}", marker);
+    return set->markers.empty() ? std::format("open-world done: none of player {}", set->player)
+                                : std::format("open-world done: {} of player {}:{}",
+                                              set->markers.size(), set->player, markers);
+  }
   if (const auto *set = std::get_if<proto::StoryRestrictions>(&message)) {
     std::string effects;
     for (const auto effect : set->effects)
@@ -4686,6 +4729,19 @@ int main(int argc, char **argv) {
   if (!options.prefabs.empty()) {
     story.push_back(
         {.at = 2.0, .verb = "prefabs", .args = {options.prefabs}, .rest = options.prefabs});
+    std::ranges::stable_sort(story, {}, &StoryStep::at);
+  }
+  // --activities, --activities-then: more steps of the host's story.
+  if (!options.activities.empty()) {
+    story.push_back({.at = options.activitiesAt,
+                     .verb = "activities",
+                     .args = {options.activities},
+                     .rest = options.activities});
+    if (!options.activitiesThen.empty())
+      story.push_back({.at = options.activitiesThenAt,
+                       .verb = "activities",
+                       .args = {options.activitiesThen},
+                       .rest = options.activitiesThen});
     std::ranges::stable_sort(story, {}, &StoryStep::at);
   }
   bool gatesSaid = false;

@@ -43,6 +43,8 @@ constexpr Info kCatalogue[] = {
     {"ragdoll state", Degraded, State,
      "bodies are neither read nor laid as their owner's lie: each copy lies as its own fall left "
      "it"},
+    {"activity marks", Degraded, State,
+     "a grouped guest's map shows its own NCPD activities, not the host's world's"},
     // ---- states the plugin and the scripts find ----
     {"drawn prompts", Degraded, State,
      "prompts on players and vendors are drawn by tandem, not the game's interactions"},
@@ -100,6 +102,8 @@ constexpr Info kCatalogue[] = {
      "a hit a V took is shown as the body's twitch: the game's pipeline played nothing"},
     {"summoned car unseen", Degraded, Fallback,
      "a partner's summoned car has no copy here: it appears when they get in"},
+    {"activity not marked", Degraded, Fallback,
+     "one NCPD activity's map pin would not take the host's state: it shows our own"},
 };
 
 std::size_t OrderOf(std::string_view id) {
