@@ -589,7 +589,7 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *voice = std::get_if<NpcVoice>(&message); voice && !Fits(*voice))
     return std::nullopt;
   if (const auto *corpse = std::get_if<CorpsePose>(&message); corpse && !Fits(*corpse))
-      return std::nullopt;
+    return std::nullopt;
   if (const auto *props = std::get_if<PropStates>(&message); props && !Fits(*props))
     return std::nullopt;
   if (const auto *rest = std::get_if<PropRest>(&message); rest && rest->entity == 0)

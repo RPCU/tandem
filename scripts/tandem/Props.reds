@@ -1,5 +1,5 @@
 // Physics props between players (docs/architecture/props.md; engine facts:
-// docs/research/engine/devices.md §13.162).
+// docs/research/engine/devices.md §13.169).
 //
 // A placed prop with a physics body (a placed entity's PhysicalMeshComponent:
 // a bin, a crate, a chair, a cone that is an entity) that something moved is

@@ -66,7 +66,7 @@ view, time bubbles (`time.md`), a V's own body (`players.md`).
    §13.162; `tools/scenarios/pair-corpse-pose.sh`). Left: a game that links later.
 4. **Physics props** (row 4): built (`props.md`, protocol 29, not run in
    game): placed prop entities something moved, by their area owner. Left:
-   world dynamic meshes (no entity, §13.162), and the run (`props-host`,
+   world dynamic meshes (no entity, §13.169), and the run (`props-host`,
    `props-guest`, `props-latecomer`).
 5. **The summoned car** (row 5): built (`OwnCar`, protocol 27, not run
    in game): seen from its arrival, driving in and parked, as its owner's
