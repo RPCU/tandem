@@ -13,9 +13,11 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <functional>
 #include <map>
 #include <optional>
+#include <set>
 
 using namespace std::chrono_literals;
 using namespace tandem;
@@ -141,6 +143,65 @@ TEST_CASE("open world: a pin the host's world matches again is put back and forg
   CHECK(map.phase[kOwnDone] == kCompleted);
   CHECK(mirror.Ours().empty());
   CHECK(mirror.Lift().empty());
+}
+
+TEST_CASE("open world: a pin the player tracked is tracked again when it is put back") {
+  Map map;
+  map.phase = {{kKabuki, kDiscovered}, {kNorthside, kDefault}, {kFar, kDiscovered}};
+  Mirror mirror;
+  mirror.Host(proto::OpenWorldDone{.player = 1, .markers = {kKabuki, kNorthside, kFar}});
+  // The player tracks kKabuki: set done (the engine untracks it), remembered.
+  auto pins = map.Pins();
+  for (auto &pin : pins)
+    pin.tracked = pin.marker == kKabuki;
+  const auto shown = mirror.Update(true, pins);
+  CHECK(std::ranges::none_of(shown, [](const Step &step) { return step.track; }));
+  map.Apply(shown);
+  CHECK(map.phase[kKabuki] == kCompleted);
+  CHECK(mirror.Untracked() == std::set<std::uint32_t>{kKabuki});
+  // Streamed in again by our game, untracked: set again, still remembered.
+  map.phase[kKabuki] = kDiscovered;
+  map.Apply(mirror.Update(true, map.Pins()));
+  CHECK(mirror.Untracked().size() == 1);
+
+  // Apart: put back, and only kKabuki is tracked again.
+  const auto back = mirror.Update(false, map.Pins());
+  CHECK(back.size() == 3);
+  for (const auto &step : back)
+    CHECK(step.track == (step.marker == kKabuki));
+  CHECK(std::ranges::find(back, Step{kKabuki, kDiscovered, true}) != back.end());
+  CHECK(mirror.Untracked().empty());
+
+  // Grouped again with nothing tracked: the leave tracks nothing.
+  map.Apply(back);
+  map.Apply(mirror.Update(true, map.Pins()));
+  const auto lift = mirror.Lift();
+  CHECK(lift.size() == 3);
+  CHECK(std::ranges::none_of(lift, [](const Step &step) { return step.track; }));
+
+  // Tracked, set done, and the session ends: the leave tracks it again.
+  map.Apply(lift);
+  mirror.Host(proto::OpenWorldDone{.player = 1, .markers = {kNorthside}});
+  pins = map.Pins();
+  for (auto &pin : pins)
+    pin.tracked = pin.marker == kNorthside;
+  map.Apply(mirror.Update(true, pins));
+  CHECK(map.phase[kNorthside] == kCompleted);
+  CHECK(mirror.Lift() == std::vector<Step>{{kNorthside, kDefault, true}});
+}
+
+TEST_CASE("open world: a pin the host's world matches again is put back with its track") {
+  Map map;
+  map.phase = {{kFar, kDiscovered}};
+  Mirror mirror;
+  mirror.Host(proto::OpenWorldDone{.player = 1, .markers = {kFar}});
+  map.Apply(mirror.Update(true, std::vector<Seen>{{kFar, kDiscovered, true}}));
+  CHECK(map.phase[kFar] == kCompleted);
+  // A resync without it (its world reset the activity): ours again, tracked.
+  mirror.Host(proto::OpenWorldDone{.player = 1});
+  CHECK(mirror.Update(true, map.Pins()) == std::vector<Step>{{kFar, kDiscovered, true}});
+  CHECK(mirror.Ours().empty());
+  CHECK(mirror.Untracked().empty());
 }
 
 TEST_CASE("open world: the story record keeps the host's set, one change at a time") {

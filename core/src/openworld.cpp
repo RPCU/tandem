@@ -52,8 +52,9 @@ std::vector<Step> Mirror::Update(bool grouped, std::span<const Seen> ours) {
     if (want == own) {
       // The host's state is ours again: put back, and ours no longer.
       if (it != m_ours.end()) {
-        if (seen.phase != own)
-          steps.push_back({seen.marker, own});
+        const auto back = Back(seen.marker, own);
+        if (seen.phase != own || back.track)
+          steps.push_back(back);
         m_ours.erase(it);
       }
       continue;
@@ -62,8 +63,13 @@ std::vector<Step> Mirror::Update(bool grouped, std::span<const Seen> ours) {
       m_ours.emplace(seen.marker, seen.phase);
     else if (seen.phase != want)
       ++m_reapplied; // our game put it back (streamed in again)
-    if (seen.phase != want)
+    if (seen.phase != want) {
+      // The engine's setter untracks a pin set done: the player's track is
+      // given back with the pin.
+      if (want == kCompleted && seen.tracked)
+        m_untracked.insert(seen.marker);
       steps.push_back({seen.marker, want});
+    }
   }
   return steps;
 }
@@ -79,8 +85,16 @@ std::vector<Step> Mirror::Release() {
   std::vector<Step> steps;
   steps.reserve(m_ours.size());
   for (const auto &[marker, own] : m_ours)
-    steps.push_back({marker, own});
+    steps.push_back(Back(marker, own));
   m_ours.clear();
+  m_untracked.clear();
   return steps;
+}
+
+Step Mirror::Back(std::uint32_t marker, std::uint8_t own) {
+  // A pin is only ever untracked by being set done, and its own phase is
+  // then not done (else it would not have been set): it can be tracked.
+  const bool track = m_untracked.erase(marker) > 0 && own != kCompleted;
+  return {marker, own, track};
 }
 } // namespace tandem::openworld
