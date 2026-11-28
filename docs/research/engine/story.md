@@ -1171,3 +1171,40 @@ phase in edx, all 32 bits)`. It looks the pin's journal hash (+0x8C) up
   phase's nodes keeps a game from setting the scene again. A community
   already active from the save spawns its people all the same.
   [2.5-verified offline for the resource; the hold: unverified]
+
+### 13.165 A map pin tracked again from outside; what Dogtown's open-world pins are (2026-11-28, read in final.reds (2.50) and the 2.50 exe disassembled; not run)
+
+For `docs/architecture/story.md`, "Open-world activities". F is
+`final.reds (2.50)`.
+
+- **Who tracks a pin**: the world map's `TrackMappin(controller)` native
+  (`gameuiWorldMapMenuGameController`, 0x142d5ca28) calls 0x142d5913c,
+  which takes the controller's pin (its weak handle at +0xA0) and calls its
+  `MappinSystem`'s vtable +0x220 with the pin's `NewMappinID` (pin +0x40),
+  or +0x228 when there is none. +0x228 is 0x142d44a20, the same function
+  the script native `MappinSystem.UntrackMappin` jumps to (F:51151); +0x220
+  is 0x142d449bc (address-library hash 3769177737): under the system's
+  lock (+0x198) it stores the id as the manually tracked pin (+0x1B8, what
+  `GetManuallyTrackedMappinID` answers, F:51147, and what
+  `PointOfInterestMappin_SetPhase` clears for a completed pin, §13.162),
+  then tells the system (0x142d426a8: system, old id, new id). So
+  `void (system, NewMappinID by value)` tracks a pin as the player does.
+  Scripts read it back with `IMappin.IsPlayerTracked()` and give the id
+  with `IMappin.GetNewMappinID()` (`NewMappinID.value`, Uint64, F:177615).
+  [2.5-verified offline: disassembled with tools/re] [unverified in game:
+  the drawn track, the GPS path; `openworld-track` reads it]
+- **No script call tracks a given pin**: `MappinSystem` has
+  `SetMappinTrackingAlternative`, `GetManuallyTrackedMappinID`,
+  `UntrackMappin` (F:51145-51151) and no track; the world map's needs its
+  controller. [2.5-verified offline]
+- **Dogtown's open-world pins are not points of interest**: the 2.0 world
+  encounters (`Zzz12_WorldEncounterVariant`, drawn as `outpost`,
+  F:276540) get their own minimap widget only outside its
+  `IsExactlyA(n"gamemappinsPointOfInterestMappin")` branch (F:337908):
+  another mappin class, with no phase in the system's saved
+  point-of-interest table (§13.162) to mirror. No script system runs
+  Phantom Liberty's airdrops (no airdrop class in F; only their loot
+  status effects, F:41290): their quest phases do. [2.5-verified offline
+  for the scripts] [unverified: that the airdrops are world encounters,
+  their mappin class and their quest; that Dogtown has no NCPD scanner
+  pins]
