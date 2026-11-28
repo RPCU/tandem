@@ -898,8 +898,9 @@ public class TandemComms {
       // (link = auto consents to everyone: no request to speak of.)
       this.Notice("Comms-LinkSent", name);
     }
-    if now == 0 {
-      // Nothing between us: our call taken back, or their request.
+    if now == 0 && !(before == 1 && this.m_holocall.JustCalled(player, this.m_now)) {
+      // Nothing between us: our call taken back, or their request. (Not
+      // the old request a new call withdrew just before it: PhoneCall.)
       this.m_holocall.Ended(player, this.m_now);
     }
     if now != 2 && this.m_offerFrom == player {
