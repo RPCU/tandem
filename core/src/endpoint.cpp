@@ -1403,6 +1403,10 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
     // Nor any world prefab (a guest that missed the last change unloads).
     if (resync && !m_story.PrefabsOn())
       Send(peer, proto::WorldPrefabs{.player = m_you});
+    // Nor any open-world activity done (a guest that missed the last change
+    // shows its own pins again; ForJoiner said it when the host had).
+    if (resync && !m_story.OpenWorldSaid())
+      Send(peer, proto::OpenWorldDone{.player = m_you});
   } else if (domains & proto::kDomainNpcs) {
     // Its view changed, not the story: the cast as its view holds it now.
     SendCastTo(peer);
@@ -3581,6 +3585,20 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
     set.erase(std::unique(set.begin(), set.end()), set.end());
     if (set.size() > proto::kMaxWorldPrefabs)
       set.resize(proto::kMaxWorldPrefabs);
+    if (!m_story.Note(message))
+      return;
+    Broadcast(message);
+    return;
+  }
+  if (auto *done = std::get_if<proto::OpenWorldDone>(&message)) {
+    done->player = m_you;
+    // One set, said one way, as the prefabs (no marker is 0).
+    auto &set = done->markers;
+    std::erase(set, std::uint32_t{0});
+    std::ranges::sort(set);
+    set.erase(std::unique(set.begin(), set.end()), set.end());
+    if (set.size() > proto::kMaxOpenWorldDone)
+      set.resize(proto::kMaxOpenWorldDone);
     if (!m_story.Note(message))
       return;
     Broadcast(message);

@@ -62,6 +62,7 @@ TANDEM_SAID_BY(Host, TimeSkipResult)
 TANDEM_SAID_BY(Host, VehicleUnlock)
 TANDEM_SAID_BY(Host, StoryRestrictions)
 TANDEM_SAID_BY(Host, WorldPrefabs)
+TANDEM_SAID_BY(Host, OpenWorldDone)
 TANDEM_SAID_BY(Host, BreachResult)
 // Who holds a turret is the host's to say (devices::TurretHolds).
 TANDEM_SAID_BY(Host, TurretBusy)
@@ -829,6 +830,8 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           inRange = (m.flags & ~p::kGateFlags) == 0;
         } else if constexpr (std::is_same_v<M, p::WorldPrefabs>) {
           inRange = m.prefabs.size() <= p::kMaxWorldPrefabs;
+        } else if constexpr (std::is_same_v<M, p::OpenWorldDone>) {
+          inRange = m.markers.size() <= p::kMaxOpenWorldDone;
         } else if constexpr (std::is_same_v<M, p::SceneState>) {
           finite = std::isfinite(m.rate) && Finite(m.anchor) && std::isfinite(m.yaw) &&
                    std::isfinite(m.radius);
@@ -1352,6 +1355,13 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
           if (m.player != m_hostPlayer)
             Add("authority.host-only",
                 std::format("world prefabs said to be player {}'s: only the host's world has them",
+                            m.player));
+        } else if constexpr (std::is_same_v<M, p::OpenWorldDone>) {
+          // The host's world: the activities its own game finished.
+          if (m.player != m_hostPlayer)
+            Add("authority.host-only",
+                std::format("open-world activities said to be player {}'s: only the host's world "
+                            "decides them",
                             m.player));
         } else if constexpr (std::is_same_v<M, p::StoryState>) {
           notOurs(m.player);

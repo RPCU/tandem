@@ -489,6 +489,21 @@ TEST_CASE("referee: world prefabs are the host's world, story gates each player'
   CHECK(Broke(guest, "authority.own-state-back"));
 }
 
+TEST_CASE("referee: open-world activities done are the host's world's") {
+  // A guest may not speak for the host's world.
+  auto host = Host();
+  host.Received(2, proto::OpenWorldDone{.player = 2, .markers = {0x10}}, kSecond);
+  CHECK(Broke(host, "authority.host-only"));
+
+  auto guest = Guest();
+  guest.Received(1, proto::OpenWorldDone{.player = 1, .markers = {0x10, 0x20}}, kSecond);
+  guest.Received(1, proto::OpenWorldDone{.player = 1}, kSecond);
+  CHECK(Rules(guest).empty());
+  // Said to be another player's world.
+  guest.Received(1, proto::OpenWorldDone{.player = 3, .markers = {0x10}}, kSecond);
+  CHECK(Broke(guest, "authority.host-only"));
+}
+
 TEST_CASE("referee: the host may not say what only a guest asks") {
   auto referee = Guest();
   referee.Received(1, proto::ResyncRequest{1}, kSecond);
