@@ -68,8 +68,9 @@ view, time bubbles (`time.md`), a V's own body (`players.md`).
    a V or a car touched near both Vs, as a placed entity's transform.
 5. **The summoned car** (row 5): built (`OwnCar`, protocol 27, not run
    in game): seen from its arrival, driving in and parked, as its owner's
-   car copy (`garage.md` 1a). Left: run `garage-summon` and
-   `garage-summon-host`.
+   car copy (`garage.md` 1a); an old one goes out of sight as the garage
+   takes its own. Left: run `garage-summon`, `garage-summon-host` and
+   `garage-summon-other`.
 6. **The partner's stars** (row 8): built (its marker in the police's
    colours, its stars in its party entry; `police.md`, "The partner's stars"), not seen yet.
 7. **Devices, glass, police** (rows 7, 11–16, 23): built, never run in
