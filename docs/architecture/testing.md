@@ -452,6 +452,10 @@ RRGGBB[,RRGGBB][@HUE]` gives the car a custom paint (`CarPaint`: its
   relay (`--relay-token` if it needs one), logging `join code K7Q-2M9`; as
   guest, `join --code K7Q-2M9 --relay …` joins by code, and `join ADDRESS
 --code … --relay …` tries ADDRESS first (`tests/relay_loopback.sh`).
+  `--host-key HEX` (32 hex digits; host, with `--relay`): binds that host
+  ID on the relay and tells it to guests (`HostCard`), logging `host ID
+HEX (open to a join by it)`; `--host-invite`: bound, not open to a join
+  by it (relay.md, "Host IDs"; scenario `coop-host-id`).
 - **story** (milestone 6): `host --story FILE` plays a scripted host story
   (journal snapshot and changes, tracked entry, call phases, lines, hubs, a
   pick, scene tiers, a reward, the host's V in another world with `world

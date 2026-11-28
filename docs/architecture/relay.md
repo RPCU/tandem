@@ -276,6 +276,59 @@ fallback, and ENet never knows: it keeps talking to the proxy on
   keep registration whose replica is away (no answer, or sent on twice)
   falls back to a new code.
 
+## Host IDs
+
+One-click rejoin and the Join list's online badge (2026-11-28, decided by
+the user: like Steam friends' "Join game"; `relay/internal/relay/hostid.go`,
+tested in `hostid_test.go`; the C++ twin in `core/src/relay.cpp`, tested in
+`tests/relay_test.cpp`; **not yet run in game**).
+
+- **The key and the ID**: a host game keeps a permanent random 128-bit
+  **host key** (`host.key` next to tandem.ini, made at its first hosting
+  on a relay with `std::random_device`, the system's cryptographic source
+  on Windows; never in the repository). Its **host ID** is the first 16
+  bytes of SHA-256 of a label and the key (`HostIDOf`, `net::HostIdOf`).
+  The host's game gives the ID to each guest with the world at its welcome
+  (`proto::HostCard`, protocol 27), and the guest keeps it on its recent
+  host (`recent.txt`, `id:HEX …`). Knowing the ID binds nothing: that
+  takes the key, so a past guest cannot pose as the host.
+- **Binding** (`HostID`, 22: secret, key, flags, where the session is;
+  padded to 64; answered `HostBound`, 23, 6 bytes, or a redirect): a
+  registered host sends it as it registers and with every refresh (20 s).
+  It lives `HostIDTTL` (60 s) after the last one. Flag `FlagHostOpen`: a
+  guest may join by the ID; tandem.ini `campaign = invite` sends 0. The
+  binding lives on the ID's **owner** (`hostOwner`: its first 31 bits
+  give its region and replica, as a code's do); a replica that is not the
+  owner, and the entrance, redirect it there. A binding of a session on
+  the owner (the "where" family 0) is taken only from that session's
+  registered host, its address and its secret; one of a session on
+  another replica (family 4 or 6, that replica's address) from whoever
+  holds the key. At most `MaxHostIDs` (4096) bindings, `MaxHostIDsPerSource`
+  (4) new ones per source.
+- **Presence** (`QueryHost`, 24: the ID, padded to 64 → `HostState`, 25, 6
+  bytes): offline (no binding, a stale one, or its session gone), online
+  (not open to a join by the ID: invite only, or the session full) or
+  joinable.
+- **Join by ID** (`JoinHost`, 26: the ID, padded to 64 → `HostSession`, 27:
+  the secret and where the session is, 22 to 40 bytes; or `HostState`
+  when it may not): the guest then registers with the secret as usual,
+  at that replica.
+- **Guessing and listing**: 2^128 IDs; an unknown ID is answered exactly as
+  an offline host; nothing lists bindings. Host lookups are limited per
+  source on a bucket of their own (`HostLookupBurst` 16, then one per
+  `HostLookupInterval`, 2 s: a Join list of 8 hosts asked twice in a row),
+  told once when over it, then ignored; they never spend a code lookup nor
+  count in the code failures' budget, so `TestCodeGuessingIsSlow` and
+  `TestCodeFailuresFromEveryoneAreCapped` hold as before
+  (`TestHostLookupsAreApartFromCodeLookups`,
+  `TestHostIDsCannotBeGuessedOrListed`). Every answer is smaller than its
+  64-byte request (`TestHostIDRepliesAreSmall`); a host not open to its ID
+  never gives the secret (`TestAHostNotOpenToItsIDIsNotJoinableByIt`).
+- The game asks on a thread of the plugin's (`net::QueryHosts`, one ID at
+  a time: an answer does not name its ID; 700 ms each, 4 s in all), as the
+  Join list opens (`TandemNative.QueryPresence`).
+- No metrics of their own yet.
+
 ## The connection check
 
 Once registered, the client probes two relay ports from its relay socket:
