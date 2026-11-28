@@ -188,6 +188,15 @@ struct TandemObjects : Red::IScriptable {
                             .c_str());
   }
 
+  // (the parity dump) the session's record of what broke, the same on every
+  // game that heard it all: its pieces and their digest.
+  static Red::CString Record() {
+    const auto record = Runtime::Get().FractureRecord();
+    return Red::CString(std::format("record: {} piece(s), digest {:08x}", record >> 32,
+                                    static_cast<std::uint32_t>(record))
+                            .c_str());
+  }
+
   RTTI_IMPL_TYPEINFO(TandemObjects);
   RTTI_IMPL_ALLOCATOR();
 };
@@ -215,4 +224,5 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemObjects, "TandemObjects", {
   RTTI_METHOD(TakeEvents);
   RTTI_METHOD(Reset);
   RTTI_METHOD(Report);
+  RTTI_METHOD(Record);
 });

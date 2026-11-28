@@ -59,7 +59,7 @@ public class TandemParity {
     if IsDefined(tracked) {
       devices = tracked.ParityList(centers, radius);
     }
-    TandemNative.Log(s"parity glass: \(TandemObjects.Report())");
+    TandemNative.Log(s"parity glass: \(TandemObjects.Record())");
     system.RunCommand("street list");
     system.RunCommand("npc list");
     TandemNative.Log(s"parity: end, \(entities) entities, \(devices) devices");

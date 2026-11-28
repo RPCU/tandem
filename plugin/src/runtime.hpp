@@ -736,6 +736,13 @@ public:
   std::vector<proto::Message> TakeObjectOutbox();
   void PushObject(proto::Message message);
   std::vector<proto::Message> TakeObjects();
+  // The session's record of what broke (devices::FractureRecord: the host's
+  // and a guest's match), as the net thread last read it: its size in the
+  // high half, its digest in the low (test: the parity dump).
+  void SetFractureRecord(std::uint32_t size, std::uint32_t digest) {
+    m_fractureRecord.store(std::uint64_t{size} << 32 | digest);
+  }
+  std::uint64_t FractureRecord() const { return m_fractureRecord.load(); }
 
   // Our player id while in a session (0: none), set by the net thread.
   void SetYou(proto::PlayerId you) { m_you.store(you); }
@@ -940,6 +947,7 @@ private:
   std::vector<proto::Message> m_breachInbox;                 // m_lock
   std::vector<proto::Message> m_objectOutbox, m_objectInbox; // m_lock
   std::atomic<proto::PlayerId> m_you{0};
+  std::atomic<std::uint64_t> m_fractureRecord{0};
   std::vector<proto::NpcAnim> m_npcAnimsIn;                                             // m_lock
   std::vector<proto::NpcShot> m_npcShotsIn;                                             // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock

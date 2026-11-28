@@ -205,7 +205,7 @@ it does not (a proxy that does not count as a civilian there, research §13.34 q
    system's "police in combat with the player"
    (`PoliceAgentRegistry.IsPoliceInCombatWithPalyer`, wrapped) answers yes:
    its own star logic keeps the stars active and the last known position
-   on our V (research §13.162); the
+   on our V (research §13.170); the
    proxies are in no agent registry there, so before the stars went grey
    the moment they came and stayed grey under their fire. They go grey,
    searching and lost by the game's own rules once nobody sees our V.

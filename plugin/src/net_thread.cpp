@@ -1470,6 +1470,8 @@ struct NetThread::Impl {
         else if (const auto *hands = std::get_if<proto::TurretHands>(&message))
           endpoint->SendTurretHands(*hands);
       }
+      runtime.SetFractureRecord(static_cast<std::uint32_t>(endpoint->Fractures().Size()),
+                                endpoint->Fractures().Digest());
       for (auto &breach : runtime.TakeBreachOutbox()) {
         log::Info("breach: ours of network {:x} ({:#x}), npc {}: {} daemon(s), {} trap(s), "
                   "flags {:#x}",
