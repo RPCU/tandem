@@ -612,7 +612,15 @@ public class TandemTime {
       }
     }
     let changes = TandemNative.UpdateTimeBubbles(owners, scales, at, ids, positions);
-    if ArraySize(changes) > 0 {
+    // Said when an NPC's speed changed, and when a bubble came or went (one
+    // with no NPC in it too: where it is centred is logged).
+    let came = ArraySize(owners) != ArraySize(this.m_bubbleOwners);
+    for owner in owners {
+      if !ArrayContains(this.m_bubbleOwners, owner) {
+        came = true;
+      }
+    }
+    if ArraySize(changes) > 0 || came {
       this.ReportBubbles(owners, at, system.You());
     }
     let by = TandemNative.TimeSlowedBy(system.You(), own, body, owners, scales, at, this.m_selfSet);
