@@ -382,3 +382,76 @@ target's position, the target, …)`, the anim event `Shoot`, the effect
   does (102002) and the chain's `MoveToSpecificEntity` with a bare
   `ToggleTakeOverControl` (`SetProperties(true, false)`, 154681).
   [2.5-untested]
+
+## 13.182 Remote views: what takes the player's camera off V's body (2026-11-28, game 2.50, scripts read)
+
+Read in the 2.50 scripts (`tools/scripts-decompile.sh`, lines as
+`final.reds (2.50):LINE`); nothing here has run in game.
+
+- **A device's takeover** (security cameras, turrets, sniper nests): the
+  scriptable system `TakeOverControlSystem` holds one controlled object
+  (`GetControlledObject`, 133481). `RequestTakeControl` (133540) refuses a
+  quickhack's at the player state machine's `HighLevel` tier 2 to 5 and
+  first ends a car's remote control; `RegisterAsCurrentObject` (133704)
+  registers the camera, attack, stop, switch and aim inputs on V and puts
+  `GameplayRestriction.NoCameraControl` on V (133797), sets the state
+  machine's `IsControllingDevice` and `IsInteractingWithDevice`
+  (`PSMSetIsPlayerControllDevice`, 133843), and
+  `EnablePlayerTPPRepresenation(true)` (133964) shows V's third-person
+  body, moves the audio listener to the camera
+  (`SetBDCameraListenerOverride`) and plays `camera_mask` on V. The
+  device activates its own camera component
+  (`Device.OnTCSTakeOverControlActivate` → `TakeControlOverCamera`,
+  77859-77894). V stays the local player's controlled object: only the
+  prototype `CCTVCamera` (490284) calls `LocalPlayerControlExistingObject`
+  (490319), so §13.121's "the camera and turret takeovers" is that
+  prototype's path, not 2.50's. [2.5-untested]
+- Turning: `OnAction` (133997) queues `TCSInputXAxisEvent` and
+  `TCSInputYAxisEvent` to the device, scaled by the zoom; the device's own
+  handlers turn it (natives on the sensor device, 77904-77908).
+  Leaving: `StopDeviceControl` or `OpenPauseMenu` →
+  `ToggleToMainPlayerObject` (133881), unless a quest locked the input
+  (`IsInputLockedFromQuest`, 133485); any hit animation of V
+  (`PlayerPuppet.OnHitAnimation`, 47398 → `ReleaseControlOnHit`, 133604)
+  for a sensor device, unless locked. A chain (`DeviceTakeControl`
+  blackboard's `DevicesChain`) jumps between devices still streamed in
+  (`ToggleToNextControlledDevice`, 133858; `FindEntityByID`, 133925).
+  Sniper nests (`SniperNest extends SensorDevice`, 193904) are held the
+  same way, with `ReturnToSniperNest`. The takeover's HUD is
+  `hudDroneController` (385887: date, timer, camera id). [2.5-untested]
+- **A car driven remotely** (2.0's take control quickhack):
+  `VehicleComponentPS.GetQuickHackActions` (145336) offers
+  `DeviceAction.TakeControlVehicleClassHack` with the
+  `Intelligence_Right_Milestone_1` perk, V on foot, the car within
+  `player.vehicleQuickHacks.maxRange`, not remote controlled already, not
+  a bike V stands on. Its `OnToggleTakeOverControl` (145405) ends any
+  takeover with the follow-up `TriggerVehicleRemoteControlEvent{enable,
+unseat passengers, modify interactions}` → `VehicleComponent.
+OnTriggerVehicleRemoteControlEvent` (62508) → the native
+  `VehicleObject.SetVehicleRemoteControlled` (66203); `OnRemoteControlEvent`
+  (62902) disables the doors' interactions and puts the passengers out
+  (`TriggerExitBehavior`, 5 s). The state machine's blackboard names the
+  car (`EntityIDVehicleRemoteControlled`, 54720;
+  `IsVehicleRemoteControlCameraTPP`, 54722); the input context
+  `VehicleRemoteControlDriverContext` (544534) toggles its camera, ends it
+  on Exit and locks saving (`RemoteControl`) meanwhile. A hit on V ends it
+  when V is on foot (47400-47405), so does any device takeover
+  (`ReleaseControlOfRemoteControlledVehicle`, 133661). Its HUD's signal
+  falls with the car's distance to V over the same `maxRange`
+  (`RemoteControlDrivingHUDGameController`, 425517-425523); what happens
+  beyond it is native. The context's decision reads
+  `scriptInterface.owner as VehicleObject` (281749) _(inferred: the car
+  is the state machine's owner while driven)_. A quest node can start one
+  (`VehicleQuestNodeSetVehicleRemoteControlled`, 216588; 62500), and a
+  passenger's variant exists (`VehiclePassengerRemoteControlDriver
+Context`, 544390). The other car quickhacks are refused on a remote
+  controlled car (145369, 145389); traffic reads one as driven
+  (`DamagePipelineFinalized`, 12659; `GetVehicleNPCData`, 62059;
+  `GetDriver`, 61327). [2.5-untested]
+- Not remote views in 2.50: Flathead (an AI follower: `AIFlatheadSetSolo
+ModeCommand`, 295164); photo mode, braindances and Johnny (Activity,
+  Elsewhere); a quest's camera animation (`story.md`). [2.5-untested]
+- To read in game: whether the scanner's `focusMode` slows time through a
+  camera as on foot (`time report` during a takeover), the remote range in
+  metres (`player.vehicleQuickHacks.maxRange`), what V's pose stream reads
+  while its third-person body is shown. [to-see]

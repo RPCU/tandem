@@ -436,11 +436,15 @@ shows its aim and shots on the others' copies; damage as today." Built
   referee holds both sides: a refusal of a turret we never claimed
   (`reply.unasked`), a guest refused three times in a row without letting
   go (`authority.turret-taken`).
-- **Cameras**: a camera in a player's hands (the takeover, a chain of
-  devices) is that game's view only: only its `friendly` bit travels (the
-  others' copies see no V while it is held: "A camera or turret turned"),
-  so two players may look through one camera at once and nothing is
-  arbitrated.
+- **Cameras** (2026-11-28, not run in game; [`remote-views.md`](remote-views.md)):
+  a security camera in a player's hands (its takeover, a chain of them)
+  turns on the others' copies as a turret does: where it points goes as
+  `TurretHands` (never firing), every copy turns there (`TandemAim`, a
+  sensor device's look-at), one player's hands at a time; the second is
+  let go with "NAME is looking through this camera" (`Turrets-BusyCamera`).
+  Its `friendly` bit travels as before (the others' copies see no V while
+  it is held: "A camera or turret turned"). One with a dynamic id, or a
+  sniper nest, turns only for its holder (`held device unshared`).
 - Tests: `tests/devices_test.cpp` ("a turret in a player's hands", "a
   turret's holds", "… is that player's alone"), `tests/protocol_test.cpp`,
   `tests/referee_test.cpp`; the mock player's

@@ -561,7 +561,7 @@ yes|no|ignore|sleep` (sleep: it goes to bed too, a sleep of its own to
   the same hour, which the host counts as its yes: two beds at once); an
   applied skip moves the clock it sends as host. `--activity KIND`
   (`workspot`, `sleep`, `screen`, `minigame`, `shop`, `menu`, `photo`,
-  `contest`) makes it busy `--activity-at N` s (default 3) after another
+  `contest`, `remote`: a camera's view 20 m off it) makes it busy `--activity-at N` s (default 3) after another
   player is there, anchored where it stands, for `--activity-for S` s
   (default 15; 0: for good); `--contest duel|race|range` makes that a
   contest of a sort (a duel names the first NPC it knows as its opponent).

@@ -42,6 +42,16 @@
   plays, never from the plugin's per-frame call: there it crashed the game
   loading a save and froze it right after "playing" (2026-11-18; suspects
   in engine-knowledge §13.42). Scenario `time`.
+- **A bubble is centred on what its V sees and acts on**
+  ([`remote-views.md`](remote-views.md), 2026-11-28, not run in game): its
+  remote view while it has one (a camera's takeover, a turret's, a car
+  driven remotely: the view's place in its `Activity`), else its V. A V
+  scanning through a camera slows the NPCs around the camera, for
+  everyone, and none around its standing body; a partner near its body
+  and far from the camera keeps its speed. A V in a remote view is not
+  slowed by another V's bubble (what it acts through has no time of its
+  own), as a V in a vehicle. `time: bubble of player P: N NPC(s), centred
+on its remote view|V at X Y Z`.
 - **A mod's slow motion is a bubble too** (`Time.reds` `Unexplained`,
   core `TimeBubbles::UnexplainedSlow`, 2026-11-19, not yet run in game):
   any global slow motion on our V's game that none of the reasons above
