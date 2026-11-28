@@ -81,6 +81,8 @@ public native struct TandemStatus {
   native let fromMenu: Bool;
   // join: the code ("K7Q-2M9"), "" by address
   native let joinCode: String;
+  // join: a recent host's ID, joined by it; "" else
+  native let hostId: String;
 }
 
 public native struct TandemPlayer {
@@ -103,6 +105,8 @@ public native struct TandemHost {
   native let code: String;
   // what campaigns.txt knows it by (CampaignNatives.reds)
   native let key: String;
+  // its host ID on the relay, once it said it; "" else
+  native let hostId: String;
 }
 
 public native struct TandemHackEvent {
@@ -624,6 +628,14 @@ public native class TandemNative extends IScriptable {
   public static native func RelayCheck() -> String
   public static native func RelayDirect() -> Int32
   public static native func JoinByCode(code: String) -> Bool
+  // Join a recent host by its ID (TandemHost.hostId) through tandem.ini's
+  // relay, with no code (false: no relay, or not an ID).
+  public static native func JoinByHost(id: String) -> Bool
+  // The Join list asks the relay about its recent hosts (on the plugin's
+  // own thread); HostPresenceOf reads each back: 0 offline, 1 online but not
+  // open to a join by its ID, 2 joinable, -1 not known.
+  public static native func QueryPresence()
+  public static native func HostPresenceOf(id: String) -> Int32
   public static native func RecordStart(name: String) -> Bool
   public static native func RecordStop()
   public static native func IsJoinCode(text: String) -> Bool

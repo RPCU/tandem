@@ -107,6 +107,11 @@ public class TandemMenuItem extends PauseMenuListItemData {
   public let hostKey: String;
   public let hostName: String;
   public let code: String;
+  // JoinRecent: its host ID on the relay ("" not known), and what the relay
+  // said of it (TandemNative.HostPresenceOf: 2 joinable, 1 online, 0
+  // offline, -1 not known).
+  public let hostId: String;
+  public let presence: Int32;
 }
 
 // What both menus show of the session, and the in-game notices.
@@ -216,6 +221,9 @@ public class TandemCoop {
     }
     let status = TandemNative.SessionStatus();
     let target = StrLen(status.joinCode) > 0 ? TandemText.FE(english, "Status-CodeTarget", status.joinCode) : s"\(status.address):\(status.port)";
+    if StrLen(status.hostId) > 0 {
+      target = TandemCoop.NameOfHostId(status.hostId);
+    }
     if status.role == 1 {
       if status.state == 0 {
         ArrayPush(lines, TandemText.FE(english, "Status-HostAtLoad", s"\(status.port)"));
@@ -341,6 +349,17 @@ public class TandemCoop {
       ArrayPush(targets, s"\(address):\(port)");
     }
     return TandemText.FE(english, "Invite-Addresses", TandemText.AnyOf(targets, english));
+  }
+
+  // A recent host's name by its host ID ("" not known).
+  public static func NameOfHostId(id: String) -> String {
+    let recent = TandemNative.RecentHosts();
+    for host in recent {
+      if Equals(host.hostId, id) {
+        return host.name;
+      }
+    }
+    return "";
   }
 
   // A join code rather than an address (a host name has a dot, or is not
@@ -522,6 +541,8 @@ public class TandemCoopMenu {
   public let hostKey: String;
   public let hostName: String;
   public let lastCode: String;
+  // A recent host joined by its ID (joinable: no code), else "".
+  public let joinHostId: String;
   // The save the page offered first when it was built (Offered).
   public let builtOffer: Int32;
   public let items: array<ref<TandemMenuItem>>;
@@ -649,11 +670,22 @@ public class TandemCoopMenu {
           label = TandemText.F("Menu-RecentCode", host.name);
           address = "";
         }
+        // Its state, from the relay, once it answered (QueryPresence).
+        let presence = StrLen(host.hostId) > 0 ? TandemNative.HostPresenceOf(host.hostId) : -1;
+        if presence == 2 {
+          label = TandemText.F("Menu-RecentJoinable", host.name);
+        } else if presence == 1 {
+          label = TandemText.F("Menu-RecentOnline", host.name);
+        } else if presence == 0 {
+          label = TandemText.F("Menu-RecentOffline", host.name);
+        }
         let item = this.Add("", TandemCoopAction.JoinRecent, label);
         item.target = address;
         item.code = host.code;
         item.hostKey = host.key;
         item.hostName = host.name;
+        item.hostId = host.hostId;
+        item.presence = presence;
       }
       this.Add("Menu-EnterCode", TandemCoopAction.EnterAddress);
     } else if Equals(this.page, TandemCoopPage.Settings) {
@@ -726,7 +758,19 @@ public class TandemCoopMenu {
   // before it is built again when it does (the menu's tick).
   public func Offered() -> Int32 {
     let problems = TandemNative.CompatProblems();
-    if this.inGame || ArraySize(problems) > 0 {
+    if ArraySize(problems) > 0 {
+      return -1;
+    }
+    // The Join list, either menu: its hosts' states, as one number.
+    if Equals(this.page, TandemCoopPage.Join) {
+      let sum = 0;
+      let recent = TandemNative.RecentHosts();
+      for host in recent {
+        sum = sum * 4 + (StrLen(host.hostId) > 0 ? TandemNative.HostPresenceOf(host.hostId) + 1 : 0);
+      }
+      return sum;
+    }
+    if this.inGame {
       return -1;
     }
     if Equals(this.page, TandemCoopPage.Coop) {
@@ -1004,6 +1048,11 @@ public class TandemCoopMenu {
       return false;
     }
     this.switching = false;
+    // The Join list opens: the relay asked about its hosts once (each
+    // answer rebuilds it: the menus' tick, Offered).
+    if Equals(this.nextPage, TandemCoopPage.Join) && NotEquals(this.page, TandemCoopPage.Join) {
+      TandemNative.QueryPresence();
+    }
     this.page = this.nextPage;
     this.cursor = this.nextCursor;
     return true;
@@ -1329,6 +1378,15 @@ private func TandemChoose() -> Bool {
   if Equals(this.m_tandem.page, TandemCoopPage.Host) {
     return TandemNative.StartHost(this.m_tandem.port);
   }
+  if Equals(this.m_tandem.page, TandemCoopPage.Save) && StrLen(this.m_tandem.joinHostId) > 0 {
+    if !TandemNative.JoinByHost(this.m_tandem.joinHostId) {
+      TandemNative.Log("coop: main menu: a host ID needs a relay (popup)");
+      GenericMessageNotification.Show(this, TandemText.Get("Menu-Join"), TandemText.Get("Popup-NeedsRelay"), GenericMessageNotificationType.OK);
+      return false;
+    }
+    TandemNative.ChooseArrival();
+    return true;
+  }
   if Equals(this.m_tandem.page, TandemCoopPage.Save) {
     if !TandemCoop.ChooseJoin(this.m_tandem.target) {
       TandemNative.Log(s"coop: main menu: \(this.m_tandem.target) not joined: a join code needs a relay (popup)");
@@ -1401,7 +1459,14 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Bool {
   } else if Equals(action, TandemCoopAction.JoinRecent) {
     this.m_tandem.hostKey = item.hostKey;
     this.m_tandem.hostName = item.hostName;
-    if StrLen(item.code) > 0 {
+    this.m_tandem.joinHostId = "";
+    if item.presence == 2 {
+      // Online and open: joined by its ID, no code.
+      TandemNative.Log(s"coop: main menu: \(item.hostName) is joinable: by its host ID");
+      this.m_tandem.joinHostId = item.hostId;
+      this.m_tandem.target = "";
+      this.TandemGo(TandemCoopPage.Save);
+    } else if StrLen(item.code) > 0 {
       // Joined by a code: today's, asked for (the last one as the empty answer).
       this.m_tandem.lastCode = item.code;
       this.TandemAskCodeOf();
@@ -1549,6 +1614,7 @@ private func TandemAskAddress() -> Void {
   this.m_tandem.hostKey = "";
   this.m_tandem.hostName = "";
   this.m_tandem.lastCode = "";
+  this.m_tandem.joinHostId = "";
   this.m_tandem.inputToken = GenericMessageNotification.ShowInput(this, TandemText.Get("Menu-Join"), TandemText.Get("Popup-EnterCode"), GenericMessageNotificationType.ConfirmCancel);
   this.m_tandem.inputToken.RegisterListener(this, n"OnTandemAddress");
 }
@@ -1618,6 +1684,7 @@ private func TandemJoinDirect(typed: String) -> Void {
   this.m_tandem.target = target;
   this.m_tandem.hostKey = target;
   this.m_tandem.hostName = "";
+  this.m_tandem.joinHostId = "";
   this.TandemGo(TandemCoopPage.Save);
 }
 
@@ -1657,6 +1724,7 @@ private func TandemCommand(command: String) -> Void {
       this.m_tandem.target = target;
       this.m_tandem.hostKey = TandemCoop.KeyOf(target);
       this.m_tandem.hostName = "";
+      this.m_tandem.joinHostId = "";
       this.TandemGo(TandemCoopPage.Save);
     }
   } else if Equals(verb, "continue") {
@@ -1953,6 +2021,11 @@ protected cb func OnTandemTick(proxy: ref<inkAnimProxy>) -> Bool {
   }
   this.TandemTidy();
   this.m_tandem.Refresh();
+  // The Join list's hosts answered (online, joinable): built again.
+  if !this.m_tandem.switching && !IsDefined(this.m_tandem.inputToken) && this.m_tandem.Offered() != this.m_tandem.builtOffer {
+    TandemNative.Log(s"coop: pause menu: the relay answered: page \(TandemCoopMenu.PageName(this.m_tandem.page)) built again");
+    this.TandemGo(this.m_tandem.page, this.m_tandem.cursor);
+  }
   // The world is paused, and our system's tick with it: its commands too.
   let command = TandemNative.TakeCommand();
   if StrLen(command) == 0 {
@@ -2005,7 +2078,14 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Void {
   } else if Equals(action, TandemCoopAction.EnterAddress) {
     this.TandemAskAddress();
   } else if Equals(action, TandemCoopAction.JoinRecent) {
-    if StrLen(item.code) > 0 {
+    if item.presence == 2 {
+      // Online and open: joined at once by its ID, no code.
+      TandemNative.Log(s"coop: pause menu: \(item.hostName) is joinable: by its host ID");
+      if !system.CoopJoinHost(item.hostId) {
+        GenericMessageNotification.Show(this, TandemText.Get("Menu-Join"), TandemText.Get("Popup-NeedsRelay"), GenericMessageNotificationType.OK);
+      }
+      this.TandemGo(TandemCoopPage.Coop);
+    } else if StrLen(item.code) > 0 {
       // Joined by a code: today's, asked for (the last one as the empty answer).
       this.m_tandem.hostName = item.hostName;
       this.m_tandem.lastCode = item.code;

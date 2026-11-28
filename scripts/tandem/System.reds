@@ -765,6 +765,18 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_inGame;
   }
 
+  // A recent host joined by its host ID through the relay, now, no code
+  // (Coop.reds: its Join list says it is joinable). False: no relay.
+  public func CoopJoinHost(id: String) -> Bool {
+    this.EndSession(true);
+    if !TandemNative.JoinByHost(id) {
+      return false;
+    }
+    TandemNative.ChooseArrival();
+    this.BeginSession();
+    return this.m_inGame;
+  }
+
   // Join by address's answer (Coop.reds): joined now, directly, and saved
   // as last_address. Returns why not, in words ("": joined).
   public func CoopJoinDirect(typed: String) -> String {
@@ -3298,6 +3310,11 @@ public class TandemSystem extends ScriptableSystem {
     }
     let target = StrLen(status.joinCode) > 0 ? TandemText.F("Status-CodeTarget", status.joinCode) : s"\(status.address):\(status.port)";
     let english = StrLen(status.joinCode) > 0 ? TandemText.FE(true, "Status-CodeTarget", status.joinCode) : target;
+    if StrLen(status.hostId) > 0 {
+      // A recent host joined by its ID: its name.
+      target = TandemCoop.NameOfHostId(status.hostId);
+      english = target;
+    }
     // The plugin stopped trying (another version, no Phantom Liberty, a code
     // that led to no session three times).
     if status.state == 5 {
@@ -3321,7 +3338,7 @@ public class TandemSystem extends ScriptableSystem {
   // tandem, the session full, a game without Phantom Liberty), or the relay
   // knows no session by that code.
   public static func JoinRefused(detail: String) -> Bool {
-    return StrBeginsWith(detail, "refused") || StrBeginsWith(detail, "protocol version") || StrBeginsWith(detail, "the session is full") || Equals(detail, "no session has this join code (wrong, or expired)");
+    return StrBeginsWith(detail, "refused") || StrBeginsWith(detail, "protocol version") || StrBeginsWith(detail, "the session is full") || Equals(detail, "no session has this join code (wrong, or expired)") || StrBeginsWith(detail, "the host is not");
   }
 
   private func GiveUpJoin(target: String, english: String, reason: String, reasonEnglish: String) -> Void {

@@ -220,6 +220,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     runtime.config.commandFile = files.command;
     runtime.config.recentFile = files.recent;
     runtime.config.campaignsFile = files.campaigns;
+    runtime.config.hostKeyFile = files.config.parent_path() / "host.key";
     tandem::plugin::campaign::SetFile(files.campaigns);
     tandem::plugin::ConfigureComms(runtime.config);
     log::SetLevel(static_cast<log::Level>(runtime.config.logLevel));

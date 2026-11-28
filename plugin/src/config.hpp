@@ -330,6 +330,12 @@ struct Config {
   std::filesystem::path recentFile;
   // campaigns.txt, the co-op playthroughs (tandem/campaigns.hpp).
   std::filesystem::path campaignsFile;
+  // host.key, this game's permanent host key (net::HostKey, 32 hex digits;
+  // made at its first hosting on a relay, never in the repository).
+  std::filesystem::path hostKeyFile;
+  // Not from the file: join: the host's ID (32 hex digits), joined by it
+  // through the relay (a recent host, one click), else "".
+  std::string hostId;
 };
 
 // Whether a session hosted now asks the relay for its token's kept code: a

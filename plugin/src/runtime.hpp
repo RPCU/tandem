@@ -32,6 +32,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -189,6 +190,9 @@ struct SessionChoice {
   std::string joinCode;
   bool addressSet{};
   bool fromMenu{};
+  // join: the host's ID (a recent host joined by it through the relay, no
+  // code), 32 hex digits; "" otherwise.
+  std::string hostId;
   // join, chosen in the co-op menu: at the first welcome our V goes beside
   // the host (Travel.reds), once (TakeArrival). Never carried by a copy of
   // the choice made after it was taken (a checkpoint's rejoin).
@@ -297,6 +301,19 @@ public:
   void RememberHost(const hosts::Target &target, std::string name);
   // A host joined by a join code (normalized), known by its name.
   void RememberCodeHost(std::string code, std::string name);
+  // The host's ID heard (proto::HostCard): kept on its recent entry (by
+  // address, or by name for a code); joined by it: that entry first.
+  void NoteRecentHostId(std::optional<hosts::Target> target, std::string name, std::string id);
+  void RememberHostById(std::string id, std::string name);
+  // Join a recent host by its ID through tandem.ini's relay (false: no relay,
+  // or not an ID). As JoinByCode.
+  bool JoinByHostId(std::string_view id);
+  // This game's host key (host.key: made once, at random, when missing).
+  std::optional<net::HostKey> HostKey();
+  // The Join list's presence: asked of the relay on a thread of its own
+  // (QueryPresence), read back by ID (Unknown until it answered).
+  void QueryPresence(std::vector<net::HostId> ids);
+  net::HostPresence PresenceOf(const net::HostId &id) const;
 
   // tandem-relay, net thread -> game thread: the host's join code to show
   // ("K7Q-2M9", "" none yet or no relay) and what the link is doing (""
@@ -881,6 +898,11 @@ private:
   SessionChoice m_choice; // m_lock
   SessionStatus m_status; // m_lock
   mutable std::mutex m_recentLock;
+  // The Join list's presence (QueryPresence), and its thread.
+  mutable std::mutex m_presenceLock;
+  std::map<net::HostId, net::HostPresence> m_presence;
+  std::jthread m_presenceThread;
+  std::atomic<bool> m_presenceBusy{false};
   mutable std::mutex m_compatLock;
   std::vector<std::string> m_differences; // m_compatLock
   proto::Body m_body{};                   // m_lock: the last Start's

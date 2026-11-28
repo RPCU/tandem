@@ -133,6 +133,7 @@ struct TandemStatus {
   Red::CString detail;   // why the last session ended, or failed
   bool fromMenu{};       // chosen in the co-op menu (else tandem.ini)
   Red::CString joinCode; // join: the code ("K7Q-2M9"), "" by address
+  Red::CString hostId;   // join: a recent host's ID, joined by it; "" else
 };
 
 struct TandemPlayer {
@@ -148,8 +149,9 @@ struct TandemHost {
   Red::CString address; // "" for a join code
   std::int32_t port{};
   Red::CString name;
-  Red::CString code; // its last join code ("K7Q-2M9"), "" by address
-  Red::CString key;  // what campaigns.txt knows it by (campaigns::HostOf...)
+  Red::CString code;   // its last join code ("K7Q-2M9"), "" by address
+  Red::CString key;    // what campaigns.txt knows it by (campaigns::HostOf...)
+  Red::CString hostId; // its host ID on the relay, once it said it; "" else
 };
 // Guest: one of the host's NPCs hit our V (proto::PlayerHit). Plain fields,
 // as above.
@@ -441,6 +443,7 @@ struct TandemNative : Red::IScriptable {
     out.fromMenu = choice.fromMenu;
     out.joinCode =
         Red::CString(choice.joinCode.empty() ? "" : net::DisplayJoinCode(choice.joinCode).c_str());
+    out.hostId = Red::CString(choice.hostId.c_str());
     return out;
   }
 
@@ -466,6 +469,11 @@ struct TandemNative : Red::IScriptable {
       } else {
         host.code = Red::CString(net::DisplayJoinCode(recent.code).c_str());
         host.key = Red::CString(campaigns::HostOfName(recent.name).c_str());
+      }
+      // Known by its ID once it said it (the V noted for it by the ID too).
+      if (!recent.hostId.empty()) {
+        host.hostId = Red::CString(recent.hostId.c_str());
+        host.key = Red::CString(("id:" + recent.hostId).c_str());
       }
       out.EmplaceBack(host);
     }
@@ -1298,6 +1306,27 @@ struct TandemNative : Red::IScriptable {
   static void RecordStop() { Runtime::Get().RequestRecording(""); }
 
   static bool JoinByCode(Red::CString code) { return Runtime::Get().JoinByCode(code.c_str()); }
+  // Join a recent host by its ID (TandemHost.hostId) through tandem.ini's
+  // relay, with no code (false: no relay, or not an ID). As JoinByCode.
+  static bool JoinByHost(Red::CString id) { return Runtime::Get().JoinByHostId(id.c_str()); }
+  // The Join list asks the relay about its recent hosts' IDs (on a thread
+  // of the plugin's: never the game thread's wait); HostPresenceOf reads
+  // each back: 0 offline, 1 online but not open to a join by its ID (invite
+  // only, or full), 2 joinable, -1 not known (yet, or no relay).
+  static void QueryPresence() {
+    std::vector<net::HostId> ids;
+    for (const auto &recent : Runtime::Get().RecentHosts())
+      if (const auto id = net::ParseHostId(recent.hostId))
+        ids.push_back(*id);
+    Runtime::Get().QueryPresence(std::move(ids));
+  }
+  static std::int32_t HostPresenceOf(Red::CString id) {
+    const auto parsed = net::ParseHostId(id.c_str());
+    if (!parsed)
+      return -1;
+    const auto state = Runtime::Get().PresenceOf(*parsed);
+    return state == net::HostPresence::Unknown ? -1 : static_cast<std::int32_t>(state);
+  }
   // The text is a join code (6 characters of base32, a dash optional).
   static bool IsJoinCode(Red::CString text) {
     return net::NormalizeJoinCode(text.c_str()).has_value();
@@ -2319,6 +2348,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStatus, "TandemStatus", {
   RTTI_PROPERTY(detail);
   RTTI_PROPERTY(fromMenu);
   RTTI_PROPERTY(joinCode);
+  RTTI_PROPERTY(hostId);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemPlayer, "TandemPlayer", {
@@ -2335,6 +2365,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemHost, "TandemHost", {
   RTTI_PROPERTY(name);
   RTTI_PROPERTY(code);
   RTTI_PROPERTY(key);
+  RTTI_PROPERTY(hostId);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemTimeChange, "TandemTimeChange", {
@@ -2520,6 +2551,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RelayCheck);
   RTTI_METHOD(RelayDirect);
   RTTI_METHOD(JoinByCode);
+  RTTI_METHOD(JoinByHost);
+  RTTI_METHOD(QueryPresence);
+  RTTI_METHOD(HostPresenceOf);
   RTTI_METHOD(RecordStart);
   RTTI_METHOD(RecordStop);
   RTTI_METHOD(IsJoinCode);
