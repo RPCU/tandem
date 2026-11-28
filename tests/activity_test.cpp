@@ -91,15 +91,14 @@ TEST_CASE("a remote view says its sort, its object, where it looks from, and its
                                      .workspot = 4,
                                      .entry = car,
                                      .anim = 8,
-                                     .anchor = {1, 2, 3},
+                                     .anchor = {10, 20, 3},
                                      .yaw = 1.f,
-                                     .view = {10, 20, 3},
                                      .traffic = 0x02000005u});
   CHECK(driven == proto::Activity{.player = 3,
                                   .kind = ActivityKind::Remote,
                                   .device = 9,
                                   .entry = car,
-                                  .view = {10, 20, 3},
+                                  .anchor = {10, 20, 3},
                                   .traffic = 0x02000005u});
   CHECK_FALSE(activity::Anchored(driven));
   CHECK_FALSE(activity::Frozen(driven));
@@ -107,7 +106,7 @@ TEST_CASE("a remote view says its sort, its object, where it looks from, and its
   CHECK(activity::RemoteCar(driven) == 0x02000005u);
   // Only a car names a shared vehicle; an unknown sort is some other view.
   auto looking = activity::Sanitized(
-      {.kind = ActivityKind::Remote, .entry = camera, .view = {5, 5, 5}, .traffic = 7});
+      {.kind = ActivityKind::Remote, .entry = camera, .anchor = {5, 5, 5}, .traffic = 7});
   CHECK(looking.traffic == 0);
   CHECK(activity::RemoteCar(looking) == 0);
   CHECK(activity::Sanitized({.kind = ActivityKind::Remote, .entry = 42}).entry ==
@@ -115,12 +114,14 @@ TEST_CASE("a remote view says its sort, its object, where it looks from, and its
   // A view that is no place is none known.
   auto lost = activity::Sanitized({.kind = ActivityKind::Remote,
                                    .entry = camera,
-                                   .view = {std::numeric_limits<float>::infinity(), 0, 0}});
+                                   .anchor = {std::numeric_limits<float>::infinity(), 0, 0}});
   CHECK_FALSE(activity::ViewOf(lost).has_value());
-  // Another kind carries neither.
-  auto seat = activity::Sanitized(
-      {.kind = ActivityKind::Workspot, .workspot = 4, .view = {1, 1, 1}, .traffic = 3});
-  CHECK(seat.view == proto::Vec3{});
+  // Another kind names no car, and its anchor is no view.
+  auto seat = activity::Sanitized({.kind = ActivityKind::Workspot,
+                                   .flags = proto::kActivityAnchored,
+                                   .workspot = 4,
+                                   .anchor = {1, 1, 1},
+                                   .traffic = 3});
   CHECK(seat.traffic == 0);
   CHECK_FALSE(activity::ViewOf(seat).has_value());
 }

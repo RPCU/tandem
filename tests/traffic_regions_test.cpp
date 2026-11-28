@@ -377,12 +377,14 @@ TEST_CASE("a vehicle driven remotely is its driver's game's, and stays so while 
   s->a->SetLocalActivity({.kind = proto::ActivityKind::Remote,
                           .device = 77,
                           .entry = vehicle,
-                          .view = {40.f, 0.f, 0.f},
+                          .anchor = {40.f, 0.f, 0.f},
                           .traffic = car});
   // Handed to a at once (no distance rule), with its state.
   REQUIRE(s->Until([&] { return s->ga.running.contains(car) && s->a->OwnsTraffic(car); }));
   REQUIRE(s->Until([&] { return s->host->TrafficOwnerOf(car) == s->a->You(); }));
   CHECK(s->h.proxies.contains(car));
+  CHECK(s->h.asked == std::vector<proto::TrafficId>{car}); // given once, by the host
+  s->h.asked.clear();
   // a drives it beside the host's V and away from its own: the rule that
   // gives a car to the V beside it does not take it from its driver.
   s->ga.Drive(car, {10.f, 0.f, 0.f});

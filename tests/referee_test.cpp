@@ -269,13 +269,13 @@ TEST_CASE("referee: a remote view is its player's word, as its game leaves it") 
                                  .kind = proto::ActivityKind::Remote,
                                  .device = 5,
                                  .entry = car,
-                                 .view = {10.f, 20.f, 3.f},
+                                 .anchor = {10.f, 20.f, 3.f},
                                  .traffic = 0x01000004u},
                  kSecond);
   guest.Received(1, proto::Activity{.player = 3}, kSecond);
   CHECK(Rules(guest).empty());
   // A camera that names a car, a remote view that holds its body, a
-  // workspot with a view, a view that is no place.
+  // workspot that names a car, a view that is no place.
   guest.Received(
       1,
       proto::Activity{
@@ -289,16 +289,15 @@ TEST_CASE("referee: a remote view is its player's word, as its game leaves it") 
                                  .entry = camera},
                  kSecond);
   CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
-  guest.Received(
-      1,
-      proto::Activity{.player = 3, .kind = proto::ActivityKind::Workspot, .view = {1.f, 0.f, 0.f}},
-      kSecond);
+  guest.Received(1,
+                 proto::Activity{.player = 3, .kind = proto::ActivityKind::Workspot, .traffic = 4},
+                 kSecond);
   CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
   guest.Received(1,
                  proto::Activity{.player = 3,
                                  .kind = proto::ActivityKind::Remote,
                                  .entry = camera,
-                                 .view = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}},
+                                 .anchor = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}},
                  kSecond);
   CHECK(Rules(guest) == std::vector<std::string>{"value.not-finite"});
   // Host: a guest says its own, never another's.

@@ -9,24 +9,22 @@ proto::Activity Sanitized(proto::Activity state) {
   if (state.kind == proto::ActivityKind::None)
     return {.player = state.player};
   // A remote view holds no body (it stands where its PlayerState says) and
-  // plays no workspot: its sort, the object, where the view is and, for a
-  // car, the shared vehicle. A view that is no place is none known.
+  // plays no workspot: its sort, the object, where the view is (`anchor`)
+  // and, for a car, the shared vehicle. A view that is no place is none known.
   if (state.kind == proto::ActivityKind::Remote) {
     if (state.entry > static_cast<std::uint32_t>(proto::RemoteSort::Device))
       state.entry = static_cast<std::uint32_t>(proto::RemoteSort::Other);
     if (state.entry != static_cast<std::uint32_t>(proto::RemoteSort::Vehicle))
       state.traffic = 0;
-    if (!std::isfinite(state.view.x) || !std::isfinite(state.view.y) ||
-        !std::isfinite(state.view.z))
-      state.view = {};
+    if (!std::isfinite(state.anchor.x) || !std::isfinite(state.anchor.y) ||
+        !std::isfinite(state.anchor.z))
+      state.anchor = {};
     state.flags = 0;
     state.workspot = 0;
     state.anim = 0;
-    state.anchor = {};
     state.yaw = 0.f;
     return state;
   }
-  state.view = {};
   state.traffic = 0;
   state.flags &= proto::kActivityFlags;
   const bool finite = std::isfinite(state.anchor.x) && std::isfinite(state.anchor.y) &&

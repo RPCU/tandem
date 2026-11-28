@@ -53,7 +53,7 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // menu shows the host's rules, coop-menu.md).
 // 26: LinkDecline's reasons 2-4, a call's outcomes (declined, busy, missed).
 // 27: Activity's remote view (ActivityKind::Remote, its RemoteSort in
-// `entry`, `view` and `traffic`): a game of 26 refuses the kind.
+// `entry`, its view in `anchor`) and `traffic`: a game of 26 refuses it.
 inline constexpr std::uint16_t kProtocolVersion = 27;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
@@ -1927,8 +1927,9 @@ enum class ActivityKind : std::uint8_t {
   // A remote view: its camera left its body for something it controls (a
   // camera's takeover, a turret's, a car driven remotely). `entry` is its
   // RemoteSort, `device` that object's EntityID hash (a placed device's is
-  // the same in every game), `view` where it is, `traffic` the shared world
-  // vehicle it drives (0: none). The body stays where PlayerState says.
+  // the same in every game), `anchor` where the view is (nothing holds the
+  // body: never kActivityAnchored), `traffic` the shared world vehicle it
+  // drives (0: none). The body stays where PlayerState says.
   Remote = 9,
 };
 // What a remote view looks through (Activity::entry of ActivityKind::Remote;
@@ -1964,9 +1965,8 @@ struct Activity {
   std::uint64_t workspot{}; // the workspot resource's path hash (0: unknown)
   std::uint32_t entry{};    // its tree entry (Contest: its ContestSort)
   std::uint64_t anim{};     // the animation playing (CName hash)
-  Vec3 anchor;              // kActivityAnchored: where the body is
+  Vec3 anchor;              // kActivityAnchored: where the body is; Remote: where the view is
   float yaw{};              // its heading (radians, sync::YawOf)
-  Vec3 view;                // Remote: where the view is (the device, the car)
   std::uint32_t traffic{};  // Remote, a vehicle: the shared vehicle (a TrafficId; 0: none)
   friend bool operator==(const Activity &, const Activity &) = default;
 };

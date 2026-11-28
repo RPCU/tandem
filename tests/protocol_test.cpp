@@ -1657,7 +1657,7 @@ TEST_CASE("activities and time skips: survive encoding, small, reliable, unknown
                       .kind = ActivityKind::Remote,
                       .device = 0x0102030405060708ull,
                       .entry = static_cast<std::uint32_t>(RemoteSort::Vehicle),
-                      .view = {40.5f, -18.f, 6.75f},
+                      .anchor = {40.5f, -18.f, 6.75f},
                       .traffic = 0x01000007u});
   RoundTrips(TimeSkip{.from = 3,
                       .request = 4,

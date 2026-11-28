@@ -41,9 +41,9 @@ inline bool Anchored(const proto::Activity &state) {
 // it says (a view at the origin is none known).
 inline std::optional<proto::Vec3> ViewOf(const proto::Activity &state) {
   if (state.kind != proto::ActivityKind::Remote ||
-      (state.view.x == 0.f && state.view.y == 0.f && state.view.z == 0.f))
+      (state.anchor.x == 0.f && state.anchor.y == 0.f && state.anchor.z == 0.f))
     return std::nullopt;
-  return state.view;
+  return state.anchor;
 }
 // The shared vehicle a remote view drives (0: none).
 inline std::uint32_t RemoteCar(const proto::Activity &state) {

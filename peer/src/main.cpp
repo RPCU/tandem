@@ -5660,7 +5660,7 @@ int main(int argc, char **argv) {
                                       busy.anchor.z)
                     : busy.kind == tandem::proto::ActivityKind::Remote
                         ? std::format(" viewing from ({:.1f}, {:.1f}, {:.1f}), vehicle {:#x}",
-                                      busy.view.x, busy.view.y, busy.view.z, busy.traffic)
+                                      busy.anchor.x, busy.anchor.y, busy.anchor.z, busy.traffic)
                         : std::string());
             } else if constexpr (std::is_same_v<E, tandem::events::TimeSkipAsked>) {
               const auto &k = e.skip;
@@ -6809,7 +6809,7 @@ int main(int argc, char **argv) {
         // A camera's takeover, 20 m off our V: its body stays where it is.
         busy.entry = static_cast<std::uint32_t>(tandem::proto::RemoteSort::Camera);
         if (lastSent)
-          busy.view = {lastSent->x + 20.f, lastSent->y, lastSent->z + 3.f};
+          busy.anchor = {lastSent->x + 20.f, lastSent->y, lastSent->z + 3.f};
       } else if (lastSent && kind != tandem::proto::ActivityKind::Photo &&
                  kind != tandem::proto::ActivityKind::Menu) {
         busy.flags |= tandem::proto::kActivityAnchored;

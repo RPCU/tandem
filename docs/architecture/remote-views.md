@@ -32,7 +32,7 @@ story's ([`story.md`](story.md)).
 Our V's remote view is read four times a second on the game thread
 (`TandemRemoteView.Sample`, from `Activities.reds`) and said as our
 **Activity** (`ActivityKind::Remote`, protocol 27): its sort in `entry`,
-the object's `EntityID` hash in `device`, where the view is in `view`
+the object's `EntityID` hash in `device`, where the view is in `anchor`
 (said again each 8 m a car drives), the shared vehicle it drives in
 `traffic`. The host stamps, keeps it for late joiners and relays it, as
 any activity (players domain of the digests). It holds no body: the V

@@ -192,9 +192,11 @@ TandemBusyState ToScript(const proto::Activity &state) {
   out.y = state.anchor.y;
   out.z = state.anchor.z;
   out.yaw = state.yaw;
-  out.viewX = state.view.x;
-  out.viewY = state.view.y;
-  out.viewZ = state.view.z;
+  if (state.kind == proto::ActivityKind::Remote) {
+    out.viewX = state.anchor.x;
+    out.viewY = state.anchor.y;
+    out.viewZ = state.anchor.z;
+  }
   out.traffic = state.traffic;
   return out;
 }
@@ -269,7 +271,7 @@ struct TandemActivity : Red::IScriptable {
     const proto::Activity state{.kind = proto::ActivityKind::Remote,
                                 .device = device,
                                 .entry = static_cast<std::uint32_t>(std::clamp(sort, 0, 255)),
-                                .view = {view.X, view.Y, view.Z},
+                                .anchor = {view.X, view.Y, view.Z},
                                 .traffic = traffic};
     Activities::Get().SetLocal(state);
   }
