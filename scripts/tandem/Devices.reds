@@ -99,6 +99,10 @@ public class TandemDevices extends ScriptableSystem {
   // The same devices by their entity's (32-bit) hash: a drive through the
   // city attaches hundreds a minute, each found without walking the list.
   private let m_index: ref<inkHashMap>;
+  // Sensor devices of ours no id names in every game (spawned: a camera, a
+  // turret, a sniper nest): found by their place when another player holds
+  // one (Turrets.reds, TurretHands by place; remote-views.md).
+  private let m_spawnedSensors: array<EntityID>;
   private let m_collisions: Int32;
   private let m_cursor: Int32;
   // In a session, as whom (0: none), and as its host.
@@ -333,6 +337,9 @@ public class TandemDevices extends ScriptableSystem {
     }
     let ps = owner.GetDevicePS();
     if !TandemDevices.Follows(ps) {
+      if IsDefined(owner as SensorDevice) && !EntityID.IsStatic(owner.GetEntityID()) && !ArrayContains(this.m_spawnedSensors, owner.GetEntityID()) {
+        ArrayPush(this.m_spawnedSensors, owner.GetEntityID());
+      }
       return;
     }
     let device = this.Track(owner.GetEntityID(), ps.GetClassName());
@@ -352,6 +359,7 @@ public class TandemDevices extends ScriptableSystem {
   // own may be gone by now). Forgotten unless the session says something of
   // it, or it is ours to put back.
   private func Detached(entity: EntityID) -> Void {
+    ArrayRemove(this.m_spawnedSensors, entity);
     if !IsDefined(this.m_index) {
       return;
     }
@@ -1369,6 +1377,10 @@ public class TandemDevices extends ScriptableSystem {
     if Equals(kind, "turret") {
       return IsDefined(ps as SecurityTurretControllerPS);
     }
+    // A sniper nest (Phantom Liberty, Dogtown): held as a turret is.
+    if Equals(kind, "nest") {
+      return IsDefined(ps as SniperNestControllerPS);
+    }
     // A turret the session follows (Turrets.reds): not the police's, which
     // stand at street corners (every fixture's nearest was one, 2026-11-21).
     if Equals(kind, "sentry") {
@@ -1392,6 +1404,25 @@ public class TandemDevices extends ScriptableSystem {
 
   // The entity of the nearest device of a kind, within `distance` (Breach.reds,
   // Interact.reds).
+  // A spawned sensor device of ours within `within` metres of `at` (none:
+  // none here): the one another player holds by its place.
+  public func SpawnedSensorNear(at: Vector4, within: Float) -> ref<SensorDevice> {
+    let best: ref<SensorDevice>;
+    let bestFar = within;
+    for id in this.m_spawnedSensors {
+      let sensor = GameInstance.FindEntityByID(this.GetGameInstance(), id) as SensorDevice;
+      if IsDefined(sensor) {
+        let where = sensor.GetWorldPosition();
+        let far = Vector4.Distance(at, where);
+        if far <= bestFar {
+          best = sensor;
+          bestFar = far;
+        }
+      }
+    }
+    return best;
+  }
+
   public func NearestOf(kind: String, distance: Float) -> ref<GameObject> {
     let device = this.Nearest(kind, distance);
     return IsDefined(device) ? GameInstance.FindEntityByID(this.GetGameInstance(), device.entity) as GameObject : null;
@@ -1467,7 +1498,7 @@ public class TandemDevices extends ScriptableSystem {
       j += 1;
     }
     TandemNative.Log(s"fixture: devices within \(radius) m: \(total) (\(listed))");
-    let kinds: array<String> = ["door", "lift", "camera", "turret", "sentry", "barrel", "ap", "radio"];
+    let kinds: array<String> = ["door", "lift", "camera", "turret", "sentry", "nest", "barrel", "ap", "radio"];
     for kind in kinds {
       let distance = 200.0;
       let device = this.Nearest(kind, distance);

@@ -43,8 +43,12 @@ public native class TandemObjects extends IScriptable {
   // entity, else the place. Guest: our copy locked our own V (3), lost it (4).
   public static native func Fire(entity: EntityID, kind: Int32, npc: Uint32, player: Uint32, target: EntityID, position: Vector4)
   // A turret in our V's hands: where it points, whether it fires (flags 1),
-  // or that we let go of it (2).
+  // or that we let go of it (2); 4: `entity` is its place's key (PlaceKey).
   public static native func Hands(entity: EntityID, position: Vector4, flags: Int32)
+  // A held device no id names (a spawned one): the key of its place, and
+  // the place a key names (W 1).
+  public static native func PlaceKey(position: Vector4) -> EntityID
+  public static native func PlaceOf(key: EntityID) -> Vector4
   // What the others' games say since the last call.
   public static native func TakeEvents() -> array<TandemObjectEvent>
   // A new session, or its end: nothing broken is remembered (the queue of

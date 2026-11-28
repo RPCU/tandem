@@ -1264,7 +1264,9 @@ TEST_CASE("a turret in a player's hands survives encoding, small, unreliable, kn
   CHECK(ChannelOf(TurretHands{}) == Channel::State);
   CHECK_FALSE(IsReliable(TurretHands{}));
   CHECK(Encode(TurretHands{}).size() <= 32);
-  CHECK_FALSE(Decode(Encode(TurretHands{.flags = 4})).has_value());
+  // A held device by its place (v28).
+  RoundTrips(TurretHands{.entity = 1ull << 63 | 5, .at = {1.f, 2.f, 3.f}, .flags = kHandsByPlace});
+  CHECK_FALSE(Decode(Encode(TurretHands{.flags = 8})).has_value());
 }
 
 TEST_CASE("a turret's refused claim survives encoding: reliable, small, appended") {

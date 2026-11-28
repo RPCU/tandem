@@ -393,8 +393,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-scene-voice", "V's own voice in replayed scenes");
     this.Text("Tandem-Degraded-Id-nameplate-projection", "name plates placed by the game's engine (tandem places them itself)");
     this.Text("Tandem-Degraded-Id-hit-shown-by-twitch", "a hit on a player shown as a plain twitch, not the game's own reaction");
-    this.Text("Tandem-Degraded-Id-remote-car-unseen", "a player's car driven remotely, seen by the others where it was left");
-    this.Text("Tandem-Degraded-Id-held-device-unshared", "a device in a player's hands that the other games cannot turn with it");
+    this.Text("Tandem-Degraded-Id-held-device-unshared", "a device in a player's hands, not a camera, a turret or a sniper nest, that the other games cannot turn with it");
     this.Text("Tandem-Degraded-Id-prompt-drawn", "a prompt drawn by tandem instead of the game's own");
     this.Text("Tandem-Degraded-Id-vehicle-teleported", "a vehicle teleported instead of moved smoothly");
     this.Text("Tandem-Degraded-Id-street-body-respawned", "a street vehicle that vanished was spawned again");
@@ -938,8 +937,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-scene-voice", "la voix de V dans les scènes rejouées");
     this.Text("Tandem-Degraded-Id-nameplate-projection", "les plaques de nom placées par le moteur du jeu (tandem les place lui-même)");
     this.Text("Tandem-Degraded-Id-hit-shown-by-twitch", "un coup reçu par un joueur affiché comme un simple sursaut, pas la réaction du jeu");
-    this.Text("Tandem-Degraded-Id-remote-car-unseen", "le véhicule d'un joueur conduit à distance, vu par les autres là où il a été laissé");
-    this.Text("Tandem-Degraded-Id-held-device-unshared", "un appareil aux mains d'un joueur que les autres jeux ne peuvent pas tourner avec lui");
+    this.Text("Tandem-Degraded-Id-held-device-unshared", "un appareil aux mains d'un joueur, ni caméra, ni tourelle, ni nid de sniper, que les autres jeux ne peuvent pas tourner avec lui");
     this.Text("Tandem-Degraded-Id-prompt-drawn", "une invite dessinée par tandem au lieu de celle du jeu");
     this.Text("Tandem-Degraded-Id-vehicle-teleported", "un véhicule téléporté au lieu d'être déplacé en douceur");
     this.Text("Tandem-Degraded-Id-street-body-respawned", "un véhicule de rue disparu a été recréé");
