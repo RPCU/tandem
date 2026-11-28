@@ -48,6 +48,12 @@ bool QuestFrozen();
 // settles a better test).
 void SetQuestGrouped(bool grouped);
 bool QuestGrouped();
+// Game thread. The same for our NCPD scanner activities (the minor
+// activities phase, docs/architecture/story.md "Open-world activities"):
+// grouped (another world leads where we stand, the default) they wait;
+// ours leading, they run and their held signals are given back.
+void SetActivitiesGrouped(bool grouped);
+bool ActivitiesGrouped();
 // Spike C2: log every phase met (its chain of resources) and every journal
 // node in it (the journal entry it names), once each.
 void SetQuestTrace(bool on);

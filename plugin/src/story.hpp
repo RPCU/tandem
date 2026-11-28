@@ -6,6 +6,7 @@
 
 #include "tandem/interact.hpp"
 #include "tandem/moments.hpp"
+#include "tandem/openworld.hpp"
 #include "tandem/prefabs.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/scene.hpp"
@@ -137,6 +138,13 @@ public:
   std::vector<std::uint64_t> &PrefabsSent() { return m_prefabsSent; }
   bool &PrefabsSaid() { return m_prefabsSaid; }
   prefabs::Mirror &Prefabs() { return m_prefabs; }
+  // Open-world activities (docs/architecture/story.md, "Open-world
+  // activities"), game thread. Host: the set last sent. Guest: the host's
+  // set, the pins we set, and what the host's set added since (to credit).
+  std::vector<std::uint32_t> &OpenWorldSent() { return m_openWorldSent; }
+  bool &OpenWorldSaid() { return m_openWorldSaid; }
+  openworld::Mirror &OpenWorld() { return m_openWorld; }
+  std::vector<std::uint32_t> &OpenWorldAdded() { return m_openWorldAdded; }
   // Story gates (docs/architecture/story.md, "Story gates"), game thread:
   // ours as last sent (-1: never), every other player's as heard, and the
   // guest's watch on the host's barriers.
@@ -180,6 +188,10 @@ private:
   std::vector<std::uint64_t> m_prefabsSent;
   bool m_prefabsSaid{};
   prefabs::Mirror m_prefabs;
+  std::vector<std::uint32_t> m_openWorldSent;
+  bool m_openWorldSaid{};
+  openworld::Mirror m_openWorld;
+  std::vector<std::uint32_t> m_openWorldAdded;
   std::int32_t m_gatesSent{-1};
   std::map<proto::PlayerId, std::uint8_t> m_gates;
   gates::Watcher m_gateWatcher;
