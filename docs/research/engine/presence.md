@@ -417,3 +417,37 @@ EnterCharge)`, `charging_tpp`, `AI_PlayChargeStartedSound`
   `shouldTrackTarget` is the AI's (`ShouldTrackTarget`, `:450386`): a smart
   weapon locked on (`IsTargetLocked`) and not jammed, or a missile rain.
   [2.5-untested]
+
+### 13.161 Where a ragdoll keeps its bones (2026-11-28, live RTTI of 2.50, final.reds, tried on instances a and c)
+
+- The ragdoll lives in the animation graph and in its own component: two
+  graph nodes, `animAnimNode_RagdollControl` (size 0xe8: `blendInDuration`
+  +0x58, `blendOutDuration` +0x5c, `inputPoseNode` +0x60, the animation it
+  blends the physics with) and `animAnimNode_RagdollPose` (0x48, no
+  properties); and `entRagdollComponent` (0x220, `isEnabled` +0x8b; an
+  NPC gets it by `RequestComponent(n"RagdollComponent",
+n"entRagdollComponent")`, `final.reds:106800`). [2.5-verified] (RTTI)
+- The cut multiplayer replicated a ragdoll as its bodies' transforms:
+  `entRagdollComponentReplicatedState : netIComponentState` (0x38:
+  `transforms: array:Transform` +0x20, `isSleeping: Bool` +0x30). That is
+  the engine's own way to put one game's ragdoll on another's copy: apply
+  that state to the copy's component. Its apply function (in the
+  component's vtable, `0x14305b1e8`) is not found yet. [2.5-verified]
+  (RTTI; not called)
+- Script events on the entity: `RagdollRequestCollectAnimPoseEvent` (the
+  ragdoll's bodies take the animated pose: `DropEvents.OnEnter`,
+  `final.reds:535890`, a carried body put down), `RagdollPutToSleepEvent`,
+  `CreateForceRagdollEvent`, `CreateDisableRagdollEvent`,
+  `CreateRagdollApplyImpulseEvent`. [2.5-verified] (final.reds)
+- Tried on a guest's copies of three killed and thrown gangers (#124):
+  neither a teleport of the entity nor tandem's pose write at the root
+  graph's commit (252 writes in 2 s), nor `CreateDisableRagdollEvent`, nor
+  `RagdollRequestCollectAnimPoseEvent` 0.3 s after the write began then
+  `RagdollPutToSleepEvent` moved or posed a ragdolled copy: each stayed
+  where and as its own fall left it (0.7–1.1 m from the owner's, heads the
+  other way; screenshot pairs). So the write at the commit is not the
+  pose the ragdoll collects, and a dead copy's entity takes no teleport.
+  [2.5-verified] (in game)
+- Next: the replicated state (above), or the ragdoll's bodies through the
+  physics system; or write the pose before the graph's ragdoll nodes (the
+  `RagdollControl` node's input) rather than at the commit. [unverified]
