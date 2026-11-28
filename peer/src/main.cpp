@@ -249,6 +249,11 @@ struct Options {
   int summonSeconds{-1};
   int summonBoardSeconds{-1};
   int summonAgainSeconds{-1};
+  // drive: another car of our garage is summoned S seconds after we stand on
+  // foot by our first one (-1: never): the others' old copy goes once out of
+  // their sight (garage.md 1a).
+  int summonOtherSeconds{-1};
+  std::string otherVehicle{"Vehicle.v_standard25_mahir_supron_player"};
   int hitNpcsSeconds{0};   // join: hit one of the host's NPCs this often (0: never)
   int hitYouSeconds{0};    // host: one of its NPCs hits each guest's V this often (0: never)
   bool hitYouMelee{false}; // --hit-you: a melee hit (blockable, held for the proxy's swing)
@@ -712,6 +717,11 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --summon-board S   --summon: we get in S seconds after it parked, then drive\n"
          "  --summon-again S   --summon: summoned again S seconds after it parked (the same\n"
          "                     car, from the other side)\n"
+         "  --summon-other S   --summon: another car of ours is summoned S seconds after we\n"
+         "                     stand on foot by the first (parked, or out of it); it drives in\n"
+         "                     and parks 6 m from us\n"
+         "  --other-vehicle R  --summon-other: that car's record (default\n"
+         "                     Vehicle.v_standard25_mahir_supron_player)\n"
          "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
          "  --shoot-you N      host: an NPC (a replayed one) fires at each guest's V every N\n"
          "                     seconds: the guest's game fires it and decides the hit\n"
@@ -1817,6 +1827,10 @@ Options Parse(int argc, char **argv) {
       options.summonBoardSeconds = Number<int>(value);
     } else if (flag == "--summon-again") {
       options.summonAgainSeconds = Number<int>(value);
+    } else if (flag == "--summon-other") {
+      options.summonOtherSeconds = Number<int>(value);
+    } else if (flag == "--other-vehicle") {
+      options.otherVehicle = value;
     } else if (flag == "--look-keys") {
       options.lookKeys = value;
     } else if (flag == "--look") {
@@ -3655,7 +3669,7 @@ public:
       m_center = m_heard.back().second.position;
     const float kRadius = m_options.driveRadius;
     constexpr float kSpeed = 8.f;
-    const float angle = static_cast<float>(nowUs / 1e6) * kSpeed / kRadius;
+    const float angle = static_cast<float>(nowUs / 1e6) * kSpeed / kRadius + m_angleFrom;
     const Vec3 at{m_center->x + kRadius * std::cos(angle), m_center->y + kRadius * std::sin(angle),
                   m_center->z};
     const Vec3 velocity{-kSpeed * std::sin(angle), kSpeed * std::cos(angle), 0.f};
@@ -3674,6 +3688,20 @@ public:
 
   void Park(const Vec3 &at) { m_parkedAt = at; }
   void Unpark() { m_parkedAt.reset(); }
+  // Off again from the car parked at `car` (--summon-board): the circle goes
+  // on from there, so the car we drive is the one we got into, not a point
+  // of the circle the clock has reached (145 m off: the others' game took
+  // it for another car, garage-summon-other 2026-11-28).
+  void UnparkFrom(const Vec3 &car, std::uint64_t nowUs) {
+    m_parkedAt.reset();
+    const auto center = Center();
+    if (!center)
+      return;
+    const float kRadius = m_options.driveRadius;
+    constexpr float kSpeed = 8.f; // Drive's
+    m_angleFrom = std::atan2(car.y - center->y, car.x - center->x) -
+                  static_cast<float>(nowUs / 1e6) * kSpeed / kRadius;
+  }
   // drive: the circle's centre (where your V was first heard; none yet).
   std::optional<Vec3> Center() {
     if (!m_center && !m_heard.empty())
@@ -3685,6 +3713,7 @@ public:
 private:
   std::optional<Vec3> m_center;
   std::optional<Vec3> m_parkedAt;
+  float m_angleFrom = 0.f; // drive: where on the circle it starts (UnparkFrom)
   std::optional<Vec3> m_beside;
   std::optional<Vec3> m_station;
 
@@ -4728,6 +4757,15 @@ int main(int argc, char **argv) {
     std::uint64_t sentUs{};
     std::optional<std::chrono::steady_clock::time_point> parkedAt;
   } summon;
+  // --summon-other: another car of ours, summoned once we stand by the first.
+  struct {
+    bool done{};
+    Vec3 from, stop;
+    std::optional<std::uint64_t> arrivingUs;
+    std::uint64_t sentUs{};
+  } summonOther;
+  std::optional<std::chrono::steady_clock::time_point> outOfCarAt; // --drive-seconds
+  std::optional<Vec3> outOfCarPlace;
   std::uint64_t seatedAtUs = 0;
   std::optional<tandem::proto::VehicleState> lastCar;
   // The last state sent, and (world ... moved) the body we hold there.
@@ -6354,8 +6392,59 @@ int main(int argc, char **argv) {
         if (!summon.arrivingUs && after(summon.parkedAt, options.summonBoardSeconds) &&
             (options.summonAgainSeconds < 0 || summon.round > 1)) {
           summon.boarded = true;
-          puppeteer.Unpark();
+          puppeteer.UnparkFrom(summon.stop, nowUs);
           Log("summon: we get in our car");
+        }
+      }
+      // --summon-other: another car of our garage, summoned once we stand by
+      // the first (parked by us, or we got out of it): it drives in on its
+      // own and parks 6 m from us; the others' copy of the first is old.
+      if (options.mode == Mode::Drive && options.summonSeconds >= 0 &&
+          options.summonOtherSeconds >= 0 && !summonOther.done && endpoint->IsJoined()) {
+        namespace proto = tandem::proto;
+        const auto nowUs = tandem::net::NowUs();
+        const auto since = summon.boarded ? outOfCarAt : summon.parkedAt;
+        std::optional<Vec3> stand;
+        if (summon.boarded)
+          stand = outOfCarPlace;
+        else if (summon.parkedAt && !summon.arrivingUs)
+          stand = Vec3{summon.stop.x - 2.f, summon.stop.y - 4.f, summon.stop.z};
+        const auto facing = tandem::sync::FromYaw(0.f);
+        const auto said = [&](std::uint8_t flags, const Vec3 &at) {
+          endpoint->SendCombat(proto::OwnCar{.vehicle = TweakDBID(options.otherVehicle),
+                                             .flags = flags,
+                                             .position = at,
+                                             .orientation = facing});
+        };
+        constexpr float kOtherFrom = 50.f, kOtherSpeed = 6.f;
+        if (!summonOther.arrivingUs && stand && since &&
+            now >= *since + std::chrono::seconds(options.summonOtherSeconds)) {
+          summonOther.stop = {stand->x + 6.f, stand->y, stand->z};
+          summonOther.from = {summonOther.stop.x, summonOther.stop.y - kOtherFrom,
+                              summonOther.stop.z};
+          summonOther.arrivingUs = nowUs;
+          said(proto::kOwnCarMoving, summonOther.from);
+          Log("summon: our other car {} drives in from {:.0f} m", options.otherVehicle, kOtherFrom);
+        }
+        if (summonOther.arrivingUs) {
+          const float t = static_cast<float>(nowUs - *summonOther.arrivingUs) / 1e6f;
+          const float along = std::min(t * kOtherSpeed, kOtherFrom);
+          proto::VehicleState car{
+              .position = {summonOther.from.x, summonOther.from.y + along, summonOther.from.z},
+              .orientation = facing,
+              .velocity = {0.f, kOtherSpeed, 0.f}};
+          if (along >= kOtherFrom) {
+            car.velocity = {};
+            endpoint->SendLocalVehicle(car);
+            said(proto::kOwnCarArrived, car.position); // the game's Arrived
+            summonOther.arrivingUs.reset();
+            summonOther.done = true;
+            Log("summon: our other car parked by us at ({:.1f}, {:.1f}, {:.1f})", car.position.x,
+                car.position.y, car.position.z);
+          } else if (nowUs - summonOther.sentUs >= 33'000) {
+            summonOther.sentUs = nowUs;
+            endpoint->SendLocalVehicle(car);
+          }
         }
       }
       if (options.mode == Mode::Drive && !parked && (options.summonSeconds < 0 || summon.boarded)) {
@@ -6475,8 +6564,11 @@ int main(int argc, char **argv) {
           endpoint->SetLocalSeat({}); // on foot, beside where the car stopped
           endpoint->SetLocalTransit({});
           parked = true;
-          if (lastCar)
+          outOfCarAt = now;
+          if (lastCar) {
             puppeteer.Park(lastCar->position);
+            outOfCarPlace = lastCar->position;
+          }
           Log("out of the car");
         }
       }

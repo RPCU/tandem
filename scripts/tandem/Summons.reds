@@ -23,8 +23,11 @@
 //   stops, it is put where its owner says it stands, then left to rest.
 // - A car summoned again elsewhere is the same car (the game moves it): the
 //   same copy follows, a jump over 8 m a teleport (MoveBody). Another car
-//   of theirs: a copy of that one; the old copy stays parked where it was
-//   (copies are never deleted, row 1b).
+//   of theirs (or none out): a copy of that one, and the old copy goes the
+//   way the garage takes a summoned car it no longer needs (research
+//   §13.166): once it is beyond GoneDistance of our V, out of our camera's
+//   view, and nobody has sat in it for FreeSeconds; until then it stands
+//   where it was, and a summon of that car again takes it back.
 //
 // Runs on the game thread (TandemSystem.OnTick). tools/game.sh cmd garage
 // cars: what we say and what we show.
@@ -48,6 +51,16 @@ public class TandemSummoned {
   public let unseen: Bool;
 }
 
+// The copy of a partner's car its garage no longer has out (another car
+// summoned, or none): it goes once out of our sight (TandemSummons.Sweep).
+public class TandemSummonedOld {
+  public let player: Uint32;
+  public let record: TweakDBID;
+  public let body: EntityID;
+  // Since when nobody has sat in it (our clock).
+  public let freeSince: Float;
+}
+
 public class TandemSummons {
   private let m_game: GameInstance;
   private let m_you: Uint32;
@@ -67,6 +80,24 @@ public class TandemSummons {
   private let m_spawned: Int32;
   private let m_adopted: Int32;
   private let m_honked: Int32;
+  // Theirs no longer out, until they go.
+  private let m_old: array<ref<TandemSummonedOld>>;
+  private let m_removed: Int32;
+  private let m_swept: Float;
+  // The record of the last copy retired (test query summons oldcopies).
+  private let m_lastOld: TweakDBID;
+
+  // An old copy goes beyond this distance of our V, out of view (the
+  // garage's own sweep has a distance of its own, not read yet: §13.166).
+  public static func GoneDistance() -> Float {
+    return 60.0;
+  }
+
+  // ... and once nobody has sat in it for this long: a car copy freed 0.3 s
+  // after an unmount froze the game (research §13.6, §13.101).
+  public static func FreeSeconds() -> Float {
+    return 5.0;
+  }
 
   // A copy is spawned for a partner's car this near our V (as traffic,
   // traffic.md "Budget": shared within 120 m, dropped beyond 150 m).
@@ -86,6 +117,7 @@ public class TandemSummons {
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
     this.m_saidAt = new Vector4(0.0, 0.0, 0.0, 0.0);
+    this.m_lastOld = TDBID.None();
   }
 
   // The car our garage summoned, when our game has it (null: none, or
@@ -113,12 +145,17 @@ public class TandemSummons {
       this.m_saidRecord = TDBID.None();
       this.m_saidCar = EntityID.FromHash(0ul);
       ArrayClear(this.m_cars);
+      ArrayClear(this.m_old);
     }
     if you == 0u || !IsDefined(system) {
       return;
     }
     this.SayOurs(system);
     this.ShowTheirs(system);
+    if this.m_now - this.m_swept >= 0.5 {
+      this.m_swept = this.m_now;
+      this.Sweep(system);
+    }
   }
 
   // ---- ours ----
@@ -253,6 +290,118 @@ public class TandemSummons {
     this.m_cars = kept;
   }
 
+  // Its garage no longer has that car out: its copy goes once out of sight.
+  private func Retire(entry: ref<TandemSummoned>) -> Void {
+    if !EntityID.IsDefined(entry.body) {
+      return;
+    }
+    let old = new TandemSummonedOld();
+    old.player = entry.player;
+    old.record = entry.record;
+    old.body = entry.body;
+    old.freeSince = this.m_now;
+    ArrayPush(this.m_old, old);
+    this.m_lastOld = entry.record;
+  }
+
+  // The old copy of that player's car of that record, out of the old ones
+  // (none: no such copy here).
+  private func TakeOld(player: Uint32, record: TweakDBID) -> EntityID {
+    let none = EntityID.FromHash(0ul);
+    let i = 0;
+    while i < ArraySize(this.m_old) {
+      let old = this.m_old[i];
+      if old.player == player && old.record == record {
+        ArrayErase(this.m_old, i);
+        if IsDefined(TandemTraffic.Body(this.m_game, old.body)) {
+          return old.body;
+        }
+      } else {
+        i += 1;
+      }
+    }
+    return none;
+  }
+
+  // The old copies go as the garage takes a summoned car it no longer needs
+  // (its sweep, research §13.166): far from our V (GoneDistance), outside
+  // our camera's view, nobody in it; a copy nobody has sat in for
+  // FreeSeconds, the car of no one here (TandemSystem.RemoveOldCopy).
+  private func Sweep(system: ref<TandemSystem>) -> Void {
+    if ArraySize(this.m_old) == 0 {
+      return;
+    }
+    let game = this.m_game;
+    let player = GetPlayer(game);
+    if !IsDefined(player) {
+      return;
+    }
+    let here = player.GetWorldPosition();
+    let camera = GameInstance.GetCameraSystem(game);
+    let kept: array<ref<TandemSummonedOld>>;
+    for old in this.m_old {
+      let body = TandemTraffic.Body(game, old.body);
+      if IsDefined(body) {
+        let taken = system.SeatedInBy(old.body) || VehicleComponent.IsVehicleOccupied(game, body);
+        if taken {
+          old.freeSince = this.m_now;
+        }
+        let far = Vector4.Distance(body.GetWorldPosition(), here);
+        let seen = camera.IsInCameraFrustum(body, 2.0, 3.0);
+        if !taken && this.m_now - old.freeSince >= TandemSummons.FreeSeconds()
+          && far > TandemSummons.GoneDistance() && !seen && system.RemoveOldCopy(old.body) {
+          this.m_removed += 1;
+          TandemNative.Log(s"summons: player \(old.player)'s old \(TDBID.ToStringDEBUG(old.record)) removed out of sight, \(far) m from our V");
+        } else {
+          ArrayPush(kept, old);
+        }
+      }
+    }
+    this.m_old = kept;
+  }
+
+  private func FirstOld() -> ref<TandemSummonedOld> {
+    for old in this.m_old {
+      return old;
+    }
+    return null;
+  }
+
+  // Car copies of that record in our world.
+  private func CopiesOf(record: TweakDBID) -> Int32 {
+    let n = 0;
+    let ids = GameInstance.GetDynamicEntitySystem().GetTaggedIDs(n"Tandem.Vehicle");
+    for id in ids {
+      let copy = TandemTraffic.Body(this.m_game, id);
+      if IsDefined(copy) && copy.GetRecordID() == record {
+        n += 1;
+      }
+    }
+    return n;
+  }
+
+  // (garage cars face old|away) our V turned where it stands, toward the
+  // first old copy or away from it.
+  private func Face(toward: Bool) -> Void {
+    let game = this.m_game;
+    let player = GetPlayer(game);
+    let first = this.FirstOld();
+    let body = IsDefined(first) ? TandemTraffic.Body(game, first.body) : null;
+    if !IsDefined(player) || !IsDefined(body) {
+      TandemNative.Log("garage cars: no old copy to face");
+      return;
+    }
+    let at = player.GetWorldPosition();
+    let there = body.GetWorldPosition();
+    let direction = Vector4.Normalize2D(there - at);
+    if !toward {
+      direction = new Vector4(-direction.X, -direction.Y, 0.0, 0.0);
+    }
+    TandemTravel.ExpectMove(game);
+    GameInstance.GetTeleportationFacility(game).Teleport(player, at, Vector4.ToRotation(direction));
+    TandemNative.Log(s"garage cars: our V faces \(toward ? "toward" : "away from") the old copy");
+  }
+
   // The copy of a partner's summoned car here (none: no copy).
   public func CopyOf(player: Uint32) -> EntityID {
     let car = this.Find(player);
@@ -285,12 +434,14 @@ public class TandemSummons {
       let entry = this.Find(other);
       if !TDBID.IsValid(record) {
         if IsDefined(entry) {
-          TandemNative.Log(s"summons: player \(other) has no car out: its copy stays parked");
+          TandemNative.Log(s"summons: player \(other) has no car out: its copy goes once out of sight");
+          this.Retire(entry);
           this.Forget(other);
         }
       } else {
         if IsDefined(entry) && entry.record != record {
-          TandemNative.Log(s"summons: player \(other) summoned another car (\(TDBID.ToStringDEBUG(record))): the old copy stays parked");
+          TandemNative.Log(s"summons: player \(other) summoned another car (\(TDBID.ToStringDEBUG(record))): the old copy goes once out of sight");
+          this.Retire(entry);
           this.Forget(other);
           entry = null;
         }
@@ -363,6 +514,15 @@ public class TandemSummons {
     if !IsDefined(body) {
       entry.body = EntityID.FromHash(0ul);
       entry.spawnedAt = 0.0;
+      // That car summoned again before its old copy went: that copy (one
+      // body per garage car, as the garage's own, §13.165).
+      let back = this.TakeOld(other, entry.record);
+      if EntityID.IsDefined(back) {
+        entry.body = back;
+        this.m_adopted += 1;
+        TandemNative.Log(s"summons: player \(other)'s \(TDBID.ToStringDEBUG(entry.record)): its old copy is out again");
+        return;
+      }
       // The copy of that car we have: the one its owner drove (and left),
       // or drives now.
       let last = TandemTraffic.Body(game, system.LastCarOf(other));
@@ -439,8 +599,12 @@ public class TandemSummons {
     }
   }
 
-  // tools/game.sh cmd garage cars
+  // tools/game.sh cmd garage cars [face old|away]
   public func Command(command: String, system: ref<TandemSystem>) -> Void {
+    if StrBeginsWith(command, "garage cars face") {
+      this.Face(Equals(command, "garage cars face old"));
+      return;
+    }
     let game = this.m_game;
     let player = GetPlayer(game);
     let here = IsDefined(player) ? player.GetWorldPosition() : new Vector4(0.0, 0.0, 0.0, 0.0);
@@ -449,7 +613,7 @@ public class TandemSummons {
     if IsDefined(ours) {
       line += s" \(Vector4.Distance(ours.GetWorldPosition(), here)) m from our V, said \(this.m_saidMoving ? "driving in" : "parked")";
     }
-    line += s"; copies spawned \(this.m_spawned), adopted \(this.m_adopted), arrivals \(this.m_honked)";
+    line += s"; copies spawned \(this.m_spawned), adopted \(this.m_adopted), arrivals \(this.m_honked), old \(ArraySize(this.m_old)), removed \(this.m_removed)";
     for car in this.m_cars {
       let body = TandemTraffic.Body(game, car.body);
       let place = IsDefined(body) ? s"\(Vector4.Distance(body.GetWorldPosition(), here)) m" : "no copy";
@@ -464,9 +628,36 @@ public class TandemSummons {
   // it stands), lag (metres from where its owner's stream is drawn),
   // seated (its owner's puppet sits in that copy: yes or no), arrivals
   // (arrivals honked and flashed here so far); ours (our
-  // own summoned car's place, "x y z"). "none": no such car.
+  // own summoned car's place, "x y z"); old (old copies still here), removed
+  // (old copies removed so far), oldcopies (car copies of the first old
+  // copy's record in our world), oldseen (that copy in our camera's view:
+  // yes or no). "none": no such car.
   public func Query(system: ref<TandemSystem>, what: String) -> String {
     let game = this.m_game;
+    if Equals(what, "old") {
+      return IntToString(ArraySize(this.m_old));
+    }
+    if Equals(what, "removed") {
+      return IntToString(this.m_removed);
+    }
+    if Equals(what, "oldcopies") || Equals(what, "oldseen") {
+      if ArraySize(this.m_old) == 0 && this.m_removed == 0 {
+        return "none";
+      }
+      let first = this.FirstOld();
+      if Equals(what, "oldseen") {
+        let seen = IsDefined(first) ? TandemTraffic.Body(game, first.body) : null;
+        if !IsDefined(seen) {
+          return "none";
+        }
+        return GameInstance.GetCameraSystem(game).IsInCameraFrustum(seen, 2.0, 3.0) ? "yes" : "no";
+      }
+      let record = this.m_lastOld;
+      if IsDefined(first) {
+        record = first.record;
+      }
+      return IntToString(this.CopiesOf(record));
+    }
     if Equals(what, "ours") {
       let ours = TandemSummons.OurCar(game);
       if !IsDefined(ours) {
@@ -483,15 +674,7 @@ public class TandemSummons {
       return IntToString(this.m_honked);
     }
     if Equals(what, "copies") {
-      let n = 0;
-      let ids = GameInstance.GetDynamicEntitySystem().GetTaggedIDs(n"Tandem.Vehicle");
-      for id in ids {
-        let copy = TandemTraffic.Body(game, id);
-        if IsDefined(copy) && copy.GetRecordID() == car.record {
-          n += 1;
-        }
-      }
-      return IntToString(n);
+      return IntToString(this.CopiesOf(car.record));
     }
     let body = TandemTraffic.Body(game, car.body);
     if !IsDefined(body) {
