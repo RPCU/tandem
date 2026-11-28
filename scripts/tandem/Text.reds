@@ -752,6 +752,10 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Phone-Invite", "Ask {1} to join you");
     this.Text("Tandem-Phone-InviteAbout", "{1} is offered a fast travel to you");
     this.Text("Tandem-Phone-Cancelled", "Call to {1} cancelled");
+    this.Text("Tandem-Phone-Busy", "{1} is busy");
+    this.Text("Tandem-Phone-NoAnswer", "{1} didn't answer");
+    this.Text("Tandem-Phone-Unavailable", "{1} is unavailable");
+    this.Text("Tandem-Phone-Missed", "Missed call from {1}");
     this.Text("Tandem-Phone-Invited", "Asked {1} to join you");
     this.Text("Tandem-Phone-Unreachable", "{1} can't be reached right now");
     // A call between players on screen (Holocall.reds).
@@ -1275,6 +1279,10 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Phone-Invite", "Proposer à {1} de vous rejoindre");
     this.Text("Tandem-Phone-InviteAbout", "{1} se voit proposer un voyage rapide jusqu'à vous");
     this.Text("Tandem-Phone-Cancelled", "Appel à {1} annulé");
+    this.Text("Tandem-Phone-Busy", "{1} est occupé");
+    this.Text("Tandem-Phone-NoAnswer", "{1} ne répond pas");
+    this.Text("Tandem-Phone-Unavailable", "{1} est injoignable");
+    this.Text("Tandem-Phone-Missed", "Appel manqué de {1}");
     this.Text("Tandem-Phone-Invited", "Proposé à {1} de vous rejoindre");
     this.Text("Tandem-Phone-Unreachable", "{1} est injoignable pour l'instant");
     this.Text("Tandem-Trade-NotNow", "Échange impossible pour l'instant");

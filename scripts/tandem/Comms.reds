@@ -370,9 +370,12 @@ public class TandemComms {
     }
     this.DriveHacks();
     if this.m_offerFrom != 0u && now - this.m_offerAt > 15.0 {
-      TandemNative.Log(s"comms: link request of \(this.NameOf(this.m_offerFrom)) left unanswered");
-      this.m_holocall.RingStopped(this.m_offerFrom);
+      let caller = this.m_offerFrom;
+      TandemNative.Log(s"comms: link request of \(this.NameOf(caller)) left unanswered: a missed call");
+      TandemCommsNative.DeclineLink(caller, 4);
+      this.m_holocall.RingStopped(caller);
       this.HideOffer();
+      this.Notice("Phone-Missed", this.NameOf(caller));
     }
     if this.m_hangUp {
       this.m_hangUp = false;
@@ -858,11 +861,16 @@ public class TandemComms {
     let name = this.NameOf(player);
     TandemNative.Log(s"comms: link with \(name): \(before) -> \(now)");
     if !TandemSync.InSession(player) {
-      // Gone: the co-op menu says so ("NAME left the session").
+      // Gone: the co-op menu says so ("NAME left the session"); a call to
+      // them ends as the phone ends a call nobody can take.
       if this.m_offerFrom == player {
         this.HideOffer();
       }
-      this.m_holocall.Ended(player, this.m_now);
+      if this.m_holocall.IsCalling(player) {
+        this.m_holocall.Refused(player, TandemText.F("Phone-Unavailable", name), this.m_now);
+      } else {
+        this.m_holocall.Ended(player, this.m_now);
+      }
       return;
     }
     if now == 3 {
@@ -898,6 +906,13 @@ public class TandemComms {
   // regroup offer's (Travel.reds) unless one has the key.
   private func ShowOffer(player: Uint32) -> Void {
     let name = this.NameOf(player);
+    let busy = this.Busy();
+    if NotEquals(busy, "") {
+      TandemCommsNative.DeclineLink(player, 3);
+      TandemNative.Log(s"comms: the link request of \(name) declined: we are busy (\(busy))");
+      this.Notice("Phone-Missed", name);
+      return;
+    }
     this.Notice("Comms-LinkAsked", name);
     let travel = TandemTravel.Of(this.m_game);
     if IsDefined(travel) && travel.ShowingOffer() {
@@ -932,13 +947,42 @@ public class TandemComms {
     TandemNative.Log(s"comms: showing the link request of \(name)\(this.m_ringing ? " (ringing)" : "")");
   }
 
-  // Our request to `player` was not taken there (reason 1: another came
-  // after it and took the call). Our consent stands, as for a request left
-  // unanswered: they can call us back.
+  // Our call to `player` was not taken there, and why (proto::kLinkDecline*:
+  // 1 another call took theirs, 2 declined, 3 busy, 4 no answer): the
+  // phone's call view says it, then the call ends. Our consent stands, as
+  // for a request left unanswered: they can call us back.
   private func LinkDeclined(player: Uint32, reason: Int32) -> Void {
     let name = this.NameOf(player);
-    TandemNative.Log(s"comms: \(name) did not take our link request (reason \(reason))");
-    this.Notice("Comms-LinkBusy", name);
+    let key = "Phone-Busy";
+    if reason == 2 {
+      key = "Phone-Declined";
+    } else if reason == 4 {
+      key = "Phone-NoAnswer";
+    }
+    TandemNative.Log(s"comms: \(name) did not take our call (reason \(reason))");
+    this.m_holocall.Refused(player, TandemText.F(key, name), this.m_now);
+    this.Notice(key, name);
+  }
+
+  // Why we cannot take a call now ("" when we can): a call of the game's,
+  // a scene that holds V, a menu, a loading screen.
+  private func Busy() -> String {
+    if this.CallUp() {
+      return "on a call";
+    }
+    let ui = GameInstance.GetBlackboardSystem(this.m_game).Get(GetAllBlackboardDefs().UI_System);
+    if IsDefined(ui) && ui.GetBool(GetAllBlackboardDefs().UI_System.IsInMenu) {
+      return "in a menu";
+    }
+    let player = GetPlayer(this.m_game);
+    if !IsDefined(player) {
+      return "loading";
+    }
+    let psm = player.GetPlayerStateMachineBlackboard();
+    if IsDefined(psm) && psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.SceneTier) >= 3 {
+      return "in a scene";
+    }
+    return "";
   }
 
   private func HideOffer() -> Void {
@@ -1036,6 +1080,7 @@ public class TandemComms {
     }
     this.m_holocall.RingStopped(player);
     this.HideOffer();
+    TandemCommsNative.DeclineLink(player, 2);
     TandemNative.Log(s"comms: declined the link request of \(this.NameOf(player))");
     return true;
   }
