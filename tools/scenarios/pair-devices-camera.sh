@@ -18,9 +18,7 @@ cmd where
 expect 'where: [-0-9.]+ ' 5
 read -r x y z < <(since | grep -oE 'where: [-0-9.]+ [-0-9.]+ [-0-9.]+' | tail -1 | awk '{ print $2, $3, $4 }')
 pat "$(awk -v x="$x" 'BEGIN { print x + 1.0 }') $y $z"
-pmark
-pcmd device near camera
-expect_partner "devices: nearest camera $camera " 10
+pnear camera "$camera"
 query before device camera attitude
 note "the camera to our V before: $before"
 mark

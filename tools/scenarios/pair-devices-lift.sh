@@ -13,9 +13,7 @@ expect 'devices: at lift [0-9a-f]+ LiftControllerPS: ' 10
 read -r lift x y z < <(since | sed -nE 's/.*devices: at lift ([0-9a-f]+) LiftControllerPS: \(([-0-9.]+), ([-0-9.]+), ([-0-9.]+)\).*/\1 \2 \3 \4/p' | tail -1)
 note "the lift: $lift"
 pat "$(awk -v x="$x" 'BEGIN { print x + 0.8 }') $y $z"
-pmark
-pcmd device near lift
-expect_partner "devices: nearest lift $lift " 10
+pnear lift "$lift"
 pquery before position
 shot pair-lift-aboard
 mark

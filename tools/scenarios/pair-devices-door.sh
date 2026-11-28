@@ -15,9 +15,7 @@ read -r door x y z < <(since | sed -nE 's/.*devices: at door ([0-9a-f]+) [A-Za-z
 note "the door: $door"
 # The partner beside our V, a metre aside: the same door is its nearest.
 pat "$(awk -v x="$x" 'BEGIN { print x + 1.0 }') $y $z"
-pmark
-pcmd device near door
-expect_partner "devices: nearest door $door " 10
+pnear door "$door"
 # A known start: closed on both.
 cmd device close door
 pause 4

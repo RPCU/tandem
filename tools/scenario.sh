@@ -633,6 +633,22 @@ partner_join() {
   expect 'joined \(player [0-9]+' 15
   pause 3
 }
+# The partner follows the device ID of KIND (its `device near KIND` names
+# it): asked every 3 s, 45 s at most, its devices streaming in after a
+# teleport (none within 200 m 5 s after its V stood there, 2026-11-28).
+pnear() {
+  local kind=$1 id=$2 i
+  for i in $(seq 1 15); do
+    pmark
+    pcmd device near "$kind"
+    sleep 3
+    if psince | grep -q "devices: nearest $kind $id "; then
+      echo "  ok (partner): follows $kind $id"
+      return 0
+    fi
+  done
+  fail "the partner never followed the $kind $id (device near $kind, 45 s)"
+}
 expect_partner() {
   local pattern=${1//27450/$game_port} timeout=${2:-30} start=$SECONDS
   while ((SECONDS - start < timeout)); do
