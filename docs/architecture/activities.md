@@ -340,7 +340,7 @@ racers.
   you watch"). Seated, the joiner's V gets out of any car, is put beside
   its slot (two abreast, 10 m behind the start line and 7 m per row), its
   race car is spawned there (`Tandem.RaceCar`): with tandem.ini
-  `race_car = own` (the default, on the settings page) its garage's active
+  `race_car = own` (the default, `tandem.ini` only) its garage's active
   car (`VehicleSystem.GetActivePlayerVehicle(Car)`, a spawned copy of that
   record: its own tuning is not carried), with `copy` or no car of its own
   a copy of the starter's; our V gets

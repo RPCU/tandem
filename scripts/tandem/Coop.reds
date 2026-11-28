@@ -5,9 +5,9 @@
 //   Co-op   -> Start a new co-op game | Host a saved game | Join a game |
 //              Join by address | Play solo (once one is chosen) | Write a
 //              bug report | Co-op settings | Back
-//   Settings -> its groups (Session, Gameplay, Interface, Scans and pings,
-//              Advanced) | Back; a group -> one item per setting
-//              (Settings.reds): picking it switches or cycles it, or asks
+//   Settings -> one item per setting (Settings.reds: the name, the host's
+//              rules but on a guest in a session, the player's own
+//              screen) | Back: picking it switches or cycles it, or asks
 //              for a text; saved to tandem.ini at once
 //   Host    -> Continue | Load game | Back      (the game's own load list)
 //   Join    -> recent hosts... | Enter a join code | Back (no recent host:
@@ -83,7 +83,6 @@ enum TandemCoopAction {
   Mods = 18,
   NewHost = 19,
   NewV = 20,
-  SettingsGroup = 21,
 }
 
 // One of our entries in a menu's list: the vanilla item data (its label is
@@ -227,6 +226,9 @@ public class TandemCoop {
       } else if status.state == 3 {
         let host = TandemCoop.HostName();
         ArrayPush(lines, StrLen(host) > 0 ? TandemText.FE(english, "Status-InSessionOf", host) : TandemText.FE(english, "Status-InSessionAt", target));
+        // The host decides them: a guest reads them here, its page has
+        // no row for them (Settings.reds).
+        ArrayPush(lines, TandemSettings.HostRulesLine(english));
         for line in TandemCoop.ConnectionLines(english) {
           ArrayPush(lines, line);
         }
@@ -480,11 +482,8 @@ public class TandemCoopMenu {
   public let nameFor: TandemCoopAction;
   // A popup closed with Esc: the menu still gets its release (clock ticks).
   public let swallowBack: Int32;
-  // The Settings page's group (0: the list of groups, 1 the first), and the
-  // next page's; the row the cursor goes to when the page shows (the row
-  // just changed, the group just left).
-  public let group: Int32;
-  public let nextGroup: Int32;
+  // The row the cursor goes to when the page shows (the setting just
+  // changed), and the next page's.
   public let cursor: Int32;
   public let nextCursor: Int32;
   // In a session when the page was built (when a setting takes effect).
@@ -585,18 +584,10 @@ public class TandemCoopMenu {
       this.Add("Menu-EnterCode", TandemCoopAction.EnterAddress);
     } else if Equals(this.page, TandemCoopPage.Settings) {
       this.sessionNow = inSession || TandemNative.IsStarted();
-      if this.group <= 0 {
-        let i = 1;
-        while i <= TandemSettings.GroupCount() {
-          let group = this.Add(TandemSettings.GroupKey(i), TandemCoopAction.SettingsGroup);
-          group.target = s"\(i)";
-          i += 1;
-        }
-      } else {
-        for key in TandemSettings.KeysOf(this.group) {
-          let item = this.Add("", TandemCoopAction.Setting, TandemSettings.Label(key));
-          item.target = key;
-        }
+      let rows = TandemSettings.Rows();
+      for key in rows {
+        let item = this.Add("", TandemCoopAction.Setting, TandemSettings.Label(key));
+        item.target = key;
       }
     } else if ArraySize(problems) > 0 {
       // Co-op is off: nothing to host or join, only the report.
@@ -681,15 +672,9 @@ public class TandemCoopMenu {
       if StrLen(target) == 0 {
         return rebuilt;
       }
-      if this.group <= 0 {
-        let group = StringToInt(target, 0);
-        this.aboutTitle = TandemText.Get(TandemSettings.GroupKey(group));
-        this.about = TandemSettings.GroupAbout(group);
-      } else {
-        this.aboutTitle = TandemSettings.Title(target);
-        this.about = TandemSettings.About(target);
-        this.aboutNote = TandemSettings.Note(target, this.sessionNow);
-      }
+      this.aboutTitle = TandemSettings.Title(target);
+      this.about = TandemSettings.About(target);
+      this.aboutNote = TandemSettings.Note(target, this.sessionNow);
     }
     return rebuilt;
   }
@@ -855,9 +840,8 @@ public class TandemCoopMenu {
 
   // Asks for OnTandemDeferred on the owner next frame; false: no panel to
   // wait on (then the owner switches at once).
-  public func Defer(page: TandemCoopPage, owner: ref<IScriptable>, opt group: Int32, opt cursor: Int32) -> Bool {
+  public func Defer(page: TandemCoopPage, owner: ref<IScriptable>, opt cursor: Int32) -> Bool {
     this.nextPage = page;
-    this.nextGroup = group;
     this.nextCursor = cursor;
     this.switching = true;
     if !IsDefined(this.later) {
@@ -881,17 +865,12 @@ public class TandemCoopMenu {
     }
     this.switching = false;
     this.page = this.nextPage;
-    this.group = Equals(this.page, TandemCoopPage.Settings) ? this.nextGroup : 0;
     this.cursor = this.nextCursor;
     return true;
   }
 
-  // Back (and Esc): a settings group goes back to the list of groups, on
-  // the group it was; any other page up a page (Up).
+  // Back (and Esc): up a page (Up).
   public func DeferUp(owner: ref<IScriptable>) -> Bool {
-    if Equals(this.page, TandemCoopPage.Settings) && this.group > 0 {
-      return this.Defer(TandemCoopPage.Settings, owner, 0, this.group - 1);
-    }
     return this.Defer(this.Up(), owner);
   }
 
@@ -1048,8 +1027,8 @@ protected cb func OnContinueButtonEnter(evt: ref<inkPointerEvent>) -> Bool {
 }
 
 @addMethod(SingleplayerMenuGameController)
-private func TandemGo(page: TandemCoopPage, opt group: Int32, opt cursor: Int32) -> Void {
-  if !this.m_tandem.Defer(page, this, group, cursor) && this.m_tandem.TakeSwitch() {
+private func TandemGo(page: TandemCoopPage, opt cursor: Int32) -> Void {
+  if !this.m_tandem.Defer(page, this, cursor) && this.m_tandem.TakeSwitch() {
     this.TandemShowPage();
   }
 }
@@ -1202,14 +1181,12 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Bool {
     this.TandemGo(TandemCoopPage.Root);
   } else if Equals(action, TandemCoopAction.Settings) {
     this.TandemGo(TandemCoopPage.Settings);
-  } else if Equals(action, TandemCoopAction.SettingsGroup) {
-    this.TandemGo(TandemCoopPage.Settings, StringToInt(item.target, 0));
   } else if Equals(action, TandemCoopAction.Setting) {
     if TandemSettings.Kind(item.target) == 2 {
       this.TandemAskSetting(item.target);
     } else {
       TandemSettings.Set(item.target, TandemSettings.Next(item.target));
-      this.TandemGo(TandemCoopPage.Settings, this.m_tandem.group, this.m_tandem.RowOf(item.target));
+      this.TandemGo(TandemCoopPage.Settings, this.m_tandem.RowOf(item.target));
     }
   }
   return true;
@@ -1237,7 +1214,7 @@ protected cb func OnTandemSetting(data: ref<inkGameNotificationData>) -> Bool {
   if !TandemSettings.Set(this.m_tandem.settingKey, close.input) {
     GenericMessageNotification.Show(this, TandemSettings.Title(this.m_tandem.settingKey), TandemSettings.Refusal(this.m_tandem.settingKey, close.input), GenericMessageNotificationType.OK);
   }
-  this.TandemGo(TandemCoopPage.Settings, this.m_tandem.group, this.m_tandem.RowOf(this.m_tandem.settingKey));
+  this.TandemGo(TandemCoopPage.Settings, this.m_tandem.RowOf(this.m_tandem.settingKey));
   return true;
 }
 
@@ -1406,7 +1383,7 @@ private func TandemCommand(command: String) -> Void {
   } else if TandemCoop.AnswerName(this.m_tandem, command) {
   } else if TandemSettings.Command(command) {
     if Equals(this.m_tandem.page, TandemCoopPage.Settings) {
-      this.TandemGo(TandemCoopPage.Settings, this.m_tandem.group);
+      this.TandemGo(TandemCoopPage.Settings, this.m_tandem.cursor);
     }
   } else {
     TandemCoop.LogStatus();
@@ -1629,8 +1606,8 @@ private func CoopSystem() -> ref<TandemSystem> {
 }
 
 @addMethod(PauseMenuGameController)
-private func TandemGo(page: TandemCoopPage, opt group: Int32, opt cursor: Int32) -> Void {
-  if !this.m_tandem.Defer(page, this, group, cursor) && this.m_tandem.TakeSwitch() {
+private func TandemGo(page: TandemCoopPage, opt cursor: Int32) -> Void {
+  if !this.m_tandem.Defer(page, this, cursor) && this.m_tandem.TakeSwitch() {
     this.TandemShowPage();
   }
 }
@@ -1742,14 +1719,12 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Void {
     this.TandemGo(TandemCoopPage.Coop);
   } else if Equals(action, TandemCoopAction.Settings) {
     this.TandemGo(TandemCoopPage.Settings);
-  } else if Equals(action, TandemCoopAction.SettingsGroup) {
-    this.TandemGo(TandemCoopPage.Settings, StringToInt(item.target, 0));
   } else if Equals(action, TandemCoopAction.Setting) {
     if TandemSettings.Kind(item.target) == 2 {
       this.TandemAskSetting(item.target);
     } else {
       TandemSettings.Set(item.target, TandemSettings.Next(item.target));
-      this.TandemGo(TandemCoopPage.Settings, this.m_tandem.group, this.m_tandem.RowOf(item.target));
+      this.TandemGo(TandemCoopPage.Settings, this.m_tandem.RowOf(item.target));
     }
   }
 }
@@ -1775,7 +1750,7 @@ protected cb func OnTandemSetting(data: ref<inkGameNotificationData>) -> Bool {
   if !TandemSettings.Set(this.m_tandem.settingKey, close.input) {
     GenericMessageNotification.Show(this, TandemSettings.Title(this.m_tandem.settingKey), TandemSettings.Refusal(this.m_tandem.settingKey, close.input), GenericMessageNotificationType.OK);
   }
-  this.TandemGo(TandemCoopPage.Settings, this.m_tandem.group, this.m_tandem.RowOf(this.m_tandem.settingKey));
+  this.TandemGo(TandemCoopPage.Settings, this.m_tandem.RowOf(this.m_tandem.settingKey));
   return true;
 }
 

@@ -224,8 +224,8 @@ fallback, and ENet never knows: it keeps talking to the proxy on
   that goes away leaves a direct path running (a guest with one does not
   fail at the end of the hold). Two sides whose NATs both map each
   destination apart (the connection check) do not punch at all.
-- **Settings**: `direct = auto|off` (`tandem.ini`, the settings page,
-  applied at once: off drops every path to the relay). Tests: "through
+- **Settings**: `direct = auto|off` (`tandem.ini` only, not on the co-op
+  menu; `coop set direct` applies it at once: off drops every path to the relay). Tests: "through
   the relay, host and guest find a direct path, and fall back to the
   relay" (up on 127.0.0.1, then the host turns it off mid-session, the
   guest falls back, the session goes on), "a host that does not punch
@@ -255,7 +255,7 @@ fallback, and ENet never knows: it keeps talking to the proxy on
 
 ## Kept codes
 
-- `code = keep` (`tandem.ini`, the settings page): the host registers with
+- `code = keep` (`tandem.ini` only): the host registers with
   `RegisterHostKeep` (19: secret, token, salt; padded to 64) and its session
   gets its token's **kept code**: 30 bits of SHA-256 of the token and the
   salt, moved into the region and the token's replica (`keepOwner`, a hash

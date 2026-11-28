@@ -143,80 +143,101 @@ yet run in game**).
   the Mod Settings mod appends its entry wherever the game's Mods entry is
   missing, and `ShowActionsList` its Close game.
 - **The page** (`scripts/tandem/Settings.reds`, both menus' Co-op page →
-  Co-op settings): its groups, as the game's settings have tabs, so that
-  no list runs past the menu's panel: Session (name, friendly_fire,
-  enemy_scaling, level_gap, story), Gameplay (quest_freeze, scene_privacy,
-  time_host, race_car), Interface (notices, markers, nameplates,
-  party_hud), Scans and pings (link, pings), Advanced (recorder, relay,
-  code, direct); each opens a page of one item per setting, a short label
-  on one line, "Name: V" (a typed value past 18 characters is cut, the
-  description shows it whole). Back and Esc go to the list of groups, on
-  the group left; a change keeps the cursor on its row. Beside the list,
-  under the status lines and apart from them (a rule, then the row's name,
-  what it does in the game's settings info grey, when a change takes
-  effect in yellow, as the game's settings say "requires a restart"): the
+  Co-op settings): one short page, no groups (the user, 2026-11-28: the
+  host decides most things, a guest gets only conveniences; most players
+  never open it, the defaults are meant to be right). Its rows, a short
+  label on one line, "Name: V" (a typed value past 18 characters is cut,
+  the description shows it whole):
+  - **the name** (each player's own);
+  - **the host's rules** (`HostRules`: `friendly_fire`, `enemy_scaling`,
+    `level_gap`), on a host's page and out of a session (they apply to
+    the sessions this player hosts); **a guest in a session has no row for
+    them**: its status lines say the host's in one line, "Host's rules:
+    friendly fire off, enemy scaling on, level gap 8" (`Status-HostRules`,
+    `Rule-*`, `TandemSettings.HostRulesLine`, from the `Rules` the host
+    sent: `TandemFight.FriendlyFire`, `TandemProgress.EnemyScaling`,
+    `TandemFight.LevelGap`), on the Co-op page and the settings page alike;
+  - **the player's own screen**: `notices`, `markers`, `nameplates`,
+    `party_hud`.
+
+  Every other key is `tandem.ini`'s alone, at its default (`IniKeys`:
+  `link`, `pings`, `recorder`, `relay`, `code`, `direct`, `story`,
+  `quest_freeze`, `scene_privacy`, `time_host`, `race_car`; what each does:
+  `plugin/src/config.hpp`); `coop settings` logs them and `coop set`
+  still changes them (the scenarios). Back and Esc go up to the Co-op
+  page; a change keeps the cursor on its row. Beside the list, under the
+  status lines and apart from them (a rule, then the row's name, what it
+  does in the game's settings info grey, when a change takes effect in
+  yellow, as the game's settings say "requires a restart"): the
   description of the row under the cursor (hovered, else selected;
-  `Settings-About-*`, `Settings-Group-About-*`, `TandemSettings.About`,
-  `Note`). Its arrays (`Keys`,
-  `Labels`, `Abouts`, `Kinds`, `Whens`, `Groups`) have one entry per setting in the
-  page's order: name, friendly_fire, enemy_scaling, level_gap, notices, markers,
-  nameplates, party_hud, link, pings, recorder, relay, code, direct, story,
-  quest_freeze, scene_privacy, time_host, race_car. `tools/menu-check.py`
-  (`task menu:check`, run by `scripts:check` and CI) checks them aligned,
-  every group named and described and none empty,
-  each key taken by `ApplySetting` and `settings::IsEditable`, every label,
-  description and choice text in English and French, no two entries
-  reading the same, nothing registered with Mod Settings, and no value
-  read straight from an array a call returned (`Labels()[i]` gave an empty
-  String in game: every row read ": V", 2026-11-20). Picking an on/off or a choice moves to the next value; a
-  typed one (name, relay, relay host token: never shown, "set" or "not
-  set") opens the message popup with Codeware's text field. Each change
-  goes through `TandemNative.SetSetting(key, value)`: the plugin checks it
-  with tandem.ini's own parser (`ApplySetting`, `plugin/src/config.cpp`),
-  saves that one line (`tandem::settings::SetKey`, `core/`, tested: the
-  other keys, the comments and the line endings stay; a key only in a
-  comment is appended, not uncommented; a value with a line break, `;` or
-  `#` is refused) through a file written aside, and applies it.
+  `Settings-About-*`, `TandemSettings.About`, `Note`; a host's rule says
+  it is everyone's, `Settings-HostsRule`). Its arrays (`Keys`, `Labels`,
+  `Abouts`, `Kinds`, `Whens`) have one entry per row in the page's order:
+  name, friendly_fire, enemy_scaling, level_gap, notices, markers,
+  nameplates, party_hud. `tools/menu-check.py` (`task menu:check`, run by
+  `scripts:check` and CI) checks them aligned, one short page (at most 10
+  rows, no groups), `HostRules` the three rules `Rules` carries and rows
+  of the page, no `IniKeys` key a row, each key (rows and `IniKeys`) taken
+  by `ApplySetting` and `settings::IsEditable`, every label, description
+  and choice text in English and French, no two entries reading the same,
+  nothing registered with Mod Settings, and no value read straight from
+  an array a call returned (`Labels()[i]` gave an empty String in game:
+  every row read ": V", 2026-11-20). Picking an on/off or a choice moves
+  to the next value; the name opens the message popup with Codeware's
+  text field. Each change goes through `TandemNative.SetSetting(key,
+  value)`: the plugin checks it with tandem.ini's own parser
+  (`ApplySetting`, `plugin/src/config.cpp`), saves that one line
+  (`tandem::settings::SetKey`, `core/`, tested: the other keys, the
+  comments and the line endings stay; a key only in a comment is
+  appended, not uncommented; a value with a line break, `;` or `#` is
+  refused) through a file written aside, and applies it.
   `TandemNative.Setting(key)` reads one back.
-- **When it applies**: at once for `recorder`, `friendly_fire`, `enemy_scaling`, `notices`,
-  `markers`, `nameplates`, `party_hud`, `race_car` (the scripts read them as they need
-  them; the nameplates and the party list every frame), `link` and `pings`
-  (`Comms::Configure`: in a session a new link default replaces our
-  consents and is sent at once; pings off stops new pings, a team target
-  still shows; `comms.md`);
-  `name`, `relay`, `relay_token`, `story`, `time_host`, `level_gap` are what a running
-  session was set up with, so a change during one waits for its end (the
-  description says so, `Settings-NextSession`); `quest_freeze` and `scene_privacy`
-  choose hooks installed at launch (`Settings-AfterRestart`).
-- **What they do**: `friendly_fire` is the host's rule for the whole
-  session (`friendly_fire = off` by default; `combat.md`, `Rules`): on a host's page it
-  changes the rule at once (the host sends `Rules` again, every game
-  follows); on a guest's page in a session it shows the host's value,
-  the description says it is the host's rule, and it cannot be changed there (its own tandem.ini's
-  value counts when it hosts). `enemy_scaling` (on by default; `npcs.md`,
-  "Enemy scaling") is the host's rule the same way: hostile NPCs tougher for
-  each extra player near them; its health per player,
-  `enemy_scaling_health`, is not on the page (tandem.ini only).
-  `notices = important` hides news (rides, calls, pauses,
-  players elsewhere, loot), `minimal` keeps only what asks for an answer or
-  went wrong (`TandemText.Importance`); every notice is logged either way.
-  `markers = off` takes the other players' markers off (HUD, minimap, map);
-  `nameplates` cycles near (to 12 m), always (any distance, smaller and
-  fainter) and off (no name over them, the marker's label neither);
-  `party_hud = off` hides the party list (`presence.md`, Layout); a
-  tandem.ini of before with `on` reads as near. The name's popup says its
-  rules ("1 to 16 characters…", `Name-Ask`) and a refusal why
-  (`Name-Invalid`); `tandem.ini`'s parser checks it (`names::Clean`) and
-  saves it trimmed.
-- **Only the page's keys** (`settings::IsEditable`, and two it saves for
-  the menu: `code_salt`, `last_address`): never `role`, `address`, `port`
-  or `join`, which the co-op menu chooses, nor the test harness's keys; `TANDEM_PORT` and `TANDEM_CONFIG` keep working (the page
-  writes the file the game read, `Config::file`). The harness's
-  `tools/game.sh role` files swap around it: a setting changed while a test
-  `tandem.ini` is in place lands in that one. Tests: `coop settings` logs
-  them all, `coop set KEY VALUE` changes one (scenario `settings`).
-- The pause menu's page seen in game 2026-11-23 (English; scenario
-  `settings-page`, its shots). Esc in the pause menu is the menu
+- **The host's rules come from the host**: the host's game sends them as
+  `Rules` (flags, `enemyHealth`, `levelGap`: `TandemFight.ConfiguredRules`
+  / `SendRules`, checked every 2 s, `Outcomes.reds`) when its tandem.ini's
+  change; every game plays by the last `Rules` it heard (`Combat::Rules`),
+  kept by the host for late joiners and in the world digest
+  (`consistency.md`). A guest's own `friendly_fire`, `enemy_scaling` and
+  `level_gap` count for nothing in a session (`TandemSettings.Set` refuses
+  them there too, "the host's rule while we are its guest"); they are
+  what it plays by when it hosts.
+- **When it applies**: at once for every row but the name (the scripts
+  read them as they need them; the nameplates and the party list every
+  frame; a host's rule goes out in `Rules` within 2 s, and the host's
+  endpoint takes the level gap as it sends it, the session's level
+  following); `name` is what a running session was set up with, so a
+  change during one waits for its end (the description says so,
+  `Settings-NextSession`).
+- **What they do**: `friendly_fire` (`friendly_fire = off` by default;
+  `combat.md`): the Vs' hits hurt each other. `enemy_scaling` (on by
+  default; `npcs.md`, "Enemy scaling"): hostile NPCs tougher for each
+  extra player near them; its health per player, `enemy_scaling_health`,
+  is not on the page (tandem.ini only). `level_gap` (8 by default, cycles
+  8, 5, 12, off; `progression.md`, "Levels"). `notices = important` hides
+  news (rides, calls, pauses, players elsewhere, loot), `minimal` keeps
+  only what asks for an answer or went wrong (`TandemText.Importance`);
+  every notice is logged either way. `markers = off` takes the other
+  players' markers off (HUD, minimap, map); `nameplates` cycles near (to
+  12 m), always (any distance, smaller and fainter) and off (no name over
+  them, the marker's label neither); `party_hud = off` hides the party
+  list (`presence.md`, Layout); a tandem.ini of before with `on` reads as
+  near. The name's popup says its rules ("1 to 16 characters…",
+  `Name-Ask`) and a refusal why (`Name-Invalid`); `tandem.ini`'s parser
+  checks it (`names::Clean`) and saves it trimmed.
+- **Only these keys** (`settings::IsEditable`: the rows, the `IniKeys`
+  and `relay_token` for `coop set`, and two saved for the menu:
+  `code_salt`, `last_address`): never `role`, `address`, `port` or
+  `join`, which the co-op menu chooses, nor the test harness's keys;
+  `TANDEM_PORT` and `TANDEM_CONFIG` keep working (the page writes the
+  file the game read, `Config::file`). The harness's `tools/game.sh role`
+  files swap around it: a setting changed while a test `tandem.ini` is in
+  place lands in that one. Tests: `coop settings` logs them all, `coop
+  set KEY VALUE` changes one (scenario `settings`); scenarios
+  `settings-page` (the host's page, a rule reaching the guest) and
+  `settings-page-guest` (the guest's page and its "Host's rules" line;
+  not yet run in game).
+- The pause menu's page seen in game 2026-11-23 (English, then in
+  groups; its one-page form of 2026-11-28 not yet). Esc in the pause menu is the menu
   scenario's, not the controller's input: `MenuScenario_PauseMenu.OnBack`
   closes the whole menu from `pause_menu`, whatever the page, so it asks
   the pause menu first (`OnTandemBack`, `TandemBackAnswer`): one of our

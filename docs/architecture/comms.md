@@ -36,9 +36,11 @@ recommendation below as built, and no text chat (6).
 2. **The link: automatic in a co-op pair, with a setting** (decided).
    `tandem.ini` `link = auto` (default): every partner is linked from the
    start, until either side breaks it; `ask`: a link starts on a request
-   the other accepts; `off`: never. `link` and `pings` are on the co-op
-   menu's Settings page, applied at once (a new default replaces the
-   consents given so far; `coop-menu.md`). The request itself is the game's way:
+   the other accepts; `off`: never. `link` and `pings` are `tandem.ini`'s
+   alone (not on the co-op menu, 2026-11-28); `coop set` applies them at
+   once (`Comms::Configure`: in a session a new link default replaces the
+   consents given so far and is sent at once; pings off stops new pings, a
+   team target still shows). The request itself is the game's way:
    aim at the partner's V and press the tag key (asks, accepts their
    request, or breaks the link), or call them from the game's phone (The
    phone, below); the partner's game rings as for a call (the game's
