@@ -133,7 +133,11 @@ public class TandemGarage {
     let system = GameInstance.GetVehicleSystem(this.m_game);
     let player = GetPlayer(this.m_game);
     if Equals(command, "garage summon") {
-      let asked = system.SpawnActivePlayerVehicle();
+      // As the hotkey does (QuickSlotsManager.SummonActiveVehicle): the
+      // active vehicle's type, not none (asked so, the engine said false and
+      // summoned all the same, 2026-11-28).
+      let slots = IsDefined(player) ? player.GetQuickSlotsManager() : null;
+      let asked = IsDefined(slots) ? system.SpawnActivePlayerVehicle(slots.GetActiveVehicleType()) : system.SpawnActivePlayerVehicle();
       TandemNative.Log(s"garage: summon asked (\(asked))");
     }
     let restricted = IsDefined(player) && VehicleSystem.IsSummoningVehiclesRestricted(this.m_game);

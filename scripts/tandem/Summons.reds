@@ -30,6 +30,9 @@
 // cars: what we say and what we show.
 
 public class TandemSummoned {
+  // When its copy was asked of the dynamic entity system (0: none waits):
+  // the body is there only once the entity spawns, a few frames later.
+  public let spawnedAt: Float;
   public let player: Uint32;
   public let record: TweakDBID;
   public let body: EntityID;
@@ -351,8 +354,15 @@ public class TandemSummons {
       at.W = 1.0;
     }
     let body = TandemTraffic.Body(game, entry.body);
+    if !IsDefined(body) && EntityID.IsDefined(entry.body) && entry.spawnedAt > 0.0 && this.m_now - entry.spawnedAt < 5.0 && this.m_now >= entry.spawnedAt {
+      // Its copy is on its way: asked again each tick until it came, one
+      // car's copies were spawned thirty times a second (garage-summon,
+      // 2026-11-28).
+      return;
+    }
     if !IsDefined(body) {
       entry.body = EntityID.FromHash(0ul);
+      entry.spawnedAt = 0.0;
       // The copy of that car we have: the one its owner drove (and left),
       // or drives now.
       let last = TandemTraffic.Body(game, system.LastCarOf(other));
@@ -375,6 +385,7 @@ public class TandemSummons {
         return;
       }
       entry.body = id;
+      entry.spawnedAt = this.m_now;
       system.ParkCopy(id, other);
       this.m_spawned += 1;
       entry.placeUntil = this.m_now + 1.0;
