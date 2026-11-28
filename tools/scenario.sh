@@ -693,9 +693,13 @@ pat() {
 # Both games' parity dumps at one moment, compared: no difference in this
 # category (devices: only ENTITY's, when given).
 compare() {
-  local category=$1 entity=${2:-} output status=0
+  local category=$1 entity=${2:-} output status=0 shots
   [ -n "$partner" ] && [ "$instance" != main ] || fail "compare needs two instances (TANDEM_INSTANCE, TANDEM_PARTNER)"
-  output=$(python3 tools/world-compare.py --instances "$instance" "$partner" --near 60 --only "$category" ${entity:+--entity "$entity"} 2>&1) || status=$?
+  # (With a screenshot of each game at that moment, on the game machine:
+  # NAME-INSTANCE.png in the instance's run/ folder, named in compare.txt.)
+  shots=compare-${category}-$(date +%H%M%S)
+  output=$(python3 tools/world-compare.py --instances "$instance" "$partner" --near 60 --only "$category" ${entity:+--entity "$entity"} --shots "$shots" 2>&1) || status=$?
+  output+=$'\n'"screenshots: $shots-$instance.png, $shots-$partner.png"
   grep -E "^(== |  $category)" <<<"$output" | sed 's/^/  /' || true
   mkdir -p "$out" && printf '%s\n' "$output" >>"$out/compare.txt"
   if [ "$category" = devices ] && [ -n "$entity" ] && ! grep -qE '^  devices: [1-9][0-9]* on both' <<<"$output"; then
