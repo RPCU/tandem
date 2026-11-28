@@ -1,6 +1,7 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "combat.hpp"
 #include "comms.hpp"
 #include "degradations.hpp"
 #include "installed.hpp"
@@ -17,6 +18,7 @@
 #include "tandem/names.hpp"
 #include "tandem/observer.hpp"
 #include "tandem/report.hpp"
+#include "tandem/scaling.hpp"
 #include "tandem/session.hpp"
 #include "tandem/settings.hpp"
 
@@ -341,6 +343,17 @@ bool Runtime::ChangeSetting(const std::string &key, const std::string &value) {
     directOn = config.direct;
   if (key == "link" || key == "pings")
     ConfigureComms(config);
+  // A host's rule changed in the pause menu: sent at once (the scripts'
+  // tick that sends the rules does not run while the menu pauses the game,
+  // instance a 2026-11-28); the tick's later send is the same, a repeat.
+  if ((key == "friendly_fire" || key == "enemy_scaling" || key == "enemy_scaling_health" ||
+       key == "level_gap") &&
+      Started() && ChosenRole() == Config::Role::Host) {
+    proto::Rules rules{.flags = config.friendlyFire ? proto::kRuleFriendlyFire : std::uint8_t{0},
+                       .levelGap = config.levelGap};
+    Combat::Get().Send(scaling::WithRule(rules, config.enemyScaling, config.enemyScalingHealth));
+    log::Info("setting: the session's rules sent at once ({} changed)", key);
+  }
   if (key == "code_salt")
     codeSalt = config.codeSalt;
   const auto shown = key == "relay_token" ? std::string("(a token)") : stored;
