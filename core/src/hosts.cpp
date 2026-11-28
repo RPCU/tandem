@@ -15,6 +15,15 @@ std::string_view Trim(std::string_view text) {
   return text.substr(first, last - first + 1);
 }
 
+// A code entry for this host name (any case).
+bool SameName(const Recent &recent, std::string_view name) {
+  return !recent.code.empty() && recent.name.size() == name.size() &&
+         std::ranges::equal(recent.name, name, [](char a, char b) {
+           return std::tolower(static_cast<unsigned char>(a)) ==
+                  std::tolower(static_cast<unsigned char>(b));
+         });
+}
+
 bool HostNameChar(char c) {
   return std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_';
 }
@@ -143,15 +152,27 @@ std::vector<Recent> ParseRecent(std::string_view text) {
     text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
     const auto space = line.find(' ');
     const auto where = line.substr(0, space);
+    std::string name =
+        space == std::string_view::npos ? std::string{} : std::string(Trim(line.substr(space)));
+    if (where.starts_with("code:")) {
+      // A join code: six letters and digits, known by the host's name.
+      const auto code = where.substr(5);
+      const bool valid = code.size() == 6 && std::ranges::all_of(code, [](char c) {
+                           return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+                         });
+      if (valid && !name.empty() &&
+          std::ranges::none_of(out, [&](const Recent &r) { return SameName(r, name); }))
+        out.push_back({{}, std::move(name), std::string(code)});
+      continue;
+    }
     // A line without a port is not one we wrote.
     if (where.find(':') == std::string_view::npos)
       continue;
     auto target = Parse(where, 0);
-    if (!target || std::ranges::any_of(out, [&](const Recent &r) { return r.target == *target; }))
+    if (!target || std::ranges::any_of(
+                       out, [&](const Recent &r) { return r.code.empty() && r.target == *target; }))
       continue;
-    out.push_back({*target, space == std::string_view::npos
-                                ? std::string{}
-                                : std::string(Trim(line.substr(space)))});
+    out.push_back({*target, std::move(name), {}});
   }
   return out;
 }
@@ -159,7 +180,7 @@ std::vector<Recent> ParseRecent(std::string_view text) {
 std::string FormatRecent(const std::vector<Recent> &list) {
   std::string out;
   for (const auto &recent : list) {
-    out += Format(recent.target);
+    out += recent.code.empty() ? Format(recent.target) : "code:" + recent.code;
     if (!recent.name.empty())
       out += ' ' + recent.name;
     out += '\n';
@@ -171,13 +192,25 @@ void Remember(std::vector<Recent> &list, const Target &target, std::string name)
   // A name is one line.
   std::ranges::replace(name, '\n', ' ');
   std::ranges::replace(name, '\r', ' ');
-  const auto old = std::ranges::find_if(list, [&](const Recent &r) { return r.target == target; });
+  const auto old = std::ranges::find_if(
+      list, [&](const Recent &r) { return r.code.empty() && r.target == target; });
   if (old != list.end()) {
     if (name.empty())
       name = old->name;
     list.erase(old);
   }
-  list.insert(list.begin(), Recent{target, std::move(name)});
+  list.insert(list.begin(), Recent{target, std::move(name), {}});
+  if (list.size() > kMaxRecent)
+    list.resize(kMaxRecent);
+}
+
+void RememberCode(std::vector<Recent> &list, std::string code, std::string name) {
+  std::ranges::replace(name, '\n', ' ');
+  std::ranges::replace(name, '\r', ' ');
+  if (name.empty() || code.empty())
+    return;
+  std::erase_if(list, [&](const Recent &r) { return SameName(r, name); });
+  list.insert(list.begin(), Recent{{}, std::move(name), std::move(code)});
   if (list.size() > kMaxRecent)
     list.resize(kMaxRecent);
 }

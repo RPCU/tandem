@@ -44,18 +44,26 @@ std::string_view ProblemWord(Problem problem);
 std::string Format(const Target &target); // "address:port"
 
 struct Recent {
-  Target target;
+  Target target;    // joined by address; empty for a join code
   std::string name; // the host's player name, as last seen (may be empty)
+  // Joined by this join code ("K7Q2M9", normalized): the host's last one,
+  // the same next time only when the relay keeps it; known by its name.
+  std::string code;
 
   bool operator==(const Recent &) const = default;
 };
 
 inline constexpr std::size_t kMaxRecent = 8;
 
-// The file's text: "address:port name" per line; bad lines are skipped.
+// The file's text: "address:port name" or "code:K7Q2M9 name" per line; bad
+// lines are skipped.
 std::vector<Recent> ParseRecent(std::string_view text);
 std::string FormatRecent(const std::vector<Recent> &list);
 // `target` first: an older entry for it is dropped (its name kept when the
 // new one is empty), and the list is cut to kMaxRecent.
 void Remember(std::vector<Recent> &list, const Target &target, std::string name);
+// A host joined by a join code, first: known by its name (a code changes from
+// session to session), so an older code entry of that name (any case) is
+// dropped. No name: nothing to remember it by.
+void RememberCode(std::vector<Recent> &list, std::string code, std::string name);
 } // namespace tandem::hosts

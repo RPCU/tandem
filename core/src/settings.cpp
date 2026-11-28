@@ -18,12 +18,12 @@ bool IsEditable(std::string_view key) {
   // changes (Settings.reds IniKeys, relay_token). (code_salt: saved by the
   // pause menu's "new code" action; last_address: by the co-op menu's Join
   // by address.)
-  static constexpr std::array<std::string_view, 22> kKeys{
+  static constexpr std::array<std::string_view, 23> kKeys{
       "name",     "recorder",     "friendly_fire", "enemy_scaling", "notices",
       "markers",  "nameplates",   "party_hud",     "relay",         "relay_token",
       "story",    "quest_freeze", "scene_privacy", "time_host",     "direct",
       "code",     "code_salt",    "link",          "pings",         "last_address",
-      "race_car", "level_gap"};
+      "race_car", "level_gap",    "campaign"};
   for (const auto k : kKeys)
     if (k == key)
       return true;

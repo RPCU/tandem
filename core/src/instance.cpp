@@ -18,6 +18,7 @@ Files Resolve(const std::filesystem::path &pluginDirectory, const Overrides &ove
   files.command = overrides.command.empty() ? pluginDirectory / "tandem.cmd"
                                             : From(pluginDirectory, overrides.command);
   files.recent = files.config.parent_path() / "recent.txt";
+  files.campaigns = files.config.parent_path() / "campaigns.txt";
   if (!overrides.log.empty())
     files.log = From(pluginDirectory, overrides.log);
   return files;

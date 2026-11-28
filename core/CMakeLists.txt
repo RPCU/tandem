@@ -28,6 +28,7 @@ add_library(tandem_core STATIC
   src/pose.cpp
   src/vehicle.cpp
   src/hosts.cpp
+  src/campaigns.cpp
   src/timebubble.cpp
   src/shaping.cpp
   src/traffic.cpp

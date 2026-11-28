@@ -22,6 +22,7 @@ TEST_CASE("an instance's files: the recent hosts follow the settings") {
                                                          .log = "/instances/b/tandem.log"});
   CHECK(files.config == "/instances/b/tandem.ini");
   CHECK(files.recent == "/instances/b/recent.txt");
+  CHECK(files.campaigns == "/instances/b/campaigns.txt");
   CHECK(files.command == "/instances/b/run/tandem.cmd");
   CHECK(files.log == "/instances/b/tandem.log");
 }
