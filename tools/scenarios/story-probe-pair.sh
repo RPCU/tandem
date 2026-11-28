@@ -7,8 +7,9 @@ ensure host
 partner_join
 mark
 pmark
-expect_partner 'quest: own quests frozen' 20
-expect_partner 'journal: snapshot [0-9]+ entries' 20
+# The partner's story frozen under ours since its join.
+pcmd story state
+expect_partner 'story: you [0-9]+, host 1, frozen true, save locked true' 10
 # A phone call: rings on the partner's phone, ends there with ours.
 cmd story call tandem_test
 expect 'phone: our call with tandem_test, phase 1, sent' 10
