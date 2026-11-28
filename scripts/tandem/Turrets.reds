@@ -931,7 +931,21 @@ public func TandemSenses() -> String {
   let security = IsDefined(ps) && ps.IsConnectedToSecuritySystem() ? ps.GetSecuritySystem() : null;
   let alarm = IsDefined(security) ? EnumValueToString("ESecuritySystemState", Cast<Int64>(EnumInt(security.GetSecurityState()))) : "none";
   let state = EnumValueToString("ESensorDeviceStates", Cast<Int64>(EnumInt(this.GetSensorDeviceState())));
-  return s"security system \(alarm), sensor \(state), follows a target \(IsDefined(this.GetCurrentlyFollowedTarget()))";
+  let detects = IsDefined(ps) && ps.GetBehaviourCanDetectIntruders();
+  return s"security system \(alarm), sensor \(state), follows a target \(IsDefined(this.GetCurrentlyFollowedTarget())), detects intruders \(detects)\(this.TandemShooting())";
+}
+
+// For the log (turret-host, turret-guest: a lock that never fired, a take
+// that never followed): what the turret's own fire depends on. Empty for a
+// camera.
+@addMethod(SensorDevice)
+public func TandemShooting() -> String {
+  return "";
+}
+
+@addMethod(SecurityTurret)
+public func TandemShooting() -> String {
+  return s", shooting \(this.m_animFeature.Shoot), weapon \(IsDefined(this.GetWeapon())), burst delay \(this.m_isBurstDelayOngoing), own fire \(this.m_tandemOwnFire)";
 }
 
 @addMethod(SensorDevice)
