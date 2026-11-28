@@ -3527,7 +3527,8 @@ using MessageVariant = std::variant<
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
-    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose, OwnCar, OpenWorldDone>;
+    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose, OwnCar,
+    OpenWorldDone>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,

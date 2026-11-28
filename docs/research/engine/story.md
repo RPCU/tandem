@@ -1115,7 +1115,7 @@ scene of its own whose camera plays the host's camera track?
   the game's. Until that is designed (parity.md row 1, "Next"), the watch
   camera stays, registered as what it is. [unverified]
 
-### 13.162 An NCPD activity's pin, by its journal path, and its phase set from outside (2026-11-28, read in final.reds (2.50), Codeware's source and the 2.50 exe decompiled; not run)
+### 13.167 An NCPD activity's pin, by its journal path, and its phase set from outside (2026-11-28, read in final.reds (2.50), Codeware's source and the 2.50 exe decompiled; not run)
 
 For `docs/architecture/story.md`, "Open-world activities". F is
 `final.reds (2.50)`; CW is Codeware's `src/` (MIT).

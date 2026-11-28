@@ -1,5 +1,5 @@
 // A point-of-interest mappin's phase, set the engine's way (see mappins.hpp;
-// docs/research/engine/story.md §13.162).
+// docs/research/engine/story.md §13.167).
 //
 // gamemappinsPointOfInterestMappin as the 2.50 RTTI has it: 0x100 bytes
 // (the SDK's generated struct agrees), its journal path hash at +0x8C
@@ -7,7 +7,7 @@
 // a plain function of the game, PointOfInterestMappin_SetPhase in the
 // address library (hash 803085170, Codeware's
 // Raw::PointOfInterestMappin::SetPhase: bool (void *mappin, phase)),
-// decompiled (§13.162): it writes the phase into its MappinSystem's table of
+// decompiled (§13.167): it writes the phase into its MappinSystem's table of
 // saved point-of-interest states (what a save keeps), untracks a pin set
 // completed, and tells the system the pin changed. So every pin a guest
 // sets is put back before its saving unlocks (OpenWorld.reds Leave). Not

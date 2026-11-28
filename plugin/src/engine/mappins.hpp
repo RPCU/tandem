@@ -2,7 +2,7 @@
 
 // A map pin's phase set the engine's way (docs/architecture/story.md,
 // "Open-world activities"; engine facts: docs/research/engine/story.md
-// §13.162, game 2.50): the host's open-world activities shown on a guest's
+// §13.167, game 2.50): the host's open-world activities shown on a guest's
 // own pins, done or open as the host's world has them, for the session only.
 // The game's own setter of a point-of-interest mappin's phase, by its
 // address-library hash (Codeware's Raw::PointOfInterestMappin::SetPhase,
