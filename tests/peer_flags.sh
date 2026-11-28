@@ -6,7 +6,7 @@ peer=$1
 declare -A value=(
   ["--port"]=27451 ["--look"]=random ["--look-keys"]=looks ["--seed"]=7 ["--name"]=test ["--body"]=male ["--mode"]=idle ["--offset"]="1,2,3"
   ["--delay"]=100 ["--rate"]=30 ["--pose"]=x.tpose ["--vehicle"]=Vehicle.x
-  ["--drive-seconds"]=5 ["--drive-radius"]=60 ["--radio"]=radio_station_09_downtempo ["--paint"]="ff0000,00ff00@120" ["--paint-off-at"]=20 ["--time"]=06:30 ["--weather"]=24h_weather_rain
+  ["--drive-seconds"]=5 ["--drive-radius"]=60 ["--radio"]=radio_station_09_downtempo ["--paint"]="ff0000,00ff00@120" ["--paint-off-at"]=20 ["--summon"]=5 ["--summon-again"]=15 ["--summon-board"]=10 ["--summon-other"]=5 ["--other-vehicle"]=Vehicle.y ["--time"]=06:30 ["--weather"]=24h_weather_rain
   ["--record"]=x.rec ["--replay"]=x.rec ["--anims"]=x.anims ["--hit-npcs"]=2 ["--hit-you"]=2 ["--pause-at"]=10 ["--pause-for"]=3
   ["--drive-seconds"]=5 ["--time"]=06:30 ["--weather"]=24h_weather_rain
   ["--record"]=x.rec ["--replay"]=x.rec ["--hit-npcs"]=2 ["--pause-at"]=10 ["--pause-for"]=3
@@ -25,7 +25,7 @@ declare -A value=(
   ["--charge"]=6 ["--hack-traffic"]=5 ["--hover"]=1 ["--link-answer-after"]=3 ["--link-outcome"]=decline
   ["--no-fast-travel"]=--check ["--ricochet"]=--check ["--shot-smart"]=--check ["--vendor-crowd"]=--check
   ["--story"]=x.story ["--answer"]=1 ["--reply"]=12345 ["--suggest"]=0
-  ["--restrict"]=GameplayRestriction.NoCombat ["--restrict-at"]=2 ["--restrict-for"]=5 ["--prefabs"]="7a3d0c5e9b1f2468,10" ["--gates"]=3 ["--status"]=BaseStatusEffect.Burning@4-10
+  ["--restrict"]=GameplayRestriction.NoCombat ["--restrict-at"]=2 ["--restrict-for"]=5 ["--prefabs"]="7a3d0c5e9b1f2468,10" ["--activities"]="7a3d0c5e,10" ["--activities-at"]=3 ["--activities-then"]="7a3d0c5e,11" ["--activities-then-at"]=20 ["--gates"]=3 ["--status"]=BaseStatusEffect.Burning@4-10
   ["--shoot-you"]=3 ["--shot-weapon"]=Items.x
   ["--sandevistan-at"]=10 ["--sandevistan-for"]=5 ["--sandevistan-scale"]=0.25 ["--scan-at"]=10
   ["--metro-at"]=5 ["--metro-for"]=40 ["--seat"]=seat_front_right ["--driver-npc"]=Character.x

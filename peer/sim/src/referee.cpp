@@ -62,6 +62,7 @@ TANDEM_SAID_BY(Host, TimeSkipResult)
 TANDEM_SAID_BY(Host, VehicleUnlock)
 TANDEM_SAID_BY(Host, StoryRestrictions)
 TANDEM_SAID_BY(Host, WorldPrefabs)
+TANDEM_SAID_BY(Host, OpenWorldDone)
 TANDEM_SAID_BY(Host, BreachResult)
 // Who holds a turret is the host's to say (devices::TurretHolds).
 TANDEM_SAID_BY(Host, TurretBusy)
@@ -167,6 +168,7 @@ TANDEM_SAID_BY(Either, Trade)
 TANDEM_SAID_BY(Either, TradeOffer)
 TANDEM_SAID_BY(Either, CarLend)
 TANDEM_SAID_BY(Either, CarPaint)
+TANDEM_SAID_BY(Either, OwnCar)
 TANDEM_SAID_BY(Either, Degraded)
 TANDEM_SAID_BY(Either, Mark)
 TANDEM_SAID_BY(Either, Tag)
@@ -350,10 +352,10 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::VehicleMotion> || std::is_same_v<M, p::Throw> ||
                            std::is_same_v<M, p::ThrowEnd> || std::is_same_v<M, p::Activity> ||
                            std::is_same_v<M, p::CarLend> || std::is_same_v<M, p::CarPaint> ||
-                           std::is_same_v<M, p::Degraded> || std::is_same_v<M, p::Link> ||
-                           std::is_same_v<M, p::Waypoint> || std::is_same_v<M, p::Defended> ||
-                           std::is_same_v<M, p::TradeOffer> || std::is_same_v<M, p::Breach> ||
-                           std::is_same_v<M, p::StatusVisuals> ||
+                           std::is_same_v<M, p::OwnCar> || std::is_same_v<M, p::Degraded> ||
+                           std::is_same_v<M, p::Link> || std::is_same_v<M, p::Waypoint> ||
+                           std::is_same_v<M, p::Defended> || std::is_same_v<M, p::TradeOffer> ||
+                           std::is_same_v<M, p::Breach> || std::is_same_v<M, p::StatusVisuals> ||
                            std::is_same_v<M, p::QuestInteract> || std::is_same_v<M, p::Fracture> ||
                            std::is_same_v<M, p::DeviceFire> || std::is_same_v<M, p::ThrowPath> ||
                            std::is_same_v<M, p::TurretHands> || std::is_same_v<M, p::Race> ||
@@ -828,6 +830,8 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           inRange = (m.flags & ~p::kGateFlags) == 0;
         } else if constexpr (std::is_same_v<M, p::WorldPrefabs>) {
           inRange = m.prefabs.size() <= p::kMaxWorldPrefabs;
+        } else if constexpr (std::is_same_v<M, p::OpenWorldDone>) {
+          inRange = m.markers.size() <= p::kMaxOpenWorldDone;
         } else if constexpr (std::is_same_v<M, p::SceneState>) {
           finite = std::isfinite(m.rate) && Finite(m.anchor) && std::isfinite(m.yaw) &&
                    std::isfinite(m.radius);
@@ -873,6 +877,10 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::CarPaint>) {
           // Flags this version knows, a template or colours, a hue in degrees.
           finite = std::isfinite(m.lightsHue);
+          inRange = !finite || p::Fits(m);
+        } else if constexpr (std::is_same_v<M, p::OwnCar>) {
+          // Flags this version knows; no car is nothing else.
+          finite = Finite(m.position) && Finite(m.orientation);
           inRange = !finite || p::Fits(m);
         } else if constexpr (std::is_same_v<M, p::Degraded>) {
           // Ids as the registry writes them, sorted, each once; known flags.
@@ -1348,6 +1356,13 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
             Add("authority.host-only",
                 std::format("world prefabs said to be player {}'s: only the host's world has them",
                             m.player));
+        } else if constexpr (std::is_same_v<M, p::OpenWorldDone>) {
+          // The host's world: the activities its own game finished.
+          if (m.player != m_hostPlayer)
+            Add("authority.host-only",
+                std::format("open-world activities said to be player {}'s: only the host's world "
+                            "decides them",
+                            m.player));
         } else if constexpr (std::is_same_v<M, p::StoryState>) {
           notOurs(m.player);
           // A moment is the host's V's; a spectator is a guest watching it.
@@ -1416,6 +1431,9 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
           notOurs(m.player);
         } else if constexpr (std::is_same_v<M, p::CarPaint>) {
           // Another player's car's paint; never ours back.
+          notOurs(m.player);
+        } else if constexpr (std::is_same_v<M, p::OwnCar>) {
+          // Another player's summoned car; never ours back.
           notOurs(m.player);
         } else if constexpr (std::is_same_v<M, p::Degraded>) {
           // What another player's game runs without; never ours back.

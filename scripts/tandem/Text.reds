@@ -381,6 +381,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-body-slots", "grapples held by the game on other players' bodies (a grabbed NPC is placed in front of them)");
     this.Text("Tandem-Degraded-Id-crowd-spawners", "our own traffic kept from spawning where another player's game runs the street");
     this.Text("Tandem-Degraded-Id-ragdoll-state", "bodies read and laid as their owners' lie (each copy lies as its own fall left it)");
+    this.Text("Tandem-Degraded-Id-activity-marks", "the host's NCPD activities on your map (your own are shown)");
     this.Text("Tandem-Degraded-Id-drawn-prompts", "the game's own prompts on players and vendors (tandem draws them)");
     this.Text("Tandem-Degraded-Id-attitude-relations", "declared faction relations (copied NPC by NPC instead)");
     this.Text("Tandem-Degraded-Id-scene-privacy", "private scenes (every scene counts as important)");
@@ -388,6 +389,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-scene-voice", "V's own voice in replayed scenes");
     this.Text("Tandem-Degraded-Id-nameplate-projection", "name plates placed by the game's engine (tandem places them itself)");
     this.Text("Tandem-Degraded-Id-hit-shown-by-twitch", "a hit on a player shown as a plain twitch, not the game's own reaction");
+    this.Text("Tandem-Degraded-Id-summoned-car-unseen", "a partner's summoned car is not shown until they get in");
     this.Text("Tandem-Degraded-Id-prompt-drawn", "a prompt drawn by tandem instead of the game's own");
     this.Text("Tandem-Degraded-Id-vehicle-teleported", "a vehicle teleported instead of moved smoothly");
     this.Text("Tandem-Degraded-Id-street-body-respawned", "a street vehicle that vanished was spawned again");
@@ -414,6 +416,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-quest-signals-dropped", "part of your paused story was lost: load your last save after leaving");
     this.Text("Tandem-Degraded-Id-no-room", "no room left for another body or animation");
     this.Text("Tandem-Degraded-Id-puppet-not-driven", "a player's body could not be moved");
+    this.Text("Tandem-Degraded-Id-activity-not-marked", "an NCPD activity on your map shows your own state, not the host's");
     this.Text("Tandem-Session-JoinedOf", "Joined {1}'s session");
     this.Text("Tandem-Session-Joined", "Joined the co-op session");
     this.Text("Tandem-Session-YouLeft", "You left the co-op session");
@@ -917,6 +920,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-body-slots", "les prises tenues par le jeu sur le corps des autres joueurs (un PNJ saisi est placé devant eux)");
     this.Text("Tandem-Degraded-Id-crowd-spawners", "notre propre circulation empêchée d'apparaître là où le jeu d'un autre joueur gère la rue");
     this.Text("Tandem-Degraded-Id-ragdoll-state", "les corps lus et couchés comme ceux de leurs propriétaires (chaque copie reste comme sa chute l'a laissée)");
+    this.Text("Tandem-Degraded-Id-activity-marks", "les activités du NCPD de l'hôte sur votre carte (les vôtres sont affichées)");
     this.Text("Tandem-Degraded-Id-drawn-prompts", "les invites natives du jeu sur les joueurs et les marchands (tandem les dessine)");
     this.Text("Tandem-Degraded-Id-attitude-relations", "les relations de faction déclarées (copiées PNJ par PNJ à la place)");
     this.Text("Tandem-Degraded-Id-scene-privacy", "les scènes privées (toute scène compte comme importante)");
@@ -924,6 +928,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-scene-voice", "la voix de V dans les scènes rejouées");
     this.Text("Tandem-Degraded-Id-nameplate-projection", "les plaques de nom placées par le moteur du jeu (tandem les place lui-même)");
     this.Text("Tandem-Degraded-Id-hit-shown-by-twitch", "un coup reçu par un joueur affiché comme un simple sursaut, pas la réaction du jeu");
+    this.Text("Tandem-Degraded-Id-summoned-car-unseen", "la voiture appelée par un partenaire n'apparaît qu'une fois qu'il y monte");
     this.Text("Tandem-Degraded-Id-prompt-drawn", "une invite dessinée par tandem au lieu de celle du jeu");
     this.Text("Tandem-Degraded-Id-vehicle-teleported", "un véhicule téléporté au lieu d'être déplacé en douceur");
     this.Text("Tandem-Degraded-Id-street-body-respawned", "un véhicule de rue disparu a été recréé");
@@ -950,6 +955,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-quest-signals-dropped", "une partie de votre histoire en pause a été perdue : chargez votre dernière sauvegarde en quittant");
     this.Text("Tandem-Degraded-Id-no-room", "plus de place pour un autre corps ou une autre animation");
     this.Text("Tandem-Degraded-Id-puppet-not-driven", "le corps d'un joueur n'a pas pu être déplacé");
+    this.Text("Tandem-Degraded-Id-activity-not-marked", "une activité du NCPD sur votre carte montre votre propre état, pas celui de l'hôte");
     this.Text("Tandem-Session-JoinedOf", "Vous avez rejoint la session de {1}");
     this.Text("Tandem-Session-Joined", "Vous avez rejoint la session coop");
     this.Text("Tandem-Session-YouLeft", "Vous avez quitté la session coop");

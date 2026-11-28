@@ -806,6 +806,24 @@ TEST_CASE("story restrictions survive encoding, are a story message, and say one
   CHECK(Decode(Encode(many)).has_value());
 }
 
+TEST_CASE("open-world activities done survive encoding and are a story message") {
+  RoundTrips(OpenWorldDone{.player = 1, .markers = {0x10, 0x8f3a5c2eU}});
+  RoundTrips(OpenWorldDone{.player = 1});
+  CHECK(IsStory(OpenWorldDone{}));
+  CHECK(ChannelOf(OpenWorldDone{}) == Channel::Event);
+  CHECK(std::string(NameOf(OpenWorldDone{})) == "OpenWorldDone");
+  // Unsorted, repeated, a marker 0 or too many: refused.
+  CHECK_FALSE(Decode(Encode(OpenWorldDone{.markers = {2, 1}})).has_value());
+  CHECK_FALSE(Decode(Encode(OpenWorldDone{.markers = {1, 1}})).has_value());
+  CHECK_FALSE(Decode(Encode(OpenWorldDone{.markers = {0, 1}})).has_value());
+  OpenWorldDone many;
+  for (std::uint32_t i = 0; i <= kMaxOpenWorldDone; ++i)
+    many.markers.push_back(i + 1);
+  CHECK_FALSE(Decode(Encode(many)).has_value());
+  many.markers.pop_back();
+  CHECK(Decode(Encode(many)).has_value());
+}
+
 TEST_CASE("world prefabs and story gates survive encoding and are story messages") {
   RoundTrips(WorldPrefabs{.player = 1, .prefabs = {0x10, 0x8f3a5c2e11d04b77ULL}});
   RoundTrips(WorldPrefabs{.player = 1});
@@ -1564,6 +1582,35 @@ TEST_CASE("an NPC's voice line is a small reliable one-shot with a known context
   CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12, .context = 1, .delayMs = kNpcVoiceMaxDelayMs + 1}))
                   .has_value());
   CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12, .context = 1, .flags = 2})).has_value());
+}
+
+TEST_CASE("a summoned car survives encoding: reliable, small, appended, one form for none") {
+  const OwnCar arriving{.player = 2,
+                        .vehicle = 0x2a1b,
+                        .flags = kOwnCarMoving,
+                        .position = {100.f, -20.f, 7.5f},
+                        .orientation = {0.f, 0.f, 0.7071f, 0.7071f},
+                        .hint = {.type = 0x55, .size = 2}};
+  RoundTrips(arriving);
+  RoundTrips(OwnCar{.player = 2, .vehicle = 0x2a1b, .position = {4.f, 5.f, 6.f}}); // parked
+  RoundTrips(OwnCar{.player = 3});                                                 // none out
+  CHECK(Message(OwnCar{}).index() == Message(CorpsePose{}).index() + 1);           // appended
+  CHECK(std::string(NameOf(OwnCar{})) == "OwnCar");
+  CHECK(ChannelOf(OwnCar{}) == Channel::Event);
+  CHECK(IsReliable(OwnCar{}));
+  CHECK(IsCombat(OwnCar{}));
+  CHECK_FALSE(IsStory(OwnCar{}));
+  CHECK_FALSE(tandem::consistency::IsOneShot(OwnCar{}));
+  CHECK(Encode(arriving).size() <= 64);
+  // Refused on the wire: a flag of another version, no car with anything
+  // else said, a place that is no number.
+  const auto refused = [](const OwnCar &car) { return !Decode(Encode(car)).has_value(); };
+  CHECK(refused({.vehicle = 7, .flags = 4}));
+  CHECK(refused({.flags = kOwnCarMoving}));
+  CHECK(refused({.position = {1.f, 0.f, 0.f}}));
+  CHECK(refused({.vehicle = 7, .position = {std::numeric_limits<float>::infinity(), 0.f, 0.f}}));
+  CHECK(refused(
+      {.vehicle = 7, .orientation = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f, 1.f}}));
 }
 
 TEST_CASE("throws, their ends, the session's rules and a defence survive encoding") {

@@ -138,7 +138,7 @@ The owner simulates; everyone else displays.
 | a shop: a vendor's stock, prices, sold items (vendors, ripperdocs, vending machines) | each player's game (save) | the vendor NPC is the world's; beside a partner's vendor, our own game's vendor of the same placed NPC opens; one killed in the session is hidden everywhere (`architecture/progression.md`) |
 | a vehicle someone drives | the driver's game | puppet vehicle, passengers mounted |
 | a car's custom paint (CrystalCoat, TwinTone) | the car's owner's game | every copy of that car painted as said, late joiners too (`architecture/vehicles.md`, Paint) |
-| a player's garage (owned cars, unlocks) | that player's game (save) | a partner may drive one by its owner's word (`lend`); the garage stays the owner's (`architecture/garage.md`) |
+| a player's garage (owned cars, unlocks) | that player's game (save) | a partner may drive one by its owner's word (`lend`); the garage stays the owner's; its summoned car is shown as its car copy from its arrival (`architecture/garage.md`) |
 | a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game | copy, riders and NPCs seated; host's scene: a seat or a ride along |
 | an NCART train (scripted transit) | each rider's own game | never shared: puppet in a train of ours, else hidden |
 | a world vehicle: traffic, parked, police, a wreck, a chase car | the game that runs it: the owner of its area (`Endpoint::AreaOwner`) that announced it, until it is handed over as an NPC is (its riders with it) | proxy, or their own instance of a placed vehicle; the first player to get in has it (`architecture/traffic.md`) |
@@ -146,6 +146,7 @@ The owner simulates; everyone else displays.
 | the session's dead: placed NPCs killed or knocked out (the ledger) | recorded by the NPC's owner, kept by the host for the session | every game keeps its own copy out of its world (hidden, never killed: no save changes), with a body where a recent one fell (`architecture/regions.md` §14) |
 | spawns: crowds, encounters | each game around its own V | held back only where a higher-ranked linked player's region covers it |
 | quests: facts, journal, phases, scenes | host | followed, never run on their own |
+| an NCPD activity (hustle, reported crime, gang watch, outpost, stash): its scene, done | the world of the group's leader: the host's while grouped, a player's own apart | a grouped guest's own activities wait, its map shows the host's done state for the session only, a finish seen with the host credited once (`architecture/story.md`, "Open-world activities") |
 | the story's gameplay restrictions (no weapons, no sprint… during the host's scene) | host (its V's, reported) | worn on its own V by a guest in the host's story moment, taken off when it leaves it (`architecture/story.md`) |
 | the host's scripted moment (a scene, a quest ride, a set piece, another world) | host (read from its V, reported) | a guest in it plays it from its own V; it watches through the host's camera, its own V parked and unseen, only while it cannot take part (a cutscene, another world, the host's V beyond its reach, the quest's camera), back at once after (`architecture/story.md`, "Spectating") |
 | time of day, weather | host | applied |

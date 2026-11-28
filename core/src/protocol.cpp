@@ -72,6 +72,15 @@ bool Fits(const NpcVoice &voice) {
          (voice.flags & ~kVoiceFlags) == 0;
 }
 
+bool Fits(const OwnCar &car) {
+  const auto finite = [](float v) { return std::isfinite(v); };
+  if ((car.flags & ~kOwnCarFlags) != 0 || !finite(car.position.x) || !finite(car.position.y) ||
+      !finite(car.position.z) || !finite(car.orientation.i) || !finite(car.orientation.j) ||
+      !finite(car.orientation.k) || !finite(car.orientation.r))
+    return false;
+  return car.vehicle != 0 || car == OwnCar{.player = car.player};
+}
+
 bool Fits(const TrafficLights &lights) {
   if (lights.lights.size() > kMaxLights)
     return false;
@@ -570,6 +579,8 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *degraded = std::get_if<Degraded>(&message); degraded && !Fits(*degraded))
     return std::nullopt;
+  if (const auto *car = std::get_if<OwnCar>(&message); car && !Fits(*car))
+    return std::nullopt;
   if (const auto *voice = std::get_if<NpcVoice>(&message); voice && !Fits(*voice))
     return std::nullopt;
   if (const auto *corpse = std::get_if<CorpsePose>(&message); corpse && !Fits(*corpse))
@@ -647,6 +658,12 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *gates = std::get_if<StoryGates>(&message);
       gates && (gates->flags & ~kGateFlags) != 0)
+    return std::nullopt;
+  if (const auto *done = std::get_if<OpenWorldDone>(&message);
+      done &&
+      (done->markers.size() > kMaxOpenWorldDone ||
+       std::ranges::adjacent_find(done->markers, std::greater_equal<>{}) != done->markers.end() ||
+       std::ranges::find(done->markers, std::uint32_t{0}) != done->markers.end()))
     return std::nullopt;
   if (const auto *visuals = std::get_if<StatusVisuals>(&message);
       visuals && (visuals->records.size() > kMaxStatusVisuals ||
@@ -732,6 +749,7 @@ bool IsStory(const Message &message) {
          std::holds_alternative<ScenePlace>(message) ||
          std::holds_alternative<WorldPrefabs>(message) ||
          std::holds_alternative<StoryGates>(message) ||
+         std::holds_alternative<OpenWorldDone>(message) ||
          (message.index() >= kId<SceneState> && message.index() <= kId<SceneLine>) ||
          std::holds_alternative<VehicleUnlock>(message);
 }
@@ -741,10 +759,11 @@ bool IsCombat(const Message &message) {
          (message.index() >= kId<Throw> && message.index() <= kId<Defended>) ||
          (message.index() >= kId<PlayerLevel> && message.index() <= kId<NpcLevel>) ||
          std::holds_alternative<CarLend>(message) || std::holds_alternative<CarPaint>(message) ||
-         std::holds_alternative<Degraded>(message) || std::holds_alternative<NpcScale>(message) ||
-         std::holds_alternative<NpcVendor>(message) || std::holds_alternative<ThrowPath>(message) ||
-         std::holds_alternative<NpcPlaced>(message) || std::holds_alternative<NpcDeath>(message) ||
-         std::holds_alternative<Race>(message) || std::holds_alternative<WeakSpotHit>(message) ||
+         std::holds_alternative<OwnCar>(message) || std::holds_alternative<Degraded>(message) ||
+         std::holds_alternative<NpcScale>(message) || std::holds_alternative<NpcVendor>(message) ||
+         std::holds_alternative<ThrowPath>(message) || std::holds_alternative<NpcPlaced>(message) ||
+         std::holds_alternative<NpcDeath>(message) || std::holds_alternative<Race>(message) ||
+         std::holds_alternative<WeakSpotHit>(message) ||
          std::holds_alternative<HackTraced>(message) ||
          std::holds_alternative<TrafficLights>(message) ||
          std::holds_alternative<CorpsePose>(message);
@@ -937,7 +956,9 @@ const char *NameOfKind(std::size_t kind) {
                                    "Degraded",
                                    "TrafficLights",
                                    "NpcVoice",
-                                   "CorpsePose"};
+                                   "CorpsePose",
+                                   "OwnCar",
+                                   "OpenWorldDone"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

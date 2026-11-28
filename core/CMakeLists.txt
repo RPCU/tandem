@@ -15,6 +15,7 @@ add_library(tandem_core STATIC
   src/session_event_make.cpp
   src/endpoint_regions.cpp
   src/story.cpp
+  src/openworld.cpp
   src/prefabs.cpp
   src/moments.cpp
   src/carryover.cpp

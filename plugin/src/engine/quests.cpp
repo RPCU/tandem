@@ -100,15 +100,25 @@ constexpr std::uint32_t kMaxPath = 64, kMaxStack = 32;
 constexpr std::size_t kMaxHeld = 4096;
 constexpr std::uint8_t kRefused = 1; // the engine's own "nothing here" (see above)
 
-// Codeware's open-world phases (QuestPhaseRegistry.cpp:12-20).
+// Codeware's open-world phases (QuestPhaseRegistry.cpp:12-20), but its
+// minor activities (below).
 constexpr const char *kOpenWorld[] = {
-    R"(base\open_world\minor_activities\open_world_minor_activities.questphase)",
     R"(base\open_world\city_scenes\open_world_city_scenes.questphase)",
     R"(base\open_world\community\global_phase\open_world_global_commuinity_phase.questphase)",
     R"(base\open_world\fixers\open_world_fixers.questphase)",
     R"(base\open_world\phases\city_entities\city_entities.questphase)",
     R"(base\open_world\vendors\open_world_vendors.questphase)",
     R"(base\quest\bugfixing\open_world_bugfixing.questphase)",
+};
+
+// The NCPD scanner's activities (hustles, reported crimes, gang watches,
+// outposts, hidden stashes: one child phase each of this one, Codeware's
+// QuestPhaseRegistry.cpp:10). Whose world plays them where we stand is the
+// group's leader's (docs/architecture/story.md, "Open-world activities"):
+// ours apart or leading, the host's while grouped with it, when ours wait
+// as our gigs do, and their held signals are given back when we are apart.
+constexpr const char *kActivities[] = {
+    R"(base\open_world\minor_activities\open_world_minor_activities.questphase)",
 };
 
 // V's homes: each player's own apartment interactions (the shower, the bed,
@@ -148,6 +158,9 @@ thread_local bool t_replaying = false;
 // waits while we are grouped with it. Grouped until the regions work says
 // otherwise: then gigs wait like the story, as before.
 std::atomic_bool g_grouped{true};
+// The same for the open-world activities: the host's world leads where we
+// stand (the story script says so from the regions every second).
+std::atomic_bool g_activitiesGrouped{true};
 std::atomic_bool g_trace{false};
 
 using Path = std::vector<std::uint16_t>;
@@ -156,17 +169,20 @@ struct Held {
   std::uint16_t node{};
   std::uint64_t socket{};
   bool gig{};
+  bool activity{};
   auto Key() const { return std::tie(phase, node, socket); }
 };
 
 // What a phase is to the freeze.
-enum class Owner : std::uint8_t { World, Gig, Story }; // World: always runs
+enum class Owner : std::uint8_t { World, Gig, Activity, Story }; // World: always runs
 
 std::mutex g_lock;                        // everything below
 std::set<std::uint64_t> g_allowed;        // open-world resource path hashes
 std::set<std::uint64_t> g_gigs;           // gig resource path hashes (tandem.ini)
+std::set<std::uint64_t> g_activityPhases; // open-world activity resource path hashes
 std::vector<Path> g_openPrefixes;         // node paths of open-world phases met
 std::vector<Path> g_gigPrefixes;          // and of gig phases
+std::vector<Path> g_activityPrefixes;     // and of open-world activity phases
 std::map<std::uint32_t, Owner> g_byPhase; // NodePathHash -> what it is (cache)
 std::set<std::uint32_t> g_tracedPhases;   // spike C2: lines already logged
 std::set<std::pair<std::uint32_t, std::uint16_t>> g_tracedNodes;
@@ -243,27 +259,30 @@ Owner OwnerOf(std::uintptr_t phase, const Path &path, std::uintptr_t context,
   if (const auto it = g_byPhase.find(hash); it != g_byPhase.end())
     return it->second;
 
-  bool open = false, gig = false;
+  bool open = false, gig = false, activity = false;
   const auto learn = [&](std::uintptr_t candidate, const Path &candidatePath) {
     const auto resource = ResourceOf(candidate);
     const bool isOpen = g_allowed.contains(resource);
-    const bool isGig = !isOpen && g_gigs.contains(resource);
-    if (!isOpen && !isGig)
+    const bool isActivity = !isOpen && g_activityPhases.contains(resource);
+    const bool isGig = !isOpen && !isActivity && g_gigs.contains(resource);
+    if (!isOpen && !isActivity && !isGig)
       return;
-    auto &prefixes = isOpen ? g_openPrefixes : g_gigPrefixes;
+    auto &prefixes = isOpen ? g_openPrefixes : isActivity ? g_activityPrefixes : g_gigPrefixes;
     if (std::ranges::find(prefixes, candidatePath) == prefixes.end()) {
       prefixes.push_back(candidatePath);
       g_byPhase.clear(); // earlier verdicts may have been its children
       lines.push_back(std::format("quest: {} phase {:#x} (resource {:#x})",
-                                  isOpen ? "open-world phase keeps running:" : "gig",
+                                  isOpen       ? "open-world phase keeps running:"
+                                  : isActivity ? "open-world activity"
+                                               : "gig",
                                   HashOf(candidatePath), resource));
     }
-    (isOpen ? open : gig) = true;
+    (isOpen ? open : isActivity ? activity : gig) = true;
   };
   learn(phase, path);
   ArrayHead stack{};
-  if (!open && ReadAt(context + kContextStack, stack) && stack.size <= kMaxStack)
-    for (std::uint32_t i = 0; i < stack.size && !open; ++i) {
+  if (!open && !activity && ReadAt(context + kContextStack, stack) && stack.size <= kMaxStack)
+    for (std::uint32_t i = 0; i < stack.size && !open && !activity; ++i) {
       std::uintptr_t ancestor = 0;
       Path ancestorPath;
       if (ReadAt(stack.entries + i * sizeof(void *), ancestor) && ancestor &&
@@ -272,9 +291,14 @@ Owner OwnerOf(std::uintptr_t phase, const Path &path, std::uintptr_t context,
     }
   for (const auto &prefix : g_openPrefixes)
     open = open || IsPrefix(prefix, path);
+  for (const auto &prefix : g_activityPrefixes)
+    activity = activity || IsPrefix(prefix, path);
   for (const auto &prefix : g_gigPrefixes)
     gig = gig || IsPrefix(prefix, path);
-  const auto owner = open ? Owner::World : gig ? Owner::Gig : Owner::Story;
+  const auto owner = open       ? Owner::World
+                     : activity ? Owner::Activity
+                     : gig      ? Owner::Gig
+                                : Owner::Story;
   g_byPhase[hash] = owner;
   return owner;
 }
@@ -433,15 +457,18 @@ std::uint8_t Detour(void *phase, void *node, void *context, const void *socket, 
   // come back here on the same thread. Nothing is logged under the lock
   // either: every quest node of every thread waits on it, and a log line
   // is a file write (and the logger's own lock).
-  bool allowed = false, gig = false;
+  bool allowed = false, gig = false, activity = false;
   std::vector<std::string> lines;
   {
     std::lock_guard _(g_lock);
     const auto owner =
         OwnerOf(phaseAddress, path, reinterpret_cast<std::uintptr_t>(context), lines);
     gig = owner == Owner::Gig;
-    // Ours to run: the open world, and our gigs while we are apart.
-    allowed = owner == Owner::World || (gig && !g_grouped.load(std::memory_order_relaxed));
+    activity = owner == Owner::Activity;
+    // Ours to run: the open world, our gigs while we are apart, and our
+    // open-world activities while our world leads where we stand.
+    allowed = owner == Owner::World || (gig && !g_grouped.load(std::memory_order_relaxed)) ||
+              (activity && !g_activitiesGrouped.load(std::memory_order_relaxed));
     if (allowed)
       ++g_passed;
   }
@@ -465,11 +492,14 @@ std::uint8_t Detour(void *phase, void *node, void *context, const void *socket, 
       overflowed = !std::exchange(g_overflow, true);
     } else {
       g_heldKeys.insert(key);
-      g_held.push_back({std::move(path), nodeId, socketName, gig});
+      g_held.push_back({std::move(path), nodeId, socketName, gig, activity});
     }
   }
   if (firstOfPhase)
-    log::Debug("quest: freezing {} phase {:#x} (resource {:#x}, depth {})", gig ? "gig" : "story",
+    log::Debug("quest: freezing {} phase {:#x} (resource {:#x}, depth {})",
+               gig        ? "gig"
+               : activity ? "open-world activity"
+                          : "story",
                hash, ResourceOf(phaseAddress), depth);
   if (overflowed) {
     log::Error("quest: more than {} signals held: the guest's own story lost some, its leave "
@@ -605,6 +635,8 @@ bool InstallQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle h
       g_allowed.insert(RED4ext::ResourcePath(path.c_str()).hash);
     for (const auto &path : gigs)
       g_gigs.insert(RED4ext::ResourcePath(path.c_str()).hash);
+    for (const auto *path : kActivities)
+      g_activityPhases.insert(RED4ext::ResourcePath(path).hash);
   }
   g_target = Find<void *>(feature::kQuestNodes, "the quest phase's ExecuteNode", kExecuteNode);
   if (!g_target) {
@@ -717,6 +749,31 @@ void SetQuestGrouped(bool grouped) {
 
 bool QuestGrouped() { return g_grouped.load(); }
 
+void SetActivitiesGrouped(bool grouped) {
+  if (g_activitiesGrouped.exchange(grouped) == grouped)
+    return;
+  log::Info("quest: our open-world activities {}",
+            grouped ? "wait (the host's world leads where we stand)" : "run (ours lead here)");
+  if (grouped || !g_active.load())
+    return;
+  // Ours lead again: the activity signals held meanwhile go back.
+  std::vector<Held> activities;
+  {
+    std::lock_guard _(g_lock);
+    std::vector<Held> kept;
+    for (auto &held : g_held) {
+      if (held.activity)
+        g_heldKeys.erase(std::make_tuple(held.phase, held.node, held.socket));
+      (held.activity ? activities : kept).push_back(std::move(held));
+    }
+    g_held = std::move(kept);
+  }
+  if (!activities.empty())
+    log::Info("quest: {} held open-world activity signals given back", GiveBack(activities));
+}
+
+bool ActivitiesGrouped() { return g_activitiesGrouped.load(); }
+
 void SetPhaseNotes(bool on) {
   // (The notes read the phase by offset: only on the measured layout.)
   on = on && LayoutOk();
@@ -778,8 +835,9 @@ std::string QuestFreezeReport() {
   std::lock_guard _(g_lock);
   return std::format(
       "quest freeze {} ({}): {} nodes refused ({} repeats), {} passed, {} signals held, "
-      "{} phases frozen, {} open-world phases met{}",
+      "{} phases frozen, {} open-world phases met, {} open-world activity phases ({}){}",
       g_active ? "on" : "off", g_grouped ? "grouped" : "apart", g_refused, g_repeats, g_passed,
-      g_held.size(), g_frozenPhases.size(), g_openPrefixes.size(), g_overflow ? ", OVERFLOW" : "");
+      g_held.size(), g_frozenPhases.size(), g_openPrefixes.size(), g_activityPrefixes.size(),
+      g_activitiesGrouped ? "waiting" : "running", g_overflow ? ", OVERFLOW" : "");
 }
 } // namespace tandem::plugin::engine

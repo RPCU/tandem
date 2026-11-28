@@ -52,7 +52,10 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 25: Rules.levelGap (the host's level_gap, said to every game: a guest's
 // menu shows the host's rules, coop-menu.md).
 // 26: LinkDecline's reasons 2-4, a call's outcomes (declined, busy, missed).
-inline constexpr std::uint16_t kProtocolVersion = 26;
+// 27: OwnCar appended (a player's summoned car, garage.md 1a).
+// 28: OpenWorldDone appended (the host's open-world activities done,
+// story.md "Open-world activities"; a game of 27 cannot read it).
+inline constexpr std::uint16_t kProtocolVersion = 28;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3453,6 +3456,54 @@ struct CorpsePose {
 };
 // An NPC, finite numbers, 1 to kMaxRagdollBodies bodies.
 bool Fits(const CorpsePose &corpse);
+// A player's own car out in the world (appended, protocol 27; garage.md
+// row 1a): the car its garage summoned, from the moment it comes, whether
+// its owner sits in it or not. Its owner's game to everyone (the host
+// stamps the player, keeps the latest for late joiners and resyncs, and
+// forgets it when the player goes), on change only: another car, it starts
+// to drive in on its own, it stops where it stands. While kOwnCarMoving is
+// set and its owner sits in no car, that player's VehicleState stream is
+// this car (the stream a driven car uses: one per player, so no new rate).
+// Every other game shows it as that player's car copy, the one its Seat
+// later puts the owner's puppet in: one body from its arrival on.
+// `vehicle` 0: no car out (what nobody said: kept nowhere). Event channel.
+inline constexpr std::uint8_t kOwnCarMoving = 1; // it drives on its own: the stream is it
+// Its summon ended here (the game's Arrived, or AlreadySummoned): its owner's
+// game honked and flashed it; every copy does the same once (research
+// §13.165).
+inline constexpr std::uint8_t kOwnCarArrived = 2;
+inline constexpr std::uint8_t kOwnCarFlags = kOwnCarMoving | kOwnCarArrived;
+struct OwnCar {
+  PlayerId player{};
+  std::uint64_t vehicle{}; // its TweakDB record (0: no car out)
+  std::uint8_t flags{};    // kOwnCar*
+  Vec3 position;           // where it stands, or where it starts to move from
+  Quat orientation;
+  RecordHint hint; // the vehicle's type and seats, for a game without the record
+  friend bool operator==(const OwnCar &, const OwnCar &) = default;
+};
+// Flags this version knows, finite numbers, and no car is nothing else
+// (one wire form for it, so a repeat is equal).
+bool Fits(const OwnCar &car);
+// ---- The host's open-world activities (docs/architecture/story.md,
+// "Open-world activities") ----
+//
+// The NCPD scanner activities the host's world has done (its hustles,
+// reported crimes, gang watches, outposts, hidden stashes: the map pins the
+// game's own MinimapPOIMappinController.IsNcpdScanner names): each by its
+// point-of-interest mappin's journal path hash (PointOfInterestMappin
+// .GetJournalPathHash: static journal data, the same in every game), done
+// when that mappin's phase is CompletedPhase. Host to guests, the whole set
+// on every change (sorted, no 0; empty: none), a story message: kept for
+// late joiners, in the story digest, an explicit "none" in a story resync,
+// as WorldPrefabs. A guest grouped with the host shows the host's phase on
+// its own pins and credits what it saw done; nothing reaches its save.
+inline constexpr std::size_t kMaxOpenWorldDone = 512;
+struct OpenWorldDone {
+  PlayerId player{}; // whose world (the host): set by the host's endpoint
+  std::vector<std::uint32_t> markers;
+  friend bool operator==(const OpenWorldDone &, const OpenWorldDone &) = default;
+};
 
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
@@ -3476,7 +3527,8 @@ using MessageVariant = std::variant<
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
-    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose>;
+    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose, OwnCar,
+    OpenWorldDone>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
@@ -3486,11 +3538,12 @@ bool operator==(const Message &a, const Message &b);
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
 // VehicleUnlock, StoryRestrictions, QuestInteract, SceneProp, ScenePlace,
-// WorldPrefabs, StoryGates):
+// WorldPrefabs, StoryGates, OpenWorldDone):
 // endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit, Throw … Defended, ThrowPath),
-// a level (PlayerLevel … NpcLevel), a car's lending or paint (CarLend, CarPaint), what a
+// a level (PlayerLevel … NpcLevel), a car's lending or paint (CarLend, CarPaint), a
+// player's summoned car (OwnCar), what a
 // game runs without (Degraded), an NPC's
 // scale (NpcScale), a vendor (NpcVendor), a placed NPC (NpcPlaced), a
 // death of the ledger (NpcDeath), a street race (Race), what a proxy

@@ -164,6 +164,7 @@ names of `engine-access.md`.
 | `vehicle move` | degraded | state | `engine/vehiclemove.cpp` (layout, hash); `System.reds` `MovePath` (5 bodies and none followed); when asked for (`vehicle_move = kinematic`, the default, or `velocity`) | the engine's move asked for, unavailable: vehicles are teleported every frame |
 | `crowd spawners` | degraded | state | `engine/crowd.cpp` (code, vtable) | where another game runs the street, our own traffic and parked cars still spawn there and are removed out of sight (`../research/engine/traffic-police.md` §13.158) |
 | `ragdoll state` | degraded | state | `engine/ragdoll.cpp` (code, each component's vtable slot) | bodies are neither read nor laid as their owner's lie: each copy lies as its own fall left it (`../research/engine/presence.md` §13.162) |
+| `activity marks` | degraded | state | `engine/mappins.cpp` (layout, hash; a fault of the setter) | a grouped guest's map shows its own NCPD activities, not the host's world's (`story.md`, "Open-world activities") |
 | `body slots` | degraded | state | `engine/slots.cpp` (layout) | a puppet's body gets no grapple slot: a grappled NPC is held in front of it, teleported each tick (`grapple held`) |
 | `drawn prompts` | degraded | state | `Prompts.reds` (`prompts.tweak` not loaded; the test command `prompts off`); chosen: `native_prompts = off` | prompts on players and vendors drawn by tandem |
 | `attitude relations` | degraded | state | `Attitudes.reds` `Declared` (did NOT take; "in part" is the save's run-time changes, carried by the runtime copy) | attitudes copied agent by agent (`npcs.md`) |
@@ -197,7 +198,9 @@ names of `engine-access.md`.
 | `quest signals dropped` | degraded | fallback | `engine/quests.cpp` | signals held for a frozen story are lost |
 | `no room` | degraded | fallback | `runtime.cpp`, `engine/posestream.cpp` | no slot for another puppet, pose or rig |
 | `puppet not driven` | degraded | fallback | `engine/hooks.cpp` | a puppet without a move component |
+| `activity not marked` | degraded | fallback | `OpenWorld.reds` `Apply` (the pin's phase read back is not the one set) | one NCPD activity's pin shows our own state |
 | `hit shown by twitch` | degraded | fallback | `HitsTaken.reds` (the pipeline played nothing, or chose an AI task) | a hit a V took shown as the body's twitch (a hit by nobody the games know twitches by design: not registered) |
+| `summoned car unseen` | degraded | fallback | `Summons.reds` (no copy could be spawned of a partner's summoned car) | the car appears only when its owner gets in (its `Seat` spawns a copy) |
 
 Looked at and left out, each for its reason: a rule that drops a message (a
 hit with friendly fire off, a stale or repeated message, an authority

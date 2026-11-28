@@ -25,7 +25,7 @@ minute; last: only side by side).
 | 2 | Traffic, parked cars, car colours and lights, traffic and walk lights, pop-in, one-sided collisions | partly | area owner's (`traffic.md`); traffic lights and the owner's looks and headlights on proxies are on branch `rides-b` (`TrafficLights`, `npc list`), being fixed on instances a/c | cars appear, differ in colour, lights disagree, a car hit on one screen only | `street-compare.py`, spawned |
 | 3 | Corpses: where they lie and their pose | same (run in game 2026-11-28: copies within 0.01–0.03 m) | a death is the owner's word; every game ragdolls its own proxy, then sets its ragdoll's bodies where the owner's lie, the cut multiplayer's replicated ragdoll state (`CorpsePose`, `regions.md` §5, "Corpses"); a late linker sees its own ragdoll's; a ledger body is laid down with no death played (`regions.md` §14: "a place of death, not a ragdoll's pose") | the same body sprawled another way, metres apart after a blast, a fall or a car; a body that slid down stairs on one screen only | placed, spawned (position) |
 | 4 | Physics props and debris: bins, crates, cones, cans, car parts, limbs | different | no owner, no sync (`world.md`, open: "which ones … is to decide"); each game's physics pushes its own; a destroyed car's parts fly per game (`traffic.md`, Explosions) | a bin knocked over on one screen stands on the other; debris lies elsewhere; the partner walks through a crate that is not there for it | not readable (no targeting component) |
-| 5 | A player's summoned car (driving in, parked) | different | seen by the others "only once its owner sits in it" (`garage.md` row 1a, open) | the partner's car appears from nothing when they get in; while it drives up, nothing comes | spawned |
+| 5 | A player's summoned car (driving in, parked) | same (not run in game) | its owner's game's: said from its arrival (`OwnCar`), its moves that player's car stream, shown as its owner's car copy, the one its `Seat` later sits in (`garage.md` row 1a) | — once run; the old car after another summon stays parked on the others' screens | spawned |
 | 6 | Decals: blood, bullet holes, scorch | partly | each game draws its own: a puppet's shot is a real NPC shot on the partner's game, with its impact and decal (`presence.md` §3); a proxy's hit reactions are its owner's word, their blood each game's; scorch follows the explosion each game runs | holes roughly where the shots went; blood pools under bodies that lie elsewhere (row 3); a long fight's walls differ in detail | not readable |
 | 7 | Police: units, cars, AVs, MaxTac | same (not run in game) | area owner's NPCs and world vehicles (`police.md`, The rule) | — once run | spawned, `npc-compare.py` |
 | 8 | The wanted level shown | different (by design: heat per player) | each V's own prevention system (`police.md`); the partner's stars on its marker (police colours) and in its party entry (the game's star art), not run in game (`police.md`, "The partner's stars") | — once seen | heat (each its own) |
@@ -40,7 +40,7 @@ minute; last: only side by side).
 | 17 | Lightning and thunder; rain's build-up and puddles | partly | the weather state is the host's (`world.md`); a guest blends to it over 10 s while the host's own cycle took its own time; strikes are each game's random | a flash and thunder on one screen; puddles drying at another pace after a change | world (rain, puddles, moisture) |
 | 18 | Time of day, sun, shadows | same | the host's clock; a guest set back only when more than 60 game seconds off (`World.reds`) | nothing; timetables (city lights, shop shutters) switch up to ~7 s apart | world (time, lights) |
 | 19 | Weather, fog, rain | same | the host's weather state by name, kept against other mods (`World.reds`) | nothing once blended | world |
-| 20 | NCPD scanner crimes, hustles, open-world activities | different | their quest phases keep running on each game (`story.md`: open-world phases are not frozen), each save its own done list; the NPCs on site follow rows 10 | a hustle the host finished still marked, and its scene set again, on the guest | not readable (quest state) |
+| 20 | NCPD scanner crimes, hustles, open-world activities | same while grouped (not run in game) | the world of the group's leader: the host's while grouped (its game runs the activity, its done set `OpenWorldDone`), a guest's own apart; a grouped guest's own activity phases wait, its pins show the host's state the engine's way for the session only, a finish seen with the host is credited in its ledger (`story.md`, "Open-world activities"); the NPCs on site follow row 10; PL's Dogtown activities and gigs are not in it | — once run; an activity community already active in a guest's save still spawns its people (shown per row 10) | not readable (quest state); the pins: `cmd story activity MARKER` on each game |
 | 21 | Radio in a car; music | partly | the driver's station (`vehicles.md`, Radio); no playback position, the song asked for best effort; combat music each game's own by its own detection | the same station, another moment of the song | spawned (radio) |
 | 22 | Billboards, holograms, ad screens | partly | on, off, broken: host's word like any device; what they show and when they cycle: each game's | another ad on the same screen | devices (status) |
 | 23 | Screens, TVs, radios in rooms | same (not run in game) | host's station (`devices.md`, `MediaDeviceControllerPS`) | — | devices (value: station) |
@@ -66,8 +66,11 @@ view, time bubbles (`time.md`), a V's own body (`players.md`).
    §13.162; `tools/scenarios/pair-corpse-pose.sh`). Left: a game that links later.
 4. **Physics props** (row 4): no owner today. A first step is the props
    a V or a car touched near both Vs, as a placed entity's transform.
-5. **The summoned car** (row 5): share it as a parked vehicle from its
-   arrival (`garage.md` 1a).
+5. **The summoned car** (row 5): built (`OwnCar`, protocol 27, not run
+   in game): seen from its arrival, driving in and parked, as its owner's
+   car copy (`garage.md` 1a); an old one goes out of sight as the garage
+   takes its own. Left: run `garage-summon`, `garage-summon-host` and
+   `garage-summon-other`.
 6. **The partner's stars** (row 8): built (its marker in the police's
    colours, its stars in its party entry; `police.md`, "The partner's stars"), not seen yet.
 7. **Devices, glass, police** (rows 7, 11–16, 23): built, never run in
@@ -78,7 +81,11 @@ view, time bubbles (`time.md`), a V's own body (`players.md`).
    not yet run. Row 15's flames are not readable: looked at in
    `pair-devices-barrel`; automatic doors and mines have no scenario (no
    fixture is known for either).
-8. **Open-world activities** (row 20): a hustle's done state per save.
+8. **Open-world activities** (row 20): built (`OpenWorldDone`, protocol
+   28, not run in game): the leader's world decides, a grouped guest's
+   pins show it and its own activities wait; nothing reaches its save.
+   Left: running `openworld-guest` and `openworld-host`, and PL's Dogtown
+   activities.
 
 ## The mod: every feature, the game's own way
 

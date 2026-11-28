@@ -248,6 +248,13 @@ public class TandemPaint {
       if system.LastCarOwnerOf(id) == 0u {
         this.m_car = id;
       }
+    } else {
+      // On foot: the car our garage summoned, when one is out (its copies
+      // show from its arrival: Summons.reds).
+      let summoned = TandemSummons.OurCar(this.m_game);
+      if IsDefined(summoned) {
+        this.m_car = summoned.GetEntityID();
+      }
     }
     let paint = TandemPaint.Read(TandemTraffic.Body(this.m_game, this.m_car));
     let key = TandemPaint.Key(paint);
@@ -286,6 +293,25 @@ public class TandemPaint {
           copy.record = record;
           copy.key = "";
           ArrayPush(this.m_copies, copy);
+        }
+      }
+    }
+    // And a partner's summoned car, its owner in it or not (Summons.reds).
+    let summons = system.Summons();
+    if IsDefined(summons) {
+      for player in players {
+        let body = summons.CopyOf(player);
+        let record = summons.RecordOf(player);
+        if EntityID.IsDefined(body) && !IsDefined(this.Find(body)) {
+          let paint = TandemProgress.CarPaintOf(player);
+          if paint.flags != 0 && paint.vehicle == record {
+            let copy = new TandemPaintedCopy();
+            copy.body = body;
+            copy.player = player;
+            copy.record = record;
+            copy.key = "";
+            ArrayPush(this.m_copies, copy);
+          }
         }
       }
     }

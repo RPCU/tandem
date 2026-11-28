@@ -753,6 +753,73 @@ TEST_CASE("each player's lending reaches everyone once, late joiners too, and go
   CHECK(b->CarLends().size() == 1);
 }
 
+TEST_CASE("a summoned car reaches everyone once, late joiners too, and goes with its owner") {
+  using namespace proto;
+  const OwnCar arriving{.vehicle = 9, .flags = kOwnCarMoving, .position = {50.f, 0.f, 0.f}};
+  const OwnCar parked{.vehicle = 9, .position = {6.f, 0.f, 0.f}};
+  CHECK_FALSE(consistency::IsOneShot(arriving)); // state: a repeat is applied nowhere
+
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  REQUIRE_MESSAGE(host, error);
+  // What the wire would refuse is not said; no car out is kept nowhere.
+  CHECK_FALSE(host->SendCombat(OwnCar{.vehicle = 9, .flags = 4}));
+  CHECK(host->SendCombat(OwnCar{}));
+  CHECK(host->OwnCars().empty());
+  CHECK(host->SendCombat(OwnCar{.player = 77, .vehicle = 5})); // stamped
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  REQUIRE_MESSAGE(a, error);
+  // Said before it is in: kept, said as it joins.
+  CHECK_FALSE(a->SendCombat(arriving));
+  Heard heard;
+  const auto cars = [&](std::size_t game) {
+    std::vector<OwnCar> out;
+    for (const auto &message : heard.at[game])
+      if (const auto *car = std::get_if<OwnCar>(&message))
+        out.push_back(*car);
+    return out;
+  };
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return host->OwnCars().size() == 2 && a->OwnCars().size() == 1;
+  }));
+  CHECK(host->OwnCars().at(host->You()).vehicle == 5);
+  CHECK(host->OwnCars().at(a->You()).flags == kOwnCarMoving); // a's own id
+  CHECK(a->OwnCars().at(host->You()).vehicle == 5);
+  CHECK_FALSE(a->OwnCars().contains(a->You()));
+  // Said again: nothing new anywhere.
+  CHECK(a->SendCombat(arriving));
+  PumpFor({host.get(), a.get()}, 150ms, std::ref(heard));
+  CHECK(cars(0).size() == 1);
+  CHECK(cars(1).size() == 1);
+
+  // a's car stops: everyone hears where. A late joiner hears it parked
+  // there and the host's; the host's car goes; a vanishes.
+  CHECK(a->SendCombat(parked));
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error, kFast);
+  REQUIRE_MESSAGE(b, error);
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return b->OwnCars().size() == 2 && b->OwnCars().at(a->You()).flags == 0;
+  }));
+  CHECK(b->OwnCars().at(a->You()).position.x == 6.f);
+  CHECK(host->SendCombat(OwnCar{}));
+  const auto hostId = host->You();
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return b->OwnCars().size() == 1 && !a->OwnCars().contains(hostId);
+  }));
+  CHECK(std::ranges::count(cars(2), OwnCar{.player = hostId}) == 1);
+  const auto aId = a->You();
+  a.reset();
+  REQUIRE(Pump({host.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return !host->OwnCars().contains(aId) && !b->OwnCars().contains(aId);
+  }));
+  CHECK(b->OwnCars().empty());
+}
+
 TEST_CASE("a car's custom paint reaches everyone once, late joiners too, and goes with its owner") {
   using namespace proto;
   const CarPaint red{.vehicle = 9, .flags = kPaintPrimary, .primaryR = 255};

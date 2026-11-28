@@ -14,10 +14,11 @@
     skips a disabled node (result 1, read offline: engine-knowledge §13.15),
     holds each refused signal and gives it back through the root phase's
     `ExecutePath` when the freeze ends. **Per phase, not global**:
-    open-world phases (communities, vendors, NCPD hustles, city scenes,
-    fixers: Codeware's list, plus `quest_freeze_allow`) and phases under
-    them keep running, so a guest away from the host runs its own
-    surroundings (`research/coop-regions.md`). **On by default** since
+    open-world phases (communities, vendors, city scenes, fixers:
+    Codeware's list, plus `quest_freeze_allow`) and phases under them keep
+    running, so a guest away from the host runs its own surroundings
+    (`research/coop-regions.md`); the NCPD scanner's activities run only
+    where the guest's world leads ("Open-world activities"). **On by default** since
     2026-11-21 (the 11 `story-*` and `quest-trace` scenarios passed in game
     against the mock player; the two-game pass is next); `quest_freeze = off`
     gives a guest calls, lines, hubs and rewards but not the journal or texts.
@@ -604,13 +605,84 @@ test watch|play|off`.
       would leave its V past the barrier.
     - Tests: `tests/prefabs_test.cpp`; mock player `--gates N`; scenario
       `gates-guest`; `tools/game.sh cmd story gates`.
+  - _Open-world activities_ (`OpenWorld.reds`, `core/include/tandem/
+openworld.hpp`, `engine/mappins.cpp`, the freeze's activity class in
+    `engine/quests.cpp`; engine facts §13.167; built 2026-11-28, not run in
+    game). The NCPD scanner's activities (hustles, reported crimes, gang
+    watches, outposts, hidden stashes: the pins the game's own minimap
+    calls `IsNcpdScanner`) belong to **the world whose game leads where the
+    players stand** (`regions.md` §9): the host's while a guest is grouped
+    with it (`TandemRegions.Leader()` is not the guest; the story's own
+    `quest apart` test switch counts too), a guest's own apart or leading.
+    One owner, as the quests: the host's game runs the activity, its scene
+    and its NPCs (shared as proxies, `regions.md`), and decides when it is
+    done; a grouped guest's game neither starts nor finishes one.
+    - _The host's word_: every 3 s the host reads its NCPD pins (all of
+      them every 30 s, `MappinSystem.GetAllMappins`) and sends the ones in
+      `CompletedPhase` by their journal path hash (static, the same in
+      every game) as `OpenWorldDone` (appended, protocol 28; the whole set
+      on every change, sorted; a story message, so kept for late joiners,
+      in the story digest, an explicit none in a resync; the first word,
+      empty too, is news: a guest shows nothing of the host's world before
+      it).
+    - _A grouped guest_: its own activity phases wait, as its gigs do (the
+      freeze's third class, `SetActivitiesGrouped`: held signals given back
+      in order when its world leads again), so its game never sets an
+      activity's scene again where the host's has finished it. While the
+      host leads (not a third player holding its region: that world sends
+      no word, so ours stay ours), each of its pins shows the host's state (`openworld::Mirror`): done there, done;
+      done in its own save and open there, discovered (the host's game runs
+      it); else its own. The phase is set the engine's way
+      (`TandemStory.SetPoiPhase`, the game's own `PointOfInterestMappin`
+      setter by hash: it writes the phase into its system's saved
+      point-of-interest state, untracks a pin set done, and the map and
+      minimap redraw it themselves, §13.167) and read back: one that does not take is the fallback `activity not marked`,
+      the setter missing the state `activity marks` (`degradations.md`).
+      The pins the guest set remember their own phase and are the only ones
+      put back: when the host's state matches theirs again, when the guest
+      goes apart, at the leave (`GuestLeave`, after its journal goes back,
+      whose entries the engine's pins follow, and before saving unlocks;
+      for 6 s after it, a pin moved again is set back once more and said).
+      A pin its own game puts back (streamed in again) is set again.
+    - _Credit_: an activity the host's set gains while the guest is
+      grouped and within 150 m of the host's V (the reward rule) is a
+      ledger entry, once (`TandemStorySystem.NoteActivity`: tier 2, kind
+      unknown, keyed by the pin's hash; `own` 3 when its own save has it
+      done). Its money and XP come by the reward rule, as any of the
+      host's rewards (`QuestReward`, paid once).
+    - _The guest's save_ (decided 2026-11-28, from the user's tier-1-only
+      decision of 2026-11-21, `quest-carryover.md`): **nothing of the
+      host's activities is written into a guest's world.** The pins show
+      the host's state for the session only, the guest's own activities
+      are held, not finished, and every pin is put back before saving
+      unlocks (the setter writes the saved state: the put-back is what
+      keeps it out of the save); a crash leaves nothing (no save in a
+      session). A pin the guest tracked is untracked when it shows done,
+      and not tracked again by the put-back. Its own copy
+      of an activity done with the host stays playable at home and is
+      credited, never paid twice.
+    - Left as each game's: an activity community already active in the
+      guest's save spawns its people while grouped (held phases do not
+      despawn them); they are the guest's NPCs, shown and merged per
+      `regions.md` (twins give way to the host's, §3). Phantom Liberty's
+      Dogtown activities (airdrops, their own phases) and the other
+      open-world content (gigs: "Whose gig is it", `quest-carryover.md`)
+      are not in this class.
+    - Tests: `tests/openworld_test.cpp` (the host's set, the mirror, the
+      record, the message over loopback), `tests/protocol_test.cpp`,
+      `tests/referee_test.cpp` (the host's world only); mock player
+      `--activities HASH[,HASH]|off` (`--activities-at S`,
+      `--activities-then SET --activities-then-at S`) and the story verb
+      `activities`; scenarios `openworld-guest`, `openworld-host`;
+      `tools/game.sh cmd story activities`, `cmd story activity
+open|done|MARKER`.
   - Not yet verified in game: scenarios `story-guest`, `story-join`, `story-host`, `story-johnny`,
     `story-private`, `story-private-host`, `story-private-calls`, `story-session-items`,
     `story-gigs-apart`, `story-restrict-guest`, `story-restrict-host`,
     `spectate-guest`, `spectate-leave`, `spectate-host`, `spectate-ride`,
     `spectate-missing`, `interact-guest-pickup`, `interact-guest-hostonly`, `interact-apart-own-gig`,
     `prefabs-guest`, `prefabs-host`, `gates-guest`, `dialogue-marks-host`,
-    `dialogue-marks-guest`.
+    `dialogue-marks-guest`, `openworld-guest`, `openworld-host`.
 
 ## Story probes
 

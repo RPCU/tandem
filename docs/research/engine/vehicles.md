@@ -814,3 +814,78 @@ others disposed of, both on the game thread's frame, four a frame, behind
 a check of both functions' starts and both slots (`dispose gate` off
 otherwise, and such entities are left). A gate check of `+0x229F5C` from a
 script tick was itself racy: the scripts ran on job threads 508 to 536.
+
+### 13.165 The summoned car: its states, its events, one body per garage vehicle (2026-11-28, game 2.50, scripts and exe read; not run in game)
+
+- **The script surface** [R, `final.reds` (2.50)]: `VehicleSystem` is
+  native (`SpawnActivePlayerVehicle` @ `0x1421AE2F0`, `SpawnPlayerVehicle`
+  @ `0x142B8AD80`, `ToggleSummonMode`, `DespawnPlayerVehicle`; RTTI
+  `gameVehicleSystem`, 0x20A80 bytes). The blackboard
+  `VehicleSummonData` holds `GarageState`, `UnlockedVehiclesCount`,
+  `SummonState` (`vehicleSummonState`: Idle 0, EnRoute 1,
+  AlreadySummoned 2, PathfindingFailed 3, Arrived 4) and
+  `SummonedVehicleEntityID`. The HUD's `VehicleSummonWidgetGameController`
+  listens to `SummonState` (1: the "on its way" notice, 2: "waiting", 4:
+  the arrival animation).
+- **The car hears its summon** [R]: native `SummonStartedEvent{state}` and
+  `SummonFinishedEvent{state}` (RTTI `vehicleSummonStartedEvent`,
+  `vehicleSummonFinishedEvent`, 0x48 bytes, `state` at +0x40) reach its
+  `VehicleComponent`: started EnRoute or AlreadySummoned creates its
+  mappin, EnRoute takes a bike off its stand (`VehicleParkedEvent{park:
+false}`), AlreadySummoned honks and flashes; finished Arrived creates the
+  mappin, honks and flashes, parks a bike and plays
+  `ui_jingle_vehicle_arrive` on the player. `HonkAndFlash`: the default
+  lights toggled at once and back 0.33 s later
+  (`VehicleLightQuestToggleEvent`), a 2 s horn (`VehicleQuestHornEvent`).
+- **It drives in by the AI** [I, RTTI names]:
+  `AIbehaviorDriveSummoningTreeNodeDefinition`,
+  `AIbehaviorIsBeingSummonedDefinition`,
+  `AIbehaviorWaitSummonConditionDefinition`, `vehicleSummonLogic` (0x1A0
+  bytes), `vehicleAbortSummoningActionEvent`.
+- **One body per garage vehicle** [2.5-static, read in part]:
+  `SpawnActivePlayerVehicle` → `0x142B84C9C` (the active vehicle of the
+  type) → `0x1421AA230` (the player's place; a spawn point near a road,
+  `0x142B83F70`) → `0x1421A9CE0`, which finds the vehicle's record among
+  the garage's 0x68-byte entries (array at +0xC0, count +0xCC) and looks
+  its entity up by the entry's id: a body that exists is used again (no
+  second one: near enough it takes the AlreadySummoned path, an event of
+  state 2 queued to it, `0x142B83418`; otherwise the summon logic at
+  +0x158, `0x1421C4D00`, sends it in from a spawn point), and only a
+  vehicle with no body is spawned. So a car summoned again is the same
+  entity, moved; another vehicle of the garage is another entity.
+- Used by `scripts/tandem/Summons.reds` (`architecture/garage.md` 1a): the
+  owner's `SummonState` says when its car drives in (EnRoute) and when it
+  arrived; a partner's copy of it honks and flashes the game's way on
+  arrival and takes the same copy when summoned again.
+
+### 13.166 The garage's sweep: how a summoned car it no longer needs goes (2026-11-28, game 2.50, exe read; not run in game)
+
+- **The garage's list** [2.5-static]: the vehicle system's garage
+  (`gameVehicleSystem` +0x1D8, its first entry) keeps its vehicles as
+  0x68-byte entries (array +0xC0, count +0xCC; the entity's id at +0x18,
+  0 while it has no body), the indices of those spawned in a list at
+  +0x108 (count +0x114) and the one summoned last at +0x320 (`0x1466A8`:
+  none). A summon (`0x1421A9CE0`, from `SpawnActivePlayerVehicle` with its
+  last argument 1, and the spawn callback `0x1421A92D0`) sets the entry's
+  byte +0x62; +0x63 is another flag the sweep reads (not named).
+- **Another car summoned does not remove the old one** [2.5-static]: the
+  summon path despawns only the vehicle it summons, when it must respawn it
+  (`0x142B83954`, the entry's own id); the old car stays a spawned entry.
+- **The sweep** [2.5-static]: `0x1404CF4FC` (its one caller `0x1421ADC70`, not
+  read) walks the spawned list; for each entry with +0x62 set
+  and +0x63 clear it asks `0x1404D1EE4`, which keeps the car when its
+  vehicle's byte +0x6C5 is set (not named), else queues it for despawning
+  when its squared distance to the player is greater than the garage's
+  float +0x358 (where it is set, and its value, not found), the camera's
+  frustum does not contain it (`0x140265480`, a frustum test, on what a
+  system's slot +0x250 fills: read as the camera's), and a query of the garage's object at +0x330 (its slot
+  +0x1C0, by the entity's id) finds nothing holding it. Queued cars go
+  through `0x1421A9550` (the despawn: the entity removed, the entry's id
+  cleared by `0x142B848B8`, the next spawned entry made the summoned one).
+  So a summoned car the player no longer needs goes once far and out of
+  view, never in front of the player.
+- Used by `scripts/tandem/Summons.reds` (`architecture/garage.md` 1a,
+  "Old"): a partner's old car copy goes by the same rule on each game,
+  by its own V and camera (`CameraSystem.IsInCameraFrustum`), with 60 m
+  for the unread distance. To read live: the float at +0x358 of the
+  garage (the system's +0x1D8 entry). [2.5-untested]
