@@ -17,9 +17,12 @@ pshot() {
   pgame shot "$1" >/dev/null && cp "$(dirname "$cache")/$partner/shots/$1.png" "$out/" 2>/dev/null || true
 }
 look() {
-  local where=$2
-  pat "$where"
+  local where=$2 x y z yaw
+  read -r x y z yaw <<<"$where"
+  # Ours at the spot, the partner a step to its side (both on one spot: our
+  # teleport did not take, 2026-11-28), looking the same way.
   at "$where"
+  pat "$(awk -v x="$x" 'BEGIN { print x + 1.2 }') $y $z ${yaw:-0}"
   pause 4
   shot "clutter-$1-ours"
   pshot "clutter-$1-partner"
