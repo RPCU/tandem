@@ -241,8 +241,18 @@ the first group session.
   proxy gets while it is assembled: the host's resource is written into
   it (by RTTI name), it is placed where the proxy stands, the proxy is put
   in it (`PlayNpcInWorkspot`) and jumped to the host's entry; meanwhile
-  the controller keeps still (`HoldPuppet`). When the host's NPC gets up
-  the proxy plays the slow exit and the controller takes over again.
+  the controller keeps still (`HoldPuppet`). It goes in only once the
+  owner's NPC has stood still 1 s and the controller has brought the copy
+  within 0.5 m of it (5 s at most): a brain-off copy takes no teleport, and
+  entered at once it sat 6 to 40 m from its owner. When the host's NPC
+  gets up the proxy plays the slow exit, its controller is attached again
+  (the workspot takes it off: copies stayed 15 to 31 m behind) and takes
+  over. A copy over 3 m from its owner for 2 s, its owner in no workspot,
+  is put back, out of any workspot (over 20 m: at once). Measured at
+  kabuki-market on instances a and c (2026-11-28, `npc list` at the same
+  moment): within 30 m of a V, the worst 26 m before, 1.7 m after (a
+  pacing workspot's phase; walkers 0.5 to 0.9 m, the lists 0.1 to 0.3 s
+  apart).
   Played once from its start, the copy's tree runs to its exit while the
   host's NPC stays (its spot keeps it there): a copy out of its workspot
   by itself goes back in at the host's entry (`TandemSpot` `replays`), once
