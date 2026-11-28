@@ -16,6 +16,7 @@
 #include <RedLib.hpp>
 
 #include <algorithm>
+#include <format>
 
 namespace tandem::plugin {
 // One change for the script (CommsEvent). Plain fields only: the script VM
@@ -161,6 +162,58 @@ struct TandemCommsNative : Red::IScriptable {
   // (tools/game.sh cmd comms report) one line for the log.
   static Red::CString Report() { return Red::CString(Comms::Get().Report().c_str()); }
 
+  // ---- a partner's call (Holocall.reds; comms.md, "The call on screen") ----
+  // A journal contact of the partner's own, for the game's call UI to find
+  // by its id (tandem_partner_PLAYER): a gameJournalContact made here, never
+  // in the journal, with the partner's name and the unknown avatar (research
+  // engine/comms.md §13.163: the call UI reads the name's text at +0xA8 and
+  // `avatarID` from the entry itself). Null when the class is not laid out
+  // as on 2.50 (logged once).
+  static Red::Handle<Red::IScriptable> PartnerContact(std::uint32_t player, Red::CString name) {
+    auto *cls = ContactClass();
+    if (!cls)
+      return {};
+    auto *instance = static_cast<Red::IScriptable *>(cls->CreateInstance(true));
+    if (!instance)
+      return {};
+    Red::Handle<Red::IScriptable> contact(instance);
+    const auto id = std::format("tandem_partner_{}", player);
+    cls->GetProperty("id")->SetValue<Red::CString>(instance, Red::CString(id.c_str()));
+    cls->GetProperty("avatarID")
+        ->SetValue<Red::TweakDBID>(instance, Red::TweakDBID("PhoneAvatars.Avatar_Unknown"));
+    cls->GetProperty("type")->SetValue<std::int32_t>(instance, 0); // gameContactType.Caller
+    cls->GetProperty("isCallableDefault")->SetValue<bool>(instance, true);
+    RenameContact(contact, name);
+    return contact;
+  }
+  // The partner's name on their contact (a name changed in the session).
+  static void RenameContact(Red::Handle<Red::IScriptable> contact, Red::CString name) {
+    auto *cls = ContactClass();
+    if (!cls || !contact || !contact->GetType()->IsA(cls))
+      return;
+    cls->GetProperty("name")->GetValuePtr<RED4ext::LocalizationString>(contact.GetPtr())->unk08 =
+        name;
+  }
+  // gameJournalContact as measured on 2.50 (0xD8 bytes; `name` a
+  // LocalizationString at +0xA0, its text at +0xA8; `type` +0xC8, `avatarID`
+  // +0xCC, `isCallableDefault` +0xD5; the entry's `id` +0x40), else null.
+  static Red::CClass *ContactClass() {
+    static Red::CClass *s_class = []() -> Red::CClass * {
+      auto *cls = Red::CRTTISystem::Get()->GetClass("gameJournalContact");
+      const auto at = [&](const char *property, std::uint32_t offset) {
+        const auto *field = cls ? cls->GetProperty(property) : nullptr;
+        return field && field->valueOffset == offset;
+      };
+      if (cls && cls->GetSize() == 0xD8 && at("id", 0x40) && at("name", 0xA0) && at("type", 0xC8) &&
+          at("avatarID", 0xCC) && at("isCallableDefault", 0xD5))
+        return cls;
+      log::Error("partner call: gameJournalContact is not laid out as on 2.50: no contact for a "
+                 "partner's call");
+      return nullptr;
+    }();
+    return s_class;
+  }
+
   RTTI_IMPL_TYPEINFO(TandemCommsNative);
   RTTI_IMPL_ALLOCATOR();
 };
@@ -200,4 +253,6 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemCommsNative, "TandemCommsNative", {
   RTTI_METHOD(PingsOn);
   RTTI_METHOD(SetWaypoint);
   RTTI_METHOD(Report);
+  RTTI_METHOD(PartnerContact);
+  RTTI_METHOD(RenameContact);
 });

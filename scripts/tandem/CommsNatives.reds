@@ -66,4 +66,9 @@ public native class TandemCommsNative extends IScriptable {
   public static native func PingsOn() -> Bool
   public static native func SetWaypoint(kind: Int32, position: Vector4)
   public static native func Report() -> String
+  // A partner's own journal contact for the phone's call UI (Holocall.reds):
+  // id tandem_partner_PLAYER, their name, the unknown avatar; null when the
+  // game's contact class is not as measured. Renamed when their name changes.
+  public static native func PartnerContact(player: Uint32, name: String) -> ref<JournalContact>
+  public static native func RenameContact(contact: ref<JournalContact>, name: String)
 }

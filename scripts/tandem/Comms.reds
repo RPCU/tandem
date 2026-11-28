@@ -915,15 +915,19 @@ public class TandemComms {
     this.HideOffer();
     this.m_offerFrom = player;
     this.m_offerAt = this.m_now;
-    if this.CallUp() {
+    let gameCall = this.CallUp();
+    if gameCall {
       this.Sound(n"ui_phone_sms");
     } else {
-      GameInstance.GetAudioSystem(this.m_game).Play(n"ui_phone_incoming_call");
+      // The phone's own call rings (PhoneSystem plays its ringtone, the
+      // incoming-call widget its hold-to-decline glyph): stopped with it.
       this.m_ringing = true;
     }
     this.m_holocall.Ring(player, name, this.m_now);
     this.Hint(true, TandemText.F("Comms-LinkWith", name));
-    TandemText.Hint(this.m_game, n"TandemLinkDecline", n"PhoneReject", true, TandemText.Get("Comms-Decline"), inkInputHintHoldIndicationType.Hold);
+    if gameCall {
+      TandemText.Hint(this.m_game, n"TandemLinkDecline", n"PhoneReject", true, TandemText.Get("Comms-Decline"), inkInputHintHoldIndicationType.Hold);
+    }
     this.UpdateKeys();
     TandemNative.Log(s"comms: showing the link request of \(name)\(this.m_ringing ? " (ringing)" : "")");
   }
@@ -983,7 +987,15 @@ public class TandemComms {
       return false;
     }
     let call = FromVariant<PhoneCallInformation>(info);
+    // A partner's call is ours (Holocall.reds), placed with the phone's own.
+    if TandemHolocall.IsPartner(call.contactName) {
+      return false;
+    }
     return Equals(call.callPhase, questPhoneCallPhase.IncomingCall) || Equals(call.callPhase, questPhoneCallPhase.StartCall);
+  }
+
+  public func Holocall() -> ref<TandemHolocall> {
+    return this.m_holocall;
   }
 
   private func OnPhoneKey(action: ListenerAction) -> Void {
