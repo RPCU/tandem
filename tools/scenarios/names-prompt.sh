@@ -31,8 +31,8 @@ expect 'coop: name "Alice", the co-op menu asks for one: no' 10
 $game key 1 >/dev/null
 cmd coop leave
 expect 'coop: left the session' 10
-cmd coop set name V
-expect 'setting: name = V' 10
+cmd coop set name Victor
+expect 'setting: name = Victor' 10
 cmd coop host
 expect 'session: starting as host' 15
 # To look at: the popup in the game's style (title, the rules, the text

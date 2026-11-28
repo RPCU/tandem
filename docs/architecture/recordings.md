@@ -53,7 +53,7 @@ host` records alone). Everything the game asks its `Endpoint` to send
   pose codec work; a `.tplay` carries the pose stream itself.
 
   **A recording session** (5–10 min, by whoever plays; the game as host
-  with `tandem.ini` `role = host`, `name = V`; `tools/game.sh cmd …`
+  with `tandem.ini` `role = host`, `name = Victor`; `tools/game.sh cmd …`
   from this machine, or the co-op menu's console later):
   1. `teleport home`, then `record start street`: walk 30 s through the
      streets around, sprint 20 s, walk back; climb and go down a flight of
