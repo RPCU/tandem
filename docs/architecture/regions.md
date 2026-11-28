@@ -354,9 +354,14 @@ and apply, research `engine/presence.md` §13.162).
   (another rig) or none keeps its own fall's (`corpse pose`). No cap: a lay
   is a one-off write, nothing is held per frame. `test query corpses`
   reads every copy's bodies back against its owner's (`CorpseApart`).
-- **Measured** (2026-11-28, three gangers thrown): copies within 0.01 and
-  0.03 m of the owner's bodies; one still sliding when read, 0.46 m (then
-  sent again since).
+- **Measured** (2026-11-28, `pair-corpse-pose`, three gangers thrown, five
+  runs): copies within 0.01 to 0.08 m of the owner's bodies; one still
+  sliding when read, 0.46 m (sent again since). A copy whose ragdoll has no
+  physics body 3 s after its death (a death animation) is made to ragdoll
+  (`CreateForceRagdollEvent`) and tried each second, 10 s at most.
+- **Not shared**: the light crowd (`Character.LightCrowd_*`) has a ragdoll
+  component with no physics body even made to ragdoll: neither read on its
+  owner nor laid on a copy (`corpse pose`).
 - **Not kept**: a game that links later, or joins, sees its own ragdoll's
   rest (as before); the ledger's bodies are still "a place of death" (§14).
   Idempotent: a repeat lays the body the same way.

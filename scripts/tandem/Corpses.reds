@@ -37,6 +37,9 @@ public class TandemCorpseShown {
   // so a lay that fails is tried again each second, 10 s at most.
   public let firstTry: Float;
   public let triedAt: Float;
+  // Its fall was a death animation, no ragdoll: the game's own ragdoll
+  // asked for once (CreateForceRagdollEvent), then laid.
+  public let forced: Bool;
 }
 
 public class TandemCorpses {
@@ -219,6 +222,7 @@ public class TandemCorpses {
       shown.measured = false;
       shown.firstTry = now;
       shown.triedAt = -1.0;
+      shown.forced = false;
     }
     if shown.lays == 0 {
       if shown.triedAt >= 0.0 && now - shown.triedAt < 1.0 && now >= shown.triedAt {
@@ -226,6 +230,13 @@ public class TandemCorpses {
       }
       shown.triedAt = now;
       let why = this.Lay(shown, body, now);
+      if NotEquals(why, "") && !shown.forced {
+        // The owner's body is a ragdoll; ours may still be a death
+        // animation's: it falls into its ragdoll, then is laid.
+        shown.forced = true;
+        body.QueueEvent(CreateForceRagdollEvent(n"tandem_corpse"));
+        TandemNative.LogDebug(s"corpse: proxy \(shown.npc) has no ragdoll yet (\(why)): ragdolled");
+      }
       if NotEquals(why, "") && now - shown.firstTry >= 10.0 {
         // Not laid: left as its own fall left it, for good.
         TandemDegraded.Fallback("corpse pose", s"npc \(shown.npc): its copy could not be laid as its owner's body in 10 s (\(why)); it lies as its own fall left it");
