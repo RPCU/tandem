@@ -126,10 +126,11 @@ struct TandemScenePlace {
 static_assert(alignof(TandemScenePlace) <= 8, "the script VM aligns struct locals to 8");
 
 // One activity pin to set: its marker (journal path hash) to `phase`
-// (gamedataMappinPhase).
+// (gamedataMappinPhase); `track`: the player's track given back after.
 struct TandemActivityStep {
   std::uint32_t marker{};
   std::int32_t phase{};
+  bool track{};
 };
 
 namespace {
@@ -744,22 +745,26 @@ struct TandemStory : Red::IScriptable {
   // activities") ----
 
   // Our activity pins as the script read them: each marker (its journal path
-  // hash) with its phase now (gamedataMappinPhase).
+  // hash) with its phase now (gamedataMappinPhase) and whether the player
+  // tracks it (none given: not tracked).
   static std::vector<openworld::Seen> Pins(const Red::DynArray<std::uint32_t> &markers,
-                                           const Red::DynArray<std::int32_t> &phases) {
+                                           const Red::DynArray<std::int32_t> &phases,
+                                           const Red::DynArray<bool> *tracked = nullptr) {
     std::vector<openworld::Seen> out;
     const auto n = std::min(markers.Size(), phases.Size());
     out.reserve(n);
     for (std::uint32_t i = 0; i < n; ++i)
       if (markers[i] != 0 && phases[i] >= 0 && phases[i] < openworld::kPhases)
-        out.push_back({markers[i], static_cast<std::uint8_t>(phases[i])});
+        out.push_back({markers[i], static_cast<std::uint8_t>(phases[i]),
+                       tracked && i < tracked->Size() && (*tracked)[i]});
     return out;
   }
 
   static Red::DynArray<TandemActivityStep> Steps(const std::vector<openworld::Step> &steps) {
     Red::DynArray<TandemActivityStep> out;
     for (const auto &step : steps)
-      out.EmplaceBack(TandemActivityStep{.marker = step.marker, .phase = step.phase});
+      out.EmplaceBack(
+          TandemActivityStep{.marker = step.marker, .phase = step.phase, .track = step.track});
     return out;
   }
 
@@ -780,11 +785,12 @@ struct TandemStory : Red::IScriptable {
   }
 
   // Guest, every few seconds: the pins to set now, the host's state while
-  // `grouped`, our own put back when not.
+  // `grouped`, our own put back when not (`tracked`: the player tracks it).
   static Red::DynArray<TandemActivityStep> ActivitiesSteps(bool grouped,
                                                            Red::DynArray<std::uint32_t> markers,
-                                                           Red::DynArray<std::int32_t> phases) {
-    return Steps(Story::Get().OpenWorld().Update(grouped, Pins(markers, phases)));
+                                                           Red::DynArray<std::int32_t> phases,
+                                                           Red::DynArray<bool> tracked) {
+    return Steps(Story::Get().OpenWorld().Update(grouped, Pins(markers, phases, &tracked)));
   }
 
   // Guest: the session is over (we leave, or the host vanished): every pin
@@ -817,14 +823,22 @@ struct TandemStory : Red::IScriptable {
     return engine::SetPoiPhase(mappin.instance, static_cast<std::uint8_t>(phase));
   }
 
+  // A pin tracked again the engine's way (engine/mappins.hpp): `system` is
+  // the game's MappinSystem, `id` the pin's NewMappinID value; false when
+  // the feature is off or the engine faulted.
+  static bool TrackPin(Red::Handle<Red::IScriptable> system, std::uint64_t id) {
+    return engine::TrackPin(system.instance, id);
+  }
+
   // `cmd openworld`: the host's set, ours set, put back by our game.
   static Red::CString ActivitiesReport() {
     auto &story = Story::Get();
     const auto &mirror = story.OpenWorld();
     const auto line =
-        std::format("the host's set {}, {} of our pins set to it ({} set again), we said {} done; "
-                    "activity marks {}, our activities {}",
+        std::format("the host's set {}, {} of our pins set to it ({} set again, {} to track "
+                    "again), we said {} done; activity marks {}, our activities {}",
                     mirror.HostSet().size(), mirror.Ours().size(), mirror.Reapplied(),
+                    mirror.Untracked().size(),
                     story.OpenWorldSaid() ? std::to_string(story.OpenWorldSent().size()) : "none",
                     engine::FeatureIsOn(engine::feature::kActivityMarks) ? "on" : "off",
                     engine::ActivitiesGrouped() ? "wait" : "run");
@@ -1608,6 +1622,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemScenePlace, "TandemScenePlace", {
 RTTI_DEFINE_CLASS(tandem::plugin::TandemActivityStep, "TandemActivityStep", {
   RTTI_PROPERTY(marker);
   RTTI_PROPERTY(phase);
+  RTTI_PROPERTY(track);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
@@ -1661,6 +1676,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(ActivitiesAdded);
   RTTI_METHOD(ActivityOwnPhase);
   RTTI_METHOD(SetPoiPhase);
+  RTTI_METHOD(TrackPin);
   RTTI_METHOD(ActivitiesReport);
   RTTI_METHOD(SendGates);
   RTTI_METHOD(GatesOf);

@@ -104,6 +104,8 @@ constexpr Info kCatalogue[] = {
      "a partner's summoned car has no copy here: it appears when they get in"},
     {"activity not marked", Degraded, Fallback,
      "one NCPD activity's map pin would not take the host's state: it shows our own"},
+    {"activity untracked", Degraded, Fallback,
+     "an NCPD activity the player tracked, shown done during the session, is not tracked again"},
 };
 
 std::size_t OrderOf(std::string_view id) {
