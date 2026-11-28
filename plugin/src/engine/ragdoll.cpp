@@ -141,9 +141,13 @@ std::uint32_t RagdollOf(RED4ext::ent::Entity *entity, const Functions &f, std::s
     why = "no entity";
     return 0;
   }
+  // The first ragdoll component with a physics body (an entity may carry
+  // more than one).
+  std::uint32_t components = 0;
   for (const auto &component : entity->components) {
     if (!component || !component->GetType()->IsA(ragdollClass))
       continue;
+    ++components;
     const auto base = reinterpret_cast<std::uintptr_t>(component.GetPtr());
     const auto vtable = *reinterpret_cast<const std::uintptr_t *>(base);
     if (!InGameImage(vtable) ||
@@ -152,13 +156,12 @@ std::uint32_t RagdollOf(RED4ext::ent::Entity *entity, const Functions &f, std::s
       return 0;
     }
     const auto id = *reinterpret_cast<const std::uint32_t *>(base + kRagdollId);
-    if (id == 0 || id == 0xFFFFFFFF) {
-      why = "its ragdoll has no physics body";
-      return 0;
-    }
-    return id;
+    if (id != 0 && id != 0xFFFFFFFF)
+      return id;
   }
-  why = "it has no ragdoll component";
+  why = components
+            ? std::format("none of its {} ragdoll component(s) has a physics body", components)
+            : "it has no ragdoll component";
   return 0;
 }
 
