@@ -71,7 +71,13 @@ view, time bubbles (`time.md`), a V's own body (`players.md`).
 6. **The partner's stars** (row 8): built (its marker in the police's
    colours, its stars in its party entry; `police.md`, "The partner's stars"), not seen yet.
 7. **Devices, glass, police** (rows 7, 11–16, 23): built, never run in
-   game; the checker reads every one of them.
+   game; the checker reads every one of them. Scenarios on two real games
+   (`pair-devices-*`, `pair-glass`, `pair-turret`, `pair-police`:
+   `two-instances.md`, "Scenarios on two games") act on one game and read
+   the other, each ending with both games' dumps of that device compared;
+   not yet run. Row 15's flames are not readable: looked at in
+   `pair-devices-barrel`; automatic doors and mines have no scenario (no
+   fixture is known for either).
 8. **Open-world activities** (row 20): a hustle's done state per save.
 
 ## The mod: every feature, the game's own way
@@ -145,7 +151,9 @@ more than `--apart`, another look or station), spawned (dynamic ids paired
 by class and record within 5 m: those with no twin), devices (bits named;
 the scanner's "exposed" left out: each V's own), glass; then runs
 `street-compare.py` and `npc-compare.py` on the same dumps. It exits 1 on
-any difference. What it cannot read (audio, decals, particles, physics
+any difference; `--only CATEGORY[,…]` counts only those (and skips the
+street and NPC comparisons), `--entity HEX` keeps one device: a two-game
+scenario's `compare` (`tools/scenario.sh`). What it cannot read (audio, decals, particles, physics
 props without a targeting component, flocks, quest state) is marked "not
 readable" above.
 

@@ -5,7 +5,8 @@ game (or the mock player) can write, without the game.
 A scenario (tools/scenarios/*.sh) reads the game's log with `expect 'RE'`,
 `reject`, `at_most N`, `since | grep` and `query` (which waits for `test
 query: WHAT ARGS = `), and the mock player's with
-`expect_peer`, `expect_peer2` and `reject_peer`. A log line reworded in the
+`expect_peer`, `expect_peer2` and `reject_peer`; a partner game's (two-game
+scenarios) with `expect_partner`, `reject_partner` and `pquery`. A log line reworded in the
 scripts or the plugin leaves its scenarios waiting for a line that never
 comes, found only minutes into an in-game run.
 
@@ -1033,7 +1034,8 @@ def format_leads(fmt):
 
 
 # ---------------------------------------------------------------- scenarios
-GAME_CALLS = {"expect": 1, "reject": 1, "at_most": 2}
+# (The partner of a two-game scenario is a game too.)
+GAME_CALLS = {"expect": 1, "reject": 1, "at_most": 2, "expect_partner": 1, "reject_partner": 1}
 PEER_CALLS = {"expect_peer": 1, "expect_peer2": 1, "reject_peer": 1}
 COMMAND_START = {";", "&&", "||", "then", "else", "do", "{", "!", "|", "(", "if", "while", "until"}
 
@@ -1133,7 +1135,7 @@ def patterns(path):
                 side = "peer" if word in PEER_CALLS else "game"
                 yield start, side, words[k + calls[word]][0]
             # query VAR WHAT ARGS waits for "test query: WHAT ARGS = VALUE".
-            if command and word == "query" and k + 2 < len(words):
+            if command and word in ("query", "pquery") and k + 2 < len(words):
                 asked = []
                 for w, _ in words[k + 2:]:
                     if w in COMMAND_START or w in (";", "&&", "||", ")"):

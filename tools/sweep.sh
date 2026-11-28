@@ -4,7 +4,8 @@
 #
 #   tools/sweep.sh [OPTIONS] [NAME...]   these scenarios (default: all but
 #                                        the by-hand ones and, without
-#                                        PILOT=1, the pilot's)
+#                                        PILOT=1, the pilot's, without
+#                                        TANDEM_PARTNER, the two games' ones)
 #   tools/sweep.sh --rerun-failed FILE   the failures of an earlier results file
 #   tools/sweep.sh --list [NAME...]      the order, with each one's group
 #
@@ -125,6 +126,8 @@ elif [ ${#names[@]} -eq 0 ]; then
   for f in tools/scenarios/*.sh; do
     name=$(basename "$f" .sh)
     if [ -z "${PILOT:-}" ] && grep -q '^# needs the pilot' "$f"; then continue; fi
+    # Two real games: only with the partner named (tools/scenario.sh).
+    if [ -z "${TANDEM_PARTNER:-}" ] && grep -q '^# needs two games' "$f"; then continue; fi
     if [ -z "$by_hand" ] && is_by_hand "$name"; then continue; fi
     names+=("$name")
   done

@@ -4,6 +4,7 @@
 
     tools/world-compare.py A.log B.log [--near 100] [--apart 1.5]
     tools/world-compare.py --instances a c [--near 100] [--shots NAME]
+    ... [--only CATEGORY[,CATEGORY]] [--entity HEX]
 
 Each game's `parity [M]` dump (scripts/tandem/Parity.reds: `tools/game.sh
 cmd parity`, `tools/instance.sh cmd NAME parity`) is read from its log: the
@@ -24,7 +25,10 @@ Reported per category, each line a difference a player could see:
   glass     the session's record of what broke, as each game has it
 then the vehicle and NPC comparisons of tools/street-compare.py and
 tools/npc-compare.py on the same dump (each run when present).
-Within --near m of either V (the V positions of both dumps).
+Within --near m of either V (the V positions of both dumps). --only counts
+(and exits 1 on) those categories alone, without the vehicle and NPC
+comparisons (tools/scenario.sh's `compare`); --entity HEX keeps only that
+device of the devices category.
 """
 
 import argparse
@@ -118,7 +122,7 @@ class Report:
         print(f"  {category}: {text}")
 
 
-def compare(a, b, near, apart):
+def compare(a, b, near, apart, entity=None):
     """Print each difference between two dumps; the counts per category."""
     r = Report()
     vs = [a["v"], b["v"]] + list(a["puppets"].values()) + list(b["puppets"].values())
@@ -213,6 +217,8 @@ def compare(a, b, near, apart):
     # devices
     both = 0
     for key in sorted(set(a["devices"]) | set(b["devices"])):
+        if entity and key[0] != entity:
+            continue
         x, y = a["devices"].get(key), b["devices"].get(key)
         ref = (x or y)["pos"]
         if dist(ref) > near:
@@ -279,6 +285,8 @@ def main():
     ap.add_argument("--near", type=float, default=100.0)
     ap.add_argument("--apart", type=float, default=1.5, help="placed entities farther apart than this differ (m)")
     ap.add_argument("--shots", metavar="NAME", help="with --instances: a screenshot of each, NAME-INSTANCE.png")
+    ap.add_argument("--only", metavar="CATEGORIES", help="count only these categories (comma-separated)")
+    ap.add_argument("--entity", metavar="HEX", help="devices: only this entity's")
     args = ap.parse_args()
     if args.instances:
         logs = ask(args.instances, args.near, args.shots)
@@ -291,8 +299,12 @@ def main():
         sys.exit("world-compare: no complete parity dump in " + ("either log" if not any(found) else
                  ("the first log" if not found[0] else "the second log")))
     a, b = found[0][-1], found[1][-1]
-    counts = compare(a, b, args.near, args.apart)
-    others(a, b, args.near)
+    counts = compare(a, b, args.near, args.apart, args.entity.lower() if args.entity else None)
+    if args.only:
+        only = set(args.only.split(","))
+        counts = {k: v for k, v in counts.items() if k in only}
+    else:
+        others(a, b, args.near)
     total = sum(counts.values())
     print("== differences: " + (", ".join(f"{k} {v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1])) or "none"))
     sys.exit(1 if total else 0)

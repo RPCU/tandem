@@ -534,6 +534,49 @@ Paths are the game's: `Z:/data/Steam/tandem-instances/b/tandem.ini` under
 Wine. A relative path starts at the plugin's folder. Built and unit-tested;
 not run in a game `[unknown]` (the instances on anya did not need them).
 
+## Scenarios on two games
+
+**Written 2026-11-28, not yet run in game.** The sweeps above put each game
+against a mock player; these put two real games in one session, so what a
+row of `parity.md` says is "same" is read off both games at once. A
+scenario that says `# needs two games` (line 3) runs only with the other
+game named, and `tools/sweep.sh` leaves it out otherwise:
+
+```sh
+TANDEM_INSTANCE=a TANDEM_PARTNER=c tools/scenario.sh pair-devices-door
+TANDEM_INSTANCE=a TANDEM_PARTNER=c tools/sweep.sh pair-devices-door pair-devices-lift pair-devices-camera pair-devices-media pair-glass pair-police
+```
+
+- **Roles**: the scenario's game hosts (`ensure host`); `partner_join` has
+  the partner run the same build with co-op off (`tools/game.sh ensure
+off` on it: started once ours plays), leave any session, take its test
+  reset and `coop join 127.0.0.1:PORT` (the game machine's loopback, our
+  port); it arrives beside our V. Its own port is
+  `TANDEM_PARTNER_PORT` (default ours + 100: two instances default to
+  27550 both). After the scenario it leaves (`coop leave`), so the next
+  one's mock player is alone with our game.
+- **Helpers** (`tools/scenario.sh`): `pcmd TEXT` (a command in the
+  partner), `pat SPOT` (its V there, settled, as `at`), `pmark`,
+  `expect_partner`/`reject_partner` (its log since its mark), `pquery VAR
+WHAT` (its test query), and `compare CATEGORY [ENTITY]`: a parity dump
+  of both games at one moment (`tools/world-compare.py --instances OURS
+PARTNER --only CATEGORY [--entity HEX]`, within 60 m), failing on any
+  difference in that category (for `devices` with an entity, also when
+  either game does not follow it); each comparison goes to the evidence's
+  `compare.txt`. A failure keeps the partner's log as `partner.log`; at
+  the end the partner, too, must have run no hook beside its script tick
+  and hold nothing degraded the scenario did not declare.
+- **The scenarios** (parity.md rows 7, 11–14, 16, 23): `pair-devices-door`,
+  `pair-devices-lift` (the partner carried by its own cabin, more than 2 m
+  up or down), `pair-devices-camera` (turned by the partner: friendly to
+  both Vs on both games, marked on ours, then back), `pair-devices-barrel`
+  (`DEVICES_AT` a spot 10 to 40 m from a barrel: none is known),
+  `pair-devices-media`, `pair-glass`, `pair-turret` (`TURRET_AT` near a
+  sentry: none is known), `pair-police` (the partner wanted: our units and
+  car after its puppet, none on our V, its own stars, standing down).
+  Automatic doors and mines have no scenario: no fixture is known for
+  either.
+
 ## Costs
 
 | Per instance | Measured on anya `[anya]`                                                                                                                        |
