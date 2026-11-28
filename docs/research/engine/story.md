@@ -1072,3 +1072,45 @@ Bool` at 64; vtable 0x143179a18), held by a
   (`r6/config/inputContexts.xml`); `Choice1_Hold` is a 0.3 s hold of
   `Choice1` (`<hold action="Choice1_Hold" timeout="0.3" />`).
   [2.5-verified offline]
+
+### 13.164 A scene's camera is a baked animation; the cut multiplayer ran scenes on every peer (2026-11-28, live RTTI of 2.50; not run)
+
+For `docs/architecture/parity.md` row 1 (spectating): can a guest run a
+scene of its own whose camera plays the host's camera track?
+
+- **A scene's camera is a recorded animation, not a stream.** Its camera
+  actor plays `scnCameraRid` (`animations: array:scnCameraAnimationRid`,
+  each a `handle:animIAnimationBuffer` and `scnCameraAnimationLOD`, a
+  trajectory and 3×7 float tracks, baked) through `scnPlayRidAnimEvent`
+  (`animResRefId: scnRidAnimationSRRefId` into the scene's `.rid`
+  resource, `animOriginMarker`, `actorPlacement`); the FPP events
+  (`scnPlayFPPControlAnimEvent`) only blend, limit or smooth the player's
+  own camera (`cameraBlendInDuration`, `yawLimitLeft`…,
+  `enableWorldSpaceSmoothing`). No scene event or node takes a camera
+  transform at run time, and a scene resource of ours cannot hold the
+  host's track: it is known only as it plays. So "a scene of the guest's
+  own playing the host's camera track" has no lever: the guest's watch
+  camera (a camera entity placed every frame from `scene::CameraTrack`)
+  is the only way to show a track that is streamed. [2.5-verified]
+  (RTTI)
+- **What the engine was built for instead**: every peer runs the same
+  scene. `scnPlayerActorDef` acquires its performer by
+  `findNetworkPlayerParams: scnFindNetworkPlayerParams` (`networkId`), so
+  a scene can cast a network player; `scnISceneSystem` still exports
+  `GetPeerIdDialogChoiceFactName` (dialogue choices per peer); and the
+  quest system replicated its state (`questQuestsSystemReplicatedState`,
+  `replicatedQuestPrefabs`). The cut multiplayer's path to a shared
+  cutscene is each game playing the scene from replicated quest state,
+  with its baked camera, the players cast by network id: the camera then
+  needs no stream at all. [2.5-verified] (RTTI; never called)
+- **Why it is not built**: that path runs the host's scene, and so its
+  quest outputs, on the guest. Its other actors are found in the quest's
+  context (`findActorInContextParams`), in the world
+  (`findActorInWorldParams`, community entries) or spawned by the scene
+  (`spawnDespawnParams`); on a guest those are its own frozen quest's
+  (story sync) or the host's proxies, not the cast, so a scene started
+  there finds nobody or spawns a second cast. Making it work means binding
+  each actor to the host's proxy and suppressing every fact, reward and
+  choice the guest's copy would emit: a scene engine of our own around
+  the game's. Until that is designed (parity.md row 1, "Next"), the watch
+  camera stays, registered as what it is. [unverified]
