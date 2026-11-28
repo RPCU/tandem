@@ -867,6 +867,7 @@ public class TandemComms {
         this.HideOffer();
       }
       if this.m_holocall.IsCalling(player) {
+        TandemNative.Log(s"comms: \(name) left while we called");
         this.m_holocall.Refused(player, TandemText.F("Phone-Unavailable", name), this.m_now);
       } else {
         this.m_holocall.Ended(player, this.m_now);
