@@ -14,7 +14,7 @@
 // the player tracked, untracked by that setter, is tracked again at its
 // put-back by the system's own tracker (MappinSystem's TrackMappin,
 // address-library hash 3769177737, the call behind the world map's own
-// TrackMappin native, §13.165). Not yet run by tandem in game: the scenario
+// TrackMappin native, §13.168). Not yet run by tandem in game: the scenario
 // openworld-guest is its check.
 
 // The SDK's headers need its main header first (own group: keep it first).
@@ -33,7 +33,7 @@
 namespace tandem::plugin::engine {
 namespace {
 constexpr std::uint32_t kSetPhase = 803085170; // PointOfInterestMappin_SetPhase
-constexpr std::uint32_t kTrack = 3769177737;   // MappinSystem's TrackMappin (§13.165)
+constexpr std::uint32_t kTrack = 3769177737;   // MappinSystem's TrackMappin (§13.168)
 constexpr std::uint32_t kPoiSize = 0x100;
 static_assert(sizeof(RED4ext::game::mappins::PointOfInterestMappin) == kPoiSize);
 
@@ -43,7 +43,7 @@ using SetPhaseFn = bool (*)(void *mappin, std::uint32_t phase);
 SetPhaseFn g_setPhase = nullptr;
 // The system's own tracker: (the MappinSystem, the pin's NewMappinID by
 // value, 8 bytes in a register). It stores the id as the manually tracked
-// pin under the system's lock and tells the system (decompiled, §13.165).
+// pin under the system's lock and tells the system (decompiled, §13.168).
 using TrackFn = void (*)(void *system, std::uint64_t id);
 TrackFn g_track = nullptr;
 

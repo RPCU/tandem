@@ -1370,7 +1370,7 @@ phase in edx, all 32 bits)`. It looks the pin's journal hash (+0x8C) up
   already active from the save spawns its people all the same.
   [2.5-verified offline for the resource; the hold: unverified]
 
-### 13.165 A map pin tracked again from outside; what Dogtown's open-world pins are (2026-11-28, read in final.reds (2.50) and the 2.50 exe disassembled; not run)
+### 13.168 A map pin tracked again from outside; what Dogtown's open-world pins are (2026-11-28, read in final.reds (2.50) and the 2.50 exe disassembled; not run)
 
 For `docs/architecture/story.md`, "Open-world activities". F is
 `final.reds (2.50)`.
@@ -1384,7 +1384,7 @@ For `docs/architecture/story.md`, "Open-world activities". F is
   is 0x142d449bc (address-library hash 3769177737): under the system's
   lock (+0x198) it stores the id as the manually tracked pin (+0x1B8, what
   `GetManuallyTrackedMappinID` answers, F:51147, and what
-  `PointOfInterestMappin_SetPhase` clears for a completed pin, §13.162),
+  `PointOfInterestMappin_SetPhase` clears for a completed pin, §13.167),
   then tells the system (0x142d426a8: system, old id, new id). So
   `void (system, NewMappinID by value)` tracks a pin as the player does.
   Scripts read it back with `IMappin.IsPlayerTracked()` and give the id
@@ -1400,7 +1400,7 @@ For `docs/architecture/story.md`, "Open-world activities". F is
   F:276540) get their own minimap widget only outside its
   `IsExactlyA(n"gamemappinsPointOfInterestMappin")` branch (F:337908):
   another mappin class, with no phase in the system's saved
-  point-of-interest table (§13.162) to mirror. No script system runs
+  point-of-interest table (§13.167) to mirror. No script system runs
   Phantom Liberty's airdrops (no airdrop class in F; only their loot
   status effects, F:41290): their quest phases do. [2.5-verified offline
   for the scripts] [unverified: that the airdrops are world encounters,

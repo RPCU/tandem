@@ -683,7 +683,7 @@ openworld.hpp`, `engine/mappins.cpp`, the freeze's activity class in
         community state, with no faithful way back at the leave:
         costlier and riskier than the fight.
       - Phantom Liberty's Dogtown activities (airdrops) are not in this
-        class: their pins are not points of interest (§13.165), each a
+        class: their pins are not points of interest (§13.168), each a
         repeating drop run by its own quest phases; mirroring one needs
         that quest's own state (whose drop it is), not found offline.
         Each game keeps its own drops.

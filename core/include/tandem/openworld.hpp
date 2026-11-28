@@ -30,7 +30,7 @@ struct Seen {
   bool tracked{};         // the player tracks it (IMappin.IsPlayerTracked)
 };
 // One pin to set: `marker` to `phase`; `track`: tracked again after (our
-// setter untracked it when it showed the host's done, §13.162).
+// setter untracked it when it showed the host's done, §13.167).
 struct Step {
   std::uint32_t marker{};
   std::uint8_t phase{};

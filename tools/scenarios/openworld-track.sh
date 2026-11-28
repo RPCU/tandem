@@ -2,9 +2,9 @@
 # shellcheck shell=bash disable=SC2317
 # Our nearest NCPD pin not done is tracked the world map's way, then the
 # mock host says it done: grouped, it shows done and is no longer tracked
-# (the engine's phase setter untracks a completed pin, §13.162). Apart, it
+# (the engine's phase setter untracks a completed pin, §13.167). Apart, it
 # is put back to our own phase and tracked again (the system's own
-# tracker, §13.165), read back; grouped again and then the session ends:
+# tracker, §13.168), read back; grouped again and then the session ends:
 # tracked again at the leave too. The track is ours to clear: off at the end.
 # Unattended: every check is read from the log; the verdict is the last line.
 ensure join

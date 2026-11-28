@@ -19,8 +19,8 @@
 //   and our own activities run (their held signals given back). Nothing of
 //   the host's is in our save: the session never saves, and the leave puts
 //   the pins back before saving unlocks. A pin the player tracked when we set
-//   it done (the engine's setter untracks it, §13.162) is tracked again with
-//   it, the system's own tracker (§13.165), unless the player has tracked
+//   it done (the engine's setter untracks it, §13.167) is tracked again with
+//   it, the system's own tracker (§13.168), unless the player has tracked
 //   another pin since.
 // Names checked against the 2.50 scripts and Codeware (MappinSystem
 // .GetAllMappins); final.reds lines in the comments.

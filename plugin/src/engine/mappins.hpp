@@ -30,7 +30,7 @@ bool CheckActivityMarks();
 bool SetPoiPhase(RED4ext::game::mappins::IMappin *mappin, std::uint8_t phase);
 
 // Game thread. Tracks the pin `id` (its NewMappinID value) the player's way,
-// by `system` (the game's MappinSystem) and its own tracker (§13.165): a pin
+// by `system` (the game's MappinSystem) and its own tracker (§13.168): a pin
 // our setter untracked when it showed the host's done, given back at its
 // put-back. False when the feature is off or `system` is not the system.
 bool TrackPin(RED4ext::IScriptable *system, std::uint64_t id);
