@@ -1279,6 +1279,17 @@ TEST_CASE("referee: an NPC's voice line is its owner's word, about an NPC it sho
   CHECK(Rules(guest) == std::vector<std::string>{"ids.unknown-npc"});
   guest.Received(1, proto::NpcVoice{.npc = 7}, kSecond);
   CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  // A voice trigger with its variation; a variation on a context line.
+  guest.Received(1,
+                 proto::NpcVoice{.npc = 7,
+                                 .context = 0x98,
+                                 .flags = proto::kVoiceTrigger,
+                                 .variation = 2,
+                                 .variations = 5},
+                 kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1, proto::NpcVoice{.npc = 7, .context = 0x97, .variation = 2}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
   // Gone from our view: its owner's lines are for the games that show it.
   guest.Received(1, proto::NpcGone{.npc = 7, .reason = proto::kGoneAway}, 2 * kSecond);
   guest.Received(1, proto::NpcVoice{.npc = 7, .context = 0x99}, 5 * kSecond);
