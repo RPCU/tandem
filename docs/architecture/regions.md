@@ -330,7 +330,7 @@ companions, the session lost.
 ### Corpses
 
 `scripts/tandem/Corpses.reds`, `engine/ragdoll.cpp`, `proto::CorpsePose`
-(protocol 24; run in game on instances a and c, `tools/pairs/corpse-pose.sh`).
+(protocol 24; run in game on instances a and c, `tools/scenarios/pair-corpse-pose.sh`).
 A death is its owner's word, and every game ragdolls its own copy: the same
 body came to rest another way on each screen. The owner's body is the
 truth, and it crosses as the game's cut multiplayer replicated a ragdoll:

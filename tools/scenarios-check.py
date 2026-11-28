@@ -110,7 +110,11 @@ def main() -> int:
             commands.add(text)
     harness = (ROOT / "tools/scenario.sh").read_text()
     helpers = set(re.findall(r"^\s*(\w+)\(\)\s*\{", harness, re.M))
-    queries = set(re.findall(r'Equals\(what, "([a-z]+)"\)', (ROOT / "scripts/tandem/TestQuery.reds").read_text()))
+    test_query = (ROOT / "scripts/tandem/TestQuery.reds").read_text()
+    # Each `Equals(what, "X")`, and the routes to a family's own command
+    # (`StrBeginsWith(command, "test query X")`, as corpses).
+    queries = set(re.findall(r'Equals\(what, "([a-z]+)"\)', test_query))
+    queries |= set(re.findall(r'StrBeginsWith\(command, "test query ([a-z]+)"\)', test_query))
     harness_vars = set(re.findall(r"(?:^|[\s;])(\w+)=", harness))
     globals_ = {name for line in harness.splitlines() if re.match(r"\w+=", line)
                 for name in re.findall(r"(?:^|\s)(\w+)=", line)}

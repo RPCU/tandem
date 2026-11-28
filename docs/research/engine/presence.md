@@ -451,6 +451,7 @@ n"entRagdollComponent")`, `final.reds:106800`). [2.5-verified] (RTTI)
   physics system; or write the pose before the graph's ragdoll nodes (the
   `RagdollControl` node's input) rather than at the commit. Done: the
   replicated state's apply (§13.162). [2.5-verified]
+
 ### 13.162 A ragdoll's replicated state: its read and its apply (2026-11-28, Ghidra of 2.50, in game on instances a and c)
 
 - `entRagdollComponent`'s vtable (`0x14305b1e8`, 69 slots) overrides
@@ -472,7 +473,7 @@ n"entRagdollComponent")`, `final.reds:106800`). [2.5-verified] (RTTI)
     positions as fixed-point integers × `0x1437b97dc`'s scale, then a
     quaternion): it dereferences the object without a check when it is no
     ragdoll, so a caller checks type 0x0C first.
-- In game (`tools/pairs/corpse-pose.sh`, three gangers killed and thrown
+- In game (`tools/scenarios/pair-corpse-pose.sh`, three gangers killed and thrown
   on the host, `engine/ragdoll.cpp`): a Tyger Claw's ragdoll has a fixed
   body count, the same on both games; the owner's settled bodies, set on
   the guest's ragdolled copy with that apply, put each copy's bodies within

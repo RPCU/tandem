@@ -184,11 +184,32 @@ using tandem::proto::Vec3;
 
 volatile std::sig_atomic_t g_stop = 0;
 
-// --corpse-npcs: a body's rest as a real ragdoll's bodies lie (a ganger's,
-// read on instance a 2026-11-28: offsets from the entity in cm, quaternions
-// × 32767), so that a game's copy of the same rig takes it.
+// --corpse-npcs: a body's rest as a real ragdoll's bodies lie (a Tyger
+// Claw's 22 bodies, thrown and settled on instance a, 2026-11-28: cm from
+// the entity, quaternions × 32767): a game's copy of a humanoid takes it.
 std::vector<tandem::proto::RagdollBody> RestingBodies() {
-  return {{.offset = {0, 0, 10}, .rotation = {0, 0, 0, 32767}}};
+  return {{.offset = {0, 0, 0}, .rotation = {-12450, 15844, 10516, -23602}},
+          {.offset = {0, 0, 0}, .rotation = {3811, -29970, -11405, 5559}},
+          {.offset = {0, 0, 0}, .rotation = {-11338, -4019, -4561, -30136}},
+          {.offset = {3, -8, 5}, .rotation = {-10441, 15359, 9280, -25351}},
+          {.offset = {-7, -3, 2}, .rotation = {10394, 30164, 1530, 7311}},
+          {.offset = {7, 3, -1}, .rotation = {-3932, -14292, -15215, -24949}},
+          {.offset = {6, -14, 9}, .rotation = {-12408, 13275, 13018, -23959}},
+          {.offset = {-38, 24, -15}, .rotation = {-22668, 16522, -13382, 10381}},
+          {.offset = {16, 39, -25}, .rotation = {12038, -8282, 18692, -22600}},
+          {.offset = {9, -22, 11}, .rotation = {-13005, 11868, 16180, -22403}},
+          {.offset = {13, -34, 12}, .rotation = {3447, -19427, -21280, 15217}},
+          {.offset = {13, -34, 12}, .rotation = {-19874, 2626, 9769, -24007}},
+          {.offset = {13, -34, 12}, .rotation = {-10048, 10629, 13148, -26208}},
+          {.offset = {-1, -52, 22}, .rotation = {-2431, 9423, 30265, 7937}},
+          {.offset = {33, -47, 6}, .rotation = {-24309, -20256, 5873, -6162}},
+          {.offset = {24, -54, 19}, .rotation = {-15464, 2136, 17977, -22512}},
+          {.offset = {-26, -40, 14}, .rotation = {-1779, 9408, 30726, 6159}},
+          {.offset = {38, -22, -8}, .rotation = {-25906, -18224, 5333, -6479}},
+          {.offset = {-32, -18, -4}, .rotation = {-15847, 21790, -16790, 8115}},
+          {.offset = {25, -2, -22}, .rotation = {10801, -6258, 16131, -25645}},
+          {.offset = {-51, -31, 9}, .rotation = {-7801, 2154, 29100, 12703}},
+          {.offset = {47, 0, -21}, .rotation = {-19429, -23581, 11825, 568}}};
 }
 
 enum class Mode { Mirror, Ghost, Front, Drive, Course, Path, Metro, Watch, Region, Idle };
