@@ -400,6 +400,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-partner-call", "a partner's call on the phone as an NPC's (their request is a notice only)");
     this.Text("Tandem-Degraded-Id-wanted-stars", "a wanted partner's stars in the game's own art (shown as a number)");
     this.Text("Tandem-Degraded-Id-corpse-pose", "a body lying as its owner's lies (it lies as its own fall left it)");
+    this.Text("Tandem-Degraded-Id-boss-state", "a boss in the same phase and with the same broken plates as for its host (it shows its own)");
     this.Text("Tandem-Degraded-Id-body-incomplete", "a player's body is missing a part");
     this.Text("Tandem-Degraded-Id-workspot-not-entered", "an NPC could not take its work spot");
     this.Text("Tandem-Degraded-Id-workspot-unread", "what an NPC sits or leans on, read for the others");
@@ -936,6 +937,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-partner-call", "l'appel d'un partenaire au téléphone comme celui d'un PNJ (sa demande n'est qu'un avis)");
     this.Text("Tandem-Degraded-Id-wanted-stars", "les étoiles d'un partenaire recherché dans le style du jeu (affichées en chiffre)");
     this.Text("Tandem-Degraded-Id-corpse-pose", "un corps couché comme celui de son propriétaire (il reste comme sa chute l'a laissé)");
+    this.Text("Tandem-Degraded-Id-boss-state", "un boss dans la même phase et avec les mêmes plaques brisées que chez son hôte (il montre les siennes)");
     this.Text("Tandem-Degraded-Id-body-incomplete", "il manque un élément au corps d'un joueur");
     this.Text("Tandem-Degraded-Id-workspot-not-entered", "un PNJ n'a pas pu prendre son poste d'activité");
     this.Text("Tandem-Degraded-Id-workspot-unread", "ce sur quoi un PNJ est assis ou appuyé, lu pour les autres");

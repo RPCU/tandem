@@ -218,6 +218,8 @@ TANDEM_SAID_BY(Either, TrafficLights)
 TANDEM_SAID_BY(Either, NpcVoice)
 // A body's rest: its owner's word (the host checks whose, as a wound's).
 TANDEM_SAID_BY(Either, CorpsePose)
+// A boss's scripted state: its owner's word (OwnedBy), never ours back.
+TANDEM_SAID_BY(Either, BossState)
 #undef TANDEM_SAID_BY
 
 // A new message without its SaidBy line above fails here ("incomplete type").
@@ -245,7 +247,7 @@ std::vector<p::NpcId> OwnedBy(const p::Message &m) {
                       std::is_same_v<M, p::NpcShotAt> || std::is_same_v<M, p::NpcActionReply> ||
                       std::is_same_v<M, p::NpcReaction> || std::is_same_v<M, p::NpcVoice> ||
                       std::is_same_v<M, p::NpcScale> || std::is_same_v<M, p::NpcLevel> ||
-                      std::is_same_v<M, p::NpcPlaced>)
+                      std::is_same_v<M, p::NpcPlaced> || std::is_same_v<M, p::BossState>)
           return {x.npc};
         else if constexpr (std::is_same_v<M, p::NpcDeath>)
           // Its owner's report names its NPC; the host's word names none.
@@ -893,6 +895,10 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::NpcVoice>) {
           // A context, a delay within its bound, flags this version knows.
           inRange = p::Fits(m);
+        } else if constexpr (std::is_same_v<M, p::BossState>) {
+          // A health in 0..1, effects ascending, spots percents (Fits).
+          finite = std::isfinite(m.health);
+          inRange = !finite || p::Fits(m);
         } else if constexpr (std::is_same_v<M, p::CorpsePose>) {
           // An NPC named, a place and a heading, its ragdoll's bodies (1 to
           // kMaxRagdollBodies), each turned by a unit quaternion.
@@ -1512,6 +1518,11 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
         } else if constexpr (std::is_same_v<M, p::NpcVoice>) {
           // A line of an NPC we were told of (its spawn goes first, on the
           // same channel), and only while it is shown to us.
+          NeedNpc(m.npc, name);
+          NeedShown(m.npc, name);
+        } else if constexpr (std::is_same_v<M, p::BossState>) {
+          // A boss we were told of and are shown (one of ours back is
+          // authority.not-owner: OwnedBy).
           NeedNpc(m.npc, name);
           NeedShown(m.npc, name);
         } else if constexpr (std::is_same_v<M, p::CorpsePose>) {

@@ -397,7 +397,7 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
       [&](proto::NpcId, proto::PlayerId owner) {
         return owner != self && (!host || m_links.Linked(owner, self));
       },
-      &count, &m_npcScale);
+      &count, &m_npcScale, &m_bossStates);
   return {
       .epoch = host ? m_epoch : m_hostEpoch,
       .seq = m_digestSeq,
@@ -1599,6 +1599,15 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
         return;
       m_npcScale[scale->npc] = *scale;
     }
+    if (const auto *boss = std::get_if<proto::BossState>(&message)) {
+      // Of an NPC we know and do not run (our own word is ours), once.
+      if (!m_npcs.contains(boss->npc) || OwnsNpc(boss->npc))
+        return;
+      if (const auto it = m_bossStates.find(boss->npc);
+          it != m_bossStates.end() && it->second == *boss)
+        return;
+      m_bossStates[boss->npc] = *boss;
+    }
     if (const auto *level = std::get_if<proto::NpcLevel>(&message)) {
       if (!m_npcs.contains(level->npc))
         return; // of an NPC that is gone
@@ -1894,6 +1903,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               m_npcHealth.erase(gone.npc);
               m_npcLevels.erase(gone.npc);
               m_npcScale.erase(gone.npc);
+              m_bossStates.erase(gone.npc);
               if (gone.reason == 1)
                 m_corpses.insert(gone.npc); // stays until the host's corpse goes
               out.push_back(events::HostNpcGone{gone});
@@ -1921,6 +1931,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               m_npcHealth.erase(it->first);
               m_npcLevels.erase(it->first);
               m_npcScale.erase(it->first);
+              m_bossStates.erase(it->first);
               m_npcVendors.erase(it->first);
               m_npcPlaced.erase(it->first);
               m_npcHolds.erase(it->first);
@@ -4278,6 +4289,18 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
       ShareNpc(message, player, *peer);
     if (Sees(m_you, player))
       out.push_back(events::Combat{message});
+  } else if (const auto *boss = std::get_if<proto::BossState>(&message)) {
+    // A boss it runs: for who sees it, once per change.
+    if (!m_npcs.contains(boss->npc) || NpcOwner(boss->npc) != player)
+      return;
+    if (const auto it = m_bossStates.find(boss->npc);
+        it != m_bossStates.end() && it->second == *boss)
+      return;
+    m_bossStates[boss->npc] = *boss;
+    if (const auto peer = PeerOf(player))
+      ShareNpc(message, player, *peer);
+    if (Sees(m_you, player))
+      out.push_back(events::Combat{message});
   } else if (const auto *area = std::get_if<proto::AreaHit>(&message)) {
     // To the victim's game: ours, or pass it on (never back to the
     // attacker), while the session's rules allow friendly fire.
@@ -4689,6 +4712,17 @@ bool Endpoint::SendCombat(proto::Message message) {
   if (const auto *corpse = std::get_if<proto::CorpsePose>(&message)) {
     if (!proto::Fits(*corpse) || !SpeaksFor(corpse->npc))
       return false;
+    SayNpc(message);
+    return true;
+  }
+  // ...and a boss's scripted state (bosses.md): once per change.
+  if (const auto *boss = std::get_if<proto::BossState>(&message)) {
+    if (!proto::Fits(*boss) || !m_npcs.contains(boss->npc) || !OwnsNpc(boss->npc))
+      return false;
+    if (const auto it = m_bossStates.find(boss->npc);
+        it != m_bossStates.end() && it->second == *boss)
+      return true; // said already
+    m_bossStates[boss->npc] = *boss;
     SayNpc(message);
     return true;
   }

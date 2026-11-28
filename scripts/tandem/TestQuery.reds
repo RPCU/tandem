@@ -228,6 +228,10 @@ public class TandemTestQuery {
       if IsDefined(hud) {
         value = hud.PlateQuery(Cast<Uint32>(StringToInt(whose, 0)), part);
       }
+    } else if Equals(what, "boss") {
+      // Bosses.reds: bar, effects, spots, target, targets, phase, hits, health, state.
+      let npcs = system.Npcs();
+      value = IsDefined(npcs) ? npcs.Bosses().Query(arg) : "none";
     } else if Equals(what, "upload") {
       let pools = GameInstance.GetStatPoolsSystem(game);
       if IsDefined(player) && pools.IsStatPoolAdded(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.QuickHackUpload) {
@@ -237,7 +241,7 @@ public class TandemTestQuery {
       value = "unknown";
     }
     if Equals(value, "unknown") {
-      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], held [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks, paint [puppet], attitude group NAME | npc ID|fresh|nearest | fresh, wanted, upload, prompt [player N | npc N], nameplate [path|apart] [player N])");
+      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], held [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks, paint [puppet], attitude group NAME | npc ID|fresh|nearest | fresh, wanted, upload, prompt [player N | npc N], nameplate [path|apart] [player N], boss bar|effects|spots|target|targets|phase|hits|health|state)");
       return;
     }
     TandemNative.Log(s"test query: \(asked) = \(value)");

@@ -19,6 +19,7 @@
 #include <RedLib.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 namespace tandem::plugin {
 // One thing the session said about hits (kinds in CombatNatives.reds).
@@ -62,7 +63,8 @@ enum Kind : std::int32_t {
   kNpcScale = 12,
   kThrowPath = 13,
   kWeakSpot = 14,
-  kTraced = 15
+  kTraced = 15,
+  kBoss = 16
 };
 
 proto::Vec3 Vec(const Red::Vector4 &v) { return {v.X, v.Y, v.Z}; }
@@ -146,6 +148,11 @@ TandemFightEvent EventOf(const proto::Message &message) {
            .attack = Red::TweakDBID(weak->record)};
   } else if (const auto *traced = std::get_if<proto::HackTraced>(&message)) {
     out = {.kind = kTraced, .npc = traced->npc, .player = traced->player};
+  } else if (const auto *boss = std::get_if<proto::BossState>(&message)) {
+    out = {.kind = kBoss,
+           .npc = boss->npc,
+           .damage = boss->health,
+           .level = static_cast<std::int32_t>(boss->effects.size())};
   }
   return out;
 }
@@ -291,6 +298,47 @@ struct TandemFight : Red::IScriptable {
     if (npc != 0)
       Combat::Get().Send(proto::HackTraced{.npc = npc});
   }
+  // Owner: one of our bosses' scripted state (bosses.md): its health
+  // (fraction), the status effects its scripts read (any order: sorted
+  // here, repeats and 0 dropped, at most kMaxBossEffects), each weak spot's
+  // health in percent (-1: unread).
+  static void SendBossState(std::uint32_t npc, float health, Red::DynArray<Red::TweakDBID> effects,
+                            Red::DynArray<std::int32_t> spots) {
+    if (npc == 0 || !std::isfinite(health))
+      return;
+    proto::BossState boss{.npc = npc, .health = std::clamp(health, 0.f, 1.f)};
+    for (const auto &effect : effects)
+      if (effect.value != 0)
+        boss.effects.push_back(effect.value);
+    std::ranges::sort(boss.effects);
+    const auto [first, last] = std::ranges::unique(boss.effects);
+    boss.effects.erase(first, last);
+    if (boss.effects.size() > proto::kMaxBossEffects)
+      boss.effects.resize(proto::kMaxBossEffects);
+    for (const auto spot : spots) {
+      if (boss.spots.size() >= proto::kMaxBossSpots)
+        break;
+      boss.spots.push_back(spot < 0 ? proto::kSpotUnknown
+                                    : static_cast<std::uint8_t>(std::min(spot, 100)));
+    }
+    Combat::Get().Send(boss);
+  }
+  // Another game's boss (event kind 16 said it changed): the effects and
+  // the weak spots' health (-1 unread) its owner said last; none: empty.
+  static Red::DynArray<Red::TweakDBID> BossEffects(std::uint32_t npc) {
+    Red::DynArray<Red::TweakDBID> out;
+    for (const auto effect : Combat::Get().BossOf(npc).effects)
+      out.PushBack(Red::TweakDBID(effect));
+    return out;
+  }
+  static Red::DynArray<std::int32_t> BossSpots(std::uint32_t npc) {
+    Red::DynArray<std::int32_t> out;
+    for (const auto spot : Combat::Get().BossOf(npc).spots)
+      out.PushBack(spot == proto::kSpotUnknown ? -1 : static_cast<std::int32_t>(spot));
+    return out;
+  }
+  // Its NPC is gone (Bosses.reds forgets it too).
+  static void ForgetBoss(std::uint32_t npc) { Combat::Get().ForgetBoss(npc); }
   // Guest: how long (seconds) a melee hit of the host's NPC `npc` waits
   // before our game runs it, so it lands when its proxy is drawn landing it.
   static float MeleeHold(std::uint32_t npc) {
@@ -339,6 +387,10 @@ struct TandemFight : Red::IScriptable {
         Regions::Get().NoteDeath(*death);
         continue;
       }
+      // A boss's state: its effects and weak spots kept here (BossEffects,
+      // BossSpots), its event says it changed.
+      if (const auto *boss = std::get_if<proto::BossState>(&message))
+        Combat::Get().NoteBoss(*boss);
       if (auto event = EventOf(message); event.kind != 0)
         out.EmplaceBack(event);
     }
@@ -403,6 +455,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemFight, "TandemFight", {
   RTTI_METHOD(SendDefended);
   RTTI_METHOD(SendWeakSpot);
   RTTI_METHOD(SendTraced);
+  RTTI_METHOD(SendBossState);
+  RTTI_METHOD(BossEffects);
+  RTTI_METHOD(BossSpots);
+  RTTI_METHOD(ForgetBoss);
   RTTI_METHOD(MeleeHold);
   RTTI_METHOD(StaleThrows);
   RTTI_METHOD(TakeEvents);

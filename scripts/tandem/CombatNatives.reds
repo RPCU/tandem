@@ -26,7 +26,9 @@ public native struct TandemFightEvent {
   // another V's fire on a weak spot of our NPC (npc, player, damage: the
   // share of its health it lost, percent; level: its index; attack: its
   // Weakspot record). 15 (owner) our NPC netrunner's trace on player's V
-  // ran to its end (npc, player).
+  // ran to its end (npc, player). 16 another game's boss's scripted state
+  // changed (npc; damage: its health then, fraction; level: how many
+  // effects; BossEffects and BossSpots hold them: Bosses.reds).
   native let kind: Int32;
   native let npc: Uint32;
   native let player: Uint32;
@@ -78,6 +80,13 @@ public native class TandemFight extends IScriptable {
   public static native func SendDefended(npc: Uint32, how: Int32)
   public static native func SendWeakSpot(npc: Uint32, record: TweakDBID, index: Int32, drain: Float)
   public static native func SendTraced(npc: Uint32)
+  // Owner: one of our bosses' scripted state (bosses.md): its health
+  // (fraction), the effects its scripts read, each weak spot's health in
+  // percent (-1 unread). Another game's: what its owner said last.
+  public static native func SendBossState(npc: Uint32, health: Float, effects: array<TweakDBID>, spots: array<Int32>)
+  public static native func BossEffects(npc: Uint32) -> array<TweakDBID>
+  public static native func BossSpots(npc: Uint32) -> array<Int32>
+  public static native func ForgetBoss(npc: Uint32)
   public static native func MeleeHold(npc: Uint32) -> Float
   public static native func StaleThrows() -> Int32
   public static native func TakeEvents() -> array<TandemFightEvent>

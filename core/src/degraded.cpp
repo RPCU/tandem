@@ -98,6 +98,8 @@ constexpr Info kCatalogue[] = {
     {"puppet not driven", Degraded, Fallback, "a puppet has no move component to drive"},
     {"hit shown by twitch", Degraded, Fallback,
      "a hit a V took is shown as the body's twitch: the game's pipeline played nothing"},
+    {"boss state", Degraded, Fallback,
+     "a boss proxy could not wear its owner's phase or weak spots: it shows its own"},
 };
 
 std::size_t OrderOf(std::string_view id) {

@@ -102,10 +102,30 @@ void Combat::ClearVendors() {
   m_vendors.Clear();
 }
 
+void Combat::NoteBoss(const proto::BossState &boss) {
+  std::lock_guard _(m_lock);
+  // A few bosses at a time; a session that met many keeps the latest.
+  if (m_bosses.size() >= 64 && !m_bosses.contains(boss.npc))
+    m_bosses.clear();
+  m_bosses[boss.npc] = boss;
+}
+
+proto::BossState Combat::BossOf(proto::NpcId npc) {
+  std::lock_guard _(m_lock);
+  const auto it = m_bosses.find(npc);
+  return it == m_bosses.end() ? proto::BossState{.npc = npc} : it->second;
+}
+
+void Combat::ForgetBoss(proto::NpcId npc) {
+  std::lock_guard _(m_lock);
+  m_bosses.erase(npc);
+}
+
 void Combat::EndSession() {
   {
     std::lock_guard _(m_lock);
     m_vendors.Clear();
+    m_bosses.clear();
     m_lends.clear();
     m_paints.clear();
   }

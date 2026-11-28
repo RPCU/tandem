@@ -1550,6 +1550,44 @@ TEST_CASE("a body's rest is the corpse owner's reliable word, its ragdoll's bodi
   CHECK_FALSE(Decode(Encode(many)).has_value());
 }
 
+TEST_CASE("a boss's scripted state is its owner's reliable word: effects in order, weak spots") {
+  BossState boss{.npc = 0x01000007, .health = 0.45f, .spots = {100, 40, kSpotBroken, kSpotUnknown}};
+  for (std::uint64_t i = 1; i <= 6; ++i)
+    boss.effects.push_back(0x10'0000'0000ULL * i + 7);
+  RoundTrips(boss);
+  CHECK(ChannelOf(boss) == Channel::Event);
+  CHECK(IsReliable(boss));
+  CHECK(IsCombat(boss));
+  CHECK_FALSE(IsStory(boss));
+  CHECK_FALSE(tandem::consistency::IsOneShot(boss));
+  CHECK(std::string_view(NameOf(boss)) == "BossState");
+  CHECK(Message(boss).index() > Message(CorpsePose{}).index());
+  // The most it carries, in one datagram.
+  boss.effects.clear();
+  for (std::uint64_t i = 1; i <= kMaxBossEffects; ++i)
+    boss.effects.push_back(0xFFFF'0000'0000ULL + i);
+  boss.spots.assign(kMaxBossSpots, 50);
+  RoundTrips(boss);
+  CHECK(Encode(boss).size() < 260);
+  // No NPC, a health that is no number or out of 0..1, effects out of order,
+  // twice, or 0, too many of either, a spot above 100 that is not unknown.
+  CHECK_FALSE(Decode(Encode(BossState{})).has_value());
+  CHECK(Decode(Encode(BossState{.npc = 1})).has_value());
+  CHECK_FALSE(Decode(Encode(BossState{.npc = 1, .health = std::numeric_limits<float>::quiet_NaN()}))
+                  .has_value());
+  CHECK_FALSE(Decode(Encode(BossState{.npc = 1, .health = 1.5f})).has_value());
+  CHECK_FALSE(Decode(Encode(BossState{.npc = 1, .effects = {5, 3}})).has_value());
+  CHECK_FALSE(Decode(Encode(BossState{.npc = 1, .effects = {3, 3}})).has_value());
+  CHECK_FALSE(Decode(Encode(BossState{.npc = 1, .effects = {0, 3}})).has_value());
+  CHECK_FALSE(Decode(Encode(BossState{.npc = 1, .spots = {101}})).has_value());
+  auto many = boss;
+  many.effects.push_back(0xFFFF'FFFF'0000ULL);
+  CHECK_FALSE(Decode(Encode(many)).has_value());
+  many = boss;
+  many.spots.push_back(1);
+  CHECK_FALSE(Decode(Encode(many)).has_value());
+}
+
 TEST_CASE("an NPC's voice line is a small reliable one-shot with a known context") {
   const NpcVoice line{
       .npc = 12, .context = 0x1234'5678'9abc'def0ULL, .delayMs = 500, .flags = kVoiceInVehicle};

@@ -52,7 +52,8 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 25: Rules.levelGap (the host's level_gap, said to every game: a guest's
 // menu shows the host's rules, coop-menu.md).
 // 26: LinkDecline's reasons 2-4, a call's outcomes (declined, busy, missed).
-inline constexpr std::uint16_t kProtocolVersion = 26;
+// 27: BossState appended (a boss's phase effects and weak spots, bosses.md).
+inline constexpr std::uint16_t kProtocolVersion = 27;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3454,6 +3455,35 @@ struct CorpsePose {
 // An NPC, finite numbers, 1 to kMaxRagdollBodies bodies.
 bool Fits(const CorpsePose &corpse);
 
+// ---- Bosses (docs/architecture/bosses.md) ----
+// A boss's scripted state as the game that runs it has it (appended,
+// protocol 27; Event channel, an IsCombat message: its owner's word, kept
+// for late joiners and in the NPC digest). The status effects its own
+// scripts read for its phases (its phase effects, invulnerability windows,
+// a hidden boss bar, Defeated: everything on it but what NpcStatus and the
+// hits carry), sorted, and each weak spot's health in its weak spot
+// component's order, as the cut multiplayer replicated a
+// gameWeakspotComponent (research engine/multiplayer-leftovers.md §13.174).
+// Every proxy of it wears the same effects (its own copy of the boss's
+// component reacts to them: hit shapes, appearance, invulnerable plates)
+// and its weak spots go no higher than the owner's (a broken one breaks).
+// The health is the boss's at this change: the receiver applies it first,
+// so a phase its own health listener crosses is the owner's. State, not a
+// one-shot: a repeat changes nothing. Sent on change; the whole set.
+inline constexpr std::size_t kMaxBossEffects = 24, kMaxBossSpots = 16;
+inline constexpr std::uint8_t kSpotBroken = 0, kSpotUnknown = 255;
+struct BossState {
+  NpcId npc{};
+  float health{};                     // fraction of its maximum, 0..1
+  std::vector<std::uint64_t> effects; // TweakDB ids of status effect records, ascending
+  std::vector<std::uint8_t> spots;    // WeakspotHealth percent, 0..100 (kSpotUnknown: unread)
+  friend bool operator==(const BossState &, const BossState &) = default;
+};
+// An NPC, a finite health in 0..1, at most kMaxBossEffects effects in
+// ascending order, none twice and none 0, at most kMaxBossSpots spots, each
+// a percent or kSpotUnknown.
+bool Fits(const BossState &boss);
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -3476,7 +3506,7 @@ using MessageVariant = std::variant<
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
-    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose>;
+    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose, BossState>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
@@ -3494,8 +3524,8 @@ bool IsStory(const Message &message);
 // game runs without (Degraded), an NPC's
 // scale (NpcScale), a vendor (NpcVendor), a placed NPC (NpcPlaced), a
 // death of the ledger (NpcDeath), a street race (Race), what a proxy
-// cannot do (WeakSpotHit, HackTraced), or a body's rest (CorpsePose): one
-// path in endpoint.hpp too.
+// cannot do (WeakSpotHit, HackTraced), a body's rest (CorpsePose), or a
+// boss's scripted state (BossState): one path in endpoint.hpp too.
 bool IsCombat(const Message &message);
 // A trade message (Trade, TradeOffer, TradeCommit): one path as well.
 bool IsTrade(const Message &message);

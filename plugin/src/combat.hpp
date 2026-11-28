@@ -64,6 +64,11 @@ public:
   bool VendorDead(std::uint64_t entity);
   std::vector<std::uint64_t> TakeDeadVendors();
   void ClearVendors();
+  // Each boss's scripted state its owner said (proto::BossState,
+  // bosses.md), noted the same way for Bosses.reds; none: an empty one.
+  void NoteBoss(const proto::BossState &boss);
+  proto::BossState BossOf(proto::NpcId npc);
+  void ForgetBoss(proto::NpcId npc);
   // Net thread, at a session's end: its vendors, lends, paints and rules are not
   // the next one's (an NPC id or a player number it reuses is someone
   // else, and its host says its own rules).
@@ -73,6 +78,7 @@ private:
   std::map<proto::PlayerId, proto::Lend> m_lends;
   std::map<proto::PlayerId, Paint> m_paints;
   vendors::Book m_vendors;
+  std::map<proto::NpcId, proto::BossState> m_bosses;
   struct Inbound {
     proto::Message message;
     std::uint64_t arrivalUs{};
