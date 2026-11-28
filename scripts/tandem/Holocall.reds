@@ -73,6 +73,11 @@ public class TandemHolocall {
     if this.m_player != player || this.m_mode != 2 {
       return;
     }
+    // Refused before our tick placed it (busy: at once): placed now, so
+    // that the call view says why.
+    if this.m_placed < 0 {
+      this.Place(player, this.m_name, true, 0);
+    }
     TandemNative.Log(s"holocall: \(this.m_name): \(status)");
     let request = new questSetPhoneStatusRequest();
     request.status = StringToName(status);

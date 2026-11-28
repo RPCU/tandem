@@ -940,8 +940,10 @@ public class TandemComms {
       this.m_ringing = true;
     }
     this.m_holocall.Ring(player, name, this.m_now);
-    this.Hint(true, TandemText.F("Comms-LinkWith", name));
+    // The phone's own incoming call shows its own Answer and Reject; ours
+    // only beside a call of the game's.
     if gameCall {
+      this.Hint(true, TandemText.F("Comms-LinkWith", name));
       TandemText.Hint(this.m_game, n"TandemLinkDecline", n"PhoneReject", true, TandemText.Get("Comms-Decline"), inkInputHintHoldIndicationType.Hold);
     }
     this.UpdateKeys();

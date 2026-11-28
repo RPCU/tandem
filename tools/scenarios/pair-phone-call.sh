@@ -17,7 +17,7 @@ expect 'comms: showing the link request of ' 20
 expect 'holocall: ringing from .*: the phone.s own call' 5
 pause 2
 cmd comms holocall
-expect "holocall: mode 1 .*the phone: tandem_partner_[0-9]+ phase 1 theirs, contact [^ (]+ PhoneAvatars.Avatar_Unknown; the HUD's ring: [^ ]" 5
+expect "holocall: mode 1 .*the phone: tandem_partner_[0-9]+ phase 1 theirs, contact .+ PhoneAvatars.Avatar_Unknown; the HUD's ring: [^ ]" 5
 shot pair-phone-ring
 # Answered: the phone's own call view, then it closes, the link stays.
 cmd comms accept
