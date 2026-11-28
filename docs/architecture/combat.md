@@ -104,7 +104,8 @@
   friendly fire (`Rules`, the host's `friendly_fire`, off by default; `Rules`
   also carries enemy scaling, `npcs.md`:
   combat-coverage.md). It is one rule for every hit and every game: the
-  host's settings page changes it live, a guest's shows it and cannot (the
+  host's settings page changes it live, a guest's has no row for it and
+  reads the host's in its status ("Host's rules: …", `coop-menu.md`) (the
   per-player setting the `polish` branch had, decided by the target's own
   game, is gone). Every way of fighting, by attacker and target, with
   its state: [combat-coverage.md](combat-coverage.md); thrown objects

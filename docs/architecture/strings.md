@@ -140,6 +140,10 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Status-JoinAtLoad` | You join {1} when your game loads | Vous rejoignez {1} dès le chargement de votre partie | Coop.reds |
 | `Status-InSessionOf` | In {1}'s session | Dans la session de {1} | Coop.reds |
 | `Status-InSessionAt` | In the session at {1} | Dans la session {1} | Coop.reds |
+| `Status-HostRules` | Host's rules: {1} | Règles de l'hôte : {1} | Settings.reds |
+| `Rule-FriendlyFire` | friendly fire {1} | tirs alliés : {1} | Settings.reds |
+| `Rule-EnemyScaling` | enemy scaling {1} | renfort ennemi : {1} | Settings.reds |
+| `Rule-LevelGap` | level gap {1} | écart de niveau : {1} | Settings.reds |
 | `Status-Retrying` | {1} not reached ({2}), trying again | {1} injoignable ({2}), nouvel essai | Coop.reds |
 | `Status-Connecting` | Connecting to {1}... | Connexion à {1}... | Coop.reds |
 | `Status-JoinFailed` | Could not join {1} | Impossible de rejoindre {1} | Coop.reds |
@@ -587,21 +591,10 @@ into the others as `{1}` or `{2}`.
 | `Settings-Item` | {1}: {2} | {1} : {2} | Settings.reds |
 | `Settings-NextSession` | A change applies from the next session. | Un changement s'applique à la prochaine session. | Settings.reds |
 | `Settings-AfterRestart` | A change applies after the game restarts. | Un changement s'applique après un redémarrage du jeu. | Settings.reds |
-| `Settings-HostsRule` | The host's rule for this session: only the host can change it. | Règle de l'hôte pour cette session : seul l'hôte peut la changer. | Settings.reds |
+| `Settings-HostsRule` | The host's rule: it applies to everyone in the sessions you host; as a guest you play by your host's. | Règle de l'hôte : elle s'applique à tous dans les sessions que vous hébergez ; invité, vous suivez celles de votre hôte. | Settings.reds |
 | `Settings-Type` | Type the new value (empty: none) | Saisissez la nouvelle valeur (vide : aucune) | Coop.reds |
 | `Settings-Invalid` | Not a value for this setting: {1} | Valeur refusée pour ce paramètre : {1} | Coop.reds |
 | `Settings-NotSet` | not set | non défini | Settings.reds |
-| `Settings-TokenSet` | set | défini | Settings.reds |
-| `Settings-Group-Session` | Session | Session | Settings.reds |
-| `Settings-Group-Gameplay` | Gameplay | Jouabilité | Settings.reds |
-| `Settings-Group-Interface` | Interface | Interface | Settings.reds |
-| `Settings-Group-Sharing` | Scans and pings | Analyses et signaux | Settings.reds |
-| `Settings-Group-Advanced` | Advanced | Avancé | Settings.reds |
-| `Settings-Group-About-Session` | Your co-op name, and the host's rules: friendly fire, enemies, the story | Votre nom en coop, et les règles de l'hôte : tirs alliés, ennemis, histoire | Settings.reds |
-| `Settings-Group-About-Gameplay` | Your own story, private scenes, your Sandevistan and street races | Votre propre histoire, les scènes privées, votre Sandevistan et les courses de rue | Settings.reds |
-| `Settings-Group-About-Interface` | Co-op notices, the other players' markers, their names and the party list | Les alertes coop, les marqueurs des autres joueurs, leurs noms et la liste du groupe | Settings.reds |
-| `Settings-Group-About-Sharing` | Who sees your scanner tags and pings | Qui voit vos marquages d'analyse et vos signaux | Settings.reds |
-| `Settings-Group-About-Advanced` | The relay, join codes, direct links and the recorder | Le relais, les codes d'invitation, les liens directs et l'enregistreur | Settings.reds |
 | `Settings-Name` | Name | Nom | Settings.reds |
 | `Settings-FriendlyFire` | Friendly fire | Tirs alliés | Settings.reds |
 | `Settings-Notices` | Notices | Alertes | Settings.reds |
@@ -613,28 +606,8 @@ into the others as `{1}` or `{2}`.
 | `Settings-Nameplates-Near` | near | de près | Settings.reds |
 | `Settings-Nameplates-Always` | always | toujours | Settings.reds |
 | `Settings-PartyHud` | Party list | Liste du groupe | Settings.reds |
-| `Settings-Link` | Sharing | Partage | Settings.reds |
-| `Settings-Link-Auto` | everyone | tous | Settings.reds |
-| `Settings-Link-Ask` | linked | liés | Settings.reds |
-| `Settings-Pings` | Pings | Signaux | Settings.reds |
-| `Settings-Recorder` | Recorder | Enregistreur | Settings.reds |
-| `Settings-Relay` | Relay | Relais | Settings.reds |
-| `Settings-Story` | Story sync | Histoire partagée | Settings.reds |
-| `Settings-QuestFreeze` | Story on hold | Histoire en pause | Settings.reds |
-| `Settings-ScenePrivacy` | Private scenes | Scènes privées | Settings.reds |
-| `Settings-TimeHost` | Sandevistan | Sandevistan | Settings.reds |
-| `Settings-TimeHost-Full` | whole game | tout le jeu | Settings.reds |
-| `Settings-TimeHost-Bubble` | NPCs near | PNJ proches | Settings.reds |
 | `Settings-EnemyScaling` | Enemy scaling | Renfort ennemi | Settings.reds |
 | `Settings-LevelGap` | Level gap | Écart de niveau | Settings.reds |
 | `Settings-LevelGap-Eight` | 8 max | 8 max | Settings.reds |
 | `Settings-LevelGap-Five` | 5 max | 5 max | Settings.reds |
 | `Settings-LevelGap-Twelve` | 12 max | 12 max | Settings.reds |
-| `Settings-Code` | Join code | Code | Settings.reds |
-| `Settings-Code-New` | new | nouveau | Settings.reds |
-| `Settings-Code-Keep` | kept | gardé | Settings.reds |
-| `Settings-Direct` | Direct link | Lien direct | Settings.reds |
-| `Settings-Direct-Auto` | auto | auto | Settings.reds |
-| `Settings-RaceCar` | Race car | Course de rue | Settings.reds |
-| `Settings-RaceCar-Own` | your own | la vôtre | Settings.reds |
-| `Settings-RaceCar-Copy` | a copy | une copie | Settings.reds |

@@ -127,6 +127,6 @@ idle: …); recorder on|off; transform guard on|off (why); dismemberment guard h
   `recorder_segment_minutes`, `recorder_pose` (`recordings.md`); `observer`, `observer_drift_m`,
   `observer_frame_ms`, `observer_captures`, `observer_max_mb` (`observer.md`);
   `log = warn|info|debug` (`netcode.md`); `compat` (`release.md`). The
-  co-op menu's Settings page changes many of them (`coop-menu.md`).
+  co-op menu's Settings page changes a few of them (`coop-menu.md`).
   Releases, startup and join-time compatibility checks, bug reports:
   `release.md`.
