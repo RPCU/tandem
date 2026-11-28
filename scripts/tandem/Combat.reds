@@ -494,6 +494,7 @@ public abstract class TandemWeakSpots {
     }
     let by = TandemNpcs.PuppetOf(game, event.player);
     GameInstance.GetStatPoolsSystem(game).RequestChangingStatPoolValue(Cast<StatsObjectID>(pick.GetEntityID()), gamedataStatPoolType.WeakspotHealth, -event.damage, by, false, true);
+    npcs.Bosses().SpotTaken(event.npc, event.player);
     TandemNative.Log(s"combat: player \(event.player)'s hit took \(event.damage)% of weak spot \(index) (\(what)) of npc \(event.npc): \(TandemWeakSpots.Health(game, pick))% left");
   }
 

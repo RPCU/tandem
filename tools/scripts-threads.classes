@@ -17,6 +17,7 @@ BaseProjectile < ItemObject < TimeDilatable < GameObject < GameEntity < Entity <
 BaseWorldMapMappinController < BaseInteractionMappinController < BaseMappinBaseController < inkLogicController < inkILogicController < IScriptable
 BillboardDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 CallPolice < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
+CerberusDetectionCombat < AIbehaviorconditionScript < AIBehaviorScriptBase < IScriptable
 DamageSystem < IDamageSystem < IReplicatedGameSystem < IGameSystem < IScriptable
 DeathDecisions < HighLevelTransition < DefaultTransition < StateFunctor < IScriptable
 DeathDecisionsWithResurrection < HighLevelTransition < DefaultTransition < StateFunctor < IScriptable
@@ -102,6 +103,7 @@ SetTopThreatToCombatTarget < AIbehaviortaskScript < AIBehaviorScriptBase < IScri
 ShardNotificationController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 ShootEvents < WeaponEventsTransition < WeaponTransition < DefaultTransition < StateFunctor < IScriptable
 SingleplayerMenuGameController < MainMenuGameController < gameuiMenuItemListGameController < gameuiSaveHandlingController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+SmasherFindTeleportPositionAroundTarget < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
 SpeedExitingEvents < ExitingEvents < ExitingEventsBase < VehicleEventsTransition < VehicleTransition < DefaultTransition < StateFunctor < IScriptable
 StatusEffectManagerComponent < AIMandatoryComponents < AIRelatedComponents < ScriptableComponent < GameComponent < IComponent < IScriptable
 StimBroadcasterComponent < ScriptableComponent < GameComponent < IComponent < IScriptable

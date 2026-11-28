@@ -175,6 +175,10 @@ public class TandemOutcomes {
         case 15:
           TandemHacks.Traced(this.m_game, event.npc, event.player, npcs);
           break;
+        case 16:
+          // Another game's boss's scripted state (Bosses.reds).
+          npcs.Bosses().Take(event, npcs);
+          break;
         default:
           break;
       }

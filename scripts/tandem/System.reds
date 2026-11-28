@@ -1421,6 +1421,25 @@ public class TandemSystem extends ScriptableSystem {
   // (test) the ride and traffic light commands (vehicles.md, "Ride tests";
   // traffic.md, "Traffic lights"), kept out of RunCommand: a branch more
   // there broke the script VM (the game died on its next command).
+  // (test, Bosses.reds) "boss catalogue | find kind:K|name:S | spawn
+  // RECORD|kind:K|name:S | kill | health P | effect RECORD | spot N |
+  // report"; the catalogue and find solo too.
+  private func BossCommand(command: String) -> Bool {
+    if !StrBeginsWith(command, "boss ") && !Equals(command, "boss") {
+      return false;
+    }
+    if Equals(command, "boss catalogue") {
+      TandemBosses.Catalogue("");
+    } else if StrBeginsWith(command, "boss find ") {
+      TandemBosses.Catalogue(StrAfterFirst(command, "boss find "));
+    } else if IsDefined(this.Npcs()) {
+      this.Npcs().Bosses().Command(command, this);
+    } else {
+      TandemNative.Log(s"bosses: not in a session: \(command)");
+    }
+    return true;
+  }
+
   private func RideCommand(command: String) -> Bool {
     if Equals(command, "vehicle seats") {
       // (test) each seat of every car copy of the others: its slot read or
@@ -1516,7 +1535,7 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   public func RunCommand(command: String) -> Void {
-    if this.RideCommand(command) {
+    if this.RideCommand(command) || this.BossCommand(command) {
       return;
     }
     if StrBeginsWith(command, "garage") {

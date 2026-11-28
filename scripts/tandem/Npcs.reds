@@ -255,6 +255,8 @@ public class TandemNpcs {
   // own NPCs is still to be found.
   private let m_ledger: ref<TandemLedger>;
   private let m_twins: array<ref<TandemTwinPending>>;
+  // The bosses we run and show (Bosses.reds).
+  private let m_bosses: ref<TandemBosses>;
 
   public func Ledger() -> ref<TandemLedger> {
     return this.m_ledger;
@@ -266,6 +268,10 @@ public class TandemNpcs {
 
   public func Scaling() -> ref<TandemScaling> {
     return this.m_scaling;
+  }
+
+  public func Bosses() -> ref<TandemBosses> {
+    return this.m_bosses;
   }
 
   // An owner's word: how many players one of its NPCs is scaled for, on its
@@ -332,6 +338,8 @@ public class TandemNpcs {
     this.m_scaling.Start(game);
     this.m_ledger = new TandemLedger();
     this.m_ledger.Start(game);
+    this.m_bosses = new TandemBosses();
+    this.m_bosses.Start(game);
     this.m_share = 1.0;
   }
 
@@ -370,6 +378,7 @@ public class TandemNpcs {
     // The proxies' side: the NPCs the players linked with us run.
     this.Follow(now);
     this.m_scaling.Proxies(this, now);
+    this.m_bosses.Tick(this, now, you);
     this.m_ledger.Tick(now, you);
     this.TakePlayerHits();
     if now - this.m_lastCheck >= 1.0 {
@@ -576,6 +585,7 @@ public class TandemNpcs {
     }
     this.m_scaling.End();
     this.m_ledger.End();
+    this.m_bosses.End();
     ArrayClear(this.m_twins);
     ArrayClear(this.m_known);
     this.m_anims.Clear();
