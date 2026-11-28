@@ -618,9 +618,9 @@ decline`, `busy KIND|off`, `busy report`, `apartment report`. Scenarios
   `start_combat`, `enemy_warning`, `vo_any_damage_hit`,
   `hit_reaction_heavy`, `fear_beg`, `stlh_death`), `host --corpse-npcs
 N` one die every N s and its body's rest follow 1 s later
-    (`CorpsePose`, a ganger's ragdoll as one lay, where it stood); with
-    `--voice-npcs`, `--voice-trigger NAME` also that voice trigger half a
-    period later (variation 1 to 3 of 3, `kVoiceTrigger`); `--status REC@FROM-TO[,REC@FROM-TO]` puts status effects on its V
+  (`CorpsePose`, a ganger's ragdoll as one lay, where it stood); with
+  `--voice-npcs`, `--voice-trigger NAME` also that voice trigger half a
+  period later (variation 1 to 3 of 3, `kVoiceTrigger`); `--status REC@FROM-TO[,REC@FROM-TO]` puts status effects on its V
   from FROM to TO s after another player is there (no TO: kept), sent as
   `StatusVisuals` for the others' puppet of it to show. Presence, cues,
   status visuals, non-twitch reactions and NPC voice lines it hears are

@@ -419,7 +419,7 @@ within 20 s of every ride, five rides in five, at one of two places.
   and the quest node `questPlayVoiceset_NodeType` (whether it queues an
   `entGameplayVOEvent`, its `isQuest`, is not read). [unverified]
 
-### 13.163 Voice triggers: the audio system's own lines for an NPC, its combat and idle chatter (2026-11-28, 2.50 exe read and RTTI)
+### 13.172 Voice triggers: the audio system's own lines for an NPC, its combat and idle chatter (2026-11-28, 2.50 exe read and RTTI)
 
 - The voice interface of §13.159 (`0x38` bytes, vtable `0x143040808`) is
   built when an NPC's voice set attaches (`0x1402beb4c`: it reads the

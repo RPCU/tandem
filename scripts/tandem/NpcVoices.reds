@@ -8,7 +8,7 @@
 // it reaches the NPC as one event, SoundPlayVo (entGameplayVOEvent, queued
 // on the entity: research §13.159). The audio system's own picks (combat and
 // idle chatter: a voice trigger, its base name and variation) reach it as
-// another, entTriggerVOEvent (research §13.163). A proxy has no brain to
+// another, entTriggerVOEvent (research §13.172). A proxy has no brain to
 // start them: the owner says which context or trigger its NPC was asked
 // for, and every proxy asks its own voice for the same one. One voice per
 // NPC: on a proxy, a line our own game's scripts start (its local hit, a
@@ -96,7 +96,7 @@ public class TandemNpcVoices {
   // A voice trigger said the engine's way: the event its voice interface
   // builds (entTriggerVOEvent: base name, variation index and number, the
   // overriding VO context, 5 when none), queued on the entity, where the
-  // NPC's voice set takes it (research §13.163).
+  // NPC's voice set takes it (research §13.172).
   public static func Trigger(body: ref<GameObject>, trigger: CName, variation: Uint32, variations: Uint32, voContext: Int32, tag: CName) -> Void {
     let evt = new entTriggerVOEvent();
     evt.triggerBaseName = trigger;
@@ -192,7 +192,7 @@ protected cb func OnTandemGameplayVo(evt: ref<SoundPlayVo>) -> Bool {
 }
 
 // Every voice trigger the audio system picks for an NPC (its combat and
-// idle chatter: the voice interface's third start, research §13.163): the
+// idle chatter: the voice interface's third start, research §13.172): the
 // event the voice takes, entTriggerVOEvent, on the NPC itself, with its base
 // name, variation and their number. Queued through a native (an entity's
 // events may run on a job thread); the tick sends those of our shared NPCs

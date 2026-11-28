@@ -401,7 +401,7 @@ same|differs, on its first tick: same`, debug) and every 2 s within
 ## Voices
 
 `scripts/tandem/NpcVoices.reds`, `proto::NpcVoice` (protocol 23; voice
-triggers protocol 25; not yet run in game). An NPC's barks start in the game's scripts through
+triggers protocol 30; not yet run in game). An NPC's barks start in the game's scripts through
 `GameObject.PlayVoiceOver` (70 callers in 2.50: `OnHit`'s
 `vo_any_damage_hit`, the hit reaction component's pain by zone, death
 (`stlh_death`, `start_dead`), combat start, the squad's warnings, fear,
@@ -432,9 +432,9 @@ NPC's own voice. A proxy has no brain to start them.
   (`TandemPresence.IsNpcProxy`, lock-free): the owner's line says it; one
   the engine itself starts on a proxy (its brain is off: rare) cannot be
   held back from the event (a handler cannot cancel it) and is heard.
-- **Voice triggers** (protocol 25): the lines the audio system picks for
+- **Voice triggers** (protocol 30): the lines the audio system picks for
   an NPC itself, its combat and idle chatter (the combat VO manager's
-  triggers, each with its variations: research §13.163), reach the NPC as
+  triggers, each with its variations: research §13.172), reach the NPC as
   another event, `entTriggerVOEvent`: a base name, the variation picked
   and their number, the VO context it overrides with. A second handler
   (`OnTandemTriggerVo`) queues each (`QueueNpcTriggerVoice`, queue only);
@@ -448,7 +448,7 @@ NPC's own voice. A proxy has no brain to start them.
   report; the first logged) to learn whether it happens.
 - **Not covered**: `answeringEntityID` (a squad's reply to another NPC:
   sent with none) and the trigger event's 20 unnamed bytes (`+0x50`, from
-  the audio system's request: left zero, §13.163). Scene lines are scene
+  the audio system's request: left zero, §13.172). Scene lines are scene
   replay's (`SceneLine`, the dialog line event queued on the speaker's
   proxy: `scene-replay.md`), barks of a scene too.
 - To hear in game: the proxy says the line the owner's NPC said, once, in
