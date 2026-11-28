@@ -383,7 +383,7 @@ target's position, the target, …)`, the anim event `Shoot`, the effect
   `ToggleTakeOverControl` (`SetProperties(true, false)`, 154681).
   [2.5-untested]
 
-### 13.162 Physics props: what a script reaches of a prop's body, and which props have no entity (2026-11-28, read in final.reds (2.50), the RTTI dump and the node types; not run)
+### 13.169 Physics props: what a script reaches of a prop's body, and which props have no entity (2026-11-28, read in final.reds (2.50), the RTTI dump and the node types; not run)
 
 - **Two kinds of physics prop.** A placed _entity_ (`worldEntityNode`, an
   `.ent`) with a `PhysicalMeshComponent` (`final.reds (2.50):209439`,

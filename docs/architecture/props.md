@@ -5,7 +5,7 @@ before this, each game's physics pushed its own copy, and the bin knocked
 over on one screen stood on the other (`parity.md` row 4). **Built and
 tested without the game** (core, loopback tests, the mock player, script
 compile checks); nothing here has run in Cyberpunk yet. Engine facts:
-[`../research/engine/devices.md`](../research/engine/devices.md) §13.162.
+[`../research/engine/devices.md`](../research/engine/devices.md) §13.169.
 
 ## Which ones (decided 2026-11-28)
 
@@ -34,7 +34,7 @@ compile checks); nothing here has run in Cyberpunk yet. Engine facts:
   `devices.md`), so it falls at the same moment, in each game's own way.
   By design, not a degradation.
 - **World dynamic meshes** (`worldDynamicMeshNode`: sector nodes with
-  physics and no entity, §13.162) have no script surface and no name a
+  physics and no entity, §13.169) have no script surface and no name a
   script can read: not shared yet (Open). Whether the city's bins and
   cones are entities or nodes is the first thing the in-game run tells.
 
@@ -57,7 +57,7 @@ instance to it from then.
 
 ## What travels
 
-Appended, protocol 24 (`protocol.hpp`, `props.hpp`, `endpoint_props.cpp`).
+Appended, protocol 29 (`protocol.hpp`, `props.hpp`, `endpoint_props.cpp`).
 
 | Message      | Channel                      | From → to                                                        | What                                                                                           |
 | ------------ | ---------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -141,10 +141,10 @@ player's word.
 
 ## Open
 
-- World dynamic meshes (§13.162): their node instances (RHT's world
+- World dynamic meshes (§13.169): their node instances (RHT's world
   inspector reaches them by the streaming system's node registry, MIT) and
   their physics proxies; a name for one (its sector and node index). Until
   then not shared.
 - Whether `PhysicalCollisionEvent` reaches every placed physics entity
-  (§13.162, unverified): `props-host` tells (no touch: no share).
+  (§13.169, unverified): `props-host` tells (no touch: no share).
 - Rotation speed is not sent: a tumbling prop is drawn between poses.
