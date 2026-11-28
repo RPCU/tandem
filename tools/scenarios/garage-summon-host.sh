@@ -8,7 +8,7 @@ expect 'garage: summon asked \(true\)' 10
 expect 'summons: our Vehicle\.[A-Za-z0-9_]+ is out, (driving in|parked)' 40
 expect_peer "player [0-9]+'s summoned car 0x[0-9a-f]+: (driving in|parked)" 10
 shot summon-host-arriving
-expect 'summons: our Vehicle\.[A-Za-z0-9_]+ is out, parked' 60
+expect 'summons: our Vehicle\.[A-Za-z0-9_]+ is out, parked, arrived' 60
 expect_peer "player [0-9]+'s summoned car 0x[0-9a-f]+: parked" 10
 pause 2
 # Where our game has it, and where the mock player heard it stands.

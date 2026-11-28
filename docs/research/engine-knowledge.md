@@ -163,6 +163,7 @@ found through this table, each number once.
 | 13.177 | Hands, status effects: thin over the transaction and status effect systems | `multiplayer-leftovers.md` |
 | 13.178 | The weapon's shot replay: attack record, target, offset on the target; the shoot under `AI_ShootAt` | `multiplayer-leftovers.md` |
 | 13.179 | Dead ends, and the cut design against tandem's (vehicles, props, destruction, inventory, weather, game systems; domain by domain) | `multiplayer-leftovers.md` |
+| 13.165 | The summoned car: its states and events, one body per garage vehicle | `vehicles.md` |
 | 13.153 | A choice of our own on a puppet's interaction component | `story.md` |
 
 ## Top traps (one line each)

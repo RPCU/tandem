@@ -6341,7 +6341,7 @@ int main(int argc, char **argv) {
           if (along >= kSummonFrom) {
             car.velocity = {};
             endpoint->SendLocalVehicle(car);
-            said(0, car.position, summon.facing);
+            said(proto::kOwnCarArrived, car.position, summon.facing); // the game's Arrived
             summon.arrivingUs.reset();
             summon.parkedAt = now;
             Log("summon: our car parked by us at ({:.1f}, {:.1f}, {:.1f})", car.position.x,
