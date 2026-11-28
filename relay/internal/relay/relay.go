@@ -55,6 +55,16 @@ type Config struct {
 	// Sources tracked at once; a new one beyond it is ignored.
 	MaxLookupSources int
 
+	// Host IDs (hostid.go): a binding lives this long after its host's last
+	// HostID; at most this many in all, and new ones per source. Lookups by
+	// host ID (QueryHost, JoinHost) per source: a burst, then one per
+	// interval, on a bucket of their own (never the code lookups').
+	HostIDTTL           time.Duration
+	MaxHostIDs          int
+	MaxHostIDsPerSource int
+	HostLookupBurst     int
+	HostLookupInterval  time.Duration
+
 	// A guest's Addresses are answered (two introductions) at most this often.
 	IntroduceInterval time.Duration
 
@@ -117,6 +127,13 @@ func DefaultConfig() Config {
 		CodeLookupInterval:       6 * time.Second,
 		MaxCodeFailuresPerMinute: 120,
 		MaxLookupSources:         4096,
+
+		HostIDTTL:           time.Minute,
+		MaxHostIDs:          4096,
+		MaxHostIDsPerSource: 4,
+		// A Join list of 8 recent hosts asked twice in a row, then one every 2 s.
+		HostLookupBurst:    16,
+		HostLookupInterval: 2 * time.Second,
 
 		IntroduceInterval: 2 * time.Second,
 
@@ -349,6 +366,11 @@ type Server struct {
 	// Failed code lookups in the minute that started at failWindow.
 	failWindow time.Time
 	failures   int
+	// Host IDs (hostid.go): the bindings we own, new ones per source, and
+	// the host lookups per source.
+	hosts         map[[HostIDSize]byte]*hostBinding
+	hostsBySource map[netip.Prefix]int
+	hostLookups   map[netip.Prefix]*lookupBucket
 	// Behind a proxy: each of its sockets' client (proxy.go).
 	flows map[netip.AddrPort]flow
 	// Open mode (open.go): the challenges' key, those used (until stale),
@@ -377,6 +399,10 @@ func NewServer(cfg Config, log *slog.Logger) *Server {
 		codes:    map[string]*session{},
 		lookups:  map[netip.Prefix]*lookupBucket{},
 		flows:    map[netip.AddrPort]flow{},
+
+		hosts:         map[[HostIDSize]byte]*hostBinding{},
+		hostsBySource: map[netip.Prefix]int{},
+		hostLookups:   map[netip.Prefix]*lookupBucket{},
 
 		powKey:         newPowKey(),
 		usedChallenges: map[[ChallengeMACSize]byte]time.Time{},
@@ -549,6 +575,10 @@ func (s *Server) control(out []byte, from, who netip.AddrPort, d datagram, size 
 		return s.requestCode(out, from, d, size, now)
 	case typeResolveCode:
 		return s.resolveCode(out, from, who, d, false, now)
+	case typeHostID:
+		return s.bindHost(out, from, who, d, now)
+	case typeQueryHost, typeJoinHost:
+		return s.lookupHost(out, from, who, d, now)
 	}
 	return out, false
 }
@@ -585,6 +615,9 @@ func (s *Server) front(out []byte, from, who netip.AddrPort, d datagram, now tim
 		return appendError(out, ErrNoSession), true
 	case typeResolveCode:
 		return s.resolveCode(out, from, who, d, true, now)
+	case typeHostID, typeQueryHost, typeJoinHost:
+		// To the ID's owner: its bindings are there.
+		return s.frontHost(out, d)
 	}
 	s.Metrics.dropped(dropUnknown)
 	return out, false
@@ -1108,6 +1141,7 @@ func (s *Server) sweep(now time.Time) {
 			delete(s.lookups, key)
 		}
 	}
+	s.sweepHosts(now)
 }
 
 // Counts returns the live sessions and clients.
