@@ -1273,7 +1273,7 @@ TEST_CASE("referee: a body's rest is of an NPC we were told of, never ours back"
   CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
 }
 
-TEST_CASE("referee: a boss's state is of an NPC we are shown, in range, never ours back") {
+TEST_CASE("referee: a boss's state is of an NPC we are shown, in range, its owner's word") {
   auto guest = Guest();
   guest.Received(1, proto::NpcSpawn{.npc = 7, .record = 1}, kSecond);
   guest.Received(
@@ -1291,7 +1291,7 @@ TEST_CASE("referee: a boss's state is of an NPC we are shown, in range, never ou
   const auto ours = regions::MakeNpcId(2, 1);
   guest.Sent(1, proto::NpcSpawn{.npc = ours, .record = 2}, kSecond);
   guest.Received(1, proto::BossState{.npc = ours}, kSecond);
-  CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.not-owner"});
 }
 
 TEST_CASE("referee: what a game runs without is its own word, passed on, never back") {

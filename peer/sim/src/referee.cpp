@@ -1521,12 +1521,10 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
           NeedNpc(m.npc, name);
           NeedShown(m.npc, name);
         } else if constexpr (std::is_same_v<M, p::BossState>) {
-          // A boss we were told of and are shown, never one of ours back.
+          // A boss we were told of and are shown (one of ours back is
+          // authority.not-owner: OwnedBy).
           NeedNpc(m.npc, name);
           NeedShown(m.npc, name);
-          if (OwnerOf(m.npc) == m_self)
-            Add("authority.own-state-back",
-                std::format("the host sent us npc {}'s boss state, which our game runs", m.npc));
         } else if constexpr (std::is_same_v<M, p::CorpsePose>) {
           // The body of an NPC we were told of, and never one of ours back.
           NeedNpc(m.npc, name);
