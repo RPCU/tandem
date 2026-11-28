@@ -51,7 +51,8 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 24: CorpsePose appended (a body's rest, regions.md §5).
 // 25: Rules.levelGap (the host's level_gap, said to every game: a guest's
 // menu shows the host's rules, coop-menu.md).
-inline constexpr std::uint16_t kProtocolVersion = 25;
+// 26: LinkDecline's reasons 2-4, a call's outcomes (declined, busy, missed).
+inline constexpr std::uint16_t kProtocolVersion = 26;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
