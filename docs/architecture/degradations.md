@@ -172,6 +172,7 @@ names of `engine-access.md`.
 | `interaction casts` | degraded | state | `engine/casts.cpp` | every interaction counts as casting its doer |
 | `scene voice` | degraded | state | `story_natives.cpp` | V's voice in a replayed scene is the game's pick |
 | `nameplate projection` | degraded | state | `PartyHud.reds` (no carrier on the HUD, no slot; `presence hud projection script`) | nameplates placed by our own projection, not the engine's (`presence.md`) |
+| `prop velocity` | degraded | state | `Props.reds` `Give` (the body's RTTI `SetLinearVelocity` not there) | another V's push given as an impulse of a nominal 10 kg (`props.md`) |
 | `prompt drawn` | degraded | fallback | `Prompts.reds` (`Adopt`, `Fallback`), `Body.reds` | one body's prompt is drawn |
 | `vehicle teleported` | degraded | fallback | `System.reds` `MoveBody` (a body that does not follow, a move refused), `Vehicles.reds` | one vehicle teleported, not moved |
 | `street body respawned` | degraded | fallback | `Traffic.reds` `Check` | a street vehicle's body was gone, spawned again |
@@ -202,6 +203,9 @@ names of `engine-access.md`.
 | `activity untracked` | degraded | fallback | `OpenWorld.reds` `TrackAgain` (the pin not on our map at its put-back, or its track read back is off) | an NCPD activity the player tracked, shown done during the session, is not tracked again |
 | `hit shown by twitch` | degraded | fallback | `HitsTaken.reds` (the pipeline played nothing, or chose an AI task) | a hit a V took shown as the body's twitch (a hit by nobody the games know twitches by design: not registered) |
 | `summoned car unseen` | degraded | fallback | `Summons.reds` (no copy could be spawned of a partner's summoned car) | the car appears only when its owner gets in (its `Seat` spawns a copy) |
+| `prop not held` | degraded | fallback | `Props.reds` `Hold` (the entity here has no physical mesh of that index) | another game's moving prop not shown moving here (`props.md`) |
+| `prop put back` | degraded | fallback | `Props.reds` `Answer` (no word in 2 s from the game that runs our area) | our instance of a prop we touched put back where it stood |
+| `prop not recorded` | degraded | fallback | `net_thread.cpp` (`props::Record` full, 1024) | a prop moved after that stands unmoved for a player who comes later |
 
 Looked at and left out, each for its reason: a rule that drops a message (a
 hit with friendly fire off, a stale or repeated message, an authority

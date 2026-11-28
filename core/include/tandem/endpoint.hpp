@@ -17,6 +17,7 @@
 #include "tandem/mods.hpp"
 #include "tandem/netcode.hpp"
 #include "tandem/pose.hpp"
+#include "tandem/props.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/regions.hpp"
 #include "tandem/rigpose.hpp"
@@ -377,6 +378,20 @@ struct BreachAnswered {
 struct Fractured {
   proto::Fracture fracture;
 };
+// Physics props (docs/architecture/props.md). Another game's moving props:
+// its word, our instances held to it. Never our own back.
+struct PropsMoved {
+  proto::PropStates states;
+};
+// Where a moved prop came to rest, by another game (the session's record:
+// also a late joiner's replay, and a prop far from our V).
+struct PropRested {
+  proto::PropRest rest;
+};
+// A push another player's V gave a prop our game runs: ours to give it.
+struct PropPushed {
+  proto::PropPush push;
+};
 // A device's fire. Guest: the host's turret turned to a target, shot at it,
 // or follows nobody any more; our copy shows it (a shot at our own V is
 // ours to fire for real). Host: a guest's copy of a turret locked that
@@ -659,7 +674,8 @@ using SessionEventVariant = std::variant<
     events::RemoteStatusVisuals, events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom,
     events::TrafficGive, events::TrafficTake, events::TrafficOwnerChanged, events::Fractured,
     events::DeviceFired, events::TurretHeld, events::LinkDeclined, events::TurretRefused,
-    events::TrafficHacked, events::RemoteHitTaken, events::HostNpcVoice>;
+    events::TrafficHacked, events::RemoteHitTaken, events::HostNpcVoice, events::PropsMoved,
+    events::PropRested, events::PropPushed>;
 // Its copies, moves and conversions compiled in session_event.cpp only, as
 // proto::Message's (tandem/closed_variant.hpp).
 using SessionEvent = ClosedVariant<SessionEventVariant>;
@@ -1067,6 +1083,27 @@ public:
   // first come (the host's devices::TurretHolds): another's claim is not
   // passed on, and its game hears TurretRefused.
   void SendTurretHands(proto::TurretHands hands);
+  // Physics props (props.md). Our game's moving props (`owner` and
+  // `timeUs` filled in), while it runs the area round our V: to the
+  // players linked with us, through the host, which passes on no other
+  // game's word about a prop one game speaks for (props::Speakers). A prop
+  // another game speaks for is left out here. False: nothing went.
+  bool SendPropStates(proto::PropStates states);
+  // Where a prop of ours came to rest: the session's record (to everyone,
+  // linked or not, for when they come; a late joiner and a world resync
+  // get the record). False: not ours to say (another game speaks for it,
+  // or ours does not run our area).
+  bool SendPropRest(proto::PropRest rest);
+  // Our V pushed our instance of a prop another game runs: to its speaker,
+  // else the owner of our area (`player`, `timeUs` filled in).
+  void SendPropPush(proto::PropPush push);
+  // Who speaks for a moving prop now (host: its arbitration; guest: the
+  // others' words heard), and where moved props came to rest.
+  std::optional<proto::PlayerId> PropSpeaker(std::uint64_t entity, std::uint8_t part) const;
+  const props::Record &Props() const { return m_propRecord; }
+  // Host: words about props passed on no further (another game spoke for
+  // the prop, or the sender does not run its area), pushes too old.
+  std::uint64_t PropsRefused() const { return m_propsRefused; }
   // Host: who holds a turret now (kNoPlayer: nobody); claims refused so far.
   proto::PlayerId TurretHolder(std::uint64_t entity) const;
   std::uint64_t TurretsRefused() const { return m_turretHolds.Refused(); }
@@ -1950,6 +1987,21 @@ private:
   bool HoldTurret(const proto::TurretHands &hands, std::optional<net::PeerId> peer);
   std::uint64_t m_fracturesDropped{};
   devices::FractureRecord m_fractureRecord;
+  // Physics props (endpoint_props.cpp): who speaks for each moving one, the
+  // session's record of rests, what was refused.
+  props::Speakers m_propSpeakers;
+  props::Record m_propRecord;
+  std::uint64_t m_propsRefused{};
+  // Host: a player's word on props (ours: `peer` none), stamped.
+  bool OnPropStates(proto::PropStates states, std::optional<net::PeerId> peer,
+                    std::vector<SessionEvent> *out);
+  void OnPropRest(proto::PropRest rest, std::vector<SessionEvent> *out);
+  void OnPropPush(proto::PropPush push, std::vector<SessionEvent> *out);
+  // Host: a guest's prop messages (false: not one of those). Guest: the
+  // host's (false: the same).
+  bool OnGuestProps(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
+                    std::vector<SessionEvent> &out);
+  bool OnHostProps(const proto::Message &message, std::vector<SessionEvent> &out);
   // Host: a break said by `player` (ours or a guest's, stamped), past the
   // rate: kept and relayed (devices.md).
   void RelayFracture(const proto::Fracture &fracture, net::PeerId from,

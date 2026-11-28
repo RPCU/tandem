@@ -13,6 +13,7 @@
 #include "tandem/net_traffic.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/presence.hpp"
+#include "tandem/props.hpp"
 #include "tandem/traffic.hpp"
 
 #include <doctest/doctest.h>
@@ -34,7 +35,7 @@ namespace {
 constexpr double kBudgetKbps = 256.0;
 constexpr double kFightDownKbps = 384.0;
 
-enum class Play { OnFoot, Standing, Fight, Driving, Apart, Scene, Crowd, Traffic };
+enum class Play { OnFoot, Standing, Fight, Driving, Apart, Scene, Crowd, Traffic, Props };
 
 const char *NameOf(Play play) {
   switch (play) {
@@ -52,6 +53,8 @@ const char *NameOf(Play play) {
     return "a dense street, 96 NPCs";
   case Play::Traffic:
     return "a street, 24 cars";
+  case Play::Props:
+    return "a blast, 16 props fly";
   default:
     return "apart (500 m)";
   }
@@ -101,7 +104,8 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
   const auto end = warmUp + static_cast<std::uint64_t>(seconds * 1e6);
   std::uint64_t nextFrame = start, nextNpcs = start, nextEvent = start;
   std::uint32_t frame = 0, sceneFrame = 0, npcFrame = 0, trafficFrame = 0;
-  std::uint64_t nextTraffic = start;
+  std::uint64_t nextTraffic = start, nextProps = start;
+  std::uint32_t propRound = 0;
   traffic::Budget streetBudget;
   std::optional<net::Traffic> before;
   std::uint64_t measuredFrom = 0;
@@ -126,7 +130,7 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
         state.position.x += apart;
         float energy = 1.f;
         if (play == Play::Standing || play == Play::Driving || play == Play::Scene ||
-            play == Play::Traffic) {
+            play == Play::Traffic || play == Play::Props) {
           state.position = {apart, 0.f, 0.f};
           state.velocity = {};
           state.orientation = sync::FromYaw(0.f);
@@ -235,6 +239,35 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
       states.cars = round ? streetBudget.Pick(cars, viewers) : traffic::PickNear(cars, viewers);
       host->SendTrafficStates(states);
     }
+    // A blast as Props.reds sends it (props.md): the host's game runs the
+    // area, 16 props fly and tumble (a full round ten times a second, the
+    // worst case: a prop at rest leaves the stream), one comes to rest each
+    // half second; the guest's V kicks one of them once a second.
+    if (play == Play::Props && now >= nextProps) {
+      nextProps += props::kStatesEveryUs;
+      ++propRound;
+      const float s = static_cast<float>(now - start) / 1e6f;
+      std::vector<props::Prop> flying;
+      for (std::uint64_t n = 1; n <= proto::kMaxPropsPerState; ++n) {
+        const float a = 0.4f * static_cast<float>(n) + s;
+        flying.push_back({.entity = 0xB0B0'0000'0000'0000ULL + n,
+                          .position = {5.f * std::cos(a), 5.f * std::sin(a), 1.f},
+                          .orientation = {0.f, 0.f, std::sin(a), std::cos(a)},
+                          .velocity = {-5.f * std::sin(a), 5.f * std::cos(a), -1.f}});
+      }
+      const std::vector<proto::Vec3> viewers{{0.f, 0.f, 0.f}, {3.f, 0.f, 0.f}};
+      props::Budget budget;
+      host->SendPropStates({.props = budget.Pick(flying, viewers)});
+      if (propRound % 5 == 0) {
+        const auto &rest = flying[propRound % flying.size()];
+        host->SendPropRest(
+            {.entity = rest.entity, .position = rest.position, .orientation = rest.orientation});
+      }
+      if (propRound % 10 == 0)
+        joined.front()->SendPropPush({.entity = flying.front().entity,
+                                      .position = flying.front().position,
+                                      .velocity = {0.f, 4.f, 1.f}});
+    }
     if (play == Play::Fight && now >= nextEvent) {
       // Twice a second: a guest's strike, the NPC's health and animation,
       // shots both ways with their tracers' ends, a ricochet, a charge.
@@ -279,7 +312,7 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
 
 TEST_CASE("typical sessions stay within the bandwidth budget, each way") {
   for (const auto play : {Play::OnFoot, Play::Standing, Play::Fight, Play::Driving, Play::Apart,
-                          Play::Scene, Play::Crowd, Play::Traffic}) {
+                          Play::Scene, Play::Crowd, Play::Traffic, Play::Props}) {
     CAPTURE(NameOf(play));
     const auto legacy = Run(play, false);
     const auto compact = Run(play, true);

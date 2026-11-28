@@ -55,7 +55,8 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 27: OwnCar appended (a player's summoned car, garage.md 1a).
 // 28: OpenWorldDone appended (the host's open-world activities done,
 // story.md "Open-world activities"; a game of 27 cannot read it).
-inline constexpr std::uint16_t kProtocolVersion = 28;
+// 29: PropStates, PropRest, PropPush appended (physics props, props.md).
+inline constexpr std::uint16_t kProtocolVersion = 29;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3505,6 +3506,69 @@ struct OpenWorldDone {
   friend bool operator==(const OpenWorldDone &, const OpenWorldDone &) = default;
 };
 
+// ---- Physics props (appended, protocol 29; docs/architecture/props.md) ----
+// A placed prop with a physics body (a bin, a crate, a chair, a cone that is
+// an entity) that something moved: a V, a car, a shot, a blast. The game
+// that runs the area round it (Endpoint::AreaOwner) simulates it and says
+// how it moves (PropStates) and where it comes to rest (PropRest); every
+// other game holds its own instance of the same placed prop to that word.
+// A prop is named by its entity's static id (sector data: the same in every
+// game) and `part`, the index of the moved body among the entity's physical
+// components. While one game speaks for a moving prop, the host passes on
+// no other game's word about it (props::Speakers, first word wins, until
+// kPropHoldUs after its last).
+
+// One moving prop in a PropStates: 33 bytes. Orientation and velocity are
+// packed as a TrafficEntry's (traffic::PackOrientation, PackVelocity).
+struct PropEntry {
+  std::uint64_t entity{};
+  std::uint8_t part{};
+  Vec3 position;
+  std::array<std::int16_t, 3> orientation{};
+  std::array<std::int16_t, 3> velocity{};
+  friend bool operator==(const PropEntry &, const PropEntry &) = default;
+};
+// At 10 Hz a full packet is 16 props: under 5 kB/s however many fly.
+inline constexpr std::size_t kMaxPropsPerState = 16;
+struct PropStates {       // State channel, ~10 Hz while any prop of ours moves
+  PlayerId owner{};       // whose game simulates them: set by the host from the connection
+  std::uint64_t timeUs{}; // when its game read them (host clock)
+  std::vector<PropEntry> props;
+  friend bool operator==(const PropStates &, const PropStates &) = default;
+};
+// At most kMaxPropsPerState, each a placed entity.
+bool Fits(const PropStates &states);
+
+// Where a moved prop came to rest (Event channel): the session's record of
+// it (the host's, props::Record), kept for late joiners and for players who
+// come there later, in the world digest. Idempotent: equal to the record,
+// nothing changes.
+struct PropRest {
+  PlayerId owner{}; // whose game said it: set by the host from the connection
+  std::uint64_t entity{};
+  std::uint8_t part{};
+  Vec3 position;
+  Quat orientation;
+  friend bool operator==(const PropRest &, const PropRest &) = default;
+};
+
+// A push our V (or the car it drives) gave a prop another game runs (Event
+// channel, one-shot): our own instance moved at once, for feel; the owner
+// gives its real prop the same velocity (unless it moves already: its
+// puppet of our V pushed it there), and its word puts ours right. To the
+// prop's speaker, else the owner of the pusher's area, through the host.
+// Dropped older than kPropPushMaxAgeUs (a stall: a late kick is wrong).
+inline constexpr std::uint64_t kPropPushMaxAgeUs = 500'000;
+struct PropPush {
+  PlayerId player{}; // whose V pushed: set by the host from the connection
+  std::uint64_t entity{};
+  std::uint8_t part{};
+  Vec3 position;          // where our instance stood before the push
+  Vec3 velocity;          // the velocity the push gave it (m/s)
+  std::uint64_t timeUs{}; // when (host clock)
+  friend bool operator==(const PropPush &, const PropPush &) = default;
+};
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -3528,7 +3592,7 @@ using MessageVariant = std::variant<
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
     TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose, OwnCar,
-    OpenWorldDone>;
+    OpenWorldDone, PropStates, PropRest, PropPush>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,

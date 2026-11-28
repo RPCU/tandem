@@ -382,3 +382,41 @@ target's position, the target, …)`, the anim event `Shoot`, the effect
   does (102002) and the chain's `MoveToSpecificEntity` with a bare
   `ToggleTakeOverControl` (`SetProperties(true, false)`, 154681).
   [2.5-untested]
+
+### 13.162 Physics props: what a script reaches of a prop's body, and which props have no entity (2026-11-28, read in final.reds (2.50), the RTTI dump and the node types; not run)
+
+- **Two kinds of physics prop.** A placed _entity_ (`worldEntityNode`, an
+  `.ent`) with a `PhysicalMeshComponent` (`final.reds (2.50):209439`,
+  `extends MeshComponent`) has a static `EntityID`, the same in every game;
+  a `worldDynamicMeshNode` ("a mesh with simulated rigid-body physics, not
+  destructible", WolvenKit's object spawner; RTTI `worldDynamicMeshNode <
+worldMeshNode`, instance `worldDynamicMeshNodeInstance`, 0x1b0 bytes) is a
+  sector node with no entity: no `EntityID`, no script object, no targeting
+  component (`parity.md` row 4: "not readable"). _(inferred: most street
+  clutter, cans, bottles and bags, is of the second kind; which kind a bin,
+  a cone or a crate is was not measured.)_ [2.5-untested]
+- **A body by script**: `PhysicalMeshComponent.CreatePhysicalBodyInterface(opt
+bodyIndex)` (`:209441`; `ColliderComponent` has one too, `:202652`)
+  returns `PhysicalBodyInterface` (`:209478`), whose script declaration has
+  `IsSimulated`, `IsKinematic`, `GetTransform`, `SetTransform(Transform)`,
+  `SetIsKinematic`, `ToggleKinematic`, `AddLinearImpulse(impulse,
+originInCOM, opt offset)`, `SetIsQueryable`. The game's own devices wake a
+  mesh that way: `SetIsKinematic(false)` then `AddLinearImpulse`
+  (`ActivatedDeviceTrap.ActivatePhysicalMeshes`, `:485463`; a traffic
+  light's fallen mesh, `:280246`). [2.5-untested]
+- **More natives than the scripts declare**: the RTTI of
+  `entPhysicalBodyInterface` also has `GetLinearVelocity`,
+  `SetLinearVelocity`, `GetAngularVelocity`, `SetAngularVelocity`,
+  `GetMass`, `SetMass`, `SetIsSleeping`, `SetDisplacement`,
+  `SetSimulationFilter` (`docs/research/data/rtti-natives-2.50.tsv`,
+  handlers `0x142998948` for `SetLinearVelocity`). The plugin calls one by
+  name (`Red::CallVirtual`, `TandemObjects.SetBodyVelocity`). [2.5-untested]
+- **The engine's notice of a touch**: `PhysicalCollisionEvent`
+  (`:313453`: `myComponent`, `otherEntity`, `otherComponent`,
+  `worldPosition`, `worldNormal`, `deltaVelocity`, `impulse`) is sent to
+  the entity whose body collided; `ActivatedDeviceTrap.OnPhysicalCollisionEvent`
+  (`:485518`) is the one handler in the scripts. Whether every placed
+  physics entity gets it, or only one whose mesh asks for collision
+  events, is not known. [unverified]
+- A component's place: `IPlacedComponent.GetLocalToWorld()` and
+  `GetInitialPosition()` (`:19992`). [2.5-untested]

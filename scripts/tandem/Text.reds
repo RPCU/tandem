@@ -388,6 +388,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-interaction-casts", "the reading of who an interaction involves");
     this.Text("Tandem-Degraded-Id-scene-voice", "V's own voice in replayed scenes");
     this.Text("Tandem-Degraded-Id-nameplate-projection", "name plates placed by the game's engine (tandem places them itself)");
+    this.Text("Tandem-Degraded-Id-prop-velocity", "pushes on objects another player's game runs given with the object's own speed (tandem guesses its weight)");
     this.Text("Tandem-Degraded-Id-hit-shown-by-twitch", "a hit on a player shown as a plain twitch, not the game's own reaction");
     this.Text("Tandem-Degraded-Id-summoned-car-unseen", "a partner's summoned car is not shown until they get in");
     this.Text("Tandem-Degraded-Id-prompt-drawn", "a prompt drawn by tandem instead of the game's own");
@@ -418,6 +419,9 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-puppet-not-driven", "a player's body could not be moved");
     this.Text("Tandem-Degraded-Id-activity-not-marked", "an NCPD activity on your map shows your own state, not the host's");
     this.Text("Tandem-Degraded-Id-activity-untracked", "an NCPD activity you tracked was not tracked again: track it from the map");
+    this.Text("Tandem-Degraded-Id-prop-not-held", "an object another player moved could not be moved here");
+    this.Text("Tandem-Degraded-Id-prop-put-back", "an object you knocked over was put back: the other player's game did not move it");
+    this.Text("Tandem-Degraded-Id-prop-not-recorded", "too many moved objects: one will look unmoved to a player who comes later");
     this.Text("Tandem-Session-JoinedOf", "Joined {1}'s session");
     this.Text("Tandem-Session-Joined", "Joined the co-op session");
     this.Text("Tandem-Session-YouLeft", "You left the co-op session");
@@ -928,6 +932,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-interaction-casts", "la lecture de qui participe à une interaction");
     this.Text("Tandem-Degraded-Id-scene-voice", "la voix de V dans les scènes rejouées");
     this.Text("Tandem-Degraded-Id-nameplate-projection", "les plaques de nom placées par le moteur du jeu (tandem les place lui-même)");
+    this.Text("Tandem-Degraded-Id-prop-velocity", "les poussées sur les objets que le jeu d'un autre joueur gère données avec la vitesse propre de l'objet (tandem devine son poids)");
     this.Text("Tandem-Degraded-Id-hit-shown-by-twitch", "un coup reçu par un joueur affiché comme un simple sursaut, pas la réaction du jeu");
     this.Text("Tandem-Degraded-Id-summoned-car-unseen", "la voiture appelée par un partenaire n'apparaît qu'une fois qu'il y monte");
     this.Text("Tandem-Degraded-Id-prompt-drawn", "une invite dessinée par tandem au lieu de celle du jeu");
@@ -958,6 +963,9 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-puppet-not-driven", "le corps d'un joueur n'a pas pu être déplacé");
     this.Text("Tandem-Degraded-Id-activity-not-marked", "une activité du NCPD sur votre carte montre votre propre état, pas celui de l'hôte");
     this.Text("Tandem-Degraded-Id-activity-untracked", "une activité du NCPD que vous suiviez n'est plus suivie : suivez-la depuis la carte");
+    this.Text("Tandem-Degraded-Id-prop-not-held", "un objet qu'un autre joueur a déplacé n'a pas pu l'être ici");
+    this.Text("Tandem-Degraded-Id-prop-put-back", "un objet que vous avez renversé a été remis en place : le jeu de l'autre joueur ne l'a pas déplacé");
+    this.Text("Tandem-Degraded-Id-prop-not-recorded", "trop d'objets déplacés : l'un d'eux semblera intact à un joueur qui arrive plus tard");
     this.Text("Tandem-Session-JoinedOf", "Vous avez rejoint la session de {1}");
     this.Text("Tandem-Session-Joined", "Vous avez rejoint la session coop");
     this.Text("Tandem-Session-YouLeft", "Vous avez quitté la session coop");

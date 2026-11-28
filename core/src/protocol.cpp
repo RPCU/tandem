@@ -81,6 +81,11 @@ bool Fits(const OwnCar &car) {
   return car.vehicle != 0 || car == OwnCar{.player = car.player};
 }
 
+bool Fits(const PropStates &states) {
+  return states.props.size() <= kMaxPropsPerState &&
+         std::ranges::none_of(states.props, [](const PropEntry &prop) { return prop.entity == 0; });
+}
+
 bool Fits(const TrafficLights &lights) {
   if (lights.lights.size() > kMaxLights)
     return false;
@@ -584,6 +589,12 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *voice = std::get_if<NpcVoice>(&message); voice && !Fits(*voice))
     return std::nullopt;
   if (const auto *corpse = std::get_if<CorpsePose>(&message); corpse && !Fits(*corpse))
+      return std::nullopt;
+  if (const auto *props = std::get_if<PropStates>(&message); props && !Fits(*props))
+    return std::nullopt;
+  if (const auto *rest = std::get_if<PropRest>(&message); rest && rest->entity == 0)
+    return std::nullopt;
+  if (const auto *push = std::get_if<PropPush>(&message); push && push->entity == 0)
     return std::nullopt;
   if (const auto *lights = std::get_if<TrafficLights>(&message); lights && !Fits(*lights))
     return std::nullopt;
@@ -720,6 +731,7 @@ Channel ChannelOf(const Message &message) {
                  std::holds_alternative<Noise>(message) ||
                  std::holds_alternative<NpcShot>(message) ||
                  std::holds_alternative<TrafficStates>(message) ||
+                 std::holds_alternative<PropStates>(message) ||
                  std::holds_alternative<MountedFire>(message) ||
                  std::holds_alternative<GunnerAim>(message) ||
                  std::holds_alternative<ActorPose>(message) ||
@@ -958,7 +970,10 @@ const char *NameOfKind(std::size_t kind) {
                                    "NpcVoice",
                                    "CorpsePose",
                                    "OwnCar",
-                                   "OpenWorldDone"};
+                                   "OpenWorldDone",
+                                   "PropStates",
+                                   "PropRest",
+                                   "PropPush"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

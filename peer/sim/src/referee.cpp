@@ -220,6 +220,11 @@ TANDEM_SAID_BY(Either, TrafficLights)
 TANDEM_SAID_BY(Either, NpcVoice)
 // A body's rest: its owner's word (the host checks whose, as a wound's).
 TANDEM_SAID_BY(Either, CorpsePose)
+// Physics props: the game that runs a prop's area says how it moves and
+// rests (stamped: owner); a push is a player's own (stamped: player).
+TANDEM_SAID_BY(Either, PropStates)
+TANDEM_SAID_BY(Either, PropRest)
+TANDEM_SAID_BY(Either, PropPush)
 #undef TANDEM_SAID_BY
 
 // A new message without its SaidBy line above fails here ("incomplete type").
@@ -322,8 +327,11 @@ p::PlayerId *SenderOf(p::Message &message) {
                       std::is_same_v<M, p::Tag> || std::is_same_v<M, p::TimeSkip> ||
                       std::is_same_v<M, p::TimeSkipVote> || std::is_same_v<M, p::Trade>)
           return &m.from;
-        else if constexpr (std::is_same_v<M, p::TrafficLights>)
+        else if constexpr (std::is_same_v<M, p::TrafficLights> ||
+                           std::is_same_v<M, p::PropStates> || std::is_same_v<M, p::PropRest>)
           return &m.owner;
+        else if constexpr (std::is_same_v<M, p::PropPush>)
+          return &m.player;
         else if constexpr (std::is_same_v<M, p::WorldItem>)
           return &m.dropper;
         else if constexpr (std::is_same_v<M, p::WorldItemTaken>)
@@ -650,6 +658,27 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
                       CarOwnerOf(given->id)));
       return;
     }
+    // A guest speaks for props where its game runs the area, or for one it
+    // speaks for already (its rest after the area changed hands). Views of
+    // the area lag by a link: a hint, not a failure.
+    if (m_endpoint && (std::holds_alternative<p::PropStates>(message) ||
+                       std::holds_alternative<p::PropRest>(message))) {
+      std::uint64_t entity = 0;
+      std::uint8_t part = 0;
+      if (const auto *states = std::get_if<p::PropStates>(&message);
+          states && !states->props.empty()) {
+        entity = states->props.front().entity;
+        part = states->props.front().part;
+      } else if (const auto *rest = std::get_if<p::PropRest>(&message)) {
+        entity = rest->entity;
+        part = rest->part;
+      }
+      if (entity != 0 && m_endpoint->AreaOwner(from) != from &&
+          m_endpoint->PropSpeaker(entity, part) != std::optional<p::PlayerId>{from})
+        Hint("authority.not-owner",
+             std::format("player {} sent {} about prop {:#x} in an area player {} runs", from, name,
+                         entity, m_endpoint->AreaOwner(from)));
+    }
     // A guest speaks in its own name only.
     auto stamped = message;
     if (auto *sender = SenderOf(stamped)) {
@@ -888,6 +917,19 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::TrafficLights>) {
           // Lights by their entity, colours the game has, a bounded list.
           inRange = p::Fits(m);
+        } else if constexpr (std::is_same_v<M, p::PropStates>) {
+          // Placed props, a bounded list, places that are places (props.md).
+          timeUs = m.timeUs;
+          inRange = p::Fits(m);
+          for (const auto &prop : m.props)
+            finite = finite && Finite(prop.position);
+        } else if constexpr (std::is_same_v<M, p::PropRest>) {
+          finite = Finite(m.position) && Finite(m.orientation);
+          inRange = m.entity != 0;
+        } else if constexpr (std::is_same_v<M, p::PropPush>) {
+          finite = Finite(m.position) && Finite(m.velocity);
+          timeUs = m.timeUs;
+          inRange = m.entity != 0;
         } else if constexpr (std::is_same_v<M, p::TrafficSpawn>) {
           finite = Finite(m.position) && Finite(m.orientation);
         } else if constexpr (std::is_same_v<M, p::Crime>) {
@@ -1015,6 +1057,8 @@ void Referee::CheckRate(p::PlayerId from, const p::Message &message, std::size_t
     budget = limits.turretHandsHz;
   else if (std::holds_alternative<p::NpcVoice>(message))
     budget = limits.npcVoiceHz;
+  else if (std::holds_alternative<p::PropStates>(message))
+    budget = limits.propStatesHz;
   if (budget > 0.f) {
     // A relayed player's states count against that player.
     auto copy = message;
@@ -1441,6 +1485,15 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
         } else if constexpr (std::is_same_v<M, p::TrafficLights>) {
           // Another game's traffic lights; never ours back.
           notOurs(m.owner);
+        } else if constexpr (std::is_same_v<M, p::PropStates>) {
+          // Another game's moving props; never ours back.
+          notOurs(m.owner);
+        } else if constexpr (std::is_same_v<M, p::PropRest>) {
+          // A rest of the session's record: our own comes back for it, and
+          // a late joiner hears rests by players who left (props.md).
+        } else if constexpr (std::is_same_v<M, p::PropPush>) {
+          // Another V's push on a prop our game runs; never ours back.
+          notOurs(m.player);
         } else if constexpr (std::is_same_v<M, p::Revive>) {
           forUs(m.target);
           NeedPlayer(m.player, name);

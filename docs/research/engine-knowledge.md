@@ -167,6 +167,7 @@ found through this table, each number once.
 | 13.166 | The garage's sweep: a summoned car it no longer needs goes far and out of view | `vehicles.md` |
 | 13.167 | An NCPD activity's pin by its journal path, its phase read and set from outside | `story.md` |
 | 13.168 | A map pin tracked again from outside (the system's own tracker); Dogtown's open-world pins are not points of interest | `story.md` |
+| 13.169 | Physics props: what a script reaches of a prop's body, and which props have no entity | `devices.md` |
 | 13.153 | A choice of our own on a puppet's interaction component | `story.md` |
 
 ## Top traps (one line each)

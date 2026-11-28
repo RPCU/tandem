@@ -142,6 +142,7 @@
 #include "tandem/play.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/presence.hpp"
+#include "tandem/props.hpp"
 #include "tandem/rigpose.hpp"
 #include "tandem/scene.hpp"
 #include "tandem/shaping.hpp"
@@ -503,6 +504,17 @@ struct Options {
     bool done{};
   };
   std::vector<FractureOrder> fractures;
+  // Physics props (props.md): a prop of our game's world that "moves" (it
+  // rolls 2 m and comes to rest, --prop), or that our V kicks in another
+  // game's area (--push-prop).
+  struct PropOrder {
+    std::uint64_t entity{};
+    tandem::proto::Vec3 at;
+    int atSeconds{5};
+    bool push{};
+    bool done{};
+  };
+  std::vector<PropOrder> props;
   // A device's fire: as a guest, "our copy of the turret has our V"
   // (--turret-seen); as a host every turret a guest says so of fires at
   // that guest (--turret-shots each time; 0: it says nothing of it).
@@ -937,6 +949,13 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     placed entity its id in hex and its destruction component's\n"
          "                     name; SECONDS into the session (5). The breaks it hears are\n"
          "                     logged\n"
+         "  --prop E:X,Y,Z[@S] our game moves the prop E (a placed entity's id in hex) S seconds\n"
+         "                     into the session (5): it rolls 2 m east from X,Y,Z in 1.5 s and\n"
+         "                     comes to rest, said as its area's owner (props.md). A push on a\n"
+         "                     prop our game runs moves it the same way, along the push\n"
+         "  --push-prop E:X,Y,Z[@S] our V kicks the prop E at X,Y,Z S seconds into the session\n"
+         "                     (5): a push to the game that runs our area. The props it\n"
+         "                     hears move, rest and are pushed are logged\n"
          "  --turret-seen E[@S] join: our copy of the turret E (its id in hex) locks our V S\n"
          "                     seconds into the session (5), and loses it 6 s later\n"
          "  --turret-hands E[:X,Y,Z][@S] our V holds the turret E (its id in hex) S seconds\n"
@@ -1190,6 +1209,27 @@ Options::FractureOrder FractureOrderOf(std::string_view spec) {
     spec = spec.substr(place + 1);
   }
   order.fracture.at = Point("--fracture", spec);
+  return order;
+}
+
+// --prop / --push-prop ENTITY:X,Y,Z[@SECONDS]
+Options::PropOrder PropOrderOf(std::string_view flag, std::string_view spec, bool push) {
+  Options::PropOrder order{.push = push};
+  if (const auto at = spec.find('@'); at != std::string_view::npos) {
+    order.atSeconds = Number<int>(spec.substr(at + 1));
+    spec = spec.substr(0, at);
+  }
+  const auto colon = spec.find(':');
+  if (colon == std::string_view::npos)
+    Usage(std::format("{} is ENTITY:X,Y,Z[@SECONDS]", flag));
+  auto entity = spec.substr(0, colon);
+  if (entity.starts_with("0x"))
+    entity.remove_prefix(2);
+  if (std::from_chars(entity.data(), entity.data() + entity.size(), order.entity, 16).ptr !=
+          entity.data() + entity.size() ||
+      order.entity == 0)
+    Usage(std::format("{}: {} is not an entity id in hex", flag, entity));
+  order.at = Point(flag, spec.substr(colon + 1));
   return order;
 }
 
@@ -1573,6 +1613,10 @@ Options Parse(int argc, char **argv) {
       options.turretShots = Number<int>(value);
     else if (flag == "--fracture")
       options.fractures.push_back(FractureOrderOf(value));
+    else if (flag == "--prop")
+      options.props.push_back(PropOrderOf(flag, value, false));
+    else if (flag == "--push-prop")
+      options.props.push_back(PropOrderOf(flag, value, true));
     else if (flag == "--breach")
       options.breach = BreachOrderOf(value);
     else if (flag == "--programs")
@@ -4867,6 +4911,16 @@ int main(int argc, char **argv) {
   // Devices: when the session began for us (--device counts from it), and
   // the devices to change back (--device-answer: when, from what).
   std::optional<std::chrono::steady_clock::time_point> devicesFrom;
+  // Props our game moves (--prop, or pushed by another V): each rolls 2 m
+  // along `way` in 1.5 s, said ten times a second, then comes to rest.
+  struct PropMotion {
+    std::uint64_t entity{};
+    tandem::proto::Vec3 from, way;
+    std::chrono::steady_clock::time_point start;
+    std::chrono::steady_clock::time_point said{};
+  };
+  std::vector<PropMotion> propMotions;
+  std::set<std::uint64_t> propsHeard;
   // A device's fire: the bursts our "turrets" still owe (host), and where
   // --turret-seen stands (0 not yet, 1 said, 2 lost again).
   struct TurretBurst {
@@ -5957,6 +6011,32 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::TurretRefused>) {
               Log("turret {:x}: our claim refused, player {} holds it", e.busy.entity,
                   e.busy.holder);
+            } else if constexpr (std::is_same_v<E, tandem::events::PropsMoved>) {
+              // Once a motion: its first state.
+              for (const auto &prop : e.states.props)
+                if (propsHeard.insert(prop.entity).second)
+                  Log("player {}'s prop {:x} moves at ({:.1f} {:.1f} {:.1f})", e.states.owner,
+                      prop.entity, prop.position.x, prop.position.y, prop.position.z);
+            } else if constexpr (std::is_same_v<E, tandem::events::PropRested>) {
+              const auto &r = e.rest;
+              propsHeard.erase(r.entity);
+              Log("player {}'s prop {:x} at rest at ({:.1f} {:.1f} {:.1f})", r.owner, r.entity,
+                  r.position.x, r.position.y, r.position.z);
+            } else if constexpr (std::is_same_v<E, tandem::events::PropPushed>) {
+              // Ours to give it: it rolls along the push, our word to all.
+              const auto &push = e.push;
+              Log("player {} pushed prop {:x} at ({:.1f} {:.1f} {:.1f}), {:.1f} m/s", push.player,
+                  push.entity, push.position.x, push.position.y, push.position.z,
+                  std::hypot(push.velocity.x, push.velocity.y, push.velocity.z));
+              const float length = std::hypot(push.velocity.x, push.velocity.y);
+              const tandem::proto::Vec3 way =
+                  length > 0.01f
+                      ? tandem::proto::Vec3{push.velocity.x / length, push.velocity.y / length, 0.f}
+                      : tandem::proto::Vec3{1.f, 0.f, 0.f};
+              propMotions.push_back({.entity = push.entity,
+                                     .from = push.position,
+                                     .way = way,
+                                     .start = std::chrono::steady_clock::now()});
             } else if constexpr (std::is_same_v<E, tandem::events::Fractured>) {
               const auto &f = e.fracture;
               Log("player {} broke {} at ({:.1f} {:.1f} {:.1f})", f.player,
@@ -7200,6 +7280,59 @@ int main(int argc, char **argv) {
       endpoint->SendFracture(order.fracture);
       Log("something broke here at ({:.1f} {:.1f} {:.1f}), entity {:x} (--fracture)",
           order.fracture.at.x, order.fracture.at.y, order.fracture.at.z, order.fracture.entity);
+    }
+    // --prop, --push-prop: each one at its time into the session.
+    for (auto &order : options.props) {
+      if (order.done || !devicesFrom || now < *devicesFrom + std::chrono::seconds(order.atSeconds))
+        continue;
+      order.done = true;
+      if (order.push) {
+        endpoint->SendPropPush(
+            {.entity = order.entity, .position = order.at, .velocity = {0.f, 3.f, 1.f}});
+        Log("prop {:x}: our V kicks it at ({:.1f} {:.1f} {:.1f}) (--push-prop)", order.entity,
+            order.at.x, order.at.y, order.at.z);
+      } else {
+        propMotions.push_back(
+            {.entity = order.entity, .from = order.at, .way = {1.f, 0.f, 0.f}, .start = now});
+        Log("prop {:x}: our game moves it from ({:.1f} {:.1f} {:.1f}) (--prop)", order.entity,
+            order.at.x, order.at.y, order.at.z);
+      }
+    }
+    // Our moving props: ten states a second, then their rest.
+    if (!propMotions.empty()) {
+      tandem::proto::PropStates states;
+      std::erase_if(propMotions, [&](PropMotion &motion) {
+        const float t =
+            std::min(1.f, std::chrono::duration<float>(now - motion.start).count() / 1.5f);
+        const tandem::proto::Vec3 at{motion.from.x + 2.f * t * motion.way.x,
+                                     motion.from.y + 2.f * t * motion.way.y,
+                                     motion.from.z + 0.5f * std::sin(3.14159f * t)};
+        const float yaw = 0.5f * 3.14159f * t;
+        const tandem::proto::Quat pose{0.f, 0.f, std::sin(yaw / 2.f), std::cos(yaw / 2.f)};
+        if (t >= 1.f) {
+          if (endpoint->SendPropRest(
+                  {.entity = motion.entity, .position = at, .orientation = pose}))
+            Log("prop {:x}: at rest at ({:.1f} {:.1f} {:.1f}), told", motion.entity, at.x, at.y,
+                at.z);
+          else
+            Log("prop {:x}: not ours to say (another game runs our area, or speaks for it)",
+                motion.entity);
+          return true;
+        }
+        if (now - motion.said >= 100ms) {
+          motion.said = now;
+          states.props.push_back(tandem::props::Pack(
+              {.entity = motion.entity,
+               .position = at,
+               .orientation = pose,
+               .velocity = {2.f / 1.5f * motion.way.x, 2.f / 1.5f * motion.way.y, 0.f}}));
+        }
+        return false;
+      });
+      if (states.props.size() > tandem::proto::kMaxPropsPerState)
+        states.props.resize(tandem::proto::kMaxPropsPerState);
+      if (!states.props.empty())
+        endpoint->SendPropStates(std::move(states));
     }
     // --breach: its outcome, once, at its time into the session.
     if (options.breach && !options.breach->done && devicesFrom &&

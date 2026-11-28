@@ -1352,3 +1352,33 @@ TEST_CASE("referee: what a game runs without is its own word, passed on, never b
   host.Received(2, proto::Degraded{.player = 2, .entries = {{.id = "looks"}}}, kSecond);
   CHECK(Rules(host).empty());
 }
+
+TEST_CASE("referee: a prop's motion and push are another game's word, in its own name") {
+  auto guest = Guest();
+  const proto::PropEntry bin{.entity = 0xB1B1, .position = {1.f, 2.f, 3.f}};
+  guest.Received(1, proto::PropStates{.owner = 3, .props = {bin}}, kSecond);
+  guest.Received(1, proto::PropPush{.player = 3, .entity = 0xB1B1}, kSecond);
+  // Our own rest comes back for the record: fine.
+  guest.Received(1, proto::PropRest{.owner = 2, .entity = 0xB1B1}, kSecond);
+  CHECK(Rules(guest).empty());
+  // Our own motion or push back; a prop that is no placed entity.
+  guest.Received(1, proto::PropStates{.owner = 2, .props = {bin}}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
+  guest.Received(1, proto::PropPush{.player = 2, .entity = 0xB1B1}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
+  guest.Received(1, proto::PropStates{.owner = 3, .props = {{.entity = 0}}}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+
+  // A guest speaks in its own name, no faster than its game's rounds.
+  auto host = Host();
+  host.Received(2, proto::PropStates{.owner = 3, .props = {bin}}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.not-yours"});
+  host.Received(2,
+                proto::PropRest{.entity = 0xB1B1,
+                                .position = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}},
+                kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"value.not-finite"});
+  for (std::uint64_t i = 0; i < 200; ++i)
+    host.Received(2, proto::PropStates{.props = {bin}}, kSecond + i * 1000);
+  CHECK(Broke(host, "rate.over-budget"));
+}
