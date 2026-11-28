@@ -207,7 +207,9 @@ the book in `core/include/tandem/campaigns.hpp` (tested,
   at the load and at each save written (`OnSavingComplete`), kept pending
   in the book and matched with a save's time (within 5 s, one playthrough
   alone, after a world's first minute) the next time the main menu reads
-  the list. A new game is so learnt from its first save. **Not verified**:
+  the list. A new game is so learnt from its first save. A page built
+  before the metadata came is built again when it does (`Offered`, the
+  menu's tick). **Not verified**:
   that a save's metadata time is the world's `GetPlaythroughTime`, that
   the screenshot request brings the metadata for every save, and that
   `OnSavingComplete` comes for autosaves. `coop campaign` (both menus)

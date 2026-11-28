@@ -522,6 +522,8 @@ public class TandemCoopMenu {
   public let hostKey: String;
   public let hostName: String;
   public let lastCode: String;
+  // The save the page offered first when it was built (Offered).
+  public let builtOffer: Int32;
   public let items: array<ref<TandemMenuItem>>;
   // A page change waits for the next frame: the list is rebuilt outside
   // the activation callback of one of its own items.
@@ -629,6 +631,7 @@ public class TandemCoopMenu {
   // own come first).
   public func Build(saves: Int32, inSession: Bool) -> Void {
     ArrayClear(this.items);
+    this.builtOffer = this.Offered();
     if Equals(this.page, TandemCoopPage.Root) {
       this.Add("Menu-Coop", TandemCoopAction.OpenCoop);
       return;
@@ -715,6 +718,26 @@ public class TandemCoopMenu {
       this.Add("Menu-Settings", TandemCoopAction.Settings);
     }
     this.Add("Menu-Back", TandemCoopAction.Back);
+  }
+
+  // The save the main menu's page offers first, its index (-1 none): on the
+  // Co-op page the co-op campaign, on the V page a known host's V from last
+  // time. The saves' metadata comes after the menu opens: a page built
+  // before it is built again when it does (the menu's tick).
+  public func Offered() -> Int32 {
+    let problems = TandemNative.CompatProblems();
+    if this.inGame || ArraySize(problems) > 0 {
+      return -1;
+    }
+    if Equals(this.page, TandemCoopPage.Coop) {
+      let campaign = TandemCampaignNative.CampaignSave();
+      return campaign.index;
+    }
+    if Equals(this.page, TandemCoopPage.Save) && StrLen(this.hostKey) > 0 {
+      let last = TandemCampaignNative.LastV(this.hostKey);
+      return last.index;
+    }
+    return -1;
   }
 
   // The item whose label has this text (any case), for the test harness.
@@ -1286,6 +1309,10 @@ protected cb func OnTandemTick(proxy: ref<inkAnimProxy>) -> Bool {
   }
   this.TandemTidy();
   this.m_tandem.Refresh();
+  if !this.m_tandem.switching && !IsDefined(this.m_tandem.inputToken) && this.m_tandem.Offered() != this.m_tandem.builtOffer {
+    TandemNative.Log(s"coop: main menu: the saves' list came: page \(TandemCoopMenu.PageName(this.m_tandem.page)) built again");
+    this.TandemGo(this.m_tandem.page, this.m_tandem.cursor);
+  }
   let command = TandemNative.TakeCommand();
   if StrBeginsWith(command, "coop") {
     this.TandemCommand(command);
