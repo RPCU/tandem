@@ -1537,6 +1537,10 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
       return;
     if (const auto *thrown = std::get_if<proto::Throw>(&message); thrown && thrown->player == m_you)
       return;
+    // A scripted kill: of our V only.
+    if (const auto *kill = std::get_if<proto::ScriptedKill>(&message);
+        kill && kill->player != m_you)
+      return;
     if (const auto *end = std::get_if<proto::ThrowEnd>(&message); end && end->player == m_you)
       return;
     if (const auto *path = std::get_if<proto::ThrowPath>(&message); path && path->player == m_you)
@@ -4289,6 +4293,14 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
       ShareNpc(message, player, *peer);
     if (Sees(m_you, player))
       out.push_back(events::Combat{message});
+  } else if (const auto *kill = std::get_if<proto::ScriptedKill>(&message)) {
+    // Its NPC's scripted kill of a V: ours, or passed to that V's game.
+    if (NpcOwner(kill->npc) != player || kill->player == player)
+      return;
+    if (kill->player == m_you)
+      out.push_back(events::Combat{message});
+    else if (const auto peer = PeerOf(kill->player))
+      Send(*peer, message);
   } else if (const auto *boss = std::get_if<proto::BossState>(&message)) {
     // A boss it runs: for who sees it, once per change.
     if (!m_npcs.contains(boss->npc) || NpcOwner(boss->npc) != player)
@@ -4714,6 +4726,20 @@ bool Endpoint::SendCombat(proto::Message message) {
       return false;
     SayNpc(message);
     return true;
+  }
+  // An NPC's scripted kill of a V (bosses.md): for that V's game, through
+  // the host; our own V's is our game's already.
+  if (const auto *kill = std::get_if<proto::ScriptedKill>(&message)) {
+    if (!proto::Fits(*kill) || kill->player == m_you || !SpeaksFor(kill->npc))
+      return false;
+    if (!IsHost()) {
+      Send(m_hostPeer, message);
+      return true;
+    }
+    const auto peer = PeerOf(kill->player);
+    if (peer)
+      Send(*peer, message);
+    return peer.has_value();
   }
   // ...and a boss's scripted state (bosses.md): once per change.
   if (const auto *boss = std::get_if<proto::BossState>(&message)) {

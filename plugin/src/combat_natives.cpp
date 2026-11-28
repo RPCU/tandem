@@ -47,6 +47,17 @@ struct TandemFightEvent {
 };
 static_assert(alignof(TandemFightEvent) <= 8, "the script VM aligns struct locals to 8");
 
+// What a boss's behaviour did that its proxies must do (Bosses.reds).
+struct TandemBossAiEvent {
+  Red::EntityID entity;
+  Red::CName name;
+};
+struct TandemBossKill {
+  Red::EntityID npc;
+  Red::EntityID target;
+  float x{}, y{}, z{};
+};
+
 namespace {
 enum Kind : std::int32_t {
   kStrike = 1,
@@ -64,7 +75,8 @@ enum Kind : std::int32_t {
   kThrowPath = 13,
   kWeakSpot = 14,
   kTraced = 15,
-  kBoss = 16
+  kBoss = 16,
+  kScriptedKill = 17
 };
 
 proto::Vec3 Vec(const Red::Vector4 &v) { return {v.X, v.Y, v.Z}; }
@@ -148,6 +160,9 @@ TandemFightEvent EventOf(const proto::Message &message) {
            .attack = Red::TweakDBID(weak->record)};
   } else if (const auto *traced = std::get_if<proto::HackTraced>(&message)) {
     out = {.kind = kTraced, .npc = traced->npc, .player = traced->player};
+  } else if (const auto *kill = std::get_if<proto::ScriptedKill>(&message)) {
+    out = {.kind = kScriptedKill, .npc = kill->npc, .player = kill->player};
+    out.x = kill->position.x, out.y = kill->position.y, out.z = kill->position.z;
   } else if (const auto *boss = std::get_if<proto::BossState>(&message)) {
     out = {.kind = kBoss,
            .npc = boss->npc,
@@ -339,6 +354,37 @@ struct TandemFight : Red::IScriptable {
   }
   // Its NPC is gone (Bosses.reds forgets it too).
   static void ForgetBoss(std::uint32_t npc) { Combat::Get().ForgetBoss(npc); }
+  // Any thread (a boss component's OnAIEvent, a behaviour task): queued
+  // for Bosses.reds' tick, nothing else (bosses.md).
+  static void QueueBossAiEvent(Red::EntityID entity, Red::CName name) {
+    Combat::Get().QueueBossAiEvent({.entity = entity.hash, .name = name.hash});
+  }
+  static void QueueBossKill(Red::EntityID npc, Red::EntityID target, Red::Vector4 position) {
+    Combat::Get().QueueBossKill(
+        {.npc = npc.hash, .target = target.hash, .position = Vec(position)});
+  }
+  // The game thread: what was queued since the last ask.
+  static Red::DynArray<TandemBossAiEvent> TakeBossAiEvents() {
+    Red::DynArray<TandemBossAiEvent> out;
+    for (const auto &event : Combat::Get().TakeBossAiEvents())
+      out.PushBack({.entity = Red::EntityID(event.entity), .name = Red::CName(event.name)});
+    return out;
+  }
+  static Red::DynArray<TandemBossKill> TakeBossKills() {
+    Red::DynArray<TandemBossKill> out;
+    for (const auto &kill : Combat::Get().TakeBossKills())
+      out.PushBack({.npc = Red::EntityID(kill.npc),
+                    .target = Red::EntityID(kill.target),
+                    .x = kill.position.x,
+                    .y = kill.position.y,
+                    .z = kill.position.z});
+    return out;
+  }
+  // Owner: our NPC's scripted kill of `player`'s V (proto::ScriptedKill).
+  static void SendScriptedKill(std::uint32_t player, std::uint32_t npc, Red::Vector4 position) {
+    Combat::Get().Send(proto::ScriptedKill{
+        .player = static_cast<proto::PlayerId>(player), .npc = npc, .position = Vec(position)});
+  }
   // Guest: how long (seconds) a melee hit of the host's NPC `npc` waits
   // before our game runs it, so it lands when its proxy is drawn landing it.
   static float MeleeHold(std::uint32_t npc) {
@@ -438,6 +484,19 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemFightEvent, "TandemFightEvent", {
   RTTI_PROPERTY(target);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemBossAiEvent, "TandemBossAiEvent", {
+  RTTI_PROPERTY(entity);
+  RTTI_PROPERTY(name);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemBossKill, "TandemBossKill", {
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(target);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemFight, "TandemFight", {
   RTTI_METHOD(SendStrike);
   RTTI_METHOD(SendWound);
@@ -459,6 +518,11 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemFight, "TandemFight", {
   RTTI_METHOD(BossEffects);
   RTTI_METHOD(BossSpots);
   RTTI_METHOD(ForgetBoss);
+  RTTI_METHOD(QueueBossAiEvent);
+  RTTI_METHOD(QueueBossKill);
+  RTTI_METHOD(TakeBossAiEvents);
+  RTTI_METHOD(TakeBossKills);
+  RTTI_METHOD(SendScriptedKill);
   RTTI_METHOD(MeleeHold);
   RTTI_METHOD(StaleThrows);
   RTTI_METHOD(TakeEvents);

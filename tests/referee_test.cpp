@@ -1294,6 +1294,22 @@ TEST_CASE("referee: a boss's state is of an NPC we are shown, in range, its owne
   CHECK(Rules(guest) == std::vector<std::string>{"authority.not-owner"});
 }
 
+TEST_CASE("referee: a scripted kill is of our V, by an NPC we were told of, somewhere") {
+  auto guest = Guest();
+  guest.Received(1, proto::NpcSpawn{.npc = 7, .record = 1}, kSecond);
+  guest.Received(1, proto::ScriptedKill{.player = 2, .npc = 7, .position = {1.f, 2.f, 3.f}},
+                 kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1, proto::ScriptedKill{.player = 3, .npc = 7}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.misdelivered"});
+  guest.Received(1, proto::ScriptedKill{.player = 2, .npc = 8}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"ids.unknown-npc"});
+  guest.Received(1,
+                 proto::ScriptedKill{.player = 2, .npc = 7, .position = {std::nanf(""), 0.f, 0.f}},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.not-finite"});
+}
+
 TEST_CASE("referee: what a game runs without is its own word, passed on, never back") {
   auto guest = Guest();
   guest.Received(

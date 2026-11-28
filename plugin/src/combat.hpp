@@ -69,6 +69,24 @@ public:
   void NoteBoss(const proto::BossState &boss);
   proto::BossState BossOf(proto::NpcId npc);
   void ForgetBoss(proto::NpcId npc);
+  // Any thread (a boss's component's AI event handler, a behaviour task):
+  // what a boss's behaviour did that its proxies must do too, queued for
+  // Bosses.reds' tick. An AI event its components heard (entity, CName
+  // hash); a scripted kill of a target (the NPC's entity, the target's,
+  // where it sends it).
+  struct BossAiEvent {
+    std::uint64_t entity{};
+    std::uint64_t name{};
+  };
+  struct BossKill {
+    std::uint64_t npc{};
+    std::uint64_t target{};
+    proto::Vec3 position;
+  };
+  void QueueBossAiEvent(BossAiEvent event);
+  std::vector<BossAiEvent> TakeBossAiEvents();
+  void QueueBossKill(BossKill kill);
+  std::vector<BossKill> TakeBossKills();
   // Net thread, at a session's end: its vendors, lends, paints and rules are not
   // the next one's (an NPC id or a player number it reuses is someone
   // else, and its host says its own rules).
@@ -79,6 +97,8 @@ private:
   std::map<proto::PlayerId, Paint> m_paints;
   vendors::Book m_vendors;
   std::map<proto::NpcId, proto::BossState> m_bosses;
+  std::vector<BossAiEvent> m_bossAiEvents;
+  std::vector<BossKill> m_bossKills;
   struct Inbound {
     proto::Message message;
     std::uint64_t arrivalUs{};

@@ -2678,6 +2678,45 @@ TEST_CASE("a boss's state is its owner's word, once per change, kept for a late 
   CHECK_FALSE(host->BossStates().contains(7));
 }
 
+TEST_CASE("an NPC's scripted kill of a V goes to that V's game alone") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  host->SendNpcSpawn({.npc = 7, .record = 1});
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(guest, error);
+  std::vector<proto::ScriptedKill> heard;
+  bool sent = false, hostHeard = false;
+  const Seen watch = [&](std::size_t i, const auto &events) {
+    if (guest->IsJoined() && guest->You() != proto::kNoPlayer && !sent) {
+      sent = true;
+      // Our own V's is our game's; a guest speaks for no NPC of the host's.
+      CHECK_FALSE(host->SendCombat(proto::ScriptedKill{.player = host->You(), .npc = 7}));
+      CHECK_FALSE(guest->SendCombat(proto::ScriptedKill{.player = host->You(), .npc = 7}));
+      CHECK(host->SendCombat(
+          proto::ScriptedKill{.player = guest->You(), .npc = 7, .position = {1.f, 2.f, 3.f}}));
+    }
+    for (const auto &event : events)
+      if (const auto *combat = std::get_if<events::Combat>(&event))
+        if (const auto *kill = std::get_if<proto::ScriptedKill>(&combat->message)) {
+          if (i == 1)
+            heard.push_back(*kill);
+          else
+            hostHeard = true;
+        }
+  };
+  REQUIRE(Pump({host.get(), guest.get()}, [&](std::size_t i, const auto &events) {
+    watch(i, events);
+    return !heard.empty();
+  }));
+  PumpFor({host.get(), guest.get()}, 200ms, watch);
+  REQUIRE(heard.size() == 1);
+  CHECK(heard[0].position == proto::Vec3{1.f, 2.f, 3.f});
+  CHECK(heard[0].player == guest->You());
+  CHECK_FALSE(hostHeard);
+}
+
 TEST_CASE("an NPC's voice lines reach the linked games' proxies, one an NPC at a time") {
   const auto port = NextPort();
   std::string error;
