@@ -634,8 +634,9 @@ openworld.hpp`, `engine/mappins.cpp`, the freeze's activity class in
       done in its own save and open there, discovered (the host's game runs
       it); else its own. The phase is set the engine's way
       (`TandemStory.SetPoiPhase`, the game's own `PointOfInterestMappin`
-      setter by hash; the map and minimap draw it themselves) and read
-      back: one that does not take is the fallback `activity not marked`,
+      setter by hash: it writes the phase into its system's saved
+      point-of-interest state, untracks a pin set done, and the map and
+      minimap redraw it themselves, §13.162) and read back: one that does not take is the fallback `activity not marked`,
       the setter missing the state `activity marks` (`degradations.md`).
       The pins the guest set remember their own phase and are the only ones
       put back: when the host's state matches theirs again, when the guest
@@ -653,7 +654,10 @@ openworld.hpp`, `engine/mappins.cpp`, the freeze's activity class in
       host's activities is written into a guest's world.** The pins show
       the host's state for the session only, the guest's own activities
       are held, not finished, and every pin is put back before saving
-      unlocks; a crash leaves nothing (no save in a session). Its own copy
+      unlocks (the setter writes the saved state: the put-back is what
+      keeps it out of the save); a crash leaves nothing (no save in a
+      session). A pin the guest tracked is untracked when it shows done,
+      and not tracked again by the put-back. Its own copy
       of an activity done with the host stays playable at home and is
       credited, never paid twice.
     - Left as each game's: an activity community already active in the

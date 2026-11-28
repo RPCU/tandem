@@ -1312,7 +1312,8 @@ written yet):
   get the scene natively: worth a narrow version once tests 1 to 3 pass.
 
   camera stays, registered as what it is. [unverified]
-### 13.162 An NCPD activity's pin, by its journal path, and its phase set from outside (2026-11-28, read in final.reds (2.50), Codeware's source; not run)
+
+### 13.162 An NCPD activity's pin, by its journal path, and its phase set from outside (2026-11-28, read in final.reds (2.50), Codeware's source and the 2.50 exe decompiled; not run)
 
 For `docs/architecture/story.md`, "Open-world activities". F is
 `final.reds (2.50)`; CW is Codeware's `src/` (MIT).
@@ -1338,16 +1339,29 @@ For `docs/architecture/story.md`, "Open-world activities". F is
   (`CompletedPOIOpacity`). [2.5-verified offline]
 - **Setting it**: no script function does (`MappinSystem` has
   `SetMappinActive`, `ChangeMappinVariant`, no phase setter, F:44139).
-  The engine's own: `MappinSystem` vtable +0x1D0 `SetPoiMappinPhase(journal
-hash, phase)` (what Codeware's activity reset calls: it keeps the phase
-  in the system's saved state), and the instance's setter
-  `PointOfInterestMappin_SetPhase` (address-library hash 803085170, `bool
-(mappin, phase)`; CW `src/Red/MappinSystem.hpp`). tandem uses the
-  instance's (by hash, no vtable slot to check) and restores every pin it
-  set before a guest's saving unlocks, whether or not the instance's phase
-  reaches the save. [unverified: the call, its effect on the drawn pin,
-  and whether the system puts the instance back from its record on a
-  stream-in: `openworld-guest` reads the phase back]
+  The engine's own setter of a pin is `PointOfInterestMappin_SetPhase`
+  (address-library hash 803085170, at 0x142d3f2c8; Codeware's
+  `Raw::PointOfInterestMappin::SetPhase`), decompiled: `(mappin in rcx,
+phase in edx, all 32 bits)`. It looks the pin's journal hash (+0x8C) up
+  in its system's table of saved point-of-interest states (the pin's
+  `MappinSystem` at +0xE0; the table at system +0x110: keys at +0x118, a
+  count at +0x124, 6-byte records at +0x128 of phase u16, variant u16,
+  active bit; lookup 0x140d6cf2c, the same one
+  `GetPointOfInterestMappinSavedState`, 0x142d44f68, reads), and when the
+  record's phase differs writes the new one there, under the table's
+  lock: **the phase lives in the system's saved state, so it reaches the
+  save.** Set to `CompletedPhase`, a pin the player tracks is untracked
+  (system +0x1B8, 0x142d44a70). Then it tells its system the pin changed
+  (0x142d3efc4: system vtable +0x390, unless the pin's +0x94 is set), and
+  the map redraws it. A journal hash with no record is left alone (a
+  phase other than completed returns at once). `IMappin.GetPhase` is the
+  pin's vtable +0x190 (0x14104106c), which asks the object at +0xB0
+  (its slot +0x20); the setter's answer is that object's slot +0x30.
+  Codeware calls it `bool (mappin, phase)`. Its other path, the system's
+  vtable +0x1D0 `SetPoiMappinPhase(journal hash, phase)`, is what its
+  activity reset calls. [2.5-verified
+  offline: decompiled with tools/re] [unverified in game: the drawn pin,
+  and that GetPhase reads the record back; `openworld-guest` reads it]
 - **The activity's scene** is a child phase of
   `base\open_world\minor_activities\open_world_minor_activities.questphase`
   (CW `QuestPhaseRegistry.cpp:10`) with its communities, spawners, facts
