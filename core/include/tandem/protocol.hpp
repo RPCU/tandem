@@ -3418,9 +3418,9 @@ bool Fits(const TrafficLights &lights);
 // screen, a stall: a cry a second late is worth nothing). An owner sends
 // one line an NPC within kNpcVoiceGapUs and kNpcVoicesPerSecond in all (a
 // voice says one line at a time; a crowd's panic asks for dozens).
-// kVoiceTrigger (protocol 25): the line is a voice trigger the audio
+// kVoiceTrigger (protocol 30): the line is a voice trigger the audio
 // system picked for the NPC (combat and idle chatter, the engine's
-// entTriggerVOEvent, research §13.163): `context` is the trigger's base
+// entTriggerVOEvent, research §13.172): `context` is the trigger's base
 // name, `variation` and `variations` its variation and their number,
 // `voContext` the VO context it overrides with (locVoiceoverContext, 5 the
 // engine's default), and every proxy says that very variation. A context

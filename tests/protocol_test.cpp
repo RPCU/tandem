@@ -1582,7 +1582,7 @@ TEST_CASE("an NPC's voice line is a small reliable one-shot with a known context
   CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12, .context = 1, .delayMs = kNpcVoiceMaxDelayMs + 1}))
                   .has_value());
   CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12, .context = 1, .flags = 4})).has_value());
-  // A voice trigger (protocol 25): its base name, the variation the owner's
+  // A voice trigger (protocol 30): its base name, the variation the owner's
   // audio picked and their number; still small.
   const NpcVoice trigger{.npc = 12,
                          .context = 0x0fed'cba9'8765'4321ULL,
