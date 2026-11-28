@@ -3,12 +3,13 @@
 // A death is its owner's word, and every game ragdolls its own copy: the
 // same body came to rest another way on each screen, metres apart after a
 // blast, a fall or a car. The owner's body is the truth: once it has
-// settled (3 s after it fell and still for 1 s, or 8 s after), its owner reads its pose
-// with the scene actors' read (engine/posestream.cpp) and sends it with the
-// body's place and heading, once. Every game that shows it lays its copy
-// there and draws it in that pose (the scene actors' write, held), for as
-// long as the copy is there. A body whose pose cannot be read or drawn
-// keeps its own ragdoll's, registered (`corpse pose`).
+// settled (3 s after it fell and still for 1 s, or 8 s after), its owner
+// reads its ragdoll's bodies, as the game's cut multiplayer replicated a
+// ragdoll (research engine/presence.md §13.162), and sends them with the
+// body's place, once. Every game that shows it sets its copy's ragdoll's
+// bodies there, at rest, and lets it sleep: the copy lies as the owner's.
+// A body that cannot be read or laid keeps its own fall's, registered
+// (`corpse pose`).
 
 public class TandemCorpseWatch {
   public let npc: Uint32;
@@ -16,21 +17,16 @@ public class TandemCorpseWatch {
   public let since: Float;
   public let stillSince: Float;
   public let last: Vector4;
-  public let reading: Bool;
-  public let readAt: Float;
 }
 
 public class TandemCorpseShown {
   public let npc: Uint32;
-  public let id: EntityID;
-  public let x: Float;
-  public let y: Float;
-  public let z: Float;
-  public let yaw: Float;
   public let toldAt: Float;
-  public let bound: Bool;
-  // Let go to make room: back to its own ragdoll's pose for good.
-  public let dropped: Bool;
+  // The copy laid (0: none yet), when, and how many times.
+  public let id: EntityID;
+  public let laidAt: Float;
+  public let lays: Int32;
+  public let measured: Bool;
 }
 
 public class TandemCorpses {
@@ -38,35 +34,28 @@ public class TandemCorpses {
   private let m_watched: array<ref<TandemCorpseWatch>>;
   private let m_shown: array<ref<TandemCorpseShown>>;
   private let m_sent: Int32;
-  private let m_drawn: Int32;
-  private let m_placed: Int32;
+  private let m_laid: Int32;
+  private let m_worst: Float;
 
   public static func Of(game: GameInstance) -> ref<TandemCorpses> {
     let presence = TandemPresenceSync.Of(game);
     return IsDefined(presence) ? presence.Corpses() : null;
   }
 
-  // At most this many copies drawn in their owner's pose at once (the
-  // scene actors' bodies share the slots: 16).
-  public static func MaxDrawn() -> Int32 {
-    return 6;
+  // Bodies told and remembered at most (the oldest forgotten first): a copy
+  // streamed in again is laid again.
+  public static func MaxShown() -> Int32 {
+    return 64;
   }
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
   }
 
-  // The end of the session: every copy back to its own ragdoll's pose.
+  // The end of the session: every body forgotten (the copies go with it).
   public func End() -> Void {
     for shown in this.m_shown {
-      if shown.bound {
-        TandemPresence.BindCorpse(shown.npc, null);
-      }
-    }
-    for watch in this.m_watched {
-      if watch.reading {
-        TandemPresence.StopCorpseRead(watch.npc);
-      }
+      TandemPresence.ForgetCorpse(shown.npc);
     }
     ArrayClear(this.m_shown);
     ArrayClear(this.m_watched);
@@ -87,8 +76,6 @@ public class TandemCorpses {
     for watch in this.m_watched {
       if watch.npc != npc {
         ArrayPush(kept, watch);
-      } else if watch.reading {
-        TandemPresence.StopCorpseRead(npc);
       }
     }
     this.m_watched = kept;
@@ -114,11 +101,7 @@ public class TandemCorpses {
     let kept: array<ref<TandemCorpseWatch>>;
     for watch in this.m_watched {
       let body = GameInstance.FindEntityByID(this.m_game, watch.id) as ScriptedPuppet;
-      if !IsDefined(body) {
-        if watch.reading {
-          TandemPresence.StopCorpseRead(watch.npc);
-        }
-      } else if !watch.reading {
+      if IsDefined(body) {
         let at = body.GetWorldPosition();
         if Vector4.Distance(at, watch.last) > 0.02 {
           watch.last = at;
@@ -126,159 +109,128 @@ public class TandemCorpses {
         }
         // 3 s at least: the entity may stand still while its ragdoll falls.
         if (now - watch.since >= 3.0 && now - watch.stillSince >= 1.0) || now - watch.since >= 8.0 {
-          TandemPresence.ReadCorpse(watch.npc, body);
-          watch.reading = true;
-          watch.readAt = now;
-        }
-        ArrayPush(kept, watch);
-      } else if TandemPresence.SendCorpse(watch.npc, body.GetWorldPosition(), Deg2Rad(body.GetWorldYaw())) {
-        this.m_sent += 1;
-        let line = s"corpse: npc \(watch.npc) at rest after \(FloatToStringPrec(now - watch.since, 1)) s: its pose sent";
-        if this.m_sent == 1 {
-          TandemNative.Log(line + " (the first body)");
+          this.Send(watch, body, at, now);
         } else {
-          TandemNative.LogDebug(line);
+          ArrayPush(kept, watch);
         }
-      } else if now - watch.readAt > 2.0 {
-        TandemPresence.StopCorpseRead(watch.npc);
-        TandemDegraded.Fallback("corpse pose", s"npc \(watch.npc): its body's pose could not be read; the other games' copies lie as their own ragdolls left them");
-      } else {
-        ArrayPush(kept, watch);
       }
     }
     this.m_watched = kept;
   }
 
-  // ---- every other game: the bodies told, laid and drawn on our copies ----
+  private func Send(watch: ref<TandemCorpseWatch>, body: ref<ScriptedPuppet>, at: Vector4, now: Float) -> Void {
+    let why = TandemPresence.SendCorpse(watch.npc, body, at, Deg2Rad(body.GetWorldYaw()));
+    if NotEquals(why, "") {
+      TandemDegraded.Fallback("corpse pose", s"npc \(watch.npc): its body could not be read (\(why)); the other games' copies lie as their own falls left them");
+      return;
+    }
+    this.m_sent += 1;
+    let line = s"corpse: npc \(watch.npc) at rest after \(FloatToStringPrec(now - watch.since, 1)) s: its bodies sent";
+    if this.m_sent == 1 {
+      TandemNative.Log(line + " (the first body)");
+    } else {
+      TandemNative.LogDebug(line);
+    }
+  }
+
+  // ---- every other game: the bodies told, laid on our copies ----
 
   private func TickShown(now: Float, system: ref<TandemSystem>) -> Void {
     let told = TandemPresence.TakeCorpses();
     for corpse in told {
-      this.Told(corpse, now);
+      this.Told(corpse.npc, now);
     }
     if ArraySize(this.m_shown) == 0 {
       return;
     }
     let npcs = system.NpcsSync();
-    let player = GetPlayer(this.m_game);
-    let kept: array<ref<TandemCorpseShown>>;
+    if !IsDefined(npcs) {
+      return;
+    }
     for shown in this.m_shown {
-      let id = IsDefined(npcs) && !shown.dropped ? npcs.ProxyEntity(shown.npc) : EntityID.FromHash(0ul);
+      let id = npcs.ProxyEntity(shown.npc);
       let body = GameInstance.FindEntityByID(this.m_game, id) as ScriptedPuppet;
-      if shown.dropped {
-        // Let go for a nearer one: nothing more to do.
-      } else if shown.bound && (!IsDefined(body) || id != shown.id) {
-        // Its copy went (streamed out, a resync): nothing to draw any more.
-        TandemPresence.BindCorpse(shown.npc, null);
-      } else if shown.bound {
-        ArrayPush(kept, shown);
-      } else if IsDefined(body) {
-        if this.Lay(shown, body, id, player) {
-          ArrayPush(kept, shown);
-        }
-      } else if !shown.dropped && now - shown.toldAt < 5.0 {
-        // Told before its copy is here (its spawn, its death): waited for.
-        ArrayPush(kept, shown);
+      if IsDefined(body) {
+        this.Show(shown, body, id, now);
       }
     }
-    this.m_shown = kept;
   }
 
-  private func Told(corpse: TandemCorpse, now: Float) -> Void {
+  private func Told(npc: Uint32, now: Float) -> Void {
     for shown in this.m_shown {
-      if shown.npc == corpse.npc {
-        shown.x = corpse.x;
-        shown.y = corpse.y;
-        shown.z = corpse.z;
-        shown.yaw = corpse.yaw;
+      if shown.npc == npc {
+        // Told again: laid again.
         shown.toldAt = now;
+        shown.id = EntityID.FromHash(0ul);
         return;
       }
     }
+    if ArraySize(this.m_shown) >= TandemCorpses.MaxShown() {
+      TandemPresence.ForgetCorpse(this.m_shown[0].npc);
+      ArrayErase(this.m_shown, 0);
+    }
     let shown = new TandemCorpseShown();
-    shown.npc = corpse.npc;
-    shown.id = EntityID.FromHash(0ul);
-    shown.x = corpse.x;
-    shown.y = corpse.y;
-    shown.z = corpse.z;
-    shown.yaw = corpse.yaw;
+    shown.npc = npc;
     shown.toldAt = now;
+    shown.id = EntityID.FromHash(0ul);
     ArrayPush(this.m_shown, shown);
   }
 
-  // Our copy where the owner's body lies, in its pose. False: not drawn.
-  private func Lay(shown: ref<TandemCorpseShown>, body: ref<ScriptedPuppet>, id: EntityID, player: ref<PlayerPuppet>) -> Bool {
-    if !this.Room(player) {
-      TandemDegraded.Fallback("corpse pose", s"npc \(shown.npc): \(TandemCorpses.MaxDrawn()) bodies already drawn in their owners' poses near us; this copy lies as its own ragdoll left it");
-      return false;
+  // A copy laid when it comes (or comes again), laid once more 1 s after
+  // (its own fall may still have been moving it), then let sleep; 2 s
+  // after the first, how far it lies from its owner's is measured once.
+  private func Show(shown: ref<TandemCorpseShown>, body: ref<ScriptedPuppet>, id: EntityID, now: Float) -> Void {
+    if id != shown.id {
+      shown.id = id;
+      shown.lays = 0;
+      shown.measured = false;
+      if !this.Lay(shown, body, now) {
+        // Not laid: left as its own fall left it, for good.
+        shown.lays = 2;
+        shown.measured = true;
+      }
+      return;
     }
-    let at = new Vector4(shown.x, shown.y, shown.z, 1.0);
-    let apart = Vector4.Distance(body.GetWorldPosition(), at);
-    if apart > 0.15 {
-      GameInstance.GetTeleportationFacility(this.m_game).Teleport(body, at, TandemYawAngles(Rad2Deg(shown.yaw)));
-      this.m_placed += 1;
-    }
-    TandemPresence.BindCorpse(shown.npc, body);
-    // The ragdoll is the body's pose, not the animation's: neither a
-    // teleport nor our write at the commit moved or posed a ragdolled copy
-    // (2026-11-27). The game's own way for a body put down (DropEvents: a
-    // carried body dropped): the ragdoll takes the animated pose for its
-    // bodies (RagdollRequestCollectAnimPoseEvent), here the owner's pose as
-    // our write draws it, then sleeps in it (RagdollPutToSleepEvent): the
-    // copy lies as the owner's (research engine/presence.md §13.161).
-    let delays = GameInstance.GetDelaySystem(this.m_game);
-    delays.DelayEvent(body, new RagdollRequestCollectAnimPoseEvent(), 0.3, false);
-    delays.DelayEvent(body, new RagdollPutToSleepEvent(), 0.8, false);
-    shown.id = id;
-    shown.bound = true;
-    this.m_drawn += 1;
-    let line = s"corpse: proxy \(shown.npc) drawn in its owner's rest pose (\(FloatToStringPrec(apart, 2)) m from where its owner's lies\(apart > 0.15 ? ": laid there" : ""))";
-    if this.m_drawn == 1 {
-      TandemNative.Log(line + " (the first body)");
-    } else {
-      TandemNative.LogDebug(line);
-    }
-    return true;
-  }
-
-  // A slot for one more drawn copy: one under the cap, or the farthest one
-  // beyond 50 m let go (out of sight: back to its own ragdoll's pose).
-  private func Room(player: ref<PlayerPuppet>) -> Bool {
-    let drawn = 0;
-    let farthest: ref<TandemCorpseShown>;
-    let far = 50.0;
-    for shown in this.m_shown {
-      if shown.bound {
-        drawn += 1;
-        if IsDefined(player) {
-          let distance = Vector4.Distance(player.GetWorldPosition(), new Vector4(shown.x, shown.y, shown.z, 1.0));
-          if distance > far {
-            far = distance;
-            farthest = shown;
-          }
-        }
+    if shown.lays == 1 && now - shown.laidAt >= 1.0 {
+      this.Lay(shown, body, now);
+      body.QueueEvent(new RagdollPutToSleepEvent());
+    } else if !shown.measured && shown.lays >= 2 && now - shown.laidAt >= 1.0 {
+      shown.measured = true;
+      let apart = TandemPresence.CorpseApart(shown.npc, body);
+      if apart > this.m_worst {
+        this.m_worst = apart;
+      }
+      let line = s"corpse: proxy \(shown.npc) lies as its owner's: its bodies within \(FloatToStringPrec(apart, 2)) m of the owner's";
+      if this.m_laid == 1 {
+        TandemNative.Log(line + " (the first body)");
+      } else {
+        TandemNative.LogDebug(line);
       }
     }
-    if drawn < TandemCorpses.MaxDrawn() {
-      return true;
-    }
-    if !IsDefined(farthest) {
+  }
+
+  private func Lay(shown: ref<TandemCorpseShown>, body: ref<ScriptedPuppet>, now: Float) -> Bool {
+    let why = TandemPresence.LayCorpse(shown.npc, body);
+    if NotEquals(why, "") {
+      TandemDegraded.Fallback("corpse pose", s"npc \(shown.npc): its copy could not be laid as its owner's body (\(why)); it lies as its own fall left it");
       return false;
     }
-    TandemPresence.BindCorpse(farthest.npc, null);
-    farthest.bound = false;
-    farthest.dropped = true;
+    if shown.lays == 0 {
+      this.m_laid += 1;
+      let line = s"corpse: proxy \(shown.npc) laid as its owner's body (its ragdoll's bodies set, at rest)";
+      if this.m_laid == 1 {
+        TandemNative.Log(line + " (the first body)");
+      } else {
+        TandemNative.LogDebug(line);
+      }
+    }
+    shown.lays += 1;
+    shown.laidAt = now;
     return true;
   }
 
   public func Report() -> Void {
-    let bound = 0;
-    for shown in this.m_shown {
-      if shown.bound {
-        bound += 1;
-      }
-    }
-    TandemNative.Log(s"corpse: sent \(this.m_sent) (our NPCs' bodies), drawn \(this.m_drawn) (copies; \(this.m_placed) laid where their owner's lie), \(bound) drawn now, \(ArraySize(this.m_watched)) settling");
+    TandemNative.Log(s"corpse: sent \(this.m_sent) (our NPCs' bodies), laid \(this.m_laid) (copies; the worst \(FloatToStringPrec(this.m_worst, 2)) m from its owner's), \(ArraySize(this.m_shown)) told, \(ArraySize(this.m_watched)) settling");
   }
 
   private func Now() -> Float {

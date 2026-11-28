@@ -1522,22 +1522,31 @@ TEST_CASE("presence, cues and NPC reactions round-trip, on the right channels, a
   CHECK(std::string_view(NameOf(NpcReaction{})) == "NpcReaction");
 }
 
-TEST_CASE("a body's rest is the corpse owner's reliable word, its pose as a scene actor's") {
-  CorpsePose rest{
-      .pose = {.npc = 7, .hips = {1, -2, 30}}, .position = {4.f, 5.f, 6.f}, .yaw = 1.5f};
-  rest.pose.rotations[0] = 9;
-  rest.pose.rotations[rest.pose.rotations.size() - 1] = 200;
+TEST_CASE("a body's rest is the corpse owner's reliable word, its ragdoll's bodies") {
+  CorpsePose rest{.npc = 7, .position = {4.f, 5.f, 6.f}, .yaw = 1.5f};
+  for (std::int16_t i = 0; i < 20; ++i)
+    rest.bodies.push_back({.offset = {i, std::int16_t(-i), 30}, .rotation = {0, 0, i, 32767}});
   RoundTrips(rest);
   CHECK(ChannelOf(rest) == Channel::Event);
   CHECK(IsCombat(rest));
   CHECK_FALSE(tandem::consistency::IsOneShot(rest));
-  CHECK(Encode(rest).size() < 460);
+  // A humanoid's ragdoll (20 bodies or so) in one datagram, as small as a wound list.
+  CHECK(Encode(rest).size() < 320);
+  rest.bodies.resize(kMaxRagdollBodies);
+  RoundTrips(rest);
+  CHECK(Encode(rest).size() < 500);
   CHECK(std::string_view(NameOf(rest)) == "CorpsePose");
-  // No NPC, a place or heading that is not a number: refused.
+  // No NPC, a place or heading that is not a number, no bodies, too many: refused.
   CHECK_FALSE(Decode(Encode(CorpsePose{})).has_value());
   auto lost = rest;
   lost.yaw = std::numeric_limits<float>::quiet_NaN();
   CHECK_FALSE(Decode(Encode(lost)).has_value());
+  auto empty = rest;
+  empty.bodies.clear();
+  CHECK_FALSE(Decode(Encode(empty)).has_value());
+  auto many = rest;
+  many.bodies.resize(kMaxRagdollBodies + 1);
+  CHECK_FALSE(Decode(Encode(many)).has_value());
 }
 
 TEST_CASE("an NPC's voice line is a small reliable one-shot with a known context") {

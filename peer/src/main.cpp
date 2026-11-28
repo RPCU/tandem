@@ -184,6 +184,13 @@ using tandem::proto::Vec3;
 
 volatile std::sig_atomic_t g_stop = 0;
 
+// --corpse-npcs: a body's rest as a real ragdoll's bodies lie (a ganger's,
+// read on instance a 2026-11-28: offsets from the entity in cm, quaternions
+// × 32767), so that a game's copy of the same rig takes it.
+std::vector<tandem::proto::RagdollBody> RestingBodies() {
+  return {{.offset = {0, 0, 10}, .rotation = {0, 0, 0, 32767}}};
+}
+
 enum class Mode { Mirror, Ghost, Front, Drive, Course, Path, Metro, Watch, Region, Idle };
 
 struct Options {
@@ -3869,8 +3876,8 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
   if (const auto *p = std::get_if<proto::NpcPoise>(&message))
     return std::format("npc {} poise {:.0f}%", p->npc, p->poise * 100.f);
   if (const auto *rest = std::get_if<proto::CorpsePose>(&message))
-    return std::format("npc {}'s body at rest at ({:.1f}, {:.1f}, {:.1f})", rest->pose.npc,
-                       rest->position.x, rest->position.y, rest->position.z);
+    return std::format("npc {}'s body at rest at ({:.1f}, {:.1f}, {:.1f}), {} bodies", rest->npc,
+                       rest->position.x, rest->position.y, rest->position.z, rest->bodies.size());
   if (const auto *d = std::get_if<proto::Difficulty>(&message))
     return std::format("the session plays at difficulty {}", d->level);
   if (const auto *a = std::get_if<proto::AreaHit>(&message))
@@ -7993,15 +8000,13 @@ int main(int argc, char **argv) {
       endpoint->SendNpcGone(
           {.npc = npc, .reason = tandem::proto::kGoneDead, .killer = endpoint->You()});
       Log("npc {} died (--corpse-npcs)", npc);
-      corpsesDue.push_back(
-          {{.pose = tandem::pose::ForActor(npc, tandem::pose::Pack(tandem::pose::Pose{})),
-            .position = spawn.position},
-           now + std::chrono::seconds(1)});
+      corpsesDue.push_back({{.npc = npc, .position = spawn.position, .bodies = RestingBodies()},
+                            now + std::chrono::seconds(1)});
     }
     for (auto it = corpsesDue.begin(); it != corpsesDue.end();)
       if (now >= it->second) {
         if (endpoint->SendCombat(it->first))
-          Log("npc {} at rest: its pose sent", it->first.pose.npc);
+          Log("npc {} at rest: its pose sent", it->first.npc);
         it = corpsesDue.erase(it);
       } else {
         ++it;

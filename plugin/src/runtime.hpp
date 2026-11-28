@@ -373,15 +373,12 @@ public:
   bool ActorPoseOf(proto::NpcId npc, pose::Pose &out);
   void ForgetActorPoses();
   std::uint32_t ActorPosesReceived();
-  // Bodies at rest (proto::CorpsePose; regions.md, "Corpses"). Owner: the
-  // next pose read of `npc` (the actor read, engine/posestream.cpp) is its
-  // corpse's, kept apart from the scene's stream, taken once. Every other
-  // game: the owner's pose of each corpse it shows, drawn on its copy for as
-  // long as it is bound (ActorPoseOf, when no scene streams that NPC).
-  void ReadCorpse(proto::NpcId npc);
-  std::optional<proto::PoseState> TakeCorpseRead(proto::NpcId npc);
+  // Bodies at rest (proto::CorpsePose; regions.md, "Corpses"), told by
+  // their owners: the newest of each NPC kept until forgotten (Corpses.reds
+  // lays its copy with it), and those told since the last take.
   void PushCorpsePose(const proto::CorpsePose &corpse);
   std::vector<proto::CorpsePose> TakeCorpseArrivals();
+  std::optional<proto::CorpsePose> CorpseOf(proto::NpcId npc);
   void ForgetCorpse(proto::NpcId npc);
   // Scene replay, other rigs (a face, a body that is not the humanoid one;
   // engine/posestream.cpp). Host: animation job threads submit a rig's pose
@@ -952,17 +949,15 @@ private:
   std::uint32_t m_loopSeq{};
   mutable std::mutex m_posesLock;
   std::map<proto::PlayerId, pose::PoseTrack> m_poses;
-  std::map<proto::NpcId, pose::PoseTrack> m_actorPoses;  // m_posesLock
-  std::map<proto::NpcId, proto::PoseState> m_actorOut;   // m_posesLock
-  std::set<proto::NpcId> m_corpseReads;                  // m_posesLock
-  std::map<proto::NpcId, proto::PoseState> m_corpseRead; // m_posesLock
-  std::map<proto::NpcId, pose::Pose> m_corpsePoses;      // m_posesLock
-  std::vector<proto::CorpsePose> m_corpseArrivals;       // m_posesLock
-  std::uint32_t m_actorPosesIn{};                        // m_posesLock
-  std::map<std::uint64_t, RigSample> m_rigOut;           // m_posesLock, by npc and part
-  std::map<std::uint64_t, rig::Track> m_rigTracks;       // m_posesLock
-  std::uint32_t m_rigPosesIn{};                          // m_posesLock
-  std::map<std::uint64_t, rig::TrackSet> m_trackSets;    // m_posesLock
+  std::map<proto::NpcId, pose::PoseTrack> m_actorPoses; // m_posesLock
+  std::map<proto::NpcId, proto::PoseState> m_actorOut;  // m_posesLock
+  std::map<proto::NpcId, proto::CorpsePose> m_corpses;  // m_posesLock
+  std::vector<proto::CorpsePose> m_corpseArrivals;      // m_posesLock
+  std::uint32_t m_actorPosesIn{};                       // m_posesLock
+  std::map<std::uint64_t, RigSample> m_rigOut;          // m_posesLock, by npc and part
+  std::map<std::uint64_t, rig::Track> m_rigTracks;      // m_posesLock
+  std::uint32_t m_rigPosesIn{};                         // m_posesLock
+  std::map<std::uint64_t, rig::TrackSet> m_trackSets;   // m_posesLock
 
   mutable std::mutex m_reachLock;
   lagcomp::Book m_reach; // m_reachLock: guests' Vs by player id, our NPCs by kNpcPuppetBase + id

@@ -62,9 +62,9 @@ bool Fits(const Degraded &degraded) {
 }
 
 bool Fits(const CorpsePose &corpse) {
-  return corpse.pose.npc != 0 && std::isfinite(corpse.position.x) &&
-         std::isfinite(corpse.position.y) && std::isfinite(corpse.position.z) &&
-         std::isfinite(corpse.yaw);
+  return corpse.npc != 0 && std::isfinite(corpse.position.x) && std::isfinite(corpse.position.y) &&
+         std::isfinite(corpse.position.z) && std::isfinite(corpse.yaw) && !corpse.bodies.empty() &&
+         corpse.bodies.size() <= kMaxRagdollBodies;
 }
 
 bool Fits(const NpcVoice &voice) {

@@ -491,9 +491,7 @@ void Runtime::Stop() {
   m_poses.clear();
   m_actorPoses.clear();
   m_actorOut.clear();
-  m_corpseReads.clear();
-  m_corpseRead.clear();
-  m_corpsePoses.clear();
+  m_corpses.clear();
   m_corpseArrivals.clear();
 }
 
@@ -2122,37 +2120,12 @@ bool Runtime::PoseOf(proto::PlayerId player, pose::Pose &out) {
 
 void Runtime::SubmitActorPose(proto::NpcId npc, const proto::PoseState &pose) {
   std::lock_guard _(m_posesLock);
-  // A corpse's rest, asked for once: not the scene's stream.
-  if (m_corpseReads.erase(npc)) {
-    m_corpseRead[npc] = pose;
-    return;
-  }
   m_actorOut[npc] = pose;
-}
-
-void Runtime::ReadCorpse(proto::NpcId npc) {
-  std::lock_guard _(m_posesLock);
-  m_corpseReads.insert(npc);
-  m_corpseRead.erase(npc);
-}
-
-std::optional<proto::PoseState> Runtime::TakeCorpseRead(proto::NpcId npc) {
-  std::lock_guard _(m_posesLock);
-  const auto it = m_corpseRead.find(npc);
-  if (it == m_corpseRead.end())
-    return std::nullopt;
-  auto pose = it->second;
-  m_corpseRead.erase(it);
-  return pose;
 }
 
 void Runtime::PushCorpsePose(const proto::CorpsePose &corpse) {
   std::lock_guard _(m_posesLock);
-  // A malformed pose is not drawn: the copy keeps its own ragdoll's.
-  const auto unpacked = pose::Unpack(pose::FromActor(corpse.pose));
-  if (!unpacked)
-    return;
-  m_corpsePoses[corpse.pose.npc] = *unpacked;
+  m_corpses[corpse.npc] = corpse;
   if (m_corpseArrivals.size() < 64)
     m_corpseArrivals.push_back(corpse);
 }
@@ -2162,11 +2135,17 @@ std::vector<proto::CorpsePose> Runtime::TakeCorpseArrivals() {
   return std::exchange(m_corpseArrivals, {});
 }
 
+std::optional<proto::CorpsePose> Runtime::CorpseOf(proto::NpcId npc) {
+  std::lock_guard _(m_posesLock);
+  const auto it = m_corpses.find(npc);
+  if (it == m_corpses.end())
+    return std::nullopt;
+  return it->second;
+}
+
 void Runtime::ForgetCorpse(proto::NpcId npc) {
   std::lock_guard _(m_posesLock);
-  m_corpsePoses.erase(npc);
-  m_corpseReads.erase(npc);
-  m_corpseRead.erase(npc);
+  m_corpses.erase(npc);
 }
 
 std::vector<proto::ActorPose> Runtime::TakeActorPoses() {
@@ -2197,16 +2176,8 @@ bool Runtime::ActorPoseOf(proto::NpcId npc, pose::Pose &out) {
   const auto now = HostNowUs();
   std::lock_guard _(m_posesLock);
   const auto it = m_actorPoses.find(npc);
-  // No scene streams it: a corpse's rest, held (CorpsePose).
-  const auto rest = [&] {
-    const auto corpse = m_corpsePoses.find(npc);
-    if (corpse == m_corpsePoses.end())
-      return false;
-    out = corpse->second;
-    return true;
-  };
   if (it == m_actorPoses.end())
-    return rest();
+    return false;
   // Its poses come as often as the scene's budget lets its stream go
   // (scene::Pacer): drawn one of their intervals in the past, so that there
   // are two to draw between.
@@ -2216,7 +2187,7 @@ bool Runtime::ActorPoseOf(proto::NpcId npc, pose::Pose &out) {
   // The stream stopped (the scene is over, the host is gone): the proxy is
   // not left frozen in its last pose.
   if (now > it->second.NewestUs() + delayUs + std::max(kActorPoseStaleUs, 3 * interval))
-    return rest();
+    return false;
   return it->second.At(now > delayUs ? now - delayUs : 0, out);
 }
 

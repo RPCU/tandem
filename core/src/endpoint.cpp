@@ -1570,7 +1570,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
     }
     // A body's rest: another owner's, never our own back.
     if (const auto *corpse = std::get_if<proto::CorpsePose>(&message)) {
-      if (!SpeaksFor(corpse->pose.npc))
+      if (!SpeaksFor(corpse->npc))
         out.push_back(events::Combat{message});
       return;
     }
@@ -4251,7 +4251,7 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     // An owner's word on its NPC (wounds, poise, its body's rest): for who
     // sees it.
     const auto *wound = std::get_if<proto::NpcWound>(&message);
-    const auto npc = wound ? wound->npc : std::get_if<proto::CorpsePose>(&message)->pose.npc;
+    const auto npc = wound ? wound->npc : std::get_if<proto::CorpsePose>(&message)->npc;
     const auto corpse = m_corpseOwner.find(npc);
     if (NpcOwner(npc) != player && !(corpse != m_corpseOwner.end() && corpse->second == player))
       return;
@@ -4687,7 +4687,7 @@ bool Endpoint::SendCombat(proto::Message message) {
   }
   // ...and where its body came to rest.
   if (const auto *corpse = std::get_if<proto::CorpsePose>(&message)) {
-    if (!proto::Fits(*corpse) || !SpeaksFor(corpse->pose.npc))
+    if (!proto::Fits(*corpse) || !SpeaksFor(corpse->npc))
       return false;
     SayNpc(message);
     return true;

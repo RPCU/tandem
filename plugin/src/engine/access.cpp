@@ -15,6 +15,7 @@
 #include "posestream.hpp"
 #include "prefabs.hpp"
 #include "quests.hpp"
+#include "ragdoll.hpp"
 #include "slots.hpp"
 #include "vehiclemove.hpp"
 #include "workspots.hpp"
@@ -240,6 +241,7 @@ void CheckAccess() {
   CheckDisposeGate();
   CheckBodySlots();
   CheckCrowdSpawners();
+  CheckRagdoll();
   g_checked = true;
   const auto summary = AccessSummary();
   if (FeaturesOff().empty())

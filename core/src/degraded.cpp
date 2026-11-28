@@ -40,6 +40,9 @@ constexpr Info kCatalogue[] = {
     {"crowd spawners", Degraded, State,
      "where another game runs the street, our own traffic and parked cars still spawn there "
      "and are removed out of sight"},
+    {"ragdoll state", Degraded, State,
+     "bodies are neither read nor laid as their owner's lie: each copy lies as its own fall left "
+     "it"},
     // ---- states the plugin and the scripts find ----
     {"drawn prompts", Degraded, State,
      "prompts on players and vendors are drawn by tandem, not the game's interactions"},

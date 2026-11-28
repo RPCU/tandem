@@ -2601,9 +2601,11 @@ TEST_CASE("a body's rest is said by its corpse's owner alone, for the games that
       sent = true;
       host->SendNpcGone({.npc = 7, .reason = proto::kGoneDead});
       // The guest speaks for no body of the host's; ours: said.
-      CHECK_FALSE(guest->SendCombat(proto::CorpsePose{.pose = {.npc = 7}, .position = {9, 9, 9}}));
-      CHECK(host->SendCombat(
-          proto::CorpsePose{.pose = {.npc = 7, .hips = {0, 0, 90}}, .position = {1, 2, 3}}));
+      const std::vector<proto::RagdollBody> bodies{
+          {.offset = {0, 0, 90}, .rotation = {0, 0, 0, 32767}}};
+      CHECK_FALSE(
+          guest->SendCombat(proto::CorpsePose{.npc = 7, .position = {9, 9, 9}, .bodies = bodies}));
+      CHECK(host->SendCombat(proto::CorpsePose{.npc = 7, .position = {1, 2, 3}, .bodies = bodies}));
     }
     for (const auto &event : events)
       if (const auto *combat = std::get_if<events::Combat>(&event))
@@ -2621,7 +2623,7 @@ TEST_CASE("a body's rest is said by its corpse's owner alone, for the games that
   PumpFor({host.get(), guest.get()}, 200ms, watch);
   REQUIRE(heard.size() == 1);
   CHECK(heard[0].position == proto::Vec3{1, 2, 3});
-  CHECK(heard[0].pose.hips[2] == 90);
+  CHECK(heard[0].bodies.at(0).offset[2] == 90);
   CHECK_FALSE(hostHeard);
 }
 
