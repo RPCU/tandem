@@ -952,8 +952,8 @@ public class TandemComms {
 
   // Our call to `player` was not taken there, and why (proto::kLinkDecline*:
   // 1 another call took theirs, 2 declined, 3 busy, 4 no answer): the
-  // phone's call view says it, then the call ends. Our consent stands, as
-  // for a request left unanswered: they can call us back.
+  // phone's call view says it, then the call ends, our request with it
+  // (but for 1: they can call us back).
   private func LinkDeclined(player: Uint32, reason: Int32) -> Void {
     let name = this.NameOf(player);
     let key = "Phone-Busy";
@@ -965,6 +965,11 @@ public class TandemComms {
     TandemNative.Log(s"comms: \(name) did not take our call (reason \(reason))");
     this.m_holocall.Refused(player, TandemText.F(key, name), this.m_now);
     this.Notice(key, name);
+    // The call is over, as a phone call nobody took: our request goes with
+    // it (calling again places a new call, it does not cancel this one).
+    if reason != 1 {
+      TandemCommsNative.SetLink(player, false);
+    }
   }
 
   // Why we cannot take a call now ("" when we can): a call of the game's,
