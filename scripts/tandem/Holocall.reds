@@ -100,7 +100,8 @@ public class TandemHolocall {
 
   // The call is over: the link broke, or ours was cancelled.
   public func Ended(player: Uint32, now: Float) -> Void {
-    if this.m_player != player || this.m_mode == 0 {
+    // (A refused call's view says why first, then ends by itself.)
+    if this.m_player != player || this.m_mode == 0 || this.m_mode == 4 {
       return;
     }
     if this.m_mode != 1 {
