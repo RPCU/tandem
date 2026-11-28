@@ -585,6 +585,9 @@ struct Options {
   int reactNpcsSeconds{0};
   int voiceNpcsSeconds{0};
   int corpseNpcsSeconds{0};
+  // --voice-trigger: with --voice-npcs, half a period after each line that
+  // NPC says this voice trigger too (variation 1, 2, 3 of 3: kVoiceTrigger).
+  std::string voiceTrigger;
   std::string holdRecord;     // what our V holds in its right hand ("": nothing said)
   std::string holdLeftRecord; // ...and in its left (--hold-left: dual wielding)
   int holsterAtSeconds{-1};   // put it away N s in, for 5 s (-1: never)
@@ -829,6 +832,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     line (a callout, a pain cry, a fear bark, a death cry: NpcVoice)\n"
          "  --corpse-npcs N    host: every N seconds one of the NPCs it sends dies, and 1 s\n"
          "                     later its body's rest is said where it stood (CorpsePose)\n"
+         "  --voice-trigger NAME  with --voice-npcs: half a period after each line, that\n"
+         "                     NPC says the voice trigger NAME (variation 1-3 of 3, NpcVoice)\n"
          "  --hack-npcs N      join: upload a quickhack on one of the host's NPCs every N\n"
          "                     seconds (1.5 s upload), then land its effect\n"
          "  --hack-action REC  --hack-npcs: the quickhack (default QuickHack.BlindHack)\n"
@@ -1825,6 +1830,8 @@ Options Parse(int argc, char **argv) {
       options.voiceNpcsSeconds = std::max(1, Number<int>(value));
     else if (flag == "--corpse-npcs")
       options.corpseNpcsSeconds = std::max(2, Number<int>(value));
+    else if (flag == "--voice-trigger")
+      options.voiceTrigger = value;
     else if (flag == "--hold")
       options.holdRecord = value;
     else if (flag == "--hold-left")
@@ -4655,6 +4662,9 @@ int main(int argc, char **argv) {
   // --corpse-npcs: the bodies whose rest is due, and when.
   std::vector<std::pair<tandem::proto::CorpsePose, std::chrono::steady_clock::time_point>>
       corpsesDue;
+  std::optional<std::chrono::steady_clock::time_point> nextTrigger;
+  tandem::proto::NpcId triggerNpc{};
+  std::uint16_t triggerStep = 0;
   // --charge: when the current charge began, the step last said and when.
   auto nextCharge = nextShot, chargeSaid = nextShot;
   std::optional<std::chrono::steady_clock::time_point> chargeFrom;
@@ -5257,8 +5267,12 @@ int main(int argc, char **argv) {
                     e.reaction.npc, e.reaction.type, e.reaction.direction, e.reaction.intensity,
                     e.reaction.bodyPart, e.reaction.by);
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcVoice>) {
-              Log("npc {} says voice context {:#x} (after {} ms)", e.voice.npc, e.voice.context,
-                  e.voice.delayMs);
+              if (e.voice.flags & tandem::proto::kVoiceTrigger)
+                Log("npc {} says trigger {:#x} variation {} of {} (VO context {})", e.voice.npc,
+                    e.voice.context, e.voice.variation, e.voice.variations, e.voice.voContext);
+              else
+                Log("npc {} says voice context {:#x} (after {} ms)", e.voice.npc, e.voice.context,
+                    e.voice.delayMs);
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteStealth>) {
               Log("player {} stealth: flags {:#x}, visibility {:.2f}, camo {:#x}", e.stealth.player,
                   e.stealth.flags, e.stealth.visibility, e.stealth.camo);
@@ -8463,6 +8477,23 @@ int main(int argc, char **argv) {
       const auto npc = endpoint->SharedNpcs().begin()->first;
       endpoint->SendNpcVoice({.npc = npc, .context = tandem::mods::NameHash(line)});
       Log("npc {} says {}", npc, line);
+      if (!options.voiceTrigger.empty()) {
+        nextTrigger = now + std::chrono::milliseconds(options.voiceNpcsSeconds * 500);
+        triggerNpc = npc;
+      }
+    }
+    // --voice-trigger: the same NPC's voice trigger, half a period later
+    // (past the owner's one line an NPC in kNpcVoiceGapUs).
+    if (nextTrigger && now >= *nextTrigger) {
+      nextTrigger.reset();
+      const auto variation = static_cast<std::uint16_t>(triggerStep++ % 3 + 1);
+      endpoint->SendNpcVoice({.npc = triggerNpc,
+                              .context = tandem::mods::NameHash(options.voiceTrigger),
+                              .flags = tandem::proto::kVoiceTrigger,
+                              .variation = variation,
+                              .variations = 3,
+                              .voContext = tandem::proto::kVoContextDefault});
+      Log("npc {} says trigger {} variation {} of 3", triggerNpc, options.voiceTrigger, variation);
     }
     // --corpse-npcs: one of the NPCs we share dies; its body's rest (a
     // neutral pose where it stood) 1 s later, as a game's settled body.
