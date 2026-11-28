@@ -62,17 +62,37 @@ centred on its remote view at X Y Z`.
   becomes its own (no teleport, no traffic drive on), and says it driven
   (a remote-controlled car with no driver is not parked: its states
   stream). Every other game's copy follows it. Out of the car, it is a
-  car like any other.
+  car like any other. A world car not shared yet is announced wherever it
+  drives (as a racer's: `Traffic.reds` `Share`), never held back or
+  removed for standing in another game's area.
+- **A car of our own driven remotely** (our garage's, one our V took;
+  protocol 28): our car to the others, with no seat of ours in it. Our
+  `Seat` names it with the slot `tandemRemote` (`System.reds` `SendSeat`)
+  and its `VehicleState` streams as when we drive it (`SampleLocal`); every
+  other game takes the copy of it we left parked there (`UnparkCopyOf`,
+  30 m) or spawns one, moves it by our states and leaves our puppet on
+  foot (`Reseat`). Out of it, the copy is parked where it stopped. A
+  partner that sits in a vehicle and one that drives its car remotely are
+  told apart where it matters (`TandemRemoteView.Seated`: revive's spots
+  and seats, a lent car's "owner aboard", the watch camera's "the host
+  rides").
 - **Refused** (the takeover's hook, `Hacks.reds`): a car another V drives
   at its wheel, one another V drives remotely, a partner's own car
   (`TandemRemoteView.TakenBy`). The takeover does nothing and our V reads
   "NAME is driving this car" (`Remote-CarBusy`) or "NAME's car: only they
   can take control of it" (`Remote-CarTheirs`).
-- **A held camera or turret** ([`devices.md`](devices.md), "A turret in a
-  player's hands"): where it points travels (`TurretHands`), every copy
-  turns there; one player's hands at a time (first come, the host's), the
-  second let go with "NAME is looking through this camera"
-  (`Turrets-BusyCamera`) or the turret's words.
+- **A held sensor device: a camera, a turret, a sniper nest**
+  ([`devices.md`](devices.md), "A turret in a player's hands"): where it
+  points travels (`TurretHands`), every copy turns there, and a turret's or
+  a sniper nest's fire is drawn from the copy's own weapon; one player's
+  hands at a time (first come, the host's), the second let go with "NAME is
+  looking through this camera" (`Turrets-BusyCamera`) or the turret's
+  words. A placed device goes by its static id. A spawned one (a dynamic
+  id, no id every game knows: protocol 28's `kHandsByPlace`) goes by its
+  place: `devices::PlaceKey`, 21 bits a coordinate in quarter metres, and
+  each game takes its own spawned sensor device within 1.5 m of it
+  (`TandemDevices.SpawnedSensorNear`); a game that has none there has
+  nothing to turn.
 - **The partner's HUD** ([`presence.md`](presence.md)): its party entry
   says "In a camera", "At a turret", "Driving remotely" or "Remote control"
   (`presence::Status::Remote`, after down, out, elsewhere, a scene and a
@@ -85,12 +105,10 @@ centred on its remote view at X Y Z`.
 
 ## Registered when lesser ([`degradations.md`](degradations.md))
 
-- `remote car unseen`: our V drives a player's car remotely (its garage's,
-  one it took): never a shared world vehicle, the others see it where it
-  was left.
-- `held device unshared`: a camera or a turret with a dynamic id, or
-  another device (a sniper nest): its copies do not turn with our V's
-  hands.
+- `held device unshared`: a device the takeover holds that is no sensor
+  device (a quest's own device): it has no aim to share.
+- Retired with protocol 28: `remote car unseen` (a car of our own driven
+  remotely, seen where it was left): it is streamed now (above).
 
 ## Tests
 
@@ -100,14 +118,16 @@ centred on its remote view at X Y Z`.
   game's and stays so), `tests/presence_test.cpp` (the status),
   `tests/protocol_test.cpp`, `tests/referee_test.cpp` (`value.range`:
   a remote view as its game leaves it).
+- Core: `tests/devices_test.cpp` (a held device no id names, by its place).
 - The mock player: `--activity remote` (a camera's view 20 m off its V).
 - In game: `tools/game.sh cmd remote` (ours and the others'), `remote
-camera`, `remote turret`, `remote car`, `remote push SPEED`, `remote
+camera`, `remote turret`, `remote car`, `remote own` (our summoned car), `remote push SPEED`, `remote
 off`; queries `remote [player N]`, `traffic ID position`.
 - Scenarios on two games (`TANDEM_PARTNER`), in this order:
   `pair-remote-camera` (a camera's takeover while scanning),
-  `pair-remote-car` (a car driven remotely), `pair-remote-turret` (a
-  turret's takeover).
+  `pair-remote-car` (a car driven remotely), `pair-remote-own-car` (a car
+  of the partner's own driven remotely), `pair-remote-turret` (a turret's
+  takeover), `pair-remote-nest` (a sniper nest's).
 
 ## Open
 
@@ -116,5 +136,10 @@ maxRange`), whether `focusMode` slows time through a camera, the
   partner's copy of a held camera turning (`CreateLookAt` on a
   `SurveillanceCamera`), V's pose stream while its third-person body
   shows.
-- A player's car driven remotely is not seen moving (registered above):
-  its copies follow its driver's `Seat`, and no V sits in it.
+- A spawned sensor device held is turned on another game only when that
+  game spawned one at the same place: vanilla 2.50 spawns no takeover
+  device that we know of (every camera, turret and sniper nest found is a
+  placed one, `Devices.reds` follows only those), so the path is tested in
+  core only. In game: no scenario until a spawner is found.
+- No fixture is known for a sniper nest (Dogtown) or a sentry yet
+  (`NEST_AT`, `TURRET_AT`).

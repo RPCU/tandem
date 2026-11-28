@@ -443,8 +443,9 @@ shows its aim and shots on the others' copies; damage as today." Built
   sensor device's look-at), one player's hands at a time; the second is
   let go with "NAME is looking through this camera" (`Turrets-BusyCamera`).
   Its `friendly` bit travels as before (the others' copies see no V while
-  it is held: "A camera or turret turned"). One with a dynamic id, or a
-  sniper nest, turns only for its holder (`held device unshared`).
+  it is held: "A camera or turret turned"). A sniper nest is held the same
+  way, its fire drawn from its copy's weapon; a spawned sensor device by
+  its place (`kHandsByPlace`, remote-views.md).
 - Tests: `tests/devices_test.cpp` ("a turret in a player's hands", "a
   turret's holds", "… is that player's alone"), `tests/protocol_test.cpp`,
   `tests/referee_test.cpp`; the mock player's
