@@ -183,7 +183,12 @@ public class TandemDevices extends ScriptableSystem {
     if ps.WasQuickHacked() {
       flags += TandemDevices.BitHacked();
     }
-    if ps.IsQuickHacksExposed() {
+    // The device's own exposure (a breach), not the world's default: with
+    // the ping preset's QuickHacksExposedByDefault every device reads
+    // exposed and no revoke clears it (final.reds (2.50):28234, :132306),
+    // so a host's word without the bit never matched (devices-barrel-record:
+    // "will not become what the host has", 2026-11-28).
+    if ps.IsQuickHacksExposed() && !NetworkSystem.QuickHacksExposedByDefault(ps.GetGameInstance()) {
       flags += TandemDevices.BitExposed();
     }
     if ps.IsGlitching() {
