@@ -25,6 +25,7 @@
 #include "tandem/traffic.hpp"
 
 #include <chrono>
+#include <format>
 #include <fstream>
 #include <map>
 #include <optional>
@@ -349,6 +350,8 @@ struct NetThread::Impl {
     // from its start and at every change.
     auto degradedSeen = Degradations::Get().Local().Changes();
     auto degradedSaid = Degradations::Get().Local().Wire();
+    // Moved props the session's full record of rests could not keep.
+    std::uint64_t propsUnrecorded = 0;
     endpoint->SendCombat(degradedSaid);
     if (lastSeat)
       endpoint->SetLocalSeat(*lastSeat);
@@ -967,6 +970,12 @@ struct NetThread::Impl {
                 runtime.PushBreach(e.result);
               } else if constexpr (std::is_same_v<E, events::Fractured>) {
                 runtime.PushObject(e.fracture);
+              } else if constexpr (std::is_same_v<E, events::PropsMoved>) {
+                runtime.PushObject(e.states);
+              } else if constexpr (std::is_same_v<E, events::PropRested>) {
+                runtime.PushObject(e.rest);
+              } else if constexpr (std::is_same_v<E, events::PropPushed>) {
+                runtime.PushObject(e.push);
               } else if constexpr (std::is_same_v<E, events::DeviceFired>) {
                 runtime.PushObject(e.fire);
               } else if constexpr (std::is_same_v<E, events::TurretHeld>) {
@@ -1475,6 +1484,21 @@ struct NetThread::Impl {
           endpoint->SendDeviceFire(*fire);
         else if (const auto *hands = std::get_if<proto::TurretHands>(&message))
           endpoint->SendTurretHands(*hands);
+        else if (const auto *states = std::get_if<proto::PropStates>(&message))
+          endpoint->SendPropStates(*states);
+        else if (const auto *rest = std::get_if<proto::PropRest>(&message))
+          endpoint->SendPropRest(*rest);
+        else if (const auto *push = std::get_if<proto::PropPush>(&message))
+          endpoint->SendPropPush(*push);
+      }
+      // Past the session's full record: a player who comes later sees such a
+      // prop where its sector puts it (props.md), a lesser path, told.
+      if (const auto refused = endpoint->Props().Refused(); refused > propsUnrecorded) {
+        propsUnrecorded = refused;
+        Degradations::Get().Fallback(
+            "prop not recorded",
+            std::format("the session's record of moved props is full ({} kept): {} not kept",
+                        endpoint->Props().Size(), refused));
       }
       runtime.SetFractureRecord(static_cast<std::uint32_t>(endpoint->Fractures().Size()),
                                 endpoint->Fractures().Digest());

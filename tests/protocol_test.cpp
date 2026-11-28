@@ -1954,3 +1954,43 @@ TEST_CASE("traffic lights survive encoding: reliable, appended, bounded") {
   CHECK_FALSE(refused(many));
   CHECK(Encode(many).size() < 1200);
 }
+
+TEST_CASE("physics props: motion on the state channel, rests and pushes reliable, a push once") {
+  const PropStates states{.owner = 2,
+                          .timeUs = 1'234'567,
+                          .props = {{.entity = 0xB1B1'0000'0000'0001ULL,
+                                     .part = 1,
+                                     .position = {1.f, 2.f, 3.f},
+                                     .orientation = {1, 2, 3},
+                                     .velocity = {100, -50, 0}}}};
+  RoundTrips(states);
+  RoundTrips(PropRest{.owner = 1,
+                      .entity = 0xC0C0,
+                      .part = 0,
+                      .position = {4.f, 5.f, 6.f},
+                      .orientation = {0.f, 0.f, 0.6f, 0.8f}});
+  RoundTrips(PropPush{.player = 3,
+                      .entity = 0xC0C0,
+                      .position = {4.f, 5.f, 6.f},
+                      .velocity = {0.f, 2.f, 0.f},
+                      .timeUs = 99});
+  CHECK(ChannelOf(states) == Channel::State);
+  CHECK(ChannelOf(PropRest{.entity = 1}) == Channel::Event);
+  CHECK(ChannelOf(PropPush{.entity = 1}) == Channel::Event);
+  CHECK(tandem::consistency::IsOneShot(PropPush{.entity = 1}));
+  CHECK_FALSE(tandem::consistency::IsOneShot(PropRest{.entity = 1}));
+  CHECK(std::string_view(NameOf(states)) == "PropStates");
+  CHECK(std::string_view(NameOf(PropRest{})) == "PropRest");
+  CHECK(std::string_view(NameOf(PropPush{})) == "PropPush");
+  // A full round stays small: 16 props in under 600 bytes.
+  PropStates full{.owner = 2, .timeUs = 1};
+  for (std::uint64_t i = 1; i <= kMaxPropsPerState; ++i)
+    full.props.push_back({.entity = i});
+  CHECK(Encode(full).size() < 600);
+  // More than a round, a prop that is no entity: refused.
+  full.props.push_back({.entity = 99});
+  CHECK_FALSE(Decode(Encode(full)).has_value());
+  CHECK_FALSE(Decode(Encode(PropStates{.props = {{.entity = 0}}})).has_value());
+  CHECK_FALSE(Decode(Encode(PropRest{})).has_value());
+  CHECK_FALSE(Decode(Encode(PropPush{})).has_value());
+}

@@ -55,6 +55,8 @@ constexpr Info kCatalogue[] = {
     {"scene voice", Degraded, State, "V's voice in a replayed scene is the game's pick"},
     {"nameplate projection", Degraded, State,
      "nameplates are placed by tandem's own projection, not the engine's"},
+    {"prop velocity", Degraded, State,
+     "a push on a prop another game runs is given as an impulse of a nominal mass"},
     // ---- fallbacks: a lesser path taken for one body, once ----
     {"prompt drawn", Degraded, Fallback, "one body's prompt is drawn, not the game's own"},
     {"vehicle teleported", Degraded, Fallback,
@@ -106,6 +108,12 @@ constexpr Info kCatalogue[] = {
      "one NCPD activity's map pin would not take the host's state: it shows our own"},
     {"activity untracked", Degraded, Fallback,
      "an NCPD activity the player tracked, shown done during the session, is not tracked again"},
+    {"prop not held", Degraded, Fallback,
+     "another game's moving prop has no such body here: ours stays where it is"},
+    {"prop put back", Degraded, Fallback,
+     "a prop our game touched in another game's area got no word from it: put back"},
+    {"prop not recorded", Degraded, Fallback,
+     "the session's record of moved props is full: a player who comes later sees it unmoved"},
 };
 
 std::size_t OrderOf(std::string_view id) {

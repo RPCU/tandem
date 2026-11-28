@@ -68,6 +68,12 @@
 //                         layer (the component's own list); shown: the
 //                         game's prompt on screen holds our choice. none:
 //                         no prompt was ever asked on that body
+//   prop HEX              a placed prop (its entity's id in hex) in our
+//                         world: "X Y Z HOW kinematic B entity X Y Z", its
+//                         first physical mesh's body (2 decimals), HOW held
+//                         (another game moves it), moving (ours, followed)
+//                         or still, then its entity's own place; none: not
+//                         in our world, or no physical mesh
 //   nameplate [path|apart] [player N]  the first remote player's nameplate
 //                         (player N's), as PartyHud.reds placed it on its
 //                         last tick: "engine X Y of W x H, within B, in
@@ -233,6 +239,8 @@ public class TandemTestQuery {
       if IsDefined(hud) {
         value = hud.PlateQuery(Cast<Uint32>(StringToInt(whose, 0)), part);
       }
+    } else if Equals(what, "prop") && count > 3 {
+      value = TandemPropSync.Where(game, TandemObjects.EntityFromHex(arg));
     } else if Equals(what, "upload") {
       let pools = GameInstance.GetStatPoolsSystem(game);
       if IsDefined(player) && pools.IsStatPoolAdded(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.QuickHackUpload) {
@@ -242,7 +250,7 @@ public class TandemTestQuery {
       value = "unknown";
     }
     if Equals(value, "unknown") {
-      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], held [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks, paint [puppet], attitude group NAME | npc ID|fresh|nearest | fresh, wanted, upload, prompt [player N | npc N], nameplate [path|apart] [player N])");
+      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], held [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks, paint [puppet], attitude group NAME | npc ID|fresh|nearest | fresh, wanted, upload, prompt [player N | npc N], nameplate [path|apart] [player N], prop HEX)");
       return;
     }
     TandemNative.Log(s"test query: \(asked) = \(value)");

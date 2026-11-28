@@ -326,6 +326,8 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<Cue>(message) || std::holds_alternative<NpcReaction>(message) ||
          // An NPC's voice line: said once (npcs.md, "Voices").
          std::holds_alternative<NpcVoice>(message) ||
+         // A push on a prop another game runs: given once (props.md).
+         std::holds_alternative<PropPush>(message) ||
          // A hit a V took: shown once on its puppet (presence.md).
          std::holds_alternative<HitTaken>(message) || std::holds_alternative<Throw>(message) ||
          std::holds_alternative<ThrowEnd>(message) ||

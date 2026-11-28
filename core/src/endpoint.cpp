@@ -376,7 +376,7 @@ proto::DeviceDigest Endpoint::DeviceDigestNow() const {
 
 std::uint32_t Endpoint::WorldDigestNow() const {
   const auto world = consistency::WorldDigest(m_world, m_difficulty, m_rules);
-  if (m_deaths.Empty() && m_fractureRecord.Empty())
+  if (m_deaths.Empty() && m_fractureRecord.Empty() && m_propRecord.Empty())
     return world;
   consistency::Hasher hash;
   hash.Add(std::uint64_t{world});
@@ -384,6 +384,8 @@ std::uint32_t Endpoint::WorldDigestNow() const {
     hash.Add(std::uint64_t{m_deaths.Digest()});
   if (!m_fractureRecord.Empty())
     hash.Add(std::uint64_t{m_fractureRecord.Digest()});
+  if (!m_propRecord.Empty())
+    hash.Add(std::uint64_t{m_propRecord.Digest()});
   return hash.Value();
 }
 
@@ -568,6 +570,9 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
 
     // Its vehicles and its requests to other owners (traffic.md).
     if (OnGuestTraffic(event.peer, player, message, out))
+      return;
+    // Its moving props, their rests, its pushes on others' (props.md).
+    if (OnGuestProps(event.peer, player, message, out))
       return;
     // Its NPCs, and its requests to other owners (regions).
     if (OnOwnerMessage(event.peer, player, message, out))
@@ -1326,6 +1331,9 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
     // What broke in the session: broken for who was not there.
     for (const auto &fracture : m_fractureRecord.InOrder())
       Send(peer, fracture);
+    // Where moved props came to rest: as they lie, for who was not there.
+    for (const auto &rest : m_propRecord.InOrder())
+      Send(peer, rest);
     // What lies in the world (its taken stacks at quantity 0). Loot is not
     // in the digests: the host arbitrates each claim (ClaimWorldItem).
     if (!resync)
@@ -1653,6 +1661,9 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
     return;
   // Shared vehicles: their owners, hand-overs, requests for ours.
   if (OnHostTraffic(message, out))
+    return;
+  // Physics props: other games' moving ones, rests, pushes for ours.
+  if (OnHostProps(message, out))
     return;
   if (proto::IsVehicleCombat(message)) {
     OnHostVehicles(message, out);

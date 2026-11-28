@@ -2059,6 +2059,9 @@ public class TandemSystem extends ScriptableSystem {
       // (test, Objects.reds) "glass": counts; "glass break|part": the
       // replay of a break at what V looks at.
       TandemObjectSync.Get(this.GetGameInstance()).Command(command);
+    } else if StrBeginsWith(command, "props") {
+      // (test, Props.reds) "props": counts; "props look|push [M/S]|at HEX".
+      TandemPropSync.Get(this.GetGameInstance()).Command(command);
     } else if StrBeginsWith(command, "takedown") {
       TandemTakedowns.Get(this.GetGameInstance()).Command(command);
     } else if Equals(command, "test reset") {
