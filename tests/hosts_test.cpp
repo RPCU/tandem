@@ -105,6 +105,30 @@ TEST_CASE("recent hosts survive the file") {
         1);
 }
 
+TEST_CASE("recent hosts keep their host ID, and are found by it") {
+  std::vector<hosts::Recent> list;
+  hosts::RememberCode(list, "K7Q2M9", "Judy");
+  hosts::Remember(list, {"192.0.2.10", 27450}, "Panam");
+  const std::string id(32, 'a'), other(32, 'b');
+  CHECK(hosts::NoteHostId(list, std::nullopt, "judy", id));
+  CHECK(hosts::NoteHostId(list, hosts::Target{"192.0.2.10", 27450}, "", other));
+  CHECK_FALSE(hosts::NoteHostId(list, std::nullopt, "nobody", id));
+  CHECK_FALSE(hosts::NoteHostId(list, std::nullopt, "judy", "short"));
+  // Another day, another code: the ID stays.
+  hosts::RememberCode(list, "ABC234", "Judy");
+  REQUIRE(list.size() == 2);
+  CHECK(list[0].hostId == id);
+  // Joined by the ID: first again, with the name it has now.
+  hosts::RememberById(list, other, "Panam V");
+  CHECK(list[0].name == "Panam V");
+  CHECK(list[0].hostId == other);
+  const auto text = hosts::FormatRecent(list);
+  CHECK(text == "id:" + other + " 192.0.2.10:27450 Panam V\nid:" + id + " code:ABC234 Judy\n");
+  CHECK(hosts::ParseRecent(text) == list);
+  // An ID that is not 32 hex digits: the line is skipped.
+  CHECK(hosts::ParseRecent("id:xyz 192.0.2.1:1 a\nid:" + id + "\n").empty());
+}
+
 TEST_CASE("recent hosts joined by a code: known by name, the newest code kept") {
   std::vector<hosts::Recent> list;
   hosts::Remember(list, {"192.0.2.10", 27450}, "Panam");

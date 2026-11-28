@@ -826,6 +826,11 @@ public:
   // The session's rules as this game knows them (the host's own; a guest's,
   // what the host said; none yet: every flag off).
   proto::Rules Rules() const { return m_rules.value_or(proto::Rules{}); }
+  // The host's card (proto::HostCard: its host ID on the relay). Host: ours,
+  // said to each guest with the world (at its welcome, at a resync). Guest:
+  // the host's, once it said it.
+  void SetHostCard(const proto::HostCard &card);
+  std::optional<proto::HostCard> HostCardHeard() const { return m_hostCard; }
   // Trade between two players (proto::IsTrade; tandem/trade.hpp). What our
   // seat says (a Trade or a TradeOffer; who we are is stamped here) goes to
   // the host's table; the host's own goes straight into it. A TradeCommit
@@ -1798,6 +1803,7 @@ private:
   std::optional<proto::Difficulty> m_difficulty;
   // The session's rules (host: its own, for late joiners; guest: the host's).
   std::optional<proto::Rules> m_rules;
+  std::optional<proto::HostCard> m_hostCard;
   bool FriendlyFire() const { return (Rules().flags & proto::kRuleFriendlyFire) != 0; }
   std::map<proto::NpcId, proto::NpcPoise> m_npcPoise;
   // How many players each NPC is scaled for (NpcScale: its owner's word),

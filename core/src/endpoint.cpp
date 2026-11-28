@@ -1314,6 +1314,8 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
       Send(peer, *m_difficulty);
     if (m_rules)
       Send(peer, *m_rules);
+    if (m_hostCard)
+      Send(peer, *m_hostCard);
     if (m_sessionLevel)
       Send(peer, *m_sessionLevel);
     // The placed NPCs that died in the session, wherever they were: the
@@ -1448,7 +1450,20 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
   }
 }
 
+void Endpoint::SetHostCard(const proto::HostCard &card) {
+  if (!IsHost() || m_hostCard == card)
+    return;
+  m_hostCard = card;
+  if (IsJoined())
+    Broadcast(card);
+}
+
 void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<SessionEvent> &out) {
+  // The host's card: kept (campaigns.hpp: the recent host's ID).
+  if (const auto *card = std::get_if<proto::HostCard>(&message)) {
+    m_hostCard = *card;
+    return;
+  }
   // A session recording keeps what the host said in full: compact forms are
   // tapped once decoded (PoseState, NpcStates).
   if (m_receivedTap && !std::holds_alternative<proto::PoseFrame>(message) &&

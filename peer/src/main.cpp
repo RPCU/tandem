@@ -334,6 +334,8 @@ struct Options {
   std::string savePathFile; // save the states heard (your V's path) here
   // tandem-relay: its address, a host token (host), the session's code (join)
   std::optional<tandem::net::RelayOptions> relay;
+  // --host-invite: a host ID bound, but not open to a join by it.
+  bool hostInvite{};
   std::string code;
   // metro: board this long into the session, ride this long.
   int metroAtSeconds{5};
@@ -636,6 +638,10 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     through it (its join code is logged); join, used when\n"
          "                     ADDRESS does not answer, or with --code only\n"
          "  --relay-token HEX  host: one of the relay's host tokens (tandem-relay token)\n"
+         "  --host-key HEX     host: a host key (32 hex digits): its host ID is bound on\n"
+         "                     the relay and told to guests (proto::HostCard), joinable\n"
+         "                     by it unless --host-invite\n"
+         "  --host-invite      host: with --host-key, not open to a join by the host ID\n"
          "  --code CODE        join: the host's join code (needs --relay)\n"
          "  --mode M           mirror | ghost | front | drive | course | path | metro |\n"
          "                     watch | region | idle (default mirror)\n"
@@ -1370,6 +1376,12 @@ Options Parse(int argc, char **argv) {
       options.scene = true;
       continue;
     }
+    if (flag == "--host-invite") {
+      options.hostInvite = true;
+      if (options.relay)
+        options.relay->hostOpen = false;
+      continue;
+    }
     if (flag == "--near-npc") {
       options.nearNpc = true;
       continue;
@@ -2009,6 +2021,14 @@ Options Parse(int argc, char **argv) {
       if (!options.relay)
         options.relay.emplace();
       options.relay->token = *token;
+    } else if (flag == "--host-key") {
+      const auto key = tandem::net::ParseHostId(value);
+      if (!key)
+        Usage("--host-key is 32 hex digits");
+      if (!options.relay)
+        options.relay.emplace();
+      options.relay->hostKey = *key;
+      options.relay->hostOpen = !options.hostInvite;
     } else if (flag == "--code") {
       const auto code = tandem::net::NormalizeJoinCode(value);
       if (!code)
@@ -4254,6 +4274,13 @@ int main(int argc, char **argv) {
     endpoint = options.host ? tandem::Endpoint::Host({options.name, options.body}, options.port,
                                                      error, {}, options.relay)
                             : tandem::Endpoint::Join({options.name, options.body}, target, error);
+  }
+  // A host ID: told to the guests at their welcome (proto::HostCard).
+  if (endpoint && options.host && options.relay && options.relay->hostKey) {
+    const auto id = tandem::net::HostIdOf(*options.relay->hostKey);
+    endpoint->SetHostCard({.id = id});
+    Log("host ID {} ({})", tandem::net::HostIdText(id),
+        options.relay->hostOpen ? "open to a join by it" : "invite only");
   }
   if (!endpoint) {
     std::cerr << "tandem-peer: " << error << '\n';

@@ -41,6 +41,23 @@ inline constexpr std::size_t kJoinCodeSize = 6;
 
 using RelaySecret = std::array<std::uint8_t, 16>;
 using RelayToken = std::array<std::uint8_t, 32>;
+// Host IDs (relay/internal/relay/hostid.go): a host game's permanent random
+// key, kept beside the plugin, and its ID (HostIdOf), which its guests are
+// told: the relay finds the host's session by it (one-click rejoin, the
+// online badge). Knowing the ID binds nothing: that takes the key.
+using HostKey = std::array<std::uint8_t, 16>;
+using HostId = std::array<std::uint8_t, 16>;
+HostId HostIdOf(const HostKey &key);
+// "00ff…" (32 hex digits) and back.
+std::string HostIdText(const HostId &id);
+std::optional<HostId> ParseHostId(std::string_view hex);
+// A host as the relay says it (relay.HostOffline, HostOnline, HostJoinable).
+enum class HostPresence : std::uint8_t { Offline = 0, Online = 1, Joinable = 2, Unknown = 0xFF };
+// Asks the relay at `address:port` about each host ID (QueryHost, following
+// two redirects at most), waiting `timeoutMs` at most; Unknown for one it
+// did not answer. Blocking: not for the net thread's loop.
+std::vector<HostPresence> QueryHosts(const std::string &address, std::uint16_t port,
+                                     const std::vector<HostId> &ids, std::uint32_t timeoutMs);
 
 // A join code as a player typed it (any case, dashes and spaces, O for 0, I
 // or L for 1) -> its 6 characters; nullopt when it is not a code. The relay
@@ -90,6 +107,12 @@ struct RelayOptions {
   // keep`), rather than a new one each session.
   bool keepCode{};
   std::uint32_t codeSalt{};
+  // Host: our host key, its ID bound to the session (HostID, every refresh);
+  // hostOpen: a guest may join by the ID (relay.FlagHostOpen). Guest: the
+  // host's ID, joined by it (JoinHost) when there is no secret.
+  std::optional<HostKey> hostKey;
+  bool hostOpen{};
+  std::optional<HostId> hostId;
   RelayTimes times;
 };
 
@@ -128,6 +151,8 @@ struct RelayStatus {
   std::string publicAddress;
   bool portKept{};
   NatMapping nat{NatMapping::Unknown};
+  // Host: our host ID's binding, as the relay last answered it.
+  HostPresence hostBound{HostPresence::Unknown};
 
   bool operator==(const RelayStatus &) const = default;
 };

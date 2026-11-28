@@ -574,6 +574,9 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *corpse = std::get_if<CorpsePose>(&message); corpse && !Fits(*corpse))
     return std::nullopt;
+  if (const auto *card = std::get_if<HostCard>(&message);
+      card && std::ranges::all_of(card->id, [](std::uint8_t b) { return b == 0; }))
+    return std::nullopt;
   if (const auto *lights = std::get_if<TrafficLights>(&message); lights && !Fits(*lights))
     return std::nullopt;
   // A live vendor names its NPC; a dead one only its entity.
@@ -937,7 +940,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "Degraded",
                                    "TrafficLights",
                                    "NpcVoice",
-                                   "CorpsePose"};
+                                   "CorpsePose",
+                                   "HostCard"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

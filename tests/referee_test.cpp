@@ -1249,6 +1249,21 @@ TEST_CASE("referee: an NPC's voice line is its owner's word, about an NPC it sho
   CHECK(Broke(host, "rate.over-budget"));
 }
 
+TEST_CASE("referee: the host's card is the host's word alone") {
+  auto guest = Guest();
+  proto::HostCard card;
+  card.id[3] = 9;
+  guest.Received(1, card, kSecond);
+  CHECK(Rules(guest).empty());
+  // Said by a guest: not its to say.
+  auto host = Host();
+  host.Received(2, card, kSecond);
+  CHECK(Broke(host, "authority.host-only"));
+  // No ID: out of range.
+  guest.Received(1, proto::HostCard{}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+}
+
 TEST_CASE("referee: a body's rest is of an NPC we were told of, never ours back") {
   auto guest = Guest();
   guest.Received(1, proto::NpcSpawn{.npc = 7, .record = 1}, kSecond);

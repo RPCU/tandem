@@ -150,6 +150,19 @@ std::vector<Recent> ParseRecent(std::string_view text) {
     const auto end = text.find('\n');
     auto line = Trim(text.substr(0, end));
     text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
+    // The host's ID first, when it is known: 32 hex digits.
+    std::string hostId;
+    if (line.starts_with("id:")) {
+      const auto space = line.find(' ');
+      const auto id =
+          line.substr(3, space == std::string_view::npos ? std::string_view::npos : space - 3);
+      if (id.size() != 32 || !std::ranges::all_of(id, [](char c) {
+            return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+          }))
+        continue;
+      hostId = std::string(id);
+      line = space == std::string_view::npos ? std::string_view{} : Trim(line.substr(space));
+    }
     const auto space = line.find(' ');
     const auto where = line.substr(0, space);
     std::string name =
@@ -162,7 +175,7 @@ std::vector<Recent> ParseRecent(std::string_view text) {
                          });
       if (valid && !name.empty() &&
           std::ranges::none_of(out, [&](const Recent &r) { return SameName(r, name); }))
-        out.push_back({{}, std::move(name), std::string(code)});
+        out.push_back({{}, std::move(name), std::string(code), std::move(hostId)});
       continue;
     }
     // A line without a port is not one we wrote.
@@ -172,7 +185,7 @@ std::vector<Recent> ParseRecent(std::string_view text) {
     if (!target || std::ranges::any_of(
                        out, [&](const Recent &r) { return r.code.empty() && r.target == *target; }))
       continue;
-    out.push_back({*target, std::move(name), {}});
+    out.push_back({*target, std::move(name), {}, std::move(hostId)});
   }
   return out;
 }
@@ -180,6 +193,8 @@ std::vector<Recent> ParseRecent(std::string_view text) {
 std::string FormatRecent(const std::vector<Recent> &list) {
   std::string out;
   for (const auto &recent : list) {
+    if (!recent.hostId.empty())
+      out += "id:" + recent.hostId + ' ';
     out += recent.code.empty() ? Format(recent.target) : "code:" + recent.code;
     if (!recent.name.empty())
       out += ' ' + recent.name;
@@ -194,12 +209,14 @@ void Remember(std::vector<Recent> &list, const Target &target, std::string name)
   std::ranges::replace(name, '\r', ' ');
   const auto old = std::ranges::find_if(
       list, [&](const Recent &r) { return r.code.empty() && r.target == target; });
+  std::string hostId;
   if (old != list.end()) {
     if (name.empty())
       name = old->name;
+    hostId = std::move(old->hostId);
     list.erase(old);
   }
-  list.insert(list.begin(), Recent{target, std::move(name), {}});
+  list.insert(list.begin(), Recent{target, std::move(name), {}, std::move(hostId)});
   if (list.size() > kMaxRecent)
     list.resize(kMaxRecent);
 }
@@ -209,9 +226,43 @@ void RememberCode(std::vector<Recent> &list, std::string code, std::string name)
   std::ranges::replace(name, '\r', ' ');
   if (name.empty() || code.empty())
     return;
+  std::string hostId;
+  for (auto &r : list)
+    if (SameName(r, name) && !r.hostId.empty())
+      hostId = std::move(r.hostId);
   std::erase_if(list, [&](const Recent &r) { return SameName(r, name); });
-  list.insert(list.begin(), Recent{{}, std::move(name), std::move(code)});
+  list.insert(list.begin(), Recent{{}, std::move(name), std::move(code), std::move(hostId)});
   if (list.size() > kMaxRecent)
     list.resize(kMaxRecent);
+}
+
+bool NoteHostId(std::vector<Recent> &list, const std::optional<Target> &target,
+                std::string_view name, std::string hostId) {
+  const auto entry = std::ranges::find_if(list, [&](const Recent &r) {
+    return target ? r.code.empty() && r.target == *target : SameName(r, name);
+  });
+  if (entry == list.end() || hostId.size() != 32)
+    return false;
+  // One entry per host ID: an older one of it goes.
+  std::erase_if(list, [&](const Recent &r) { return &r != &*entry && r.hostId == hostId; });
+  const auto again = std::ranges::find_if(list, [&](const Recent &r) {
+    return target ? r.code.empty() && r.target == *target : SameName(r, name);
+  });
+  again->hostId = std::move(hostId);
+  return true;
+}
+
+void RememberById(std::vector<Recent> &list, std::string_view hostId, std::string name) {
+  std::ranges::replace(name, '\n', ' ');
+  std::ranges::replace(name, '\r', ' ');
+  const auto entry =
+      std::ranges::find_if(list, [&](const Recent &r) { return r.hostId == hostId; });
+  if (hostId.empty() || entry == list.end())
+    return;
+  auto recent = std::move(*entry);
+  list.erase(entry);
+  if (!name.empty())
+    recent.name = std::move(name);
+  list.insert(list.begin(), std::move(recent));
 }
 } // namespace tandem::hosts

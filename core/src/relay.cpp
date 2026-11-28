@@ -40,7 +40,17 @@ enum : std::uint8_t {
   kRegisterHostKeep = 19,
   kChallenge = 20,
   kRegisterHostOpen = 21,
+  kHostId = 22,
+  kHostBound = 23,
+  kQueryHost = 24,
+  kHostState = 25,
+  kJoinHost = 26,
+  kHostSession = 27,
 };
+// relay.FlagHostOpen: a guest may join by our host ID.
+constexpr std::uint8_t kFlagHostOpen = 1;
+// A host lookup of the Join list: one answer waited for this long, asked twice.
+constexpr enet_uint32 kHostQueryMs = 700;
 constexpr std::size_t kPunchSize = kHeader + 4 + 2 + 1;
 constexpr std::size_t kObservedSize = kHeader + 4 + 1 + 4 + 2; // IPv4
 // A kept code's seconds left: it lives while we are registered.
@@ -227,6 +237,94 @@ std::optional<RelayToken> ParseRelayToken(std::string_view hex) {
   return token;
 }
 
+HostId HostIdOf(const HostKey &key) {
+  // relay.HostIDOf: SHA-256 of a label and the key, its first 16 bytes.
+  constexpr std::string_view kLabel{"tandem-host-id\0", 15};
+  std::vector<std::uint8_t> message(kLabel.begin(), kLabel.end());
+  message.insert(message.end(), key.begin(), key.end());
+  const auto digest = Sha256(message);
+  HostId id{};
+  std::copy_n(digest.begin(), id.size(), id.begin());
+  return id;
+}
+
+std::string HostIdText(const HostId &id) {
+  constexpr std::string_view kHex = "0123456789abcdef";
+  std::string text;
+  for (const auto byte : id) {
+    text += kHex[byte >> 4];
+    text += kHex[byte & 15];
+  }
+  return text;
+}
+
+std::optional<HostId> ParseHostId(std::string_view hex) {
+  HostId id{};
+  if (hex.size() != id.size() * 2)
+    return std::nullopt;
+  for (std::size_t i = 0; i < id.size(); ++i) {
+    const auto *first = hex.data() + 2 * i;
+    auto [end, ec] = std::from_chars(first, first + 2, id[i], 16);
+    if (ec != std::errc{} || end != first + 2)
+      return std::nullopt;
+  }
+  return id;
+}
+
+std::vector<HostPresence> QueryHosts(const std::string &address, std::uint16_t port,
+                                     const std::vector<HostId> &ids, std::uint32_t timeoutMs) {
+  std::vector<HostPresence> out(ids.size(), HostPresence::Unknown);
+  ENetAddress relay{};
+  if (ids.empty() || !ResolveIpv4(address, relay))
+    return out;
+  relay.port = port;
+  ENetSocket socket = OpenSocket(nullptr);
+  if (socket == ENET_SOCKET_NULL)
+    return out;
+  const auto start = enet_time_get();
+  // One at a time: an answer does not name the ID it is about.
+  for (std::size_t i = 0; i < ids.size() && Since(enet_time_get(), start) < timeoutMs; ++i) {
+    auto bytes = Header(kQueryHost);
+    bytes.insert(bytes.end(), ids[i].begin(), ids[i].end());
+    const auto request = Padded(std::move(bytes));
+    ENetAddress to = relay;
+    int redirects = 0, tries = 0;
+    bool done = false;
+    while (!done && tries < 2 && Since(enet_time_get(), start) < timeoutMs) {
+      ++tries;
+      SendTo(socket, to, request.data(), request.size());
+      const auto sent = enet_time_get();
+      while (!done && Since(enet_time_get(), sent) < kHostQueryMs) {
+        enet_uint32 condition = ENET_SOCKET_WAIT_RECEIVE;
+        if (enet_socket_wait(socket, &condition, 50) < 0 || !(condition & ENET_SOCKET_WAIT_RECEIVE))
+          continue;
+        std::uint8_t buffer[64];
+        ENetAddress from{};
+        const auto size = ReceiveFrom(socket, from, buffer, sizeof buffer);
+        if (size < kHeader + 1 || !Same(from, to) || std::memcmp(buffer, kMagic, 4) != 0)
+          continue;
+        if (buffer[4] == kHostState && size == kHeader + 1 && buffer[kHeader] <= 2) {
+          out[i] = static_cast<HostPresence>(buffer[kHeader]);
+          done = true;
+        } else if (buffer[4] == kRedirect && size == kHeader + 1 + 4 + 2 && buffer[kHeader] == 4 &&
+                   redirects < kMaxRedirects) {
+          std::memcpy(&to.host, buffer + kHeader + 1, 4); // network order already
+          to.port = Be16(buffer + kHeader + 5);
+          ++redirects;
+          tries = 0;
+          break; // asked again there
+        } else if (buffer[4] == kError) {
+          // Over the lookups' limit (or refused): the rest stay unknown.
+          enet_socket_destroy(socket);
+          return out;
+        }
+      }
+    }
+  }
+  enet_socket_destroy(socket);
+  return out;
+}
+
 std::string_view DirectOutlook(const RelayStatus &status) {
   switch (status.nat) {
   case NatMapping::Stable:
@@ -293,6 +391,9 @@ RelayLink::RelayLink(Role role, RelayOptions options, std::uint16_t enetPort,
       m_secret = *m_options.secret;
       m_haveSecret = m_secretGiven = true;
       m_phase = Phase::Registering;
+    } else if (m_options.hostId) {
+      // A recent host, joined by its ID: no code (JoinHost).
+      m_phase = Phase::Resolving;
     } else if (const auto code = NormalizeJoinCode(m_options.code)) {
       m_options.code = *code;
       m_phase = Phase::Resolving;
@@ -429,7 +530,10 @@ void RelayLink::ToRelay(const std::vector<std::uint8_t> &bytes, enet_uint32 now)
 
 void RelayLink::SendRequest(enet_uint32 now) {
   std::vector<std::uint8_t> bytes;
-  if (m_phase == Phase::Resolving) {
+  if (m_phase == Phase::Resolving && m_options.hostId) {
+    bytes = Header(kJoinHost);
+    bytes.insert(bytes.end(), m_options.hostId->begin(), m_options.hostId->end());
+  } else if (m_phase == Phase::Resolving) {
     bytes = Header(kResolveCode);
     bytes.insert(bytes.end(), m_options.code.begin(), m_options.code.end());
   } else if (m_role == Role::Host && m_solved) {
@@ -511,6 +615,8 @@ void RelayLink::StartOver(enet_uint32 now) {
   m_startMs = now;
   m_status.code.clear(); // that replica's: another gives another
   m_codeKept = false;
+  m_hostAt = {}; // our host ID bound again once registered
+  m_hostBinding = false;
   m_solving = m_solved = false; // another relay, another challenge
   if (m_homes.size() > 1) {
     // Several relays: the one answering the soonest now.
@@ -558,6 +664,10 @@ void RelayLink::Pump() {
       break;
     if (OnObserved(from, buffer, size, now))
       continue; // a probe's answer, from any relay we asked
+    if (m_role == Role::Host && m_hostBinding && Same(from, m_hostAt) && !Same(from, m_relay)) {
+      OnHostReply(buffer, size, now); // our host ID's owner, another replica
+      continue;
+    }
     if (Same(from, m_relay) && m_phase != Phase::Choosing)
       OnRelay(buffer, size, now);
     else if (m_directOn)
@@ -661,8 +771,41 @@ void RelayLink::OnRelay(const std::uint8_t *data, std::size_t size, enet_uint32 
       OnError(body[0]);
     break;
   case kRedirect:
-    OnRedirect(body, length, now);
+    // Registered, a host is sent on only for its host ID (to its owner).
+    if (m_role == Role::Host && m_phase == Phase::Ready && m_hostBinding)
+      OnHostReply(data, size, now);
+    else
+      OnRedirect(body, length, now);
     break;
+  case kHostBound:
+    if (m_role == Role::Host)
+      OnHostReply(data, size, now);
+    break;
+  case kHostState:
+    // A guest joining by a host ID that may not: in words, no retry.
+    if (m_role == Role::Guest && m_phase == Phase::Resolving && length == 1)
+      Fail(body[0] == 1 ? "the host is not open to a join by its ID (invite only, or full)"
+                        : "the host is not online");
+    break;
+  case kHostSession: {
+    if (m_role != Role::Guest || m_phase != Phase::Resolving || length < m_secret.size() + 1)
+      return;
+    const auto *at = body + m_secret.size();
+    const auto rest = length - m_secret.size();
+    if (rest == 1 + 4 + 2 && at[0] == 4) {
+      // The session is on another replica: registered there.
+      std::memcpy(&m_relay.host, at + 1, 4); // network order already
+      m_relay.port = Be16(at + 5);
+    } else if (rest != 1 || at[0] != 0) {
+      Fail("the relay sent us to an address we cannot reach (IPv6)");
+      return;
+    }
+    std::copy_n(body, m_secret.size(), m_secret.begin());
+    m_haveSecret = true;
+    m_phase = Phase::Registering;
+    SendRequest(now);
+    break;
+  }
   case kChallenge:
     OnChallenge(body, length, now);
     break;
@@ -702,6 +845,52 @@ void RelayLink::OnRelay(const std::uint8_t *data, std::size_t size, enet_uint32 
     break;
   default:
     break;
+  }
+}
+
+// Host: our host ID bound to our session, on its owner (the relay in use, or
+// the replica it sends us to), with where the session is when that differs.
+void RelayLink::BindHostId(enet_uint32 now) {
+  if (!m_options.hostKey)
+    return;
+  if (m_hostAt.host == 0) {
+    m_hostAt = m_relay;
+    m_hostRedirects = 0;
+  }
+  auto bytes = Header(kHostId);
+  bytes.insert(bytes.end(), m_secret.begin(), m_secret.end());
+  bytes.insert(bytes.end(), m_options.hostKey->begin(), m_options.hostKey->end());
+  bytes.push_back(m_options.hostOpen ? kFlagHostOpen : 0);
+  std::uint8_t raw[16]{};
+  if (Same(m_hostAt, m_relay)) {
+    bytes.push_back(0); // the session is where we ask
+  } else {
+    bytes.push_back(4);
+    std::memcpy(raw, &m_relay.host, 4); // network order
+  }
+  bytes.insert(bytes.end(), std::begin(raw), std::end(raw));
+  AppendBe16(bytes, static_cast<std::uint16_t>(Same(m_hostAt, m_relay) ? 0 : m_relay.port));
+  const auto padded = Padded(std::move(bytes));
+  SendTo(m_outer, m_hostAt, padded.data(), padded.size());
+  m_hostBoundMs = now;
+  m_hostBinding = true;
+}
+
+void RelayLink::OnHostReply(const std::uint8_t *data, std::size_t size, enet_uint32 now) {
+  if (size < kHeader + 1 || std::memcmp(data, kMagic, 4) != 0)
+    return;
+  const auto *body = data + kHeader;
+  const auto length = size - kHeader;
+  if (data[4] == kHostBound && length == 1 && body[0] <= 2) {
+    m_status.hostBound = static_cast<HostPresence>(body[0]);
+  } else if (data[4] == kRedirect && length == 1 + 4 + 2 && body[0] == 4 &&
+             m_hostRedirects < kMaxRedirects) {
+    std::memcpy(&m_hostAt.host, body + 1, 4); // network order already
+    m_hostAt.port = Be16(body + 5);
+    ++m_hostRedirects;
+    BindHostId(now);
+  } else if (data[4] == kError) {
+    m_status.hostBound = HostPresence::Unknown;
   }
 }
 
@@ -1094,6 +1283,12 @@ void RelayLink::Timers(enet_uint32 now) {
       SendRequest(now);
     }
   }
+
+  // Our host ID: bound once registered, then as often as the registration
+  // (the relay forgets it HostIDTTL after).
+  if (m_phase == Phase::Ready && !m_lost && m_options.hostKey &&
+      (!m_hostBinding || Since(now, m_hostBoundMs) >= kRefreshMs))
+    BindHostId(now);
 
   // The code: asked until given, then again as often as the registration
   // (its time left, or back from a relay that restarted).
