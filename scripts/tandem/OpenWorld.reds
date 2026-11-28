@@ -43,6 +43,11 @@ public class TandemOpenWorld {
   // Pins the engine would not set, or track again, said once each.
   private let m_refused: array<Uint32>;
   private let m_untracked: array<Uint32>;
+  // Pins put back whose player's track is to be given back: at the next
+  // check, on the pin as a fresh scan has it (TrackLater). Given back in
+  // the same call as the phase, the track did not read back
+  // (openworld-track, 2026-11-28).
+  private let m_trackLater: array<Uint32>;
   // Guest, after a leave: what was put back, looked at again until
   // m_liftUntil (the engine's own rules may move a pin after the journal's
   // put-back).
@@ -77,6 +82,7 @@ public class TandemOpenWorld {
       TandemStory.ActivitiesSend(this.m_markers, phases);
       return;
     }
+    this.TrackLater();
     // Whose world leads where we stand: the host's while grouped with it
     // (regions.md §9: the group's leader), ours apart or leading.
     let leader = TandemRegions.Leader();
@@ -160,8 +166,10 @@ public class TandemOpenWorld {
           TandemDegraded.Fallback("activity not marked", s"pin \(marker) would not take phase \(phase)");
         }
       }
-      if step.track {
-        this.TrackAgain(marker, mappin);
+      if step.track && !ArrayContains(this.m_trackLater, marker) {
+        ArrayPush(this.m_trackLater, marker);
+        // Scanned afresh before the next check gives the track back.
+        this.m_lastScan = -100.0;
       }
     }
     this.m_shown = set;
@@ -188,6 +196,17 @@ public class TandemOpenWorld {
     } else {
       this.Untracked(marker, "the engine's tracker did not take it");
     }
+  }
+
+  // The tracks to give back (Apply), each on its pin as the last scan has
+  // it.
+  private func TrackLater() -> Void {
+    for marker in this.m_trackLater {
+      let i = ArrayFindFirst(this.m_markers, marker);
+      let mappin: ref<IMappin> = i >= 0 ? this.m_pins[i] : null;
+      this.TrackAgain(marker, mappin);
+    }
+    ArrayClear(this.m_trackLater);
   }
 
   // A track we could not give back: the fallback, said once a pin.
@@ -245,7 +264,7 @@ public class TandemOpenWorld {
     this.m_lastCheck = -100.0;
   }
 
-  // The session is over (a guest: before its journal goes back): every pin
+  // The session is over (a guest: after its journal went back): every pin
   // we set, back to its own phase; our activities run again.
   public func Leave(isGuest: Bool, now: Float) -> Void {
     ArrayClear(this.m_lifted);
@@ -283,10 +302,17 @@ public class TandemOpenWorld {
   // that the engine moved again (its journal entry's put-back) is set to
   // its own phase once more, said; then nothing is kept.
   public func AfterLeave(now: Float) -> Void {
-    if ArraySize(this.m_lifted) == 0 || now - this.m_liftCheck < 1.0 {
+    if (ArraySize(this.m_lifted) == 0 && ArraySize(this.m_trackLater) == 0) || now - this.m_liftCheck < 1.0 {
       return;
     }
     this.m_liftCheck = now;
+    // The tracks the leave's put-back gives back, on a fresh scan.
+    if ArraySize(this.m_trackLater) > 0 {
+      this.Scan(now);
+      this.TrackLater();
+      ArrayClear(this.m_pins);
+      ArrayClear(this.m_markers);
+    }
     let i = 0;
     while i < ArraySize(this.m_lifted) && i < ArraySize(this.m_liftPins) {
       let mappin = this.m_liftPins[i];

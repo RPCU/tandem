@@ -31,7 +31,7 @@ expect "openworld: activity $marker phase 0 at .*, tracked no" 10
 mark
 cmd quest apart
 expect 'openworld: [1-9][0-9]* of [1-9][0-9]* pin\(s\) set back to our own \(apart\)' 10
-expect "openworld: activity $marker tracked again" 5
+expect "openworld: activity $marker tracked again" 10
 cmd story activity "$marker"
 expect "openworld: activity $marker phase $own at .*, tracked yes" 10
 # Grouped again (untracked again), then the host goes: back at the leave.
@@ -44,7 +44,7 @@ mark
 pkill -x tandem-peer
 expect 'session ended' 60
 expect 'openworld: [1-9][0-9]* of [1-9][0-9]* pin\(s\) back to our own \(leave\)' 20
-expect "openworld: activity $marker tracked again" 5
+expect "openworld: activity $marker tracked again" 10
 cmd story activity "$marker"
 expect "openworld: activity $marker phase $own at .*, tracked yes" 10
 cmd story activity "untrack"
