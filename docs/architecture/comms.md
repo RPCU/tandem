@@ -349,7 +349,8 @@ yet**. `scripts/tandem/PhoneContacts.reds`.
   writes no `phonecall_*` fact and is no story call (`Phone.reds` skips
   `tandem_partner_*`).
   - **Outcomes** (`LinkDecline` reasons, protocol 25): answered, the call
-    view on the call for 8 s, then the phone's end, the link on; declined
+    view on the call for 8 s (30 with its choices, below), then the
+    phone's end, the link on; declined
     (`PhoneReject` held there), busy (on a call, in a menu, in a scene of
     tier 3 or more, loading: declined at once), no answer (it rang out, 15
     s: declined as missed), unavailable (they left): the call view's own
@@ -366,7 +367,7 @@ yet**. `scripts/tandem/PhoneContacts.reds`.
     incoming-call widget draws), `comms hangup`, `comms accept`, `comms
 decline`. Scenarios: `phone-holocall-ring`, `phone-holocall-call`,
     `phone-call-outcomes` (the mock's `--link-outcome answer | decline |
-busy | ignore`), `pair-phone-call` (two games).
+busy | ignore`), `pair-phone-call` and `pair-phone-choices` (two games).
   - Replaced (2026-11-21 to 28): our own spawns of the HUD phone's
     `incomingCallElement` and `holoAudioCallElement` (their `libraryID`)
     played by `HoloAudioCallLogicController.ShowIncomingContact` and
@@ -375,9 +376,21 @@ busy | ignore`), `pair-phone-call` (two games).
     `TandemComms.Tick`, the hang-up flag set by `TandemComms.OnAction`.
     The holocall's render texture
     (`HudPhoneAvatarController.m_HolocallRenderTexture`) stays the engine's.
-  - Not built yet: the partner's own portrait (the unknown avatar shows),
-    and choices during a call (trade, link) as a holocall's dialogue
-    options; the contact list's rows still offer Trade, Join, Invite.
+  - **Choices on the call** (2026-11-28): answered, the call shows what
+    the phone's row of that player offers, as a holocall's dialogue
+    choices on the game's own choice widget (phone style, titled with
+    their name; `TandemDialogue.ShowCallHub`, held as the guest's
+    stand-in hubs are): Trade (with `trade = on`: give, swap or sell),
+    Join NAME, Ask NAME to join you, Hang up last. One list,
+    `TandemPhoneContacts.Actions`, for the rows and the call: the
+    face-to-face prompts' remote ones (Revive needs to be there). A pick
+    (ChoiceApply, the cursor on the scroll keys) ends the call view and
+    does what the row does; the link stays but for Hang up. With its
+    choices up the call view stays 30 s (8 without). A story hub comes
+    first: the call's give way. Test commands `comms callhub` (the
+    options in English, drawn or not), `comms callpick TEXT`; scenario
+    `pair-phone-choices`.
+  - Not built yet: the partner's own portrait (the unknown avatar shows).
 - **How, in the game's scripts** (`final.reds:408140`, wrapped, each a
   `public final func` of the HUD controller, reached from its own input
   listener on the game thread; none is a cb func or a per-entity class,

@@ -144,6 +144,11 @@ public class TandemStorySystem extends ScriptableSystem {
   private let m_lastQuest: Uint32;
   private let m_lastQuestAt: Float;
 
+  // The dialogue's choice hubs (a call's choices: Holocall.reds).
+  public func Dialogue() -> ref<TandemDialogue> {
+    return this.m_dialogue;
+  }
+
   public static func Get(game: GameInstance) -> ref<TandemStorySystem> {
     return GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemStorySystem") as TandemStorySystem;
   }

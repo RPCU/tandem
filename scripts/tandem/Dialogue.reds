@@ -38,6 +38,15 @@ public class TandemDialogue {
   private let m_holds: Bool;
   private let m_held: ListChoiceHubData;
   private let m_holdDirty: Bool;
+  // A call between players (Holocall.reds): what can be done with them, on
+  // the game's own choice widget as a holocall's choices; our cursor on it
+  // and the option picked (-1: none yet). A story hub comes first.
+  private let m_call: Bool;
+  private let m_callTexts: array<String>;
+  private let m_callCursor: Int32;
+  private let m_callPick: Int32;
+  // Our listeners on the choice keys (a stand-in hub or a call's).
+  private let m_listening: Bool;
   private let m_holdSaid: Int32;
   private let m_marksWhy: String;
 
@@ -368,7 +377,7 @@ public class TandemDialogue {
       }
       return;
     }
-    let selected = this.m_shown ? this.m_cursor : -1;
+    let selected = this.m_shown ? this.m_cursor : (this.m_call ? this.m_callCursor : -1);
     let drawn = widget.TandemHeldDrawn(this.m_held.id, selected);
     if this.m_holdDirty || !drawn {
       widget.TandemHold(this.m_held, selected);
@@ -645,12 +654,9 @@ public class TandemDialogue {
     board.SetInt(defs.ActiveChoiceHubID, data.id, true);
     this.m_cursor = 0;
     board.SetInt(defs.SelectedIndex, 0, true);
-    if !this.m_shown {
-      let player = GetPlayer(this.m_game);
-      player.RegisterInputListener(this, n"ChoiceScrollUp");
-      player.RegisterInputListener(this, n"ChoiceScrollDown");
-      player.RegisterInputListener(this, n"ChoiceApply");
-    }
+    // (A call's choices give way to the story's.)
+    this.m_call = false;
+    this.Listen(true);
     this.m_shown = true;
     this.m_shownHub = this.m_pendingHub;
     this.Hold(data);
@@ -669,18 +675,121 @@ public class TandemDialogue {
     let hubs: DialogChoiceHubs;
     let board = this.Board(false);
     board.SetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs, ToVariant(hubs), true);
+    this.Listen(false);
+    TandemNative.Log("choice: hub closed");
+  }
+
+  private func Listen(on: Bool) -> Void {
+    if Equals(on, this.m_listening) {
+      return;
+    }
     let player = GetPlayer(this.m_game);
-    if IsDefined(player) {
+    if !IsDefined(player) {
+      return;
+    }
+    this.m_listening = on;
+    if on {
+      player.RegisterInputListener(this, n"ChoiceScrollUp");
+      player.RegisterInputListener(this, n"ChoiceScrollDown");
+      player.RegisterInputListener(this, n"ChoiceApply");
+    } else {
       player.UnregisterInputListener(this, n"ChoiceScrollUp");
       player.UnregisterInputListener(this, n"ChoiceScrollDown");
       player.UnregisterInputListener(this, n"ChoiceApply");
     }
-    TandemNative.Log("choice: hub closed");
+  }
+
+  // ---- a call's choices (Holocall.reds) ----
+
+  // The options of a call with another player, on the game's own widget as
+  // a holocall's (the phone's style), titled with their name; again with
+  // other texts when what can be done changes. False: a story hub is up.
+  public func ShowCallHub(id: Int32, title: String, texts: array<String>) -> Bool {
+    if this.m_shown || this.m_testHub {
+      return false;
+    }
+    let data: ListChoiceHubData;
+    data.id = id;
+    data.activityState = EVisualizerActivityState.Active;
+    data.isPhoneLockActive = true;
+    data.title = title;
+    for text in texts {
+      let choice: ListChoiceData;
+      choice.localizedName = text;
+      choice.inputActionName = n"ChoiceApply";
+      ArrayPush(data.choices, choice);
+    }
+    if !this.m_call {
+      this.m_callCursor = 0;
+      this.m_callPick = -1;
+      TandemNative.Log(s"choice: a call's choices shown (\(ArraySize(texts)) options)");
+    }
+    this.m_call = true;
+    this.m_callTexts = texts;
+    if this.m_callCursor >= ArraySize(texts) {
+      this.m_callCursor = 0;
+    }
+    this.Listen(true);
+    this.Hold(data);
+    return true;
+  }
+
+  public func CloseCallHub() -> Void {
+    if !this.m_call {
+      return;
+    }
+    this.m_call = false;
+    this.m_callPick = -1;
+    if !this.m_shown {
+      this.Unhold();
+      this.Listen(false);
+    }
+    TandemNative.Log("choice: a call's choices closed");
+  }
+
+  public func CallHubShown() -> Bool {
+    return this.m_call;
+  }
+
+  // The option picked on the call's hub since the last ask (-1: none).
+  public func TakeCallPick() -> Int32 {
+    let pick = this.m_callPick;
+    this.m_callPick = -1;
+    return pick;
+  }
+
+  // (test) the call's hub drawn by the game's widget, our cursor on it.
+  public func CallHubDrawn() -> Bool {
+    let widget = this.Widget();
+    return this.m_call && IsDefined(widget) && widget.TandemHeldDrawn(this.m_held.id, this.m_callCursor);
+  }
+
+  // (test) as the key on that option.
+  public func PickCall(index: Int32) -> Void {
+    if this.m_call && index >= 0 && index < ArraySize(this.m_callTexts) {
+      this.m_callCursor = index;
+      this.m_callPick = index;
+    }
   }
 
   // Our own cursor on the stand-in hub; apply marks a suggestion.
   protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
     TandemNative.HookRan(n"Dialogue.TandemDialogue.OnAction");
+    if this.m_call && !this.m_shown {
+      // A call's choices: the cursor drawn on the next tick (ApplyHold), the
+      // option picked acted on there (Holocall.reds).
+      let options = ArraySize(this.m_callTexts);
+      let key = ListenerAction.GetName(action);
+      if options == 0 {
+        return false;
+      }
+      if ListenerAction.IsButtonJustPressed(action) && (Equals(key, n"ChoiceScrollUp") || Equals(key, n"ChoiceScrollDown")) {
+        this.m_callCursor = Equals(key, n"ChoiceScrollUp") ? (this.m_callCursor + options - 1) % options : (this.m_callCursor + 1) % options;
+      } else if Equals(key, n"ChoiceApply") && Equals(ListenerAction.GetType(action), gameinputActionType.BUTTON_RELEASED) {
+        this.m_callPick = this.m_callCursor;
+      }
+      return false;
+    }
     if !this.m_shown {
       return false;
     }
@@ -703,6 +812,7 @@ public class TandemDialogue {
 
   // Leaving: no hub or line of the host's stays on screen.
   public func Close() -> Void {
+    this.CloseCallHub();
     this.CloseHub();
     this.Unhold();
     if ArraySize(this.m_lines) > 0 {

@@ -26,7 +26,8 @@ pause 2
 cmd comms holocall
 expect 'holocall: mode 3 .*the phone: tandem_partner_[0-9]+ phase 2 ' 5
 shot pair-phone-on
-expect 'holocall: the call with .* closed, the link stays' 12
+# (Its choices up: 30 s, pair-phone-choices.)
+expect 'holocall: the call with .* closed, the link stays' 35
 cmd comms holocall
 expect 'holocall: mode 0 .*the phone: tandem_partner_[0-9]+ phase 3 ' 5
 expect_partner 'comms: link with .*-> 3' 10
