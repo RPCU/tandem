@@ -432,8 +432,9 @@ configMapGenerator:
 - From this release the relay also keeps **host IDs** (one-click rejoin,
   the Join list's online badge: [the design](architecture/relay.md#host-ids)).
   Nothing to configure: a binding lives a minute after its host's last
-  word, 4096 at most (4 new per source), and lookups by host ID have
-  their own per-source limit (16, then one per 2 s), apart from the
+  word, 4096 at most (4 new per source, `--max-host-ids-per-source`), and
+  lookups by host ID have their own per-source limit (16, then one per
+  2 s: `--host-lookup-burst`, `--host-lookup-interval`), apart from the
   code lookups'. In a fleet a host ID's binding lives on its owner
   replica (from the ID's bits, as a code's), so replicas and regions
   need the same `--peers` and `--regions` as for codes. An older relay
