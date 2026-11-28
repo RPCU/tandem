@@ -139,13 +139,20 @@ Decided by the user 2026-11-19 (the recommended defaults):
     stops, its copy settles where it was last drawn; the old car after
     another summon stays parked on the others' screens (copies are never
     deleted) while the game took it away on its owner's.
-  - `tools/game.sh cmd garage cars`: what we say and show. Mock player
-    (drive mode): `--summon S` (driven in from 50 m, parked 4 m from it),
+  - `tools/game.sh cmd garage cars`: what we say and show; `test query
+summons copies|at|off|lag|seated|ours`: the game's own state of the
+    first partner's summoned car (its copies of that record, its place, how
+    far from its owner's word and from the stream's drawn place, whether
+    its owner's puppet sits in it) and of ours. Mock player (drive mode):
+    `--summon S` (driven in from 50 m, parked 4 m from it),
     `--summon-again S`, `--summon-board S`.
-- Scenarios: `garage-summon` (the game hosts, the mock player's car is
-  summoned, driven in, summoned again, then boarded: one copy, followed,
-  parked, taken by its `Seat`), `garage-summon-host` (the game summons its
-  own car: the mock player hears it driving in and parked), `garage-guest` (summon as a guest; a vehicle the mock host's
+- Scenarios (the verdict from both games' state, not log lines alone):
+  `garage-summon` (the game hosts, the mock player's car is summoned,
+  driven in, summoned again, then boarded: one copy at every step, on the
+  stream within 1 m while it drives, parked within 1 m of where the mock
+  player's car stopped, its puppet seated in that copy),
+  `garage-summon-host` (the game summons its own car: the mock player
+  hears it parked within 1 m of where our game has it), `garage-guest` (summon as a guest; a vehicle the mock host's
   garage "gets" with `--unlock-vehicle`, credited once in our ledger and
   not unlocked with the default `credit`), `garage-lend` (the mock host
   says `never`: the `garage` command logs it). The real unlock path needs a

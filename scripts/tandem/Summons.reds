@@ -387,4 +387,68 @@ public class TandemSummons {
     }
     TandemNative.Log(line);
   }
+
+  // (test query summons WHAT) the game's own state of the first partner's
+  // summoned car here: copies (car copies of its record in our world),
+  // at (its copy's place, "x y z"), off (metres from where its owner says
+  // it stands), lag (metres from where its owner's stream is drawn),
+  // seated (its owner's puppet sits in that copy: yes or no); ours (our
+  // own summoned car's place, "x y z"). "none": no such car.
+  public func Query(system: ref<TandemSystem>, what: String) -> String {
+    let game = this.m_game;
+    if Equals(what, "ours") {
+      let ours = TandemSummons.OurCar(game);
+      if !IsDefined(ours) {
+        return "none";
+      }
+      let place = ours.GetWorldPosition();
+      return s"\(FloatToStringPrec(place.X, 2)) \(FloatToStringPrec(place.Y, 2)) \(FloatToStringPrec(place.Z, 2))";
+    }
+    if ArraySize(this.m_cars) == 0 {
+      return "none";
+    }
+    let car = this.m_cars[0];
+    if Equals(what, "copies") {
+      let n = 0;
+      let ids = GameInstance.GetDynamicEntitySystem().GetTaggedIDs(n"Tandem.Vehicle");
+      for id in ids {
+        let copy = TandemTraffic.Body(game, id);
+        if IsDefined(copy) && copy.GetRecordID() == car.record {
+          n += 1;
+        }
+      }
+      return IntToString(n);
+    }
+    let body = TandemTraffic.Body(game, car.body);
+    if !IsDefined(body) {
+      return "none";
+    }
+    let at = body.GetWorldPosition();
+    if Equals(what, "at") {
+      return s"\(FloatToStringPrec(at.X, 2)) \(FloatToStringPrec(at.Y, 2)) \(FloatToStringPrec(at.Z, 2))";
+    }
+    if Equals(what, "off") {
+      let said = TandemNative.RemoteOwnCarPosition(car.player);
+      said.W = at.W;
+      return FloatToStringPrec(Vector4.Distance(at, said), 2);
+    }
+    if Equals(what, "lag") {
+      let drawn = TandemNative.RemoteVehiclePosition(car.player);
+      if drawn.W == 0.0 {
+        return "none";
+      }
+      drawn.W = at.W;
+      return FloatToStringPrec(Vector4.Distance(at, drawn), 2);
+    }
+    if Equals(what, "seated") {
+      let puppet = system.PuppetOf(car.player);
+      if !IsDefined(puppet) {
+        return "none";
+      }
+      let mount = GameInstance.GetMountingFacility(game).GetMountingInfoSingleWithIds(puppet.GetEntityID());
+      let parent = mount.parentId;
+      return parent == car.body ? "yes" : "no";
+    }
+    return "unknown";
+  }
 }

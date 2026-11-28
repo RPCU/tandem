@@ -190,6 +190,11 @@ public class TandemTestQuery {
       if IsDefined(devices) {
         value = devices.Query(arg, words[4]);
       }
+    } else if Equals(what, "summons") {
+      let summons = system.Summons();
+      if IsDefined(summons) {
+        value = summons.Query(system, arg);
+      }
     } else if Equals(what, "paint") {
       let paints = system.Paint();
       if IsDefined(paints) && (count == 3 || Equals(arg, "puppet")) {
