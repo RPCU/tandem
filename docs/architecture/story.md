@@ -607,7 +607,7 @@ test watch|play|off`.
       `gates-guest`; `tools/game.sh cmd story gates`.
   - _Open-world activities_ (`OpenWorld.reds`, `core/include/tandem/
 openworld.hpp`, `engine/mappins.cpp`, the freeze's activity class in
-    `engine/quests.cpp`; engine facts §13.162; built 2026-11-28, not run in
+    `engine/quests.cpp`; engine facts §13.167; built 2026-11-28, not run in
     game). The NCPD scanner's activities (hustles, reported crimes, gang
     watches, outposts, hidden stashes: the pins the game's own minimap
     calls `IsNcpdScanner`) belong to **the world whose game leads where the
@@ -620,7 +620,7 @@ openworld.hpp`, `engine/mappins.cpp`, the freeze's activity class in
     - _The host's word_: every 3 s the host reads its NCPD pins (all of
       them every 30 s, `MappinSystem.GetAllMappins`) and sends the ones in
       `CompletedPhase` by their journal path hash (static, the same in
-      every game) as `OpenWorldDone` (appended, protocol 24; the whole set
+      every game) as `OpenWorldDone` (appended, protocol 28; the whole set
       on every change, sorted; a story message, so kept for late joiners,
       in the story digest, an explicit none in a resync; the first word,
       empty too, is news: a guest shows nothing of the host's world before
@@ -636,7 +636,7 @@ openworld.hpp`, `engine/mappins.cpp`, the freeze's activity class in
       (`TandemStory.SetPoiPhase`, the game's own `PointOfInterestMappin`
       setter by hash: it writes the phase into its system's saved
       point-of-interest state, untracks a pin set done, and the map and
-      minimap redraw it themselves, §13.162) and read back: one that does not take is the fallback `activity not marked`,
+      minimap redraw it themselves, §13.167) and read back: one that does not take is the fallback `activity not marked`,
       the setter missing the state `activity marks` (`degradations.md`).
       The pins the guest set remember their own phase and are the only ones
       put back: when the host's state matches theirs again, when the guest

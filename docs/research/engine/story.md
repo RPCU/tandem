@@ -1313,7 +1313,7 @@ written yet):
 
   camera stays, registered as what it is. [unverified]
 
-### 13.162 An NCPD activity's pin, by its journal path, and its phase set from outside (2026-11-28, read in final.reds (2.50), Codeware's source and the 2.50 exe decompiled; not run)
+### 13.167 An NCPD activity's pin, by its journal path, and its phase set from outside (2026-11-28, read in final.reds (2.50), Codeware's source and the 2.50 exe decompiled; not run)
 
 For `docs/architecture/story.md`, "Open-world activities". F is
 `final.reds (2.50)`; CW is Codeware's `src/` (MIT).

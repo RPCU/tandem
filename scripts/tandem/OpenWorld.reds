@@ -1,5 +1,5 @@
 // The host's open-world activities on a guest's map (docs/architecture/
-// story.md, "Open-world activities"; engine facts §13.162). The NCPD
+// story.md, "Open-world activities"; engine facts §13.167). The NCPD
 // scanner's activities (hustles, reported crimes, gang watches, outposts,
 // hidden stashes: the pins the game's own MinimapPOIMappinController
 // .IsNcpdScanner names, final.reds (2.50):434330) belong to the world whose
