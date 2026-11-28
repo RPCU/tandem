@@ -121,11 +121,35 @@ void Combat::ForgetBoss(proto::NpcId npc) {
   m_bosses.erase(npc);
 }
 
+void Combat::QueueBossAiEvent(BossAiEvent event) {
+  std::lock_guard _(m_lock);
+  if (m_bossAiEvents.size() < 64)
+    m_bossAiEvents.push_back(event);
+}
+
+std::vector<Combat::BossAiEvent> Combat::TakeBossAiEvents() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_bossAiEvents, {});
+}
+
+void Combat::QueueBossKill(BossKill kill) {
+  std::lock_guard _(m_lock);
+  if (m_bossKills.size() < 16)
+    m_bossKills.push_back(kill);
+}
+
+std::vector<Combat::BossKill> Combat::TakeBossKills() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_bossKills, {});
+}
+
 void Combat::EndSession() {
   {
     std::lock_guard _(m_lock);
     m_vendors.Clear();
     m_bosses.clear();
+    m_bossAiEvents.clear();
+    m_bossKills.clear();
     m_lends.clear();
     m_paints.clear();
   }

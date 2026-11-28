@@ -752,6 +752,12 @@ pshot() { mkdir -p "$out" && pgame shot "$1" >/dev/null && cp "$cache/shots/$1.p
 # partner. God mode on both: the fight's end must not end a V (revive.md).
 # BOSS_LATE=1: the partner joins once the boss is at 45 % (a guest who joins
 # mid-fight: its proxy must start in the host's phase).
+# BOSS_AI_EVENT=NAME: the boss's behaviour sends its components that AI
+# event (Oda's BladesOn, Kurt's KnifeOn, Cerberus's CerberusScan): the
+# partner's proxy hears it too. BOSS_CAMO=1: the partner cloaks; the boss's
+# camo check sees its puppet cloaked. BOSS_SCRIPTED_KILL=1: the boss's
+# scripted kill of the partner's puppet (Cerberus's) is done to the
+# partner's V on its own game.
 boss_fight() {
   local record=$1 name=$2 me bx by bz spots phase pphase health after bar pbar targets peffects pspots state
   ensure host
@@ -800,6 +806,22 @@ boss_fight() {
   expect_value "$pbar" = shown
   shot "$name-bar"
   pshot "$name-bar"
+  if [ -n "${BOSS_AI_EVENT:-}" ]; then
+    pmark
+    cmd boss ai "$BOSS_AI_EVENT"
+    expect "bosses: our boss [0-9]+'s AI event $BOSS_AI_EVENT to its proxies" 10
+    expect_partner "bosses: proxy [0-9]+ hears its owner's AI event $BOSS_AI_EVENT" 10
+    shot "$name-ai"
+    pshot "$name-ai"
+  fi
+  if [ -n "${BOSS_CAMO:-}" ]; then
+    pmark
+    pcmd boss cloak
+    expect_partner 'bosses: our V cloaked' 5
+    pause 2
+    cmd boss camo
+    expect 'bosses: camo check: puppet [0-9]+ cloaked true' 10
+  fi
   # Whom it attacks: the partner, 3 m off, for a while; its attacks reach
   # the partner's V on the partner's game.
   expect "bosses: our boss [0-9]+ targets player $me" 30
@@ -835,6 +857,19 @@ boss_fight() {
   note "its phase: $phase on both; effects it wears on the partner's: $peffects"
   shot "$name-fight"
   pshot "$name-fight"
+  if [ -n "${BOSS_SCRIPTED_KILL:-}" ]; then
+    local ppos
+    pmark
+    cmd boss scripted-kill
+    expect 'bosses: our npc [0-9]+.s scripted kill of player [0-9]+.s V: sent to their game' 10
+    expect_partner 'bosses: npc [0-9]+.s scripted kill sends our V to -2174' 10
+    pause 3
+    pquery ppos position
+    expect_value "$ppos" '~' '^-217[0-9]'
+    # Back beside the boss for its death.
+    pat "$(awk -v x="$bx" 'BEGIN { print x + 3.0 }') $by $bz"
+    pause 3
+  fi
   # Its death on both, and both bars gone.
   pmark
   cmd boss kill

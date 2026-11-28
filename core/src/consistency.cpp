@@ -322,6 +322,8 @@ bool IsOneShot(const proto::Message &message) {
          // A quest interaction: asked once, answered once (story.md).
          std::holds_alternative<QuestInteract>(message) ||
          std::holds_alternative<NpcWound>(message) || std::holds_alternative<AreaHit>(message) ||
+         // An NPC's scripted kill of a V: done once (bosses.md).
+         std::holds_alternative<ScriptedKill>(message) ||
          // A hand-over's steps: each is acted on once (docs/architecture/regions.md).
          std::holds_alternative<NpcHandover>(message) ||
          std::holds_alternative<NpcHandoverState>(message) ||

@@ -328,6 +328,8 @@ struct TandemNpcAnim {
   std::uint64_t workspot{};
   std::int32_t workspotEntry{};
   Red::CName workspotAnim;
+  Red::CName aiEvent;   // a boss's last AI event to its components (bosses.md)
+  std::int32_t aiSeq{}; // its count, 1 to 255 (0: none yet)
 };
 static_assert(alignof(TandemNpcAnim) <= 8, "the script VM aligns struct locals to 8");
 
@@ -1937,7 +1939,7 @@ struct TandemNative : Red::IScriptable {
   static void SendNpcAnim(std::uint32_t npc, std::int32_t highLevel, std::int32_t upperBody,
                           std::int32_t stance, std::int32_t flags, Red::TweakDBID weapon,
                           std::uint32_t target, std::uint64_t workspot, std::int32_t workspotEntry,
-                          Red::CName workspotAnim) {
+                          Red::CName workspotAnim, Red::CName aiEvent, std::int32_t aiSeq) {
     Runtime::Get().SubmitNpcAnim({.npc = npc,
                                   .highLevel = static_cast<std::uint8_t>(highLevel),
                                   .upperBody = static_cast<std::uint8_t>(upperBody),
@@ -1947,7 +1949,9 @@ struct TandemNative : Red::IScriptable {
                                   .target = target,
                                   .workspot = workspot,
                                   .workspotEntry = static_cast<std::uint32_t>(workspotEntry),
-                                  .workspotAnim = workspotAnim.hash});
+                                  .workspotAnim = workspotAnim.hash,
+                                  .aiEvent = aiEvent.hash,
+                                  .aiSeq = static_cast<std::uint8_t>(aiSeq)});
   }
   // Host: one of its NPCs fired (or reloaded).
   static void SendNpcShot(std::uint32_t npc, std::int32_t effect, Red::Vector4 target) {
@@ -1961,7 +1965,8 @@ struct TandemNative : Red::IScriptable {
     for (const auto &a : Runtime::Get().TakeNpcAnims())
       out.EmplaceBack(TandemNpcAnim{
           a.npc, a.highLevel, a.upperBody, a.stance, a.flags, Red::TweakDBID(a.weapon), a.target,
-          a.workspot, static_cast<std::int32_t>(a.workspotEntry), Red::CName(a.workspotAnim)});
+          a.workspot, static_cast<std::int32_t>(a.workspotEntry), Red::CName(a.workspotAnim),
+          Red::CName(a.aiEvent), static_cast<std::int32_t>(a.aiSeq)});
     return out;
   }
   static Red::DynArray<TandemNpcShot> TakeNpcShots() {
@@ -2129,6 +2134,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcAnim, "TandemNpcAnim", {
   RTTI_PROPERTY(workspot);
   RTTI_PROPERTY(workspotEntry);
   RTTI_PROPERTY(workspotAnim);
+  RTTI_PROPERTY(aiEvent);
+  RTTI_PROPERTY(aiSeq);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcShot, "TandemNpcShot", {

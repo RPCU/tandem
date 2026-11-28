@@ -488,6 +488,21 @@ AI, senses and target tracker are off, its components are not).
   game: each V feels its own). The Chimera's Metalstorm
   (`AISubActionChimeraMetalstorm_Record_Implementation`, `:418746`) is a
   `ShootWithWeapon` on the combat target. [2.5-untested] (scripts)
+- **Paired animations with V are workspot pairs**: the V's half
+  `WorkspotGameSystem.PlayInDevice(device, V, camera, playerWorkspot,
+deviceWorkspot, syncName, duration)`, the NPC's `PlayNpcInWorkspot(npc,
+master, reference, npcWorkspot, syncName, duration)` (the disposal device,
+  `:208539`; a trunk, `:64190`), or `SendDynamicSyncBindSignal(actor,
+master)`; the RTTI has `workDynamicSyncBindCommandData`,
+  `workSyncAnimClip`, `workSyncMasterEntryAnim`, `workIsSyncMasterCondition`,
+  and the AI's `AIUseWorkspotCommand`. Every pair a script starts with V is
+  V's own (takedowns, disposals, the trunk); none in a boss's component or
+  AI script. [2.5-untested] (scripts, RTTI)
+- **AI events reach a component as an `AIEvent` queued on its entity**
+  (`new AIEvent()`, `name`; `OnAIEvent(aiEvent: ref<AIEvent>)` in
+  `OdaComponent`, `KurtzBossComponent`, `KurtzComponent`,
+  `CerberusComponent`, `ScannerControlComponent`, `DroneComponent`,
+  `ReactionManagerComponent`). [2.5-untested] (scripts)
 - **Boss takedowns** read the target's phase effects
   (`GetBossNameBasedOnRecord`, `:284115`: Smasher's three records, Oda's
   two, Royce's exos, Sasquatch's three; `GetCurrentBossPhase`), offered on

@@ -198,7 +198,7 @@ names of `engine-access.md`.
 | `no room` | degraded | fallback | `runtime.cpp`, `engine/posestream.cpp` | no slot for another puppet, pose or rig |
 | `puppet not driven` | degraded | fallback | `engine/hooks.cpp` | a puppet without a move component |
 | `hit shown by twitch` | degraded | fallback | `HitsTaken.reds` (the pipeline played nothing, or chose an AI task) | a hit a V took shown as the body's twitch (a hit by nobody the games know twitches by design: not registered) |
-| `boss state` | degraded | fallback | `Bosses.reds` (a proxy whose weak spots are not its owner's count, or an owner's effect record our game lacks) | the boss proxy shows its own phase effects or plates for what differs (`bosses.md`) |
+| `boss state` | degraded | fallback | `Bosses.reds` (a proxy whose weak spots are not its owner's count, or an owner's effect record our game lacks; the owner: a boss in a paired animation with a puppet) | the boss proxy shows its own phase effects or plates for what differs; a paired grab plays on the owner's game only (`bosses.md`, Known limits) |
 
 Looked at and left out, each for its reason: a rule that drops a message (a
 hit with friendly fire off, a stale or repeated message, an authority

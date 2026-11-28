@@ -53,7 +53,9 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // menu shows the host's rules, coop-menu.md).
 // 26: LinkDecline's reasons 2-4, a call's outcomes (declined, busy, missed).
 // 27: BossState appended (a boss's phase effects and weak spots, bosses.md).
-inline constexpr std::uint16_t kProtocolVersion = 27;
+// 28: NpcAnim.aiEvent and aiSeq (a boss's AI events to its components);
+// ScriptedKill appended (an NPC's scripted kill of a V, bosses.md).
+inline constexpr std::uint16_t kProtocolVersion = 28;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -981,6 +983,12 @@ struct NpcAnim {
   std::uint64_t workspot{};
   std::uint32_t workspotEntry{};
   std::uint64_t workspotAnim{};
+  // The last AI event its behaviour sent the boss's own components (a
+  // CName's hash: Oda's BladesOn, Kurt's KnifeOn, Cerberus's scans and eye
+  // flares; 0: none) and its count, 1 to 255 (0: none yet): each new count
+  // is the event played once more on the proxy's components (bosses.md).
+  std::uint64_t aiEvent{};
+  std::uint8_t aiSeq{};
   friend bool operator==(const NpcAnim &, const NpcAnim &) = default;
 };
 
@@ -3479,6 +3487,21 @@ struct BossState {
   std::vector<std::uint8_t> spots;    // WeakspotHealth percent, 0..100 (kSpotUnknown: unread)
   friend bool operator==(const BossState &, const BossState &) = default;
 };
+// An NPC's scripted kill of a V (appended, protocol 28; bosses.md, Event
+// channel, an IsCombat message): its behaviour moved that V's body away to
+// end it (Cerberus's CerberusRangedKillTask teleports its combat target to
+// `position`). A puppet moved on the NPC's game is put back by its own V's
+// stream, so the NPC's owner sends this to that V's game (through the host),
+// which does the same to its own V. A one-shot.
+struct ScriptedKill {
+  PlayerId player{}; // the V killed
+  NpcId npc{};
+  Vec3 position; // where its body is sent
+  friend bool operator==(const ScriptedKill &, const ScriptedKill &) = default;
+};
+// A V, an NPC, a finite position.
+bool Fits(const ScriptedKill &kill);
+
 // An NPC, a finite health in 0..1, at most kMaxBossEffects effects in
 // ascending order, none twice and none 0, at most kMaxBossSpots spots, each
 // a percent or kSpotUnknown.
@@ -3506,7 +3529,8 @@ using MessageVariant = std::variant<
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
-    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose, BossState>;
+    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose, BossState,
+    ScriptedKill>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
@@ -3525,7 +3549,8 @@ bool IsStory(const Message &message);
 // scale (NpcScale), a vendor (NpcVendor), a placed NPC (NpcPlaced), a
 // death of the ledger (NpcDeath), a street race (Race), what a proxy
 // cannot do (WeakSpotHit, HackTraced), a body's rest (CorpsePose), or a
-// boss's scripted state (BossState): one path in endpoint.hpp too.
+// boss's scripted state (BossState), an NPC's scripted kill of a V
+// (ScriptedKill): one path in endpoint.hpp too.
 bool IsCombat(const Message &message);
 // A trade message (Trade, TradeOffer, TradeCommit): one path as well.
 bool IsTrade(const Message &message);

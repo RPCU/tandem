@@ -649,6 +649,8 @@ public class TandemNpcAnims {
             sent.settleAt = now + TandemNpcAnims.Interval();
             if changed != 0 {
               TandemNative.LogDebug(s"npc anims: event (\(NameToString(event.cls))): npc \(sent.npc)\(TandemNpcAnims.Diff(sent.anim, anim, changed))");
+              anim.aiEvent = sent.anim.aiEvent;
+              anim.aiSeq = sent.anim.aiSeq;
               sent.anim = anim;
               this.m_byEvent += 1;
               this.Send(anim);
@@ -748,6 +750,8 @@ public class TandemNpcAnims {
       } else {
         this.m_polled += 1;
       }
+      anim.aiEvent = sent.anim.aiEvent;
+      anim.aiSeq = sent.anim.aiSeq;
       sent.anim = anim;
       this.Send(anim);
       return;
@@ -826,8 +830,24 @@ public class TandemNpcAnims {
     return s"spot \(plays) said \(said) replays \(replays)";
   }
 
+  // Owner: an AI event the NPC's behaviour sent its own components (a
+  // boss's: Bosses.reds), sent with its states at once, counted so each one
+  // plays once on every proxy. False: the NPC is not one we send.
+  public func AiEvent(id: Uint32, name: CName) -> Bool {
+    let sent = this.FindSent(id);
+    if !IsDefined(sent) {
+      return false;
+    }
+    let anim = sent.anim;
+    anim.aiEvent = name;
+    anim.aiSeq = anim.aiSeq >= 255 ? 1 : anim.aiSeq + 1;
+    sent.anim = anim;
+    this.Send(anim);
+    return true;
+  }
+
   private func Send(anim: TandemNpcAnim) -> Void {
-    TandemNative.SendNpcAnim(anim.npc, anim.highLevel, anim.upperBody, anim.stance, anim.flags, anim.weapon, anim.target, anim.workspot, anim.workspotEntry, anim.workspotAnim);
+    TandemNative.SendNpcAnim(anim.npc, anim.highLevel, anim.upperBody, anim.stance, anim.flags, anim.weapon, anim.target, anim.workspot, anim.workspotEntry, anim.workspotAnim, anim.aiEvent, anim.aiSeq);
   }
 
   // What differs between two states of an NPC: 1 high, 2 upper, 4 stance,
@@ -1181,6 +1201,15 @@ public class TandemNpcAnims {
     }
     if anim.target != proxy.lookAt {
       this.LookAt(body, proxy, anim.target);
+    }
+    // Its owner's behaviour sent its components an AI event (a boss's: Oda's
+    // blades, Kurt's knife, Cerberus's scans): the same event to the proxy's
+    // own components, which play it as the owner's did (bosses.md).
+    if anim.aiSeq != before.aiSeq && anim.aiSeq != 0 && IsNameValid(anim.aiEvent) {
+      let event = new AIEvent();
+      event.name = anim.aiEvent;
+      body.QueueEvent(event);
+      TandemNative.Log(s"bosses: proxy \(proxy.npc) hears its owner's AI event \(NameToString(anim.aiEvent)) (\(anim.aiSeq))");
     }
     proxy.shown = anim;
     this.m_applied += 1;

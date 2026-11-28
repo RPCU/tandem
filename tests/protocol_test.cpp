@@ -456,6 +456,8 @@ TEST_CASE("NPC animation states are reliable and small, their shots unreliable")
   crowd.npcs.resize(kMaxNpcAnims);
   CHECK(Encode(crowd).size() < 4096); // all 64 at once, rare (a fight starting)
   CHECK(Encode(NpcAnims{.npcs = {NpcAnim{}}}).size() < 64);
+  // A boss's AI event rides with its states (bosses.md).
+  RoundTrips(NpcAnims{.npcs = {NpcAnim{.npc = 3, .aiEvent = 0x1234'5678'9abcULL, .aiSeq = 7}}});
   crowd.npcs.resize(kMaxNpcAnims + 1);
   CHECK_FALSE(Decode(Encode(crowd)).has_value());
 }
@@ -1586,6 +1588,26 @@ TEST_CASE("a boss's scripted state is its owner's reliable word: effects in orde
   many = boss;
   many.spots.push_back(1);
   CHECK_FALSE(Decode(Encode(many)).has_value());
+}
+
+TEST_CASE("an NPC's scripted kill of a V is a small reliable one-shot for that V's game") {
+  const ScriptedKill kill{
+      .player = 2, .npc = 0x01000007, .position = {-2174.81f, -2376.33f, -192.68f}};
+  RoundTrips(kill);
+  CHECK(ChannelOf(kill) == Channel::Event);
+  CHECK(IsReliable(kill));
+  CHECK(IsCombat(kill));
+  CHECK(tandem::consistency::IsOneShot(kill));
+  CHECK(std::string_view(NameOf(kill)) == "ScriptedKill");
+  CHECK(Message(kill).index() > Message(BossState{}).index());
+  CHECK(Encode(kill).size() < 32);
+  // No V, a V past the last, no NPC, a place that is not a number: refused.
+  CHECK_FALSE(Decode(Encode(ScriptedKill{.npc = 1})).has_value());
+  CHECK_FALSE(Decode(Encode(ScriptedKill{.player = kMaxPlayerId + 1, .npc = 1})).has_value());
+  CHECK_FALSE(Decode(Encode(ScriptedKill{.player = 2})).has_value());
+  auto lost = kill;
+  lost.position.y = std::numeric_limits<float>::infinity();
+  CHECK_FALSE(Decode(Encode(lost)).has_value());
 }
 
 TEST_CASE("an NPC's voice line is a small reliable one-shot with a known context") {

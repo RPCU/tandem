@@ -78,6 +78,12 @@ bool Fits(const BossState &boss) {
                              [](std::uint8_t spot) { return spot <= 100 || spot == kSpotUnknown; });
 }
 
+bool Fits(const ScriptedKill &kill) {
+  return kill.player != kNoPlayer && kill.player <= kMaxPlayerId && kill.npc != 0 &&
+         std::isfinite(kill.position.x) && std::isfinite(kill.position.y) &&
+         std::isfinite(kill.position.z);
+}
+
 bool Fits(const NpcVoice &voice) {
   return voice.context != 0 && voice.delayMs <= kNpcVoiceMaxDelayMs &&
          (voice.flags & ~kVoiceFlags) == 0;
@@ -587,6 +593,8 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *boss = std::get_if<BossState>(&message); boss && !Fits(*boss))
     return std::nullopt;
+  if (const auto *kill = std::get_if<ScriptedKill>(&message); kill && !Fits(*kill))
+    return std::nullopt;
   if (const auto *lights = std::get_if<TrafficLights>(&message); lights && !Fits(*lights))
     return std::nullopt;
   // A live vendor names its NPC; a dead one only its entity.
@@ -760,7 +768,9 @@ bool IsCombat(const Message &message) {
          std::holds_alternative<Race>(message) || std::holds_alternative<WeakSpotHit>(message) ||
          std::holds_alternative<HackTraced>(message) ||
          std::holds_alternative<TrafficLights>(message) ||
-         std::holds_alternative<CorpsePose>(message) || std::holds_alternative<BossState>(message);
+         std::holds_alternative<CorpsePose>(message) ||
+         std::holds_alternative<BossState>(message) ||
+         std::holds_alternative<ScriptedKill>(message);
 }
 
 bool IsTrade(const Message &message) {
@@ -951,7 +961,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "TrafficLights",
                                    "NpcVoice",
                                    "CorpsePose",
-                                   "BossState"};
+                                   "BossState",
+                                   "ScriptedKill"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

@@ -220,6 +220,8 @@ TANDEM_SAID_BY(Either, NpcVoice)
 TANDEM_SAID_BY(Either, CorpsePose)
 // A boss's scripted state: its owner's word (OwnedBy), never ours back.
 TANDEM_SAID_BY(Either, BossState)
+// An NPC's scripted kill of a V: its owner's word, to that V (OwnedBy).
+TANDEM_SAID_BY(Either, ScriptedKill)
 #undef TANDEM_SAID_BY
 
 // A new message without its SaidBy line above fails here ("incomplete type").
@@ -247,7 +249,8 @@ std::vector<p::NpcId> OwnedBy(const p::Message &m) {
                       std::is_same_v<M, p::NpcShotAt> || std::is_same_v<M, p::NpcActionReply> ||
                       std::is_same_v<M, p::NpcReaction> || std::is_same_v<M, p::NpcVoice> ||
                       std::is_same_v<M, p::NpcScale> || std::is_same_v<M, p::NpcLevel> ||
-                      std::is_same_v<M, p::NpcPlaced> || std::is_same_v<M, p::BossState>)
+                      std::is_same_v<M, p::NpcPlaced> || std::is_same_v<M, p::BossState> ||
+                      std::is_same_v<M, p::ScriptedKill>)
           return {x.npc};
         else if constexpr (std::is_same_v<M, p::NpcDeath>)
           // Its owner's report names its NPC; the host's word names none.
@@ -895,6 +898,10 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::NpcVoice>) {
           // A context, a delay within its bound, flags this version knows.
           inRange = p::Fits(m);
+        } else if constexpr (std::is_same_v<M, p::ScriptedKill>) {
+          // A V, an NPC, a place.
+          finite = Finite(m.position);
+          inRange = !finite || p::Fits(m);
         } else if constexpr (std::is_same_v<M, p::BossState>) {
           // A health in 0..1, effects ascending, spots percents (Fits).
           finite = std::isfinite(m.health);
@@ -1520,6 +1527,10 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
           // same channel), and only while it is shown to us.
           NeedNpc(m.npc, name);
           NeedShown(m.npc, name);
+        } else if constexpr (std::is_same_v<M, p::ScriptedKill>) {
+          // Of our V, by an NPC we were told of.
+          forUs(m.player);
+          NeedNpc(m.npc, name);
         } else if constexpr (std::is_same_v<M, p::BossState>) {
           // A boss we were told of and are shown (one of ours back is
           // authority.not-owner: OwnedBy).

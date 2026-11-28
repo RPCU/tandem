@@ -179,6 +179,10 @@ public class TandemOutcomes {
           // Another game's boss's scripted state (Bosses.reds).
           npcs.Bosses().Take(event, npcs);
           break;
+        case 17:
+          // A proxy's NPC's scripted kill of our V (Bosses.reds).
+          npcs.Bosses().Killed(event, npcs);
+          break;
         default:
           break;
       }

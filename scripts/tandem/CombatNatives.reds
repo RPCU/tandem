@@ -28,7 +28,8 @@ public native struct TandemFightEvent {
   // Weakspot record). 15 (owner) our NPC netrunner's trace on player's V
   // ran to its end (npc, player). 16 another game's boss's scripted state
   // changed (npc; damage: its health then, fraction; level: how many
-  // effects; BossEffects and BossSpots hold them: Bosses.reds).
+  // effects; BossEffects and BossSpots hold them: Bosses.reds). 17 the
+  // NPC npc's scripted kill of our V (player; x y z: where it sends it).
   native let kind: Int32;
   native let npc: Uint32;
   native let player: Uint32;
@@ -56,6 +57,22 @@ public native struct TandemFightEvent {
   native let dz: Float;
   native let id: Uint32;
   native let target: Uint32;
+}
+
+// What a boss's behaviour did that its proxies must do (Bosses.reds): an
+// AI event its components heard; a scripted kill of its target (where it
+// sends it).
+public native struct TandemBossAiEvent {
+  native let entity: EntityID;
+  native let name: CName;
+}
+
+public native struct TandemBossKill {
+  native let npc: EntityID;
+  native let target: EntityID;
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
 }
 
 public native class TandemFight extends IScriptable {
@@ -87,6 +104,13 @@ public native class TandemFight extends IScriptable {
   public static native func BossEffects(npc: Uint32) -> array<TweakDBID>
   public static native func BossSpots(npc: Uint32) -> array<Int32>
   public static native func ForgetBoss(npc: Uint32)
+  // Any thread: a boss's AI event or scripted kill, queued for the tick.
+  public static native func QueueBossAiEvent(entity: EntityID, name: CName)
+  public static native func QueueBossKill(npc: EntityID, target: EntityID, position: Vector4)
+  public static native func TakeBossAiEvents() -> array<TandemBossAiEvent>
+  public static native func TakeBossKills() -> array<TandemBossKill>
+  // Owner: our NPC's scripted kill of that player's V (ScriptedKill).
+  public static native func SendScriptedKill(player: Uint32, npc: Uint32, position: Vector4)
   public static native func MeleeHold(npc: Uint32) -> Float
   public static native func StaleThrows() -> Int32
   public static native func TakeEvents() -> array<TandemFightEvent>

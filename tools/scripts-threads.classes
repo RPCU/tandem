@@ -17,7 +17,10 @@ BaseProjectile < ItemObject < TimeDilatable < GameObject < GameEntity < Entity <
 BaseWorldMapMappinController < BaseInteractionMappinController < BaseMappinBaseController < inkLogicController < inkILogicController < IScriptable
 BillboardDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 CallPolice < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
+CerberusComponent < ScriptableComponent < GameComponent < IComponent < IScriptable
 CerberusDetectionCombat < AIbehaviorconditionScript < AIBehaviorScriptBase < IScriptable
+CerberusDetectionOpticalCamo < AIbehaviorconditionScript < AIBehaviorScriptBase < IScriptable
+CerberusRangedKillTask < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
 DamageSystem < IDamageSystem < IReplicatedGameSystem < IGameSystem < IScriptable
 DeathDecisions < HighLevelTransition < DefaultTransition < StateFunctor < IScriptable
 DeathDecisionsWithResurrection < HighLevelTransition < DefaultTransition < StateFunctor < IScriptable
@@ -53,6 +56,8 @@ IncomingCallGameController < gameuiNewPhoneRelatedHUDGameController < inkHUDGame
 InitialLoadingScreenLogicController < ILoadingLogicController < inkLogicController < inkILogicController < IScriptable
 InVehicleCombatDecorator < AIVehicleTaskAbstract < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
 Inventory < GameComponent < IComponent < IScriptable
+KurtzBossComponent < ScriptableComponent < GameComponent < IComponent < IScriptable
+KurtzComponent < ScriptableComponent < GameComponent < IComponent < IScriptable
 LoadingScreenLogicController < ILoadingLogicController < inkLogicController < inkILogicController < IScriptable
 MappinUIUtils
 MarketSystem < IMarketSystem < ScriptableSystem < IScriptableSystem < IScriptable
@@ -75,6 +80,7 @@ NewHudPhoneGameController < gameuiNewHudPhoneGameController < gameuiGenericNotif
 NPCPoiseListener < ScriptStatPoolsListener < IStatPoolsListener < IScriptable
 NPCPuppet < ScriptedPuppet < gamePuppet < gamePuppetBase < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
 NPCStatesComponent < AINetStateComponent < ScriptableComponent < GameComponent < IComponent < IScriptable
+OdaComponent < ScriptableComponent < GameComponent < IComponent < IScriptable
 PassengerEvents < VehicleEventsTransition < VehicleTransition < DefaultTransition < StateFunctor < IScriptable
 PauseMenuBackgroundGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 PauseMenuGameController < gameuiMenuItemListGameController < gameuiSaveHandlingController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
@@ -94,6 +100,7 @@ ReleaseEvents < CarriedObjectEvents < CarriedObjectTransition < DefaultTransitio
 ReloadEvents < WeaponEventsTransition < WeaponTransition < DefaultTransition < StateFunctor < IScriptable
 RetractableAd < BaseAnimatedDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 RoadBlock < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
+ScannerControlComponent < ScriptableComponent < GameComponent < IComponent < IScriptable
 ScriptableDeviceComponentPS < SharedGameplayPS < DeviceComponentPS < GameComponentPS < PersistentState < IScriptable
 ScriptedPuppet < gamePuppet < gamePuppetBase < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
 SecurityTurret < SensorDevice < ExplosiveDevice < BasicDistractionDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
