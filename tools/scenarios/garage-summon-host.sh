@@ -3,8 +3,20 @@
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode idle --body female
 expect 'joined \(player [0-9]+' 30
-cmd garage summon
-expect 'garage: summon asked \(true\)' 10
+# A car of ours already out (the test reset leaves it where it was) makes
+# the engine answer false and honk it where it stands (AlreadySummoned):
+# vanilla's answer, not this test's arrival. It is sent away first; a
+# summon on its cooldown is asked again until the engine takes it.
+cmd garage dismiss
+expect 'garage: (our Vehicle\.[A-Za-z0-9_]+ sent away|no car of ours out to send away)' 10
+for _ in 1 2 3 4 5 6; do
+  mark
+  cmd garage summon
+  expect 'garage: summon asked \((true|false)\)' 10
+  since | grep -q 'garage: summon asked (true)' && break
+  pause 10
+done
+expect 'garage: summon asked \(true\), on cooldown false, our car out before false' 1
 expect 'summons: our Vehicle\.[A-Za-z0-9_]+ is out, (driving in|parked)' 40
 expect_peer "player [0-9]+'s summoned car 0x[0-9a-f]+: (driving in|parked)" 10
 shot summon-host-arriving

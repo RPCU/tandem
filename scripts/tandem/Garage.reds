@@ -128,7 +128,7 @@ public class TandemGarage {
     return true;
   }
 
-  // tools/game.sh cmd garage | garage summon
+  // tools/game.sh cmd garage | garage summon | garage dismiss
   public func Command(command: String) -> Void {
     let system = GameInstance.GetVehicleSystem(this.m_game);
     let player = GetPlayer(this.m_game);
@@ -137,8 +137,23 @@ public class TandemGarage {
       // active vehicle's type, not none (asked so, the engine said false and
       // summoned all the same, 2026-11-28).
       let slots = IsDefined(player) ? player.GetQuickSlotsManager() : null;
-      let asked = IsDefined(slots) ? system.SpawnActivePlayerVehicle(slots.GetActiveVehicleType()) : system.SpawnActivePlayerVehicle();
-      TandemNative.Log(s"garage: summon asked (\(asked))");
+      // False is the engine's answer to a car already out (it honks where it
+      // stands: the summon ends AlreadySummoned) or on its cooldown.
+      let type = IsDefined(slots) ? slots.GetActiveVehicleType() : gamedataVehicleType.Car;
+      let cooldown = system.IsActivePlayerVehicleOnCooldown(type);
+      let out = IsDefined(TandemSummons.OurCar(this.m_game));
+      let asked = IsDefined(slots) ? system.SpawnActivePlayerVehicle(type) : system.SpawnActivePlayerVehicle();
+      TandemNative.Log(s"garage: summon asked (\(asked)), on cooldown \(cooldown), our car out before \(out)");
+    } else if Equals(command, "garage dismiss") {
+      // (test) our summoned car sent away, as the garage does when another
+      // is called: a summon after it is a real one (garage-summon-host).
+      let car = TandemSummons.OurCar(this.m_game);
+      if IsDefined(car) {
+        system.DespawnPlayerVehicle(Cast<GarageVehicleID>(car.GetRecordID()));
+        TandemNative.Log(s"garage: our \(TDBID.ToStringDEBUG(car.GetRecordID())) sent away");
+      } else {
+        TandemNative.Log("garage: no car of ours out to send away");
+      }
     }
     let restricted = IsDefined(player) && VehicleSystem.IsSummoningVehiclesRestricted(this.m_game);
     let earned = TandemStory.CarryVehicles();
