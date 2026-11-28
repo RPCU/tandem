@@ -417,6 +417,14 @@ public class TandemSpot {
     // entity's origin: where the body stands.
     spot.SetLocalTransform(new Vector4(0.0, 0.0, 0.0, 1.0), new Quaternion(0.0, 0.0, 0.0, 1.0));
     if hold != 0u {
+      // Where its owner's sits, not where the copy stood: a copy still
+      // walking (or late to spawn) played its owner's bench 7 m off, and
+      // stayed there once its owner got up (kabuki-market, 2026-11-27).
+      let at = TandemNative.RemotePosition(hold);
+      if at.W > 0.0 && Vector4.Distance(body.GetWorldPosition(), at) > 0.3 {
+        at.W = 1.0;
+        GameInstance.GetTeleportationFacility(game).Teleport(body, at, TandemYawAngles(Rad2Deg(TandemNative.RemoteYaw(hold))));
+      }
       TandemNative.HoldPuppet(hold, true);
     }
     GameInstance.GetWorkspotSystem(game).PlayNpcInWorkspot(body, body, body, TandemNpcAnims.SpotName(), n"None", 0.3);
