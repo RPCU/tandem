@@ -57,6 +57,14 @@ public:
   };
   void NotePaint(const proto::CarPaint &paint);
   Paint PaintOf(proto::PlayerId player);
+  // Each player's summoned car out in the world (proto::OwnCar; none for a
+  // player that said nothing), noted the same way, with its changes.
+  struct OwnCarSaid {
+    proto::OwnCar car;
+    std::uint32_t changes{};
+  };
+  void NoteOwnCar(const proto::OwnCar &car);
+  OwnCarSaid OwnCarOf(proto::PlayerId player);
   // The session's vendors (proto::NpcVendor, tandem/vendors.hpp), noted the
   // same way: each shared NPC's placed entity, the vendors that died.
   void NoteVendor(const proto::NpcVendor &vendor);
@@ -72,6 +80,7 @@ public:
 private:
   std::map<proto::PlayerId, proto::Lend> m_lends;
   std::map<proto::PlayerId, Paint> m_paints;
+  std::map<proto::PlayerId, OwnCarSaid> m_ownCars;
   vendors::Book m_vendors;
   struct Inbound {
     proto::Message message;

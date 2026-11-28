@@ -20,9 +20,11 @@
   owner (NPCs, devices, physics props, quest objects: the host), which
   applies them and replicates the outcome; the guest's own game shows its
   action at once (its V's animation, sound and effects) so it feels local.
-  Physics objects (crates, bodies, cars hit) need an owner and a sync of
-  their transform like vehicles; which ones (all props, or only those a
-  player touched) is to decide. Done for takedowns, grapples, finishers
+  Physics props: decided 2026-11-28, the placed props something moved,
+  near a V, are the area owner's, their motion and rest shown by the
+  others; debris with no shared name (car parts, limbs) stays each
+  game's own effect of a shared cause (`props.md`, "Which ones"; built,
+  not run in game). Bodies and cars hit: NPCs and traffic. Done for takedowns, grapples, finishers
   and carried, thrown and disposed bodies (see `stealth.md`; to verify in
   game with scenarios `takedowns-host` and `takedowns-guest`). Still open
   there: the disposal container's own state (door, light, "used") stays the

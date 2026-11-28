@@ -66,6 +66,7 @@ add_library(tandem SHARED
   src/engine/prefabs.cpp
   src/engine/scenes.cpp
   src/engine/slots.cpp
+  src/engine/mappins.cpp
   src/engine/physics.cpp
   src/engine/ragdoll.cpp
   src/engine/vehiclemove.cpp

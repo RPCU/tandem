@@ -17,6 +17,10 @@
   `NpcSpawn` (an empty street: rain or night) is not saved and the previous
   file stays, since its replay gives a guest no proxies (on 2026-11-18 that
   broke every guest scenario); a replay without spawns says so in its log.
+  Recordings are not in git: a scenario's `--replay FILE` or
+  `--play-session FILE` missing from the worktree is linked from the
+  machine's shared copy, `~/.cache/tandem/recordings/NAME`
+  (`tools/scenario.sh` `recordings_here`), else the scenario fails.
   The `npcs-host` scenario spawns its own gangers first
   (`tools/game.sh cmd npc spawn [N]`). Tested on Linux by
   `tests/peer_replay.sh` (part of `task test`).

@@ -1149,12 +1149,16 @@ public class TandemPresenceSync {
       if IsDefined(this.m_reactions) {
         this.m_reactions.Command(StrAfterFirst(command, "react "), system);
       }
+    } else if StrBeginsWith(command, "voice") {
+      if IsDefined(this.m_voices) {
+        this.m_voices.Command(StrAfterFirst(command, "voice "), system);
+      }
     } else if StrBeginsWith(command, "status") {
       if IsDefined(this.m_status) {
         this.m_status.Command(StrAfterFirst(command, "status "));
       }
     } else {
-      TandemNative.Log(s"presence: unknown command '\(command)' (report, steps auto|on|off, swim both|fx|sound, vo NAME, sound NAME, fx NAME, flinch, hit [npc], bullet [left], trail, tracer both|bullet|trail, charge on|full|off [left], hud ..., react ..., status ...)");
+      TandemNative.Log(s"presence: unknown command '\(command)' (report, steps auto|on|off, swim both|fx|sound, vo NAME, sound NAME, fx NAME, flinch, hit [npc], bullet [left], trail, tracer both|bullet|trail, charge on|full|off [left], hud ..., react ..., voice trigger NAME [VARIATION VARIATIONS], status ...)");
     }
   }
 

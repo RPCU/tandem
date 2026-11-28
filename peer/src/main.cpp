@@ -142,6 +142,7 @@
 #include "tandem/play.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/presence.hpp"
+#include "tandem/props.hpp"
 #include "tandem/rigpose.hpp"
 #include "tandem/scene.hpp"
 #include "tandem/shaping.hpp"
@@ -242,6 +243,18 @@ struct Options {
   // to stock (seconds after taking the seat; 0: never).
   std::optional<tandem::proto::CarPaint> paint;
   int paintOffSeconds{0};
+  // drive: our garage's car is summoned S seconds after we are together and
+  // drives in on its own (-1: we sit in it from the start); we get in S
+  // seconds after it parked (-1: never); it is summoned again S seconds
+  // after it parked (-1: never).
+  int summonSeconds{-1};
+  int summonBoardSeconds{-1};
+  int summonAgainSeconds{-1};
+  // drive: another car of our garage is summoned S seconds after we stand on
+  // foot by our first one (-1: never): the others' old copy goes once out of
+  // their sight (garage.md 1a).
+  int summonOtherSeconds{-1};
+  std::string otherVehicle{"Vehicle.v_standard25_mahir_supron_player"};
   int hitNpcsSeconds{0};   // join: hit one of the host's NPCs this often (0: never)
   int hitYouSeconds{0};    // host: one of its NPCs hits each guest's V this often (0: never)
   bool hitYouMelee{false}; // --hit-you: a melee hit (blockable, held for the proxy's swing)
@@ -308,11 +321,15 @@ struct Options {
   // (AIQuickHackStatusEffect.HackingInterrupted on it for 2 s; -1: never).
   double hackInterruptSeconds{-1.0};
   int hackCarSeconds{0};
-  std::string storyFile;         // host: a scripted story (tools/scenarios/story-host.story)
-  std::string restrictions;      // host: story restrictions on its V (REC[,REC]), as steps
-  double restrictAt{2.0};        // ...this long after a guest is in
-  double restrictFor{0.0};       // ...lifted after this long (0: never)
-  std::string prefabs;           // host: its quests' world prefabs (REF[,REF], hex), as a step
+  std::string storyFile;      // host: a scripted story (tools/scenarios/story-host.story)
+  std::string restrictions;   // host: story restrictions on its V (REC[,REC]), as steps
+  double restrictAt{2.0};     // ...this long after a guest is in
+  double restrictFor{0.0};    // ...lifted after this long (0: never)
+  std::string prefabs;        // host: its quests' world prefabs (REF[,REF], hex), as a step
+  std::string activities;     // host: its open-world activities done (HASH[,HASH], hex)
+  double activitiesAt{2.0};   // ...this long after a guest is in
+  std::string activitiesThen; // ...and this set later (--activities-then-at)
+  double activitiesThenAt{0.0};
   int gates{-1};                 // our story gates (proto::kGate* bits), said once in session
   bool noFastTravel{};           // host: its quest blocks fast travel (kStoryNoFastTravel)
   int answerSeconds{-1};         // join: answer the host's ringing call after this long (-1: never)
@@ -487,6 +504,17 @@ struct Options {
     bool done{};
   };
   std::vector<FractureOrder> fractures;
+  // Physics props (props.md): a prop of our game's world that "moves" (it
+  // rolls 2 m and comes to rest, --prop), or that our V kicks in another
+  // game's area (--push-prop).
+  struct PropOrder {
+    std::uint64_t entity{};
+    tandem::proto::Vec3 at;
+    int atSeconds{5};
+    bool push{};
+    bool done{};
+  };
+  std::vector<PropOrder> props;
   // A device's fire: as a guest, "our copy of the turret has our V"
   // (--turret-seen); as a host every turret a guest says so of fires at
   // that guest (--turret-shots each time; 0: it says nothing of it).
@@ -557,6 +585,9 @@ struct Options {
   int reactNpcsSeconds{0};
   int voiceNpcsSeconds{0};
   int corpseNpcsSeconds{0};
+  // --voice-trigger: with --voice-npcs, half a period after each line that
+  // NPC says this voice trigger too (variation 1, 2, 3 of 3: kVoiceTrigger).
+  std::string voiceTrigger;
   std::string holdRecord;     // what our V holds in its right hand ("": nothing said)
   std::string holdLeftRecord; // ...and in its left (--hold-left: dual wielding)
   int holsterAtSeconds{-1};   // put it away N s in, for 5 s (-1: never)
@@ -700,6 +731,16 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --paint RRGGBB[,RRGGBB][@HUE] drive: the car carries a custom paint (CarPaint):\n"
          "                     its colour, a second one, its lights' hue in degrees\n"
          "  --paint-off-at S   --paint: back to stock paint S seconds after taking the seat\n"
+         "  --summon S         drive: our car is summoned S seconds after we meet, drives in\n"
+         "                     on its own (OwnCar, its states) and parks 4 m from us, on foot\n"
+         "  --summon-board S   --summon: we get in S seconds after it parked, then drive\n"
+         "  --summon-again S   --summon: summoned again S seconds after it parked (the same\n"
+         "                     car, from the other side)\n"
+         "  --summon-other S   --summon: another car of ours is summoned S seconds after we\n"
+         "                     stand on foot by the first (parked, or out of it); it drives in\n"
+         "                     and parks 6 m from us\n"
+         "  --other-vehicle R  --summon-other: that car's record (default\n"
+         "                     Vehicle.v_standard25_mahir_supron_player)\n"
          "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
          "  --shoot-you N      host: an NPC (a replayed one) fires at each guest's V every N\n"
          "                     seconds: the guest's game fires it and decides the hit\n"
@@ -791,6 +832,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     line (a callout, a pain cry, a fear bark, a death cry: NpcVoice)\n"
          "  --corpse-npcs N    host: every N seconds one of the NPCs it sends dies, and 1 s\n"
          "                     later its body's rest is said where it stood (CorpsePose)\n"
+         "  --voice-trigger NAME  with --voice-npcs: half a period after each line, that\n"
+         "                     NPC says the voice trigger NAME (variation 1-3 of 3, NpcVoice)\n"
          "  --hack-npcs N      join: upload a quickhack on one of the host's NPCs every N\n"
          "                     seconds (1.5 s upload), then land its effect\n"
          "  --hack-action REC  --hack-npcs: the quickhack (default QuickHack.BlindHack)\n"
@@ -813,6 +856,12 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --prefabs REF[,REF]  host: its quests have these world prefabs loaded (node\n"
          "                     refs, hex), 2 s after a guest is in; join: logs the host's\n"
          "                     set as heard\n"
+         "  --activities HASH[,HASH]|off  host: its world has these open-world activities\n"
+         "                     done (their map pins' journal path hashes, hex), said\n"
+         "                     --activities-at S after a guest is in (default 2); join: logs\n"
+         "                     the host's set as heard\n"
+         "  --activities-then HASH[,HASH] --activities-then-at S  host: its set later (one\n"
+         "                     done with the guest: the guest credits it)\n"
          "  --no-fast-travel   host: its quest blocks fast travel (StoryState's flag), 2 s\n"
          "                     after a guest is in: a guest's V never respawns far away\n"
          "  --gates N          our story gates (1 Watson lockdown lifted, 2 Dogtown open,\n"
@@ -905,6 +954,13 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     placed entity its id in hex and its destruction component's\n"
          "                     name; SECONDS into the session (5). The breaks it hears are\n"
          "                     logged\n"
+         "  --prop E:X,Y,Z[@S] our game moves the prop E (a placed entity's id in hex) S seconds\n"
+         "                     into the session (5): it rolls 2 m east from X,Y,Z in 1.5 s and\n"
+         "                     comes to rest, said as its area's owner (props.md). A push on a\n"
+         "                     prop our game runs moves it the same way, along the push\n"
+         "  --push-prop E:X,Y,Z[@S] our V kicks the prop E at X,Y,Z S seconds into the session\n"
+         "                     (5): a push to the game that runs our area. The props it\n"
+         "                     hears move, rest and are pushed are logged\n"
          "  --turret-seen E[@S] join: our copy of the turret E (its id in hex) locks our V S\n"
          "                     seconds into the session (5), and loses it 6 s later\n"
          "  --turret-hands E[:X,Y,Z][@S] our V holds the turret E (its id in hex) S seconds\n"
@@ -1158,6 +1214,27 @@ Options::FractureOrder FractureOrderOf(std::string_view spec) {
     spec = spec.substr(place + 1);
   }
   order.fracture.at = Point("--fracture", spec);
+  return order;
+}
+
+// --prop / --push-prop ENTITY:X,Y,Z[@SECONDS]
+Options::PropOrder PropOrderOf(std::string_view flag, std::string_view spec, bool push) {
+  Options::PropOrder order{.push = push};
+  if (const auto at = spec.find('@'); at != std::string_view::npos) {
+    order.atSeconds = Number<int>(spec.substr(at + 1));
+    spec = spec.substr(0, at);
+  }
+  const auto colon = spec.find(':');
+  if (colon == std::string_view::npos)
+    Usage(std::format("{} is ENTITY:X,Y,Z[@SECONDS]", flag));
+  auto entity = spec.substr(0, colon);
+  if (entity.starts_with("0x"))
+    entity.remove_prefix(2);
+  if (std::from_chars(entity.data(), entity.data() + entity.size(), order.entity, 16).ptr !=
+          entity.data() + entity.size() ||
+      order.entity == 0)
+    Usage(std::format("{}: {} is not an entity id in hex", flag, entity));
+  order.at = Point(flag, spec.substr(colon + 1));
   return order;
 }
 
@@ -1541,6 +1618,10 @@ Options Parse(int argc, char **argv) {
       options.turretShots = Number<int>(value);
     else if (flag == "--fracture")
       options.fractures.push_back(FractureOrderOf(value));
+    else if (flag == "--prop")
+      options.props.push_back(PropOrderOf(flag, value, false));
+    else if (flag == "--push-prop")
+      options.props.push_back(PropOrderOf(flag, value, true));
     else if (flag == "--breach")
       options.breach = BreachOrderOf(value);
     else if (flag == "--programs")
@@ -1749,6 +1830,8 @@ Options Parse(int argc, char **argv) {
       options.voiceNpcsSeconds = std::max(1, Number<int>(value));
     else if (flag == "--corpse-npcs")
       options.corpseNpcsSeconds = std::max(2, Number<int>(value));
+    else if (flag == "--voice-trigger")
+      options.voiceTrigger = value;
     else if (flag == "--hold")
       options.holdRecord = value;
     else if (flag == "--hold-left")
@@ -1799,6 +1882,16 @@ Options Parse(int argc, char **argv) {
       options.paint = paint;
     } else if (flag == "--paint-off-at") {
       options.paintOffSeconds = Number<int>(value);
+    } else if (flag == "--summon") {
+      options.summonSeconds = Number<int>(value);
+    } else if (flag == "--summon-board") {
+      options.summonBoardSeconds = Number<int>(value);
+    } else if (flag == "--summon-again") {
+      options.summonAgainSeconds = Number<int>(value);
+    } else if (flag == "--summon-other") {
+      options.summonOtherSeconds = Number<int>(value);
+    } else if (flag == "--other-vehicle") {
+      options.otherVehicle = value;
     } else if (flag == "--look-keys") {
       options.lookKeys = value;
     } else if (flag == "--look") {
@@ -2024,6 +2117,14 @@ Options Parse(int argc, char **argv) {
       options.restrictFor = Number<double>(value);
     } else if (flag == "--prefabs") {
       options.prefabs = value;
+    } else if (flag == "--activities") {
+      options.activities = value;
+    } else if (flag == "--activities-at") {
+      options.activitiesAt = Number<double>(value);
+    } else if (flag == "--activities-then") {
+      options.activitiesThen = value;
+    } else if (flag == "--activities-then-at") {
+      options.activitiesThenAt = Number<double>(value);
     } else if (flag == "--gates") {
       options.gates = Number<int>(value);
     } else if (flag == "--go-down") {
@@ -2455,6 +2556,9 @@ private:
 //   prefabs REF[,REF]|off        the world prefabs the host's quests have
 //                                loaded (node refs, hex); off: none
 //   gates N                      the host's story gates (proto::kGate* bits)
+//   activities HASH[,HASH]|off   the open-world activities the host's world
+//                                has done (map pins' journal path hashes,
+//                                hex); off: none
 //   restrict REC[,REC]|off       the gameplay restrictions the host's story
 //                                has on its V now (GameplayRestriction.NoCombat:
 //                                weapons away); off: lifted
@@ -2818,6 +2922,20 @@ std::optional<tandem::proto::Message> StoryMessage(const StoryStep &step, std::u
         }
       return set;
     }
+    if (step.verb == "activities" && !a.empty()) {
+      proto::OpenWorldDone set;
+      if (a[0] != "off")
+        for (std::size_t start = 0; start <= a[0].size();) {
+          const auto comma = std::min(a[0].find(',', start), a[0].size());
+          if (comma > start)
+            set.markers.push_back(static_cast<std::uint32_t>(
+                std::stoul(a[0].substr(start, comma - start), nullptr, 16)));
+          start = comma + 1;
+        }
+      std::ranges::sort(set.markers);
+      set.markers.erase(std::unique(set.markers.begin(), set.markers.end()), set.markers.end());
+      return set;
+    }
     if (step.verb == "gates" && !a.empty())
       return proto::StoryGates{.flags = static_cast<std::uint8_t>(std::stoi(a[0]))};
     if (step.verb == "effect" && a.size() >= 2)
@@ -2909,6 +3027,14 @@ std::string Describe(const tandem::proto::Message &message) {
   }
   if (const auto *gates = std::get_if<proto::StoryGates>(&message))
     return std::format("story gates: player {} flags {}", gates->player, gates->flags);
+  if (const auto *set = std::get_if<proto::OpenWorldDone>(&message)) {
+    std::string markers;
+    for (const auto marker : set->markers)
+      markers += std::format(" {:x}", marker);
+    return set->markers.empty() ? std::format("open-world done: none of player {}", set->player)
+                                : std::format("open-world done: {} of player {}:{}",
+                                              set->markers.size(), set->player, markers);
+  }
   if (const auto *set = std::get_if<proto::StoryRestrictions>(&message)) {
     std::string effects;
     for (const auto effect : set->effects)
@@ -3637,7 +3763,7 @@ public:
       m_center = m_heard.back().second.position;
     const float kRadius = m_options.driveRadius;
     constexpr float kSpeed = 8.f;
-    const float angle = static_cast<float>(nowUs / 1e6) * kSpeed / kRadius;
+    const float angle = static_cast<float>(nowUs / 1e6) * kSpeed / kRadius + m_angleFrom;
     const Vec3 at{m_center->x + kRadius * std::cos(angle), m_center->y + kRadius * std::sin(angle),
                   m_center->z};
     const Vec3 velocity{-kSpeed * std::sin(angle), kSpeed * std::cos(angle), 0.f};
@@ -3655,11 +3781,33 @@ public:
   }
 
   void Park(const Vec3 &at) { m_parkedAt = at; }
+  void Unpark() { m_parkedAt.reset(); }
+  // Off again from the car parked at `car` (--summon-board): the circle goes
+  // on from there, so the car we drive is the one we got into, not a point
+  // of the circle the clock has reached (145 m off: the others' game took
+  // it for another car, garage-summon-other 2026-11-28).
+  void UnparkFrom(const Vec3 &car, std::uint64_t nowUs) {
+    m_parkedAt.reset();
+    const auto center = Center();
+    if (!center)
+      return;
+    const float kRadius = m_options.driveRadius;
+    constexpr float kSpeed = 8.f; // Drive's
+    m_angleFrom = std::atan2(car.y - center->y, car.x - center->x) -
+                  static_cast<float>(nowUs / 1e6) * kSpeed / kRadius;
+  }
+  // drive: the circle's centre (where your V was first heard; none yet).
+  std::optional<Vec3> Center() {
+    if (!m_center && !m_heard.empty())
+      m_center = m_heard.back().second.position;
+    return m_center;
+  }
   void Beside(std::optional<Vec3> at) { m_beside = at; }
 
 private:
   std::optional<Vec3> m_center;
   std::optional<Vec3> m_parkedAt;
+  float m_angleFrom = 0.f; // drive: where on the circle it starts (UnparkFrom)
   std::optional<Vec3> m_beside;
   std::optional<Vec3> m_station;
 
@@ -3905,6 +4053,13 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
   if (const auto *paint = std::get_if<proto::CarPaint>(&message))
     return std::format("player {}'s car is painted: {} (car {:#x})", paint->player,
                        PaintText(*paint), paint->vehicle);
+  if (const auto *car = std::get_if<proto::OwnCar>(&message))
+    return car->vehicle == 0
+               ? std::format("player {}'s summoned car: none out", car->player)
+               : std::format("player {}'s summoned car {:#x}: {} at ({:.1f}, {:.1f}, {:.1f})",
+                             car->player, car->vehicle,
+                             (car->flags & proto::kOwnCarMoving) ? "driving in" : "parked",
+                             car->position.x, car->position.y, car->position.z);
   if (const auto *s = std::get_if<proto::NpcStrike>(&message))
     return std::format("npc {} struck by player {}: {:.0f} health, {:.0f} poise, flags {:#x}, "
                        "zone {}, part {}",
@@ -4507,6 +4662,9 @@ int main(int argc, char **argv) {
   // --corpse-npcs: the bodies whose rest is due, and when.
   std::vector<std::pair<tandem::proto::CorpsePose, std::chrono::steady_clock::time_point>>
       corpsesDue;
+  std::optional<std::chrono::steady_clock::time_point> nextTrigger;
+  tandem::proto::NpcId triggerNpc{};
+  std::uint16_t triggerStep = 0;
   // --charge: when the current charge began, the step last said and when.
   auto nextCharge = nextShot, chargeSaid = nextShot;
   std::optional<std::chrono::steady_clock::time_point> chargeFrom;
@@ -4627,6 +4785,19 @@ int main(int argc, char **argv) {
         {.at = 2.0, .verb = "prefabs", .args = {options.prefabs}, .rest = options.prefabs});
     std::ranges::stable_sort(story, {}, &StoryStep::at);
   }
+  // --activities, --activities-then: more steps of the host's story.
+  if (!options.activities.empty()) {
+    story.push_back({.at = options.activitiesAt,
+                     .verb = "activities",
+                     .args = {options.activities},
+                     .rest = options.activities});
+    if (!options.activitiesThen.empty())
+      story.push_back({.at = options.activitiesThenAt,
+                       .verb = "activities",
+                       .args = {options.activitiesThen},
+                       .rest = options.activitiesThen});
+    std::ranges::stable_sort(story, {}, &StoryStep::at);
+  }
   bool gatesSaid = false;
   // join: the call to answer, and when.
   std::optional<std::pair<std::uint64_t, std::chrono::steady_clock::time_point>> toAnswer;
@@ -4685,6 +4856,26 @@ int main(int argc, char **argv) {
   const auto startUs = tandem::net::NowUs();
   auto nextWorld = std::chrono::steady_clock::now();
   bool seated = false, parked = false, paintOff = false;
+  // --summon: our summoned car's arrival.
+  struct {
+    bool standing{}, boarded{};
+    int round{};
+    Vec3 stop, from;
+    float direction{-1.f};
+    tandem::proto::Quat facing;
+    std::optional<std::uint64_t> arrivingUs;
+    std::uint64_t sentUs{};
+    std::optional<std::chrono::steady_clock::time_point> parkedAt;
+  } summon;
+  // --summon-other: another car of ours, summoned once we stand by the first.
+  struct {
+    bool done{};
+    Vec3 from, stop;
+    std::optional<std::uint64_t> arrivingUs;
+    std::uint64_t sentUs{};
+  } summonOther;
+  std::optional<std::chrono::steady_clock::time_point> outOfCarAt; // --drive-seconds
+  std::optional<Vec3> outOfCarPlace;
   std::uint64_t seatedAtUs = 0;
   std::optional<tandem::proto::VehicleState> lastCar;
   // The last state sent, and (world ... moved) the body we hold there.
@@ -4745,6 +4936,16 @@ int main(int argc, char **argv) {
   // Devices: when the session began for us (--device counts from it), and
   // the devices to change back (--device-answer: when, from what).
   std::optional<std::chrono::steady_clock::time_point> devicesFrom;
+  // Props our game moves (--prop, or pushed by another V): each rolls 2 m
+  // along `way` in 1.5 s, said ten times a second, then comes to rest.
+  struct PropMotion {
+    std::uint64_t entity{};
+    tandem::proto::Vec3 from, way;
+    std::chrono::steady_clock::time_point start;
+    std::chrono::steady_clock::time_point said{};
+  };
+  std::vector<PropMotion> propMotions;
+  std::set<std::uint64_t> propsHeard;
   // A device's fire: the bursts our "turrets" still owe (host), and where
   // --turret-seen stands (0 not yet, 1 said, 2 lost again).
   struct TurretBurst {
@@ -5066,8 +5267,12 @@ int main(int argc, char **argv) {
                     e.reaction.npc, e.reaction.type, e.reaction.direction, e.reaction.intensity,
                     e.reaction.bodyPart, e.reaction.by);
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcVoice>) {
-              Log("npc {} says voice context {:#x} (after {} ms)", e.voice.npc, e.voice.context,
-                  e.voice.delayMs);
+              if (e.voice.flags & tandem::proto::kVoiceTrigger)
+                Log("npc {} says trigger {:#x} variation {} of {} (VO context {})", e.voice.npc,
+                    e.voice.context, e.voice.variation, e.voice.variations, e.voice.voContext);
+              else
+                Log("npc {} says voice context {:#x} (after {} ms)", e.voice.npc, e.voice.context,
+                    e.voice.delayMs);
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteStealth>) {
               Log("player {} stealth: flags {:#x}, visibility {:.2f}, camo {:#x}", e.stealth.player,
                   e.stealth.flags, e.stealth.visibility, e.stealth.camo);
@@ -5835,6 +6040,32 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::TurretRefused>) {
               Log("turret {:x}: our claim refused, player {} holds it", e.busy.entity,
                   e.busy.holder);
+            } else if constexpr (std::is_same_v<E, tandem::events::PropsMoved>) {
+              // Once a motion: its first state.
+              for (const auto &prop : e.states.props)
+                if (propsHeard.insert(prop.entity).second)
+                  Log("player {}'s prop {:x} moves at ({:.1f} {:.1f} {:.1f})", e.states.owner,
+                      prop.entity, prop.position.x, prop.position.y, prop.position.z);
+            } else if constexpr (std::is_same_v<E, tandem::events::PropRested>) {
+              const auto &r = e.rest;
+              propsHeard.erase(r.entity);
+              Log("player {}'s prop {:x} at rest at ({:.1f} {:.1f} {:.1f})", r.owner, r.entity,
+                  r.position.x, r.position.y, r.position.z);
+            } else if constexpr (std::is_same_v<E, tandem::events::PropPushed>) {
+              // Ours to give it: it rolls along the push, our word to all.
+              const auto &push = e.push;
+              Log("player {} pushed prop {:x} at ({:.1f} {:.1f} {:.1f}), {:.1f} m/s", push.player,
+                  push.entity, push.position.x, push.position.y, push.position.z,
+                  std::hypot(push.velocity.x, push.velocity.y, push.velocity.z));
+              const float length = std::hypot(push.velocity.x, push.velocity.y);
+              const tandem::proto::Vec3 way =
+                  length > 0.01f
+                      ? tandem::proto::Vec3{push.velocity.x / length, push.velocity.y / length, 0.f}
+                      : tandem::proto::Vec3{1.f, 0.f, 0.f};
+              propMotions.push_back({.entity = push.entity,
+                                     .from = push.position,
+                                     .way = way,
+                                     .start = std::chrono::steady_clock::now()});
             } else if constexpr (std::is_same_v<E, tandem::events::Fractured>) {
               const auto &f = e.fracture;
               Log("player {} broke {} at ({:.1f} {:.1f} {:.1f})", f.player,
@@ -6246,7 +6477,127 @@ int main(int argc, char **argv) {
           metroSecondHalf = secondHalf;
         }
       }
-      if (options.mode == Mode::Drive && !parked) {
+      // --summon: our garage's car drives in on its own and parks by us,
+      // we on foot (OwnCar; our VehicleState stream is it while it moves);
+      // --summon-again: summoned again (the same car, moved); --summon-board:
+      // we get in (our Seat: the others' copy of it is our car's).
+      if (options.mode == Mode::Drive && options.summonSeconds >= 0 && !summon.boarded &&
+          endpoint->IsJoined()) {
+        namespace proto = tandem::proto;
+        const auto nowUs = tandem::net::NowUs();
+        const auto center = puppeteer.Center();
+        if (center && !summon.standing) {
+          summon.stop = {center->x + options.driveRadius, center->y + 4.f, center->z};
+          puppeteer.Park({summon.stop.x - 2.f, summon.stop.y - 4.f, summon.stop.z});
+          summon.standing = true;
+        }
+        const auto after = [&](std::optional<std::chrono::steady_clock::time_point> from,
+                               int seconds) {
+          return from && seconds >= 0 && now >= *from + std::chrono::seconds(seconds);
+        };
+        const auto said = [&](std::uint8_t flags, const Vec3 &at, const proto::Quat &facing) {
+          endpoint->SendCombat(proto::OwnCar{.vehicle = TweakDBID(options.vehicle),
+                                             .flags = flags,
+                                             .position = at,
+                                             .orientation = facing,
+                                             .hint = options.vehicleHint});
+        };
+        constexpr float kSummonFrom = 50.f, kSummonSpeed = 6.f;
+        const bool due = summon.round == 0 ? after(togetherSince, options.summonSeconds)
+                                           : summon.round == 1 &&
+                                                 after(summon.parkedAt, options.summonAgainSeconds);
+        if (summon.standing && !summon.arrivingUs && due) {
+          // From ahead the first time, from behind when summoned again.
+          summon.direction = summon.round == 0 ? -1.f : 1.f;
+          summon.from = {summon.stop.x, summon.stop.y - summon.direction * kSummonFrom,
+                         summon.stop.z};
+          summon.facing =
+              tandem::sync::FromYaw(summon.direction < 0 ? std::numbers::pi_v<float> : 0.f);
+          summon.arrivingUs = nowUs;
+          ++summon.round;
+          said(proto::kOwnCarMoving, summon.from, summon.facing);
+          Log("summon: our car {} drives in from {:.0f} m{}", options.vehicle, kSummonFrom,
+              summon.round > 1 ? " (summoned again)" : "");
+        }
+        if (summon.arrivingUs) {
+          const float t = static_cast<float>(nowUs - *summon.arrivingUs) / 1e6f;
+          const float along = std::min(t * kSummonSpeed, kSummonFrom);
+          proto::VehicleState car{
+              .position = {summon.from.x, summon.from.y + summon.direction * along, summon.from.z},
+              .orientation = summon.facing,
+              .velocity = {0.f, summon.direction * kSummonSpeed, 0.f}};
+          if (along >= kSummonFrom) {
+            car.velocity = {};
+            endpoint->SendLocalVehicle(car);
+            said(proto::kOwnCarArrived, car.position, summon.facing); // the game's Arrived
+            summon.arrivingUs.reset();
+            summon.parkedAt = now;
+            Log("summon: our car parked by us at ({:.1f}, {:.1f}, {:.1f})", car.position.x,
+                car.position.y, car.position.z);
+          } else if (nowUs - summon.sentUs >= 33'000) {
+            summon.sentUs = nowUs;
+            endpoint->SendLocalVehicle(car);
+          }
+        }
+        if (!summon.arrivingUs && after(summon.parkedAt, options.summonBoardSeconds) &&
+            (options.summonAgainSeconds < 0 || summon.round > 1)) {
+          summon.boarded = true;
+          puppeteer.UnparkFrom(summon.stop, nowUs);
+          Log("summon: we get in our car");
+        }
+      }
+      // --summon-other: another car of our garage, summoned once we stand by
+      // the first (parked by us, or we got out of it): it drives in on its
+      // own and parks 6 m from us; the others' copy of the first is old.
+      if (options.mode == Mode::Drive && options.summonSeconds >= 0 &&
+          options.summonOtherSeconds >= 0 && !summonOther.done && endpoint->IsJoined()) {
+        namespace proto = tandem::proto;
+        const auto nowUs = tandem::net::NowUs();
+        const auto since = summon.boarded ? outOfCarAt : summon.parkedAt;
+        std::optional<Vec3> stand;
+        if (summon.boarded)
+          stand = outOfCarPlace;
+        else if (summon.parkedAt && !summon.arrivingUs)
+          stand = Vec3{summon.stop.x - 2.f, summon.stop.y - 4.f, summon.stop.z};
+        const auto facing = tandem::sync::FromYaw(0.f);
+        const auto said = [&](std::uint8_t flags, const Vec3 &at) {
+          endpoint->SendCombat(proto::OwnCar{.vehicle = TweakDBID(options.otherVehicle),
+                                             .flags = flags,
+                                             .position = at,
+                                             .orientation = facing});
+        };
+        constexpr float kOtherFrom = 50.f, kOtherSpeed = 6.f;
+        if (!summonOther.arrivingUs && stand && since &&
+            now >= *since + std::chrono::seconds(options.summonOtherSeconds)) {
+          summonOther.stop = {stand->x + 6.f, stand->y, stand->z};
+          summonOther.from = {summonOther.stop.x, summonOther.stop.y - kOtherFrom,
+                              summonOther.stop.z};
+          summonOther.arrivingUs = nowUs;
+          said(proto::kOwnCarMoving, summonOther.from);
+          Log("summon: our other car {} drives in from {:.0f} m", options.otherVehicle, kOtherFrom);
+        }
+        if (summonOther.arrivingUs) {
+          const float t = static_cast<float>(nowUs - *summonOther.arrivingUs) / 1e6f;
+          const float along = std::min(t * kOtherSpeed, kOtherFrom);
+          proto::VehicleState car{
+              .position = {summonOther.from.x, summonOther.from.y + along, summonOther.from.z},
+              .orientation = facing,
+              .velocity = {0.f, kOtherSpeed, 0.f}};
+          if (along >= kOtherFrom) {
+            car.velocity = {};
+            endpoint->SendLocalVehicle(car);
+            said(proto::kOwnCarArrived, car.position); // the game's Arrived
+            summonOther.arrivingUs.reset();
+            summonOther.done = true;
+            Log("summon: our other car parked by us at ({:.1f}, {:.1f}, {:.1f})", car.position.x,
+                car.position.y, car.position.z);
+          } else if (nowUs - summonOther.sentUs >= 33'000) {
+            summonOther.sentUs = nowUs;
+            endpoint->SendLocalVehicle(car);
+          }
+        }
+      }
+      if (options.mode == Mode::Drive && !parked && (options.summonSeconds < 0 || summon.boarded)) {
         const auto nowUs = tandem::net::NowUs();
         const bool driving = options.seat == "seat_front_left";
         const auto car = puppeteer.Drive(nowUs).second;
@@ -6363,8 +6714,11 @@ int main(int argc, char **argv) {
           endpoint->SetLocalSeat({}); // on foot, beside where the car stopped
           endpoint->SetLocalTransit({});
           parked = true;
-          if (lastCar)
+          outOfCarAt = now;
+          if (lastCar) {
             puppeteer.Park(lastCar->position);
+            outOfCarPlace = lastCar->position;
+          }
           Log("out of the car");
         }
       }
@@ -6955,6 +7309,59 @@ int main(int argc, char **argv) {
       endpoint->SendFracture(order.fracture);
       Log("something broke here at ({:.1f} {:.1f} {:.1f}), entity {:x} (--fracture)",
           order.fracture.at.x, order.fracture.at.y, order.fracture.at.z, order.fracture.entity);
+    }
+    // --prop, --push-prop: each one at its time into the session.
+    for (auto &order : options.props) {
+      if (order.done || !devicesFrom || now < *devicesFrom + std::chrono::seconds(order.atSeconds))
+        continue;
+      order.done = true;
+      if (order.push) {
+        endpoint->SendPropPush(
+            {.entity = order.entity, .position = order.at, .velocity = {0.f, 3.f, 1.f}});
+        Log("prop {:x}: our V kicks it at ({:.1f} {:.1f} {:.1f}) (--push-prop)", order.entity,
+            order.at.x, order.at.y, order.at.z);
+      } else {
+        propMotions.push_back(
+            {.entity = order.entity, .from = order.at, .way = {1.f, 0.f, 0.f}, .start = now});
+        Log("prop {:x}: our game moves it from ({:.1f} {:.1f} {:.1f}) (--prop)", order.entity,
+            order.at.x, order.at.y, order.at.z);
+      }
+    }
+    // Our moving props: ten states a second, then their rest.
+    if (!propMotions.empty()) {
+      tandem::proto::PropStates states;
+      std::erase_if(propMotions, [&](PropMotion &motion) {
+        const float t =
+            std::min(1.f, std::chrono::duration<float>(now - motion.start).count() / 1.5f);
+        const tandem::proto::Vec3 at{motion.from.x + 2.f * t * motion.way.x,
+                                     motion.from.y + 2.f * t * motion.way.y,
+                                     motion.from.z + 0.5f * std::sin(3.14159f * t)};
+        const float yaw = 0.5f * 3.14159f * t;
+        const tandem::proto::Quat pose{0.f, 0.f, std::sin(yaw / 2.f), std::cos(yaw / 2.f)};
+        if (t >= 1.f) {
+          if (endpoint->SendPropRest(
+                  {.entity = motion.entity, .position = at, .orientation = pose}))
+            Log("prop {:x}: at rest at ({:.1f} {:.1f} {:.1f}), told", motion.entity, at.x, at.y,
+                at.z);
+          else
+            Log("prop {:x}: not ours to say (another game runs our area, or speaks for it)",
+                motion.entity);
+          return true;
+        }
+        if (now - motion.said >= 100ms) {
+          motion.said = now;
+          states.props.push_back(tandem::props::Pack(
+              {.entity = motion.entity,
+               .position = at,
+               .orientation = pose,
+               .velocity = {2.f / 1.5f * motion.way.x, 2.f / 1.5f * motion.way.y, 0.f}}));
+        }
+        return false;
+      });
+      if (states.props.size() > tandem::proto::kMaxPropsPerState)
+        states.props.resize(tandem::proto::kMaxPropsPerState);
+      if (!states.props.empty())
+        endpoint->SendPropStates(std::move(states));
     }
     // --breach: its outcome, once, at its time into the session.
     if (options.breach && !options.breach->done && devicesFrom &&
@@ -8070,6 +8477,23 @@ int main(int argc, char **argv) {
       const auto npc = endpoint->SharedNpcs().begin()->first;
       endpoint->SendNpcVoice({.npc = npc, .context = tandem::mods::NameHash(line)});
       Log("npc {} says {}", npc, line);
+      if (!options.voiceTrigger.empty()) {
+        nextTrigger = now + std::chrono::milliseconds(options.voiceNpcsSeconds * 500);
+        triggerNpc = npc;
+      }
+    }
+    // --voice-trigger: the same NPC's voice trigger, half a period later
+    // (past the owner's one line an NPC in kNpcVoiceGapUs).
+    if (nextTrigger && now >= *nextTrigger) {
+      nextTrigger.reset();
+      const auto variation = static_cast<std::uint16_t>(triggerStep++ % 3 + 1);
+      endpoint->SendNpcVoice({.npc = triggerNpc,
+                              .context = tandem::mods::NameHash(options.voiceTrigger),
+                              .flags = tandem::proto::kVoiceTrigger,
+                              .variation = variation,
+                              .variations = 3,
+                              .voContext = tandem::proto::kVoContextDefault});
+      Log("npc {} says trigger {} variation {} of 3", triggerNpc, options.voiceTrigger, variation);
     }
     // --corpse-npcs: one of the NPCs we share dies; its body's rest (a
     // neutral pose where it stood) 1 s later, as a game's settled body.

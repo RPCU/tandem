@@ -2,7 +2,8 @@
 // `TandemPresence` static functions and its structs. Declared on the script
 // side in scripts/tandem/PresenceNatives.reds: keep the two in sync
 // (tools/check-natives.py reads both). All of these run on the game thread,
-// but QueueNpcVoice and IsNpcProxy (any thread: they only queue and read).
+// but QueueNpcVoice, QueueNpcTriggerVoice and IsNpcProxy (any thread: they
+// only queue and read).
 
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
@@ -81,21 +82,30 @@ struct TandemNpcReaction {
 static_assert(alignof(TandemNpcReaction) <= 8, "the script VM aligns struct locals to 8");
 
 // A voice line the game started on one of our entities (NpcVoices.reds),
-// queued by the wrap of GameObject.PlayVoiceOver.
+// queued by its handlers of the voice's events. A trigger: `context` is the
+// trigger's base name, with its variation and their number.
 struct TandemLocalVoice {
   Red::EntityID entity;
   Red::CName context;
   float delay{}; // seconds
   bool inVehicle{};
+  bool trigger{};
+  std::uint32_t variation{};
+  std::uint32_t variations{};
+  std::int32_t voContext{}; // locVoiceoverContext
 };
 static_assert(alignof(TandemLocalVoice) <= 8, "the script VM aligns struct locals to 8");
 
-// A voice line of an NPC we show (proto::NpcVoice).
+// A voice line of an NPC we show (proto::NpcVoice); a trigger as above.
 struct TandemNpcVoice {
   std::uint32_t npc{};
   Red::CName context;
   float delay{}; // seconds
   bool inVehicle{};
+  bool trigger{};
+  std::uint32_t variation{};
+  std::uint32_t variations{};
+  std::int32_t voContext{}; // locVoiceoverContext
 };
 static_assert(alignof(TandemNpcVoice) <= 8, "the script VM aligns struct locals to 8");
 
@@ -302,6 +312,32 @@ struct TandemPresence : Red::IScriptable {
          .flags = static_cast<std::uint8_t>(inVehicle ? proto::kVoiceInVehicle : 0)},
         net::NowUs());
   }
+  // A trigger's overriding VO context as the wire carries it: one
+  // locVoiceoverContext does not know is the engine's default.
+  static std::uint8_t VoContext(std::int32_t value) {
+    return (value >= 0 && value <= proto::kVoContextMinorActivity) ||
+                   value == proto::kVoContextDefault
+               ? static_cast<std::uint8_t>(value)
+               : proto::kVoContextDefault;
+  }
+  // Any thread: a voice trigger the audio system picked for one of our
+  // entities (its handler of entTriggerVOEvent may run on a job thread).
+  // Only queues. Variation counts in the audio metadata are small: one past
+  // 16 bits is held at it.
+  static void QueueNpcTriggerVoice(Red::EntityID entity, Red::CName trigger,
+                                   std::uint32_t variation, std::uint32_t variations,
+                                   std::int32_t voContext) {
+    if (entity.hash == 0 || trigger.hash == 0)
+      return;
+    PresenceState::Get().QueueLocalVoice(
+        {.entity = entity.hash,
+         .context = trigger.hash,
+         .flags = proto::kVoiceTrigger,
+         .variation = static_cast<std::uint16_t>(std::min<std::uint32_t>(variation, 0xffff)),
+         .variations = static_cast<std::uint16_t>(std::min<std::uint32_t>(variations, 0xffff)),
+         .voContext = VoContext(voContext)},
+        net::NowUs());
+  }
   // Any thread, lock-free: the entity is our proxy of another game's NPC,
   // whose voice is its owner's word (NpcVoice), not its own game's.
   static bool IsNpcProxy(Red::EntityID entity) {
@@ -311,9 +347,10 @@ struct TandemPresence : Red::IScriptable {
   static Red::DynArray<TandemLocalVoice> TakeLocalNpcVoices() {
     Red::DynArray<TandemLocalVoice> out;
     for (const auto &v : PresenceState::Get().TakeLocalVoices(net::NowUs()))
-      out.EmplaceBack(TandemLocalVoice{Red::EntityID(v.entity), Red::CName(v.context),
-                                       static_cast<float>(v.delayMs) / 1000.f,
-                                       (v.flags & proto::kVoiceInVehicle) != 0});
+      out.EmplaceBack(TandemLocalVoice{
+          Red::EntityID(v.entity), Red::CName(v.context), static_cast<float>(v.delayMs) / 1000.f,
+          (v.flags & proto::kVoiceInVehicle) != 0, (v.flags & proto::kVoiceTrigger) != 0,
+          v.variation, v.variations, v.voContext});
     return out;
   }
   // Game thread: one of our shared NPCs said a line (proto::NpcVoice).
@@ -451,13 +488,28 @@ struct TandemPresence : Red::IScriptable {
     return s_sent;
   }
 
+  // Game thread: one of our shared NPCs said a voice trigger (proto::NpcVoice,
+  // kVoiceTrigger): its base name, variation and their number.
+  static void SendNpcTriggerVoice(std::uint32_t npc, Red::CName trigger, std::uint32_t variation,
+                                  std::uint32_t variations, std::int32_t voContext) {
+    if (trigger.hash == 0)
+      return;
+    Runtime::Get().SubmitNpcVoice(
+        {.npc = npc,
+         .context = trigger.hash,
+         .flags = proto::kVoiceTrigger,
+         .variation = static_cast<std::uint16_t>(std::min<std::uint32_t>(variation, 0xffff)),
+         .variations = static_cast<std::uint16_t>(std::min<std::uint32_t>(variations, 0xffff)),
+         .voContext = VoContext(voContext)});
+  }
   // Game thread: the lines of the NPCs we show since the last ask.
   static Red::DynArray<TandemNpcVoice> TakeNpcVoices() {
     Red::DynArray<TandemNpcVoice> out;
     for (const auto &v : PresenceState::Get().TakeVoices(net::NowUs()))
-      out.EmplaceBack(TandemNpcVoice{v.npc, Red::CName(v.context),
-                                     static_cast<float>(v.delayMs) / 1000.f,
-                                     (v.flags & proto::kVoiceInVehicle) != 0});
+      out.EmplaceBack(TandemNpcVoice{
+          v.npc, Red::CName(v.context), static_cast<float>(v.delayMs) / 1000.f,
+          (v.flags & proto::kVoiceInVehicle) != 0, (v.flags & proto::kVoiceTrigger) != 0,
+          v.variation, v.variations, v.voContext});
     return out;
   }
 
@@ -559,6 +611,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemLocalVoice, "TandemLocalVoice", {
   RTTI_PROPERTY(context);
   RTTI_PROPERTY(delay);
   RTTI_PROPERTY(inVehicle);
+  RTTI_PROPERTY(trigger);
+  RTTI_PROPERTY(variation);
+  RTTI_PROPERTY(variations);
+  RTTI_PROPERTY(voContext);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcVoice, "TandemNpcVoice", {
@@ -566,6 +622,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcVoice, "TandemNpcVoice", {
   RTTI_PROPERTY(context);
   RTTI_PROPERTY(delay);
   RTTI_PROPERTY(inVehicle);
+  RTTI_PROPERTY(trigger);
+  RTTI_PROPERTY(variation);
+  RTTI_PROPERTY(variations);
+  RTTI_PROPERTY(voContext);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemCorpse, "TandemCorpse", {
@@ -604,9 +664,11 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemPresence, "TandemPresence", {
   RTTI_METHOD(SendNpcReaction);
   RTTI_METHOD(TakeNpcReactions);
   RTTI_METHOD(QueueNpcVoice);
+  RTTI_METHOD(QueueNpcTriggerVoice);
   RTTI_METHOD(IsNpcProxy);
   RTTI_METHOD(TakeLocalNpcVoices);
   RTTI_METHOD(SendNpcVoice);
+  RTTI_METHOD(SendNpcTriggerVoice);
   RTTI_METHOD(TakeNpcVoices);
   RTTI_METHOD(SendCorpse);
   RTTI_METHOD(TakeCorpses);

@@ -539,6 +539,16 @@ public native class TandemNative extends IScriptable {
   public static native func IsTimeHostFull() -> Bool
   public static native func SendSeat(vehicle: TweakDBID, seat: CName, owner: Uint32, hint: TandemRecordHint)
   public static native func SendVehicle(position: Vector4, orientation: Quaternion, velocity: Vector4)
+  // A summoned car (Summons.reds, docs/architecture/garage.md 1a): ours,
+  // said when it changes (vehicle none: no car out; flags 1 while it drives
+  // on its own); a partner's as the session last said it (changes 0: never;
+  // a vanilla stand-in for a record we lack; W 0: no car out).
+  public static native func SendOwnCar(vehicle: TweakDBID, flags: Int32, position: Vector4, orientation: Quaternion, hint: TandemRecordHint)
+  public static native func RemoteOwnCarChanges(player: Uint32) -> Int32
+  public static native func RemoteOwnCarVehicle(player: Uint32) -> TweakDBID
+  public static native func RemoteOwnCarFlags(player: Uint32) -> Int32
+  public static native func RemoteOwnCarPosition(player: Uint32) -> Vector4
+  public static native func RemoteOwnCarOrientation(player: Uint32) -> Quaternion
   public static native func RemoteSeatChanges(player: Uint32) -> Int32
   public static native func RemoteSeatVehicle(player: Uint32) -> TweakDBID
   public static native func RemoteSeatSlot(player: Uint32) -> CName

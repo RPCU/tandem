@@ -55,12 +55,16 @@ public:
 
   // ---- any thread (the voice wrap may run on a job thread) -> game thread ----
   // A voice line the game started on one of our entities (NpcVoices.reds):
-  // its entity, context and delay; the tick sends those of our shared NPCs.
+  // its entity, context and delay (a trigger: its base name, variation and
+  // their number, kVoiceTrigger); the tick sends those of our shared NPCs.
   struct LocalVoice {
     std::uint64_t entity{};
     std::uint64_t context{};
     std::uint16_t delayMs{};
     std::uint8_t flags{};
+    std::uint16_t variation{};
+    std::uint16_t variations{};
+    std::uint8_t voContext{};
   };
   void QueueLocalVoice(const LocalVoice &voice, std::uint64_t nowUs);
   std::vector<LocalVoice> TakeLocalVoices(std::uint64_t nowUs);

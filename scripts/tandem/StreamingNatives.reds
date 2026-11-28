@@ -74,4 +74,8 @@ public abstract class TandemPointKind {
   // A grenade bounced (entity: the grenade; the place of the bounce; value:
   // the engine time of it, in milliseconds).
   public static func ThrowBounce() -> Int32 { return 3; }
+  // A placed entity's physics body touched something (Props.reds; other:
+  // what it touched; name: its component; the place of the touch; value:
+  // the impulse in hundredths).
+  public static func PropTouch() -> Int32 { return 4; }
 }

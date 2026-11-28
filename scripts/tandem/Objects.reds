@@ -66,6 +66,8 @@ public class TandemObjectSync extends ScriptableSystem {
       turrets.Update(you, now);
     }
     if you == 0u {
+      // Physics props (Props.reds): their touches' queue taken, nothing kept.
+      TandemPropSync.Tick(game, 0u, now);
       return;
     }
     for point in broken {
@@ -80,6 +82,8 @@ public class TandemObjectSync extends ScriptableSystem {
         turrets.OnEvent(event, now);
       }
     }
+    // Physics props (Props.reds): what TakeEvents routed to them this tick.
+    TandemPropSync.Tick(game, you, now);
     // Once a second: what waited and is in our world now.
     if ArraySize(this.m_waiting) > 0 && (now - this.m_waitedAt >= 1.0 || now < this.m_waitedAt) {
       this.m_waitedAt = now;

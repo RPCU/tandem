@@ -25,6 +25,7 @@
 #include "tandem/traffic.hpp"
 
 #include <chrono>
+#include <format>
 #include <fstream>
 #include <map>
 #include <optional>
@@ -66,6 +67,8 @@ struct NetThread::Impl {
   std::optional<proto::CarLend> lastLend;
   // Our car's custom paint (said by the scripts when it changes): again too.
   std::optional<proto::CarPaint> lastPaint;
+  // Our summoned car (said by the scripts when it changes): again too.
+  std::optional<proto::OwnCar> lastOwnCar;
   std::optional<proto::Seat> lastSeat;
   std::optional<proto::VehicleRadio> lastRadio;
   std::optional<proto::Stealth> lastStealth;
@@ -341,10 +344,14 @@ struct NetThread::Impl {
       endpoint->SendCombat(*lastLend);
     if (lastPaint)
       endpoint->SendCombat(*lastPaint);
+    if (lastOwnCar)
+      endpoint->SendCombat(*lastOwnCar);
     // What this game runs without (degradations.hpp): said to the session
     // from its start and at every change.
     auto degradedSeen = Degradations::Get().Local().Changes();
     auto degradedSaid = Degradations::Get().Local().Wire();
+    // Moved props the session's full record of rests could not keep.
+    std::uint64_t propsUnrecorded = 0;
     endpoint->SendCombat(degradedSaid);
     if (lastSeat)
       endpoint->SetLocalSeat(*lastSeat);
@@ -497,6 +504,8 @@ struct NetThread::Impl {
                 runtime.PushEvent({ScriptEvent::Kind::PlayerLeft, e.player, {}, {}});
                 // Its car's paint goes with it (a namesake's car is stock).
                 Combat::Get().PushInbound(proto::CarPaint{.player = e.player});
+                // And its summoned car: no one's now (its copy stays parked).
+                Combat::Get().PushInbound(proto::OwnCar{.player = e.player});
                 // And what its game ran without.
                 Combat::Get().PushInbound(proto::Degraded{.player = e.player});
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Left, .player = e.player});
@@ -961,6 +970,12 @@ struct NetThread::Impl {
                 runtime.PushBreach(e.result);
               } else if constexpr (std::is_same_v<E, events::Fractured>) {
                 runtime.PushObject(e.fracture);
+              } else if constexpr (std::is_same_v<E, events::PropsMoved>) {
+                runtime.PushObject(e.states);
+              } else if constexpr (std::is_same_v<E, events::PropRested>) {
+                runtime.PushObject(e.rest);
+              } else if constexpr (std::is_same_v<E, events::PropPushed>) {
+                runtime.PushObject(e.push);
               } else if constexpr (std::is_same_v<E, events::DeviceFired>) {
                 runtime.PushObject(e.fire);
               } else if constexpr (std::is_same_v<E, events::TurretHeld>) {
@@ -1469,6 +1484,21 @@ struct NetThread::Impl {
           endpoint->SendDeviceFire(*fire);
         else if (const auto *hands = std::get_if<proto::TurretHands>(&message))
           endpoint->SendTurretHands(*hands);
+        else if (const auto *states = std::get_if<proto::PropStates>(&message))
+          endpoint->SendPropStates(*states);
+        else if (const auto *rest = std::get_if<proto::PropRest>(&message))
+          endpoint->SendPropRest(*rest);
+        else if (const auto *push = std::get_if<proto::PropPush>(&message))
+          endpoint->SendPropPush(*push);
+      }
+      // Past the session's full record: a player who comes later sees such a
+      // prop where its sector puts it (props.md), a lesser path, told.
+      if (const auto refused = endpoint->Props().Refused(); refused > propsUnrecorded) {
+        propsUnrecorded = refused;
+        Degradations::Get().Fallback(
+            "prop not recorded",
+            std::format("the session's record of moved props is full ({} kept): {} not kept",
+                        endpoint->Props().Size(), refused));
       }
       runtime.SetFractureRecord(static_cast<std::uint32_t>(endpoint->Fractures().Size()),
                                 endpoint->Fractures().Digest());
@@ -1515,6 +1545,8 @@ struct NetThread::Impl {
           lastLend = *lend;
         if (const auto *paint = std::get_if<proto::CarPaint>(&message))
           lastPaint = *paint;
+        if (const auto *car = std::get_if<proto::OwnCar>(&message))
+          lastOwnCar = *car;
         if (!endpoint->SendCombat(message))
           if (const auto *area = std::get_if<proto::AreaHit>(&message))
             log::Info("hit on player {} dropped: not in the session, or friendly fire is off",
