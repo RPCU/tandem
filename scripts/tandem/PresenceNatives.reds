@@ -68,21 +68,32 @@ public native struct TandemNpcReaction {
 }
 
 // A voice line the game started on one of our entities (NpcVoices.reds).
+// A trigger: context is its base name, with its variation and their number.
 public native struct TandemLocalVoice {
   native let entity: EntityID;
   native let context: CName;
   // seconds
   native let delay: Float;
   native let inVehicle: Bool;
+  native let trigger: Bool;
+  native let variation: Uint32;
+  native let variations: Uint32;
+  // locVoiceoverContext
+  native let voContext: Int32;
 }
 
-// A voice line of an NPC we show (proto::NpcVoice).
+// A voice line of an NPC we show (proto::NpcVoice); a trigger as above.
 public native struct TandemNpcVoice {
   native let npc: Uint32;
   native let context: CName;
   // seconds
   native let delay: Float;
   native let inVehicle: Bool;
+  native let trigger: Bool;
+  native let variation: Uint32;
+  native let variations: Uint32;
+  // locVoiceoverContext
+  native let voContext: Int32;
 }
 
 // A body at rest another game told (proto::CorpsePose).
@@ -125,12 +136,15 @@ public native class TandemPresence extends IScriptable {
   public static native func Flinch(player: Uint32, strength: Float, direction: Vector4, forward: Vector4) -> Void;
   public static native func SendNpcReaction(npc: Uint32, by: Uint32, type: Int32, direction: Int32, intensity: Int32, bodyPart: Int32, variation: Int32, source: Int32, stance: Int32, moveSpeed: Int32, moveDirection: Int32, turns: Bool, angle: Float, way: Vector4) -> Void;
   public static native func TakeNpcReactions() -> array<TandemNpcReaction>;
-  // NPC voices (NpcVoices.reds). Any thread: QueueNpcVoice only queues,
-  // IsNpcProxy only reads; the others on the game thread.
+  // NPC voices (NpcVoices.reds). Any thread: QueueNpcVoice and
+  // QueueNpcTriggerVoice only queue, IsNpcProxy only reads; the others on
+  // the game thread.
   public static native func QueueNpcVoice(entity: EntityID, context: CName, delay: Float, inVehicle: Bool) -> Void;
+  public static native func QueueNpcTriggerVoice(entity: EntityID, trigger: CName, variation: Uint32, variations: Uint32, voContext: Int32) -> Void;
   public static native func IsNpcProxy(entity: EntityID) -> Bool;
   public static native func TakeLocalNpcVoices() -> array<TandemLocalVoice>;
   public static native func SendNpcVoice(npc: Uint32, context: CName, delay: Float, inVehicle: Bool) -> Void;
+  public static native func SendNpcTriggerVoice(npc: Uint32, trigger: CName, variation: Uint32, variations: Uint32, voContext: Int32) -> Void;
   public static native func TakeNpcVoices() -> array<TandemNpcVoice>;
   // Bodies at rest (Corpses.reds). Owner: a settled body's ragdoll read and
   // sent with its place ("" when sent, else why not). Every other game: the
