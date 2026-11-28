@@ -8,6 +8,7 @@
 
 #include "config.hpp"
 #include "degradations.hpp"
+#include "engine/access.hpp"
 #include "engine/casts.hpp"
 #include "engine/mappins.hpp"
 #include "engine/posestream.hpp"
@@ -747,7 +748,7 @@ struct TandemStory : Red::IScriptable {
   static std::vector<openworld::Seen> Pins(const Red::DynArray<std::uint32_t> &markers,
                                            const Red::DynArray<std::int32_t> &phases) {
     std::vector<openworld::Seen> out;
-    const auto n = std::min(markers.size, phases.size);
+    const auto n = std::min(markers.Size(), phases.Size());
     out.reserve(n);
     for (std::uint32_t i = 0; i < n; ++i)
       if (markers[i] != 0 && phases[i] >= 0 && phases[i] < openworld::kPhases)
