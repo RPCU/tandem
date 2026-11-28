@@ -1273,6 +1273,27 @@ TEST_CASE("referee: a body's rest is of an NPC we were told of, never ours back"
   CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
 }
 
+TEST_CASE("referee: a boss's state is of an NPC we are shown, in range, never ours back") {
+  auto guest = Guest();
+  guest.Received(1, proto::NpcSpawn{.npc = 7, .record = 1}, kSecond);
+  guest.Received(
+      1, proto::BossState{.npc = 7, .health = 0.5f, .effects = {3, 9}, .spots = {100, 0}}, kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1, proto::BossState{.npc = 8, .health = 0.5f}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"ids.unknown-npc"});
+  guest.Received(1, proto::BossState{.npc = 7, .health = std::nanf("")}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.not-finite"});
+  // Effects out of order, a spot above 100.
+  guest.Received(1, proto::BossState{.npc = 7, .effects = {9, 3}}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1, proto::BossState{.npc = 7, .spots = {120}}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  const auto ours = regions::MakeNpcId(2, 1);
+  guest.Sent(1, proto::NpcSpawn{.npc = ours, .record = 2}, kSecond);
+  guest.Received(1, proto::BossState{.npc = ours}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
+}
+
 TEST_CASE("referee: what a game runs without is its own word, passed on, never back") {
   auto guest = Guest();
   guest.Received(

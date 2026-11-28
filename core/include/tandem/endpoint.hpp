@@ -820,8 +820,10 @@ public:
   // linked with it, kept with the NPC's records until it goes (one whose spawn is still on its way
   // is said right after it); never a dead one (the host derives those from the owner's NpcGone,
   // tells everyone and keeps them for the session). Race: our word on a street race, in our name,
-  // to every other game (the host stamps a guest's and relays it). False when nothing was sent (not
-  // ours to say, nobody to send to, refused by the rules).
+  // to every other game (the host stamps a guest's and relays it). BossState: an owner's word on
+  // a boss it runs (bosses.md), to everyone who sees it, once per change, kept for late joiners
+  // and in the NPC digest until it goes. False when nothing was sent (not ours to say, nobody to
+  // send to, refused by the rules).
   bool SendCombat(proto::Message message);
   // The session's rules as this game knows them (the host's own; a guest's,
   // what the host said; none yet: every flag off).
@@ -844,6 +846,8 @@ public:
   const std::map<proto::NpcId, proto::NpcLevel> &NpcLevels() const { return m_npcLevels; }
   // How many players each NPC we know of is scaled for, as its owner said.
   const std::map<proto::NpcId, proto::NpcScale> &NpcScales() const { return m_npcScale; }
+  // Each boss's scripted state we know of, as its owner said (BossState).
+  const std::map<proto::NpcId, proto::BossState> &BossStates() const { return m_bossStates; }
   // Who may drive each player's cars, as they said (a guest's own is not
   // kept here; the host's is).
   const std::map<proto::PlayerId, proto::CarLend> &CarLends() const { return m_lends; }
@@ -1804,6 +1808,8 @@ private:
   // as this game knows it; and ours said before their spawn reached us.
   std::map<proto::NpcId, proto::NpcScale> m_npcScale;
   std::map<proto::NpcId, proto::NpcScale> m_npcScaleEarly;
+  // Each boss's scripted state (BossState: its owner's word), as this game knows it.
+  std::map<proto::NpcId, proto::BossState> m_bossStates;
   std::map<proto::NpcId, proto::NpcPoise> m_npcPoiseEarly; // ours, said before its spawn
   // The NPCs of our range we announced (a poise before the first spawn
   // waits for it; after a removal it is said), at most kNpcsSaid.

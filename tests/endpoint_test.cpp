@@ -2627,6 +2627,57 @@ TEST_CASE("a body's rest is said by its corpse's owner alone, for the games that
   CHECK_FALSE(hostHeard);
 }
 
+TEST_CASE("a boss's state is its owner's word, once per change, kept for a late joiner") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  host->SendNpcSpawn({.npc = 7, .record = 1});
+  const proto::BossState first{.npc = 7, .health = 0.8f, .effects = {11, 12}, .spots = {100, 60}};
+  // Before anyone joined: kept for whoever comes; an NPC nobody runs: refused.
+  CHECK(host->SendCombat(first));
+  CHECK_FALSE(host->SendCombat(proto::BossState{.npc = 9, .health = 1.f}));
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(guest, error);
+  std::vector<proto::BossState> heard;
+  bool sent = false, hostHeard = false;
+  const Seen watch = [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *combat = std::get_if<events::Combat>(&event))
+        if (const auto *boss = std::get_if<proto::BossState>(&combat->message)) {
+          if (i == 1)
+            heard.push_back(*boss);
+          else
+            hostHeard = true;
+        }
+    if (heard.size() == 1 && !sent) {
+      sent = true;
+      // A repeat is said already; the guest speaks for no boss of the host's.
+      CHECK(host->SendCombat(first));
+      CHECK_FALSE(guest->SendCombat(
+          proto::BossState{.npc = 7, .health = 0.1f, .effects = {13}, .spots = {0, 0}}));
+      CHECK(host->SendCombat(
+          proto::BossState{.npc = 7, .health = 0.45f, .effects = {12, 14}, .spots = {100, 0}}));
+    }
+  };
+  REQUIRE(Pump({host.get(), guest.get()}, [&](std::size_t i, const auto &events) {
+    watch(i, events);
+    return heard.size() >= 2;
+  }));
+  PumpFor({host.get(), guest.get()}, 200ms, watch);
+  REQUIRE(heard.size() == 2);
+  CHECK(heard[0] == first);
+  CHECK(heard[1].effects == std::vector<std::uint64_t>{12, 14});
+  CHECK(heard[1].spots == std::vector<std::uint8_t>{100, 0});
+  CHECK(guest->BossStates().at(7) == heard[1]);
+  CHECK_FALSE(hostHeard);
+  // Gone with its NPC.
+  host->SendNpcGone({.npc = 7, .reason = proto::kGoneDead});
+  REQUIRE(Pump({host.get(), guest.get()},
+               [&](std::size_t, const auto &) { return !guest->BossStates().contains(7); }));
+  CHECK_FALSE(host->BossStates().contains(7));
+}
+
 TEST_CASE("an NPC's voice lines reach the linked games' proxies, one an NPC at a time") {
   const auto port = NextPort();
   std::string error;

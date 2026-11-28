@@ -45,14 +45,17 @@ std::uint32_t WorldDigest(const std::optional<proto::World> &world,
 // `only`, the NPCs it accepts (id, owner) and no others: a guest is sent, and
 // hashes, the NPCs of the owners it is linked with. `scales`: how many
 // players each NPC is scaled for (NpcScale: the armour a proxy computes a
-// hit against); one never said counts as alone.
+// hit against); one never said counts as alone. `bosses`: each boss's
+// scripted state (BossState: its effects and weak spots; its health is
+// NpcHealth's to say).
 using NpcFilter = std::function<bool(proto::NpcId, proto::PlayerId)>;
 std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
                         const std::map<proto::NpcId, proto::NpcHealth> &health,
                         const std::map<proto::NpcId, proto::NpcHold> &holds = {},
                         const std::map<proto::NpcId, proto::PlayerId> &owners = {},
                         const NpcFilter &only = {}, std::uint16_t *count = nullptr,
-                        const std::map<proto::NpcId, proto::NpcScale> *scales = nullptr);
+                        const std::map<proto::NpcId, proto::NpcScale> *scales = nullptr,
+                        const std::map<proto::NpcId, proto::BossState> *bosses = nullptr);
 // The shared world vehicles and how each stands (part of the NPC domain: a
 // difference is resynced with it).
 // `owners` and `only` as for NpcDigest (the owner of a vehicle with none

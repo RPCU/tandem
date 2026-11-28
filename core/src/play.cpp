@@ -501,6 +501,7 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
                              std::is_same_v<M, proto::NpcPoise> ||
                              std::is_same_v<M, proto::NpcLevel> ||
                              std::is_same_v<M, proto::NpcScale> ||
+                             std::is_same_v<M, proto::BossState> ||
                              std::is_same_v<M, proto::Difficulty> ||
                              std::is_same_v<M, proto::Rules> || std::is_same_v<M, proto::Journal> ||
                              std::is_same_v<M, proto::Tracked> ||

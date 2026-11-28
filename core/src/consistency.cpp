@@ -50,7 +50,8 @@ std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
                         const std::map<proto::NpcId, proto::NpcHold> &holds,
                         const std::map<proto::NpcId, proto::PlayerId> &owners,
                         const NpcFilter &only, std::uint16_t *count,
-                        const std::map<proto::NpcId, proto::NpcScale> *scales) {
+                        const std::map<proto::NpcId, proto::NpcScale> *scales,
+                        const std::map<proto::NpcId, proto::BossState> *bosses) {
   Hasher hash;
   std::size_t counted = 0;
   for (const auto &[id, spawn] : npcs) {
@@ -80,6 +81,16 @@ std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
     if (scales)
       if (const auto it = scales->find(id); it != scales->end() && it->second.players > 1)
         hash.Add(std::uint64_t{0xE2}).Add(std::uint64_t{it->second.players});
+    // A boss's phase effects and weak spots, as its owner said them.
+    if (bosses)
+      if (const auto it = bosses->find(id); it != bosses->end()) {
+        hash.Add(std::uint64_t{0xE4});
+        for (const auto effect : it->second.effects)
+          hash.Add(effect);
+        hash.Add(std::uint64_t{0xE5});
+        for (const auto spot : it->second.spots)
+          hash.Add(std::uint64_t{spot});
+      }
   }
   if (count)
     *count = static_cast<std::uint16_t>(std::min<std::size_t>(counted, 0xFFFF));
