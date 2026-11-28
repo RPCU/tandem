@@ -323,9 +323,18 @@ not bought (each game's lock is its own door's persistent state otherwise,
    lifts it. A save must never hold co-op state.
 
 3. **Clean**: saving unlocks. `tandem.ini` `leave` decides what follows:
-   - `stay` (the default): nothing more. The guest goes on in place, in its
-     own world; the game's next autosave, or the player's save, keeps what
-     the V earned.
+   - `stay` (the default): nothing more is done for the player. The guest
+     goes on in place, in its own world; the game's next autosave, or the
+     player's save, keeps what the V earned. The choice is offered in
+     plain words (`TandemSaves.Offer`, 2026-11-28, not yet run in game),
+     whether the guest left or the host quit: "Back in your own world.
+     Your V keeps all it earned in NAME's game: save to keep it for good"
+     (`Saves-Offer`, the host the last one in `recent.txt`; `Saves-OfferAlone`
+     without a name), with the game's own quick save key as the HUD's hint
+     ("Save your V", action `QuickSave`) for 30 s or until a session starts
+     again. The game's own quick save is the yes; playing on is the no (the
+     pause menu's Exit still saves first, below). Scenario
+     `coop-remembered-v`.
    - `save`: one quick save, the game's own (`QuickSave()`, the one F5
      makes, with its "game saved" notice), as soon as the game's own save
      locks allow it (not in combat, not in a scene; given up after two

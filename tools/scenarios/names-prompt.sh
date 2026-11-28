@@ -31,6 +31,9 @@ expect 'coop: name "Alice", the co-op menu asks for one: no' 10
 $game key 1 >/dev/null
 cmd coop leave
 expect 'coop: left the session' 10
+# Host this game made this world a co-op campaign: not the tests' world's.
+cmd coop campaign unmark
+expect 'campaign: this world is no longer a co-op campaign' 10
 cmd coop set name V
 expect 'setting: name = V' 10
 cmd coop host

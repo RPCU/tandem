@@ -306,6 +306,16 @@ public class TandemSystem extends ScriptableSystem {
   // said (ShowCode).
   private let m_codeShown: String;
   private let m_relayShown: String;
+  // A co-op campaign (docs/architecture/coop-menu.md, "Campaigns"): a world
+  // the co-op menu hosted, saved with it. It opens to friends as it loads,
+  // by the host's rule (tandem.ini campaign), Continue or Load game alike.
+  private persistent let m_campaign: Bool;
+  // Its notice, said once the world plays (not behind the loading screen).
+  private let m_campaignNotice: String;
+  // A join the co-op menu chose, before its first welcome (WatchJoin): the
+  // last problem said; a host that could not open, said.
+  private let m_joinSaid: String;
+  private let m_hostFailSaid: Bool;
 
   private func OnAttach() -> Void {
     if TandemNative.IsConfigured() {
@@ -381,6 +391,9 @@ public class TandemSystem extends ScriptableSystem {
     TandemDegradedSay.SayRefused(this.GetGameInstance());
     this.m_saves = new TandemSaves();
     this.m_saves.Start(this.GetGameInstance(), this);
+    // A co-op campaign opens as it loads (the session chosen before the
+    // start below).
+    this.OpenCampaign();
     // The recorder (its own key, solo or not) learns a game is loaded: it
     // starts if it is on (now, or when the co-op menu switches it on).
     this.m_recordReady = false;
@@ -416,6 +429,8 @@ public class TandemSystem extends ScriptableSystem {
     TandemNative.Log(s"in game, body \(body)");
     TandemNative.Start(body);
     this.m_inGame = true;
+    this.m_joinSaid = "";
+    this.m_hostFailSaid = false;
     // (What this game runs without is said by TandemDegradedSay.Tick, each
     // by name, from the session's start: Degraded.reds.)
     this.m_haveLast = false;
@@ -1169,6 +1184,7 @@ public class TandemSystem extends ScriptableSystem {
       if !this.m_playing && this.WorldNow() - this.m_attachedAt > 2.0 {
         this.m_playing = true;
         TandemNative.Log("playing (solo)");
+        this.SayCampaign();
       }
       // The test pilot plays without a session too, every frame.
       if this.PilotOn() {
@@ -1193,6 +1209,7 @@ public class TandemSystem extends ScriptableSystem {
     if !this.m_playing && this.WorldNow() - this.m_attachedAt > 2.0 {
       this.m_playing = true;
       TandemNative.Log("playing");
+      this.SayCampaign();
       if IsDefined(this.m_pause) {
         this.m_pause.SetReady();
       }
@@ -1248,6 +1265,7 @@ public class TandemSystem extends ScriptableSystem {
     this.SpawnJoined();
     if this.m_playing {
       this.ShowCode();
+      this.WatchJoin();
     }
     TandemNative.PerfMark(9);
     // Where the cars were drawn last frame, before anything moves them.
@@ -2414,6 +2432,8 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.Log("coop: left the session");
     } else if Equals(verb, "report") {
       TandemNative.Log(s"coop: report: \(TandemNative.WriteReport())");
+    } else if Equals(verb, "campaign") {
+      this.CampaignCommand(arg);
     } else if TandemSettings.Command(command) || TandemMods.Command(command) {
       return;
     } else {
@@ -3182,6 +3202,133 @@ public class TandemSystem extends ScriptableSystem {
           break;
       }
     }
+  }
+
+  // ---- co-op campaigns (docs/architecture/coop-menu.md, "Campaigns") ----
+
+  // At the load: is this world a co-op campaign (its save says so), and
+  // does it open? Hosted from the co-op menu (Start a new co-op game, Host
+  // a saved game, Continue co-op campaign) it becomes one. Else, with no
+  // session chosen, it opens to friends by the host's rule (tandem.ini
+  // campaign: open and invite host it now, closed plays alone).
+  private func OpenCampaign() -> Void {
+    let seconds = EngineTime.ToFloat(GameInstance.GetPlaythroughTime(this.GetGameInstance()));
+    let status = TandemNative.SessionStatus();
+    let hosting = status.role == 1 && status.fromMenu;
+    this.m_campaign = TandemCampaignNative.WorldLoaded(seconds, this.m_campaign);
+    this.m_campaignNotice = "";
+    if hosting {
+      if !this.m_campaign {
+        this.MarkCampaign();
+      }
+      return;
+    }
+    if !this.m_campaign {
+      return;
+    }
+    if status.role != 0 {
+      TandemNative.Log("campaign: a co-op campaign loaded, a session chosen already");
+      return;
+    }
+    let rule = TandemNative.Setting("campaign");
+    if Equals(rule, "closed") {
+      TandemNative.Log("campaign: a co-op campaign loaded: closed, played alone");
+      this.m_campaignNotice = "Session-CampaignClosed";
+      return;
+    }
+    TandemNative.StartHost(0);
+    if !TandemNative.IsConfigured() {
+      // Co-op is off (a startup check): the co-op menu says why.
+      TandemNative.Log("campaign: a co-op campaign loaded: co-op is off, played alone");
+      return;
+    }
+    TandemNative.Log(s"campaign: a co-op campaign loaded: \(rule), hosting as it loads");
+    this.m_campaignNotice = "Session-CampaignOpen";
+  }
+
+  // This world is a co-op campaign from now on (the pause menu's Host this
+  // game; the main menu's hosts at the load): saved with it.
+  public func MarkCampaign() -> Void {
+    this.m_campaign = true;
+    TandemCampaignNative.Mark(true);
+  }
+
+  private func SayCampaign() -> Void {
+    if StrLen(this.m_campaignNotice) > 0 {
+      TandemCoop.Notice(this.GetGameInstance(), this.m_campaignNotice);
+      this.m_campaignNotice = "";
+    }
+  }
+
+  // coop campaign [mark | unmark | next] (tools/game.sh cmd): what is known;
+  // this world made a co-op campaign as the co-op menu's hosting makes it,
+  // or no longer one (a test's cleanup); the next world loaded as one whose
+  // save says so (no save written: the scenarios).
+  private func CampaignCommand(arg: String) -> Void {
+    if Equals(arg, "mark") {
+      this.MarkCampaign();
+    } else if Equals(arg, "unmark") {
+      this.m_campaign = false;
+      TandemCampaignNative.Mark(false);
+    } else if Equals(arg, "next") {
+      TandemCampaignNative.TestNext();
+      TandemNative.Log("campaign: the next world loads as a co-op campaign");
+    }
+    TandemNative.Log(TandemCampaignNative.CampaignReport());
+    TandemNative.Log(s"campaign: rule \(TandemNative.Setting("campaign")), this save says co-op campaign: \(this.m_campaign)");
+  }
+
+  // Feedback while a join the co-op menu chose has not been welcomed yet
+  // (TandemNative.Arriving), and for a host that could not open: in words,
+  // once each. A refusal (another version, the session full, a wrong code)
+  // gives up at once; anything else after a minute of the world's time.
+  // Given up, the player is out of the session in its own world.
+  private func WatchJoin() -> Void {
+    let status = TandemNative.SessionStatus();
+    if status.role == 1 {
+      if status.state == 5 && !this.m_hostFailSaid {
+        this.m_hostFailSaid = true;
+        TandemNative.Log(s"session: could not host: \(status.detail)");
+        TandemText.NoticeReason(this.GetGameInstance(), "Session-HostFailed", status.detail);
+      }
+      return;
+    }
+    if status.role != 2 || status.state == 3 || !TandemNative.Arriving() {
+      return;
+    }
+    let target = StrLen(status.joinCode) > 0 ? TandemText.F("Status-CodeTarget", status.joinCode) : s"\(status.address):\(status.port)";
+    let english = StrLen(status.joinCode) > 0 ? TandemText.FE(true, "Status-CodeTarget", status.joinCode) : target;
+    // The plugin stopped trying (another version, no Phantom Liberty, a code
+    // that led to no session three times).
+    if status.state == 5 {
+      this.GiveUpJoin(target, english, TandemText.Reason(status.detail), status.detail);
+      return;
+    }
+    if status.state == 4 && StrLen(status.detail) > 0 && NotEquals(status.detail, this.m_joinSaid) {
+      this.m_joinSaid = status.detail;
+      if TandemSystem.JoinRefused(status.detail) {
+        this.GiveUpJoin(target, english, TandemText.Reason(status.detail), status.detail);
+        return;
+      }
+      TandemText.Say(this.GetGameInstance(), SimpleMessageType.Neutral, 5.0, "Session-JoinRetrying", TandemText.F("Session-JoinRetrying", target, TandemText.Reason(status.detail)), TandemText.FE(true, "Session-JoinRetrying", english, status.detail));
+    }
+    if this.WorldNow() - this.m_attachedAt > 60.0 {
+      this.GiveUpJoin(target, english, TandemText.Get("Reason-NoAnswer"), TandemText.English("Reason-NoAnswer"));
+    }
+  }
+
+  // A reason no retry changes: the host refused us (another version of
+  // tandem, the session full, a game without Phantom Liberty), or the relay
+  // knows no session by that code.
+  public static func JoinRefused(detail: String) -> Bool {
+    return StrBeginsWith(detail, "refused") || StrBeginsWith(detail, "protocol version") || StrBeginsWith(detail, "the session is full") || Equals(detail, "no session has this join code (wrong, or expired)");
+  }
+
+  private func GiveUpJoin(target: String, english: String, reason: String, reasonEnglish: String) -> Void {
+    TandemNative.Log(s"join: given up on \(english): \(reasonEnglish)");
+    this.EndSession(true);
+    TandemNative.Leave();
+    TandemText.Say(this.GetGameInstance(), SimpleMessageType.Neutral, 8.0, "Session-JoinGaveUp", TandemText.F("Session-JoinGaveUp", target, reason), TandemText.FE(true, "Session-JoinGaveUp", english, reasonEnglish));
   }
 
   // Host: the join code on screen as soon as the relay gives it, and again

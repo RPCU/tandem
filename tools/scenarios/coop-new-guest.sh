@@ -20,6 +20,8 @@ expect 'in the session as player [0-9]+' 60
 note 'the lifepath opening scene may play out first: the arrival waits for it (90 s at most)'
 expect 'arrival: joining tandem-peer behind the fast travel.s loading screen|arrival: beside tandem-peer already' 150
 expect 'coop notice: Joined tandem-peer.s session \[Session-JoinedOf\]' 90
+# The new V is the one this host is joined with next time.
+expect 'campaign: our V noted for [0-9.]+:[0-9]+' 10
 shot coop-new-guest
 note 'look: the new V stands beside the mock player, free to move (no prologue restriction left on it), its own prologue quest not advancing'
 pause 20

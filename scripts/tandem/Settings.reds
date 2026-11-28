@@ -15,24 +15,24 @@ public class TandemSettings {
   // In the page's order. kind: 0 on/off, 1 a choice, 2 typed. when: 0 at
   // once, 1 from the next session, 2 after a restart.
   public static func Keys() -> array<String> {
-    return ["name", "friendly_fire", "enemy_scaling", "level_gap", "notices", "markers", "nameplates", "party_hud"];
+    return ["name", "friendly_fire", "enemy_scaling", "level_gap", "campaign", "notices", "markers", "nameplates", "party_hud"];
   }
 
   private static func Labels() -> array<String> {
-    return ["Settings-Name", "Settings-FriendlyFire", "Settings-EnemyScaling", "Settings-LevelGap", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-PartyHud"];
+    return ["Settings-Name", "Settings-FriendlyFire", "Settings-EnemyScaling", "Settings-LevelGap", "Settings-Campaign", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-PartyHud"];
   }
 
   // What each one does, shown beside the page for the row the cursor is on.
   private static func Abouts() -> array<String> {
-    return ["Settings-About-Name", "Settings-About-FriendlyFire", "Settings-About-EnemyScaling", "Settings-About-LevelGap", "Settings-About-Notices", "Settings-About-Markers", "Settings-About-Nameplates", "Settings-About-PartyHud"];
+    return ["Settings-About-Name", "Settings-About-FriendlyFire", "Settings-About-EnemyScaling", "Settings-About-LevelGap", "Settings-About-Campaign", "Settings-About-Notices", "Settings-About-Markers", "Settings-About-Nameplates", "Settings-About-PartyHud"];
   }
 
   private static func Kinds() -> array<Int32> {
-    return [2, 0, 0, 1, 1, 0, 1, 0];
+    return [2, 0, 0, 1, 1, 1, 0, 1, 0];
   }
 
   private static func Whens() -> array<Int32> {
-    return [1, 0, 0, 0, 0, 0, 0, 0];
+    return [1, 0, 0, 0, 0, 0, 0, 0, 0];
   }
 
   // The host's rules (proto::Rules, sent to every game as they change): rows
@@ -40,6 +40,12 @@ public class TandemSettings {
   // it hosts), left out on a guest in a session.
   public static func HostRules() -> array<String> {
     return ["friendly_fire", "enemy_scaling", "level_gap"];
+  }
+
+  // The host's own, not a rule of the session (no other game needs it): a
+  // row on a host's page and out of a session, none on a guest in one.
+  public static func HostOnly() -> array<String> {
+    return ["campaign"];
   }
 
   // tandem.ini's keys off the page, at their defaults for every player
@@ -55,7 +61,8 @@ public class TandemSettings {
     let guest = TandemSettings.IsGuest();
     let rows: array<String>;
     for key in keys {
-      if !guest || !TandemSettings.IsHostRule(key) {
+      let hosts = TandemSettings.HostOnly();
+      if !guest || !TandemSettings.IsHostRule(key) && !ArrayContains(hosts, key) {
         ArrayPush(rows, key);
       }
     }
@@ -100,6 +107,9 @@ public class TandemSettings {
     if Equals(key, "level_gap") {
       return ["8", "5", "12", "off"];
     }
+    if Equals(key, "campaign") {
+      return ["open", "invite", "closed"];
+    }
     return ["on", "off"];
   }
 
@@ -112,6 +122,9 @@ public class TandemSettings {
     }
     if Equals(key, "level_gap") {
       return ["Settings-LevelGap-Eight", "Settings-LevelGap-Five", "Settings-LevelGap-Twelve", "Common-Off"];
+    }
+    if Equals(key, "campaign") {
+      return ["Settings-Campaign-Open", "Settings-Campaign-Invite", "Settings-Campaign-Closed"];
     }
     return ["Common-On", "Common-Off"];
   }

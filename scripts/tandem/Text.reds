@@ -99,7 +99,8 @@ public class TandemText {
       "the relay's replicas sent us on twice (their peers lists disagree)",
       "the relay sent us to an address we cannot reach (IPv6)",
       "the relay is restarting: try again in a moment",
-      "the relay hosts as many sessions from your address as it may"
+      "the relay hosts as many sessions from your address as it may",
+      "the join code led to no session"
     ];
     let keys = [
       "Reason-Full", "Reason-HostGone", "Reason-Unreachable", "Reason-Connecting",
@@ -112,7 +113,8 @@ public class TandemText {
       "Reason-RelayLoop",
       "Reason-RelayIpv6",
       "Reason-RelayDraining",
-      "Reason-RelaySourceBusy"
+      "Reason-RelaySourceBusy",
+      "Reason-CodeNoSession"
     ];
 
     let i = 0;
@@ -197,7 +199,8 @@ public class TandemText {
       "Saves-NotRestored", "Mods-Replaced-Item", "Trade-Unknown", "Exit-Saving", "Exit-NotSaved",
       "Checkpoint-Saving", "Checkpoint-Failed",
       "Interact-HostOnly", "Interact-Taken", "Interact-TooFar",
-      "Interact-Missing", "Interact-Busy", "Trade-NotNow", "Phone-Unreachable", "Turrets-Busy"
+      "Interact-Missing", "Interact-Busy", "Trade-NotNow", "Phone-Unreachable", "Turrets-Busy",
+      "Saves-Offer", "Saves-OfferAlone", "Session-HostFailed", "Session-JoinGaveUp"
     ];
     if ArrayContains(asks, key) {
       return 2;
@@ -804,6 +807,32 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-About-Markers", "A marker for each other player on the HUD, the minimap and the map");
     this.Text("Tandem-Settings-About-Nameplates", "The name over the other players: close by, at any distance, or none");
     this.Text("Tandem-Settings-About-PartyHud", "The list under your health bar: each linked partner's name, health and state");
+    // Co-op campaigns (Coop.reds, CampaignNatives.reds).
+    this.Text("Tandem-Menu-ContinueCampaign", "Continue co-op campaign");
+    this.Text("Tandem-Menu-LastV", "Your V from last time (level {1}, {2})");
+    this.Text("Tandem-Menu-RecentCode", "{1} (join code)");
+    this.Text("Tandem-Status-Campaign", "Co-op campaign: level {1}, {2}");
+    this.Text("Tandem-Status-ChooseJoinSaveLast", "Your V to join {1}: the one from last time, a new one, or another save");
+    this.Text("Tandem-Status-CampaignOpen", "Co-op campaign: open to friends");
+    this.Text("Tandem-Status-CampaignInvite", "Co-op campaign: invite only, a new join code each session");
+    this.Text("Tandem-Status-CampaignClosed", "Co-op campaign: closed. Host this game opens it to friends");
+    this.Text("Tandem-Popup-EnterCodeOf", "{1}'s join code: their game shows it on the pause menu, under Co-op (like K7Q-2M9)");
+    this.Text("Tandem-Popup-EnterCodeLast", "Leave it empty to try {1} again.");
+    this.Text("Tandem-Session-CampaignOpen", "Co-op campaign open: friends can drop in");
+    this.Text("Tandem-Session-CampaignClosed", "Co-op campaign, closed: pause menu, Co-op, Host this game opens it to friends");
+    this.Text("Tandem-Session-HostFailed", "Couldn't open co-op: {1}");
+    this.Text("Tandem-Session-JoinRetrying", "Can't reach {1} yet ({2}): retrying");
+    this.Text("Tandem-Session-JoinGaveUp", "Couldn't join {1}: {2}. You play on in your own world: pause menu, Co-op, to try again");
+    this.Text("Tandem-Reason-NoAnswer", "no answer for a minute: their game may be closed, or not open to you");
+    this.Text("Tandem-Reason-CodeNoSession", "the join code led to no session: wrong, or it changed since");
+    this.Text("Tandem-Saves-Offer", "Back in your own world. Your V keeps all it earned in {1}'s game: save to keep it for good");
+    this.Text("Tandem-Saves-OfferAlone", "Back in your own world. Your V keeps all it earned in co-op: save to keep it for good");
+    this.Text("Tandem-Saves-OfferHint", "Save your V");
+    this.Text("Tandem-Settings-Campaign", "Co-op campaign");
+    this.Text("Tandem-Settings-Campaign-Open", "open to friends");
+    this.Text("Tandem-Settings-Campaign-Invite", "invite only");
+    this.Text("Tandem-Settings-Campaign-Closed", "closed");
+    this.Text("Tandem-Settings-About-Campaign", "A save you host from the co-op menu is a co-op campaign. Whenever you go on with it, alone or not: open to friends hosts it as it loads, friends drop in with your join code (with a relay token, the same code every session); invite only hosts it with a new code each session, for the friends you send it to; closed plays it alone until Co-op, Host this game");
   }
 }
 
@@ -1326,5 +1355,31 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-About-Markers", "Un marqueur pour chaque autre joueur sur l'ATH, la mini-carte et la carte");
     this.Text("Tandem-Settings-About-Nameplates", "Le nom au-dessus des autres joueurs : de près, à toute distance, ou aucun");
     this.Text("Tandem-Settings-About-PartyHud", "La liste sous votre barre de santé : nom, santé et état de chaque partenaire lié");
+    // Campagnes coop.
+    this.Text("Tandem-Menu-ContinueCampaign", "Continuer la campagne coop");
+    this.Text("Tandem-Menu-LastV", "Votre V de la dernière fois (niveau {1}, {2})");
+    this.Text("Tandem-Menu-RecentCode", "{1} (code d'invitation)");
+    this.Text("Tandem-Status-Campaign", "Campagne coop : niveau {1}, {2}");
+    this.Text("Tandem-Status-ChooseJoinSaveLast", "Votre V pour rejoindre {1} : celui de la dernière fois, un nouveau, ou une autre sauvegarde");
+    this.Text("Tandem-Status-CampaignOpen", "Campagne coop : ouverte aux amis");
+    this.Text("Tandem-Status-CampaignInvite", "Campagne coop : sur invitation, un nouveau code à chaque session");
+    this.Text("Tandem-Status-CampaignClosed", "Campagne coop : fermée. Héberger cette partie l'ouvre à vos amis");
+    this.Text("Tandem-Popup-EnterCodeOf", "Le code d'invitation de {1} : son jeu l'affiche dans le menu pause, sous Coop (comme K7Q-2M9)");
+    this.Text("Tandem-Popup-EnterCodeLast", "Laissez vide pour réessayer {1}.");
+    this.Text("Tandem-Session-CampaignOpen", "Campagne coop ouverte : vos amis peuvent vous rejoindre");
+    this.Text("Tandem-Session-CampaignClosed", "Campagne coop fermée : menu pause, Coop, Héberger cette partie l'ouvre à vos amis");
+    this.Text("Tandem-Session-HostFailed", "Impossible d'ouvrir la coop : {1}");
+    this.Text("Tandem-Session-JoinRetrying", "{1} pas encore joignable ({2}) : nouvel essai");
+    this.Text("Tandem-Session-JoinGaveUp", "Impossible de rejoindre {1} : {2}. Vous continuez dans votre propre monde : menu pause, Coop, pour réessayer");
+    this.Text("Tandem-Reason-NoAnswer", "aucune réponse depuis une minute : son jeu est peut-être fermé, ou pas ouvert pour vous");
+    this.Text("Tandem-Reason-CodeNoSession", "le code d'invitation ne mène à aucune session : erroné, ou il a changé depuis");
+    this.Text("Tandem-Saves-Offer", "De retour dans votre monde. Votre V garde tout ce qu'il a gagné dans la partie de {1} : sauvegardez pour le garder pour de bon");
+    this.Text("Tandem-Saves-OfferAlone", "De retour dans votre monde. Votre V garde tout ce qu'il a gagné en coop : sauvegardez pour le garder pour de bon");
+    this.Text("Tandem-Saves-OfferHint", "Sauvegarder votre V");
+    this.Text("Tandem-Settings-Campaign", "Campagne coop");
+    this.Text("Tandem-Settings-Campaign-Open", "ouverte aux amis");
+    this.Text("Tandem-Settings-Campaign-Invite", "sur invitation");
+    this.Text("Tandem-Settings-Campaign-Closed", "fermée");
+    this.Text("Tandem-Settings-About-Campaign", "Une sauvegarde que vous hébergez depuis le menu coop est une campagne coop. Chaque fois que vous la reprenez, seul ou non : ouverte aux amis l'héberge dès le chargement, vos amis vous rejoignent avec votre code d'invitation (avec un jeton de relais, le même code à chaque session) ; sur invitation l'héberge avec un nouveau code à chaque session, pour les amis à qui vous l'envoyez ; fermée la joue seul jusqu'à Coop, Héberger cette partie");
   }
 }

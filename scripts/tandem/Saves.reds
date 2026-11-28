@@ -62,6 +62,10 @@ public class TandemSaves {
   // A test's exit or checkpoint (tools/game.sh cmd exit … dry): no save
   // written (counted as written), no exit made.
   private let m_dry: Bool;
+  // Back from a session with `leave = stay`: the offer to save now (a
+  // notice, and the game's own quick save key as a hint), and when it lapses.
+  private let m_offering: Bool;
+  private let m_offerUntil: Float;
 
   public func Start(game: GameInstance, system: ref<TandemSystem>) -> Void {
     this.m_game = game;
@@ -72,6 +76,13 @@ public class TandemSaves {
     this.m_exit = 0;
     this.m_checkpoint = false;
     this.m_dry = false;
+    this.m_offering = false;
+    // Every save of this world, ours or the game's: its playthrough time
+    // tells campaigns.txt which save it was (CampaignNatives.reds).
+    if !this.m_listening {
+      GameInstance.GetSystemRequestsHandler().RegisterToCallback(n"OnSavingComplete", this, n"OnSavingComplete");
+      this.m_listening = true;
+    }
   }
 
   public func Locked() -> Bool {
@@ -166,6 +177,9 @@ public class TandemSaves {
     }
     this.CheckpointTick(now);
     let guest = this.m_system.You() != 0u && !TandemNative.IsHost();
+    if this.m_offering && (guest || now > this.m_offerUntil) {
+      this.EndOffer();
+    }
     let step = TandemProgress.LeaveStep();
     if guest {
       this.m_saidLeft = false;
@@ -208,6 +222,9 @@ public class TandemSaves {
     switch action {
       case 1:
         TandemNative.Log(s"save: back from co-op: our own world is back, saving unlocked (leave = \(TandemSaves.ModeName())\(wanted ? ", a save wanted" : ""))");
+        if !wanted && TandemProgress.LeaveMode() == 0 {
+          this.Offer(now);
+        }
         break;
       case 2:
         this.Save();
@@ -351,10 +368,37 @@ public class TandemSaves {
       this.m_saved = success ? 1 : -1;
       TandemNative.Log(s"save: the game says the save \(success ? "was written" : "failed")");
     }
+    if success {
+      TandemCampaignNative.WorldSaved(EngineTime.ToFloat(GameInstance.GetPlaythroughTime(this.m_game)));
+    }
+  }
+
+  // The choice on leaving (progression.md, Leaving), worded plainly: our V
+  // kept what it earned; the game's own quick save keeps it for good, now or
+  // whenever the player saves (the pause menu's Exit saves it anyway).
+  private func Offer(now: Float) -> Void {
+    let recent = TandemNative.RecentHosts();
+    let host = ArraySize(recent) > 0 ? recent[0].name : "";
+    if StrLen(host) > 0 {
+      TandemText.NoticeAs(this.m_game, SimpleMessageType.Neutral, 12.0, "Saves-Offer", host);
+    } else {
+      TandemText.NoticeAs(this.m_game, SimpleMessageType.Neutral, 12.0, "Saves-OfferAlone");
+    }
+    TandemText.Hint(this.m_game, n"TandemSaveOffer", n"QuickSave", true, TandemText.Get("Saves-OfferHint"), inkInputHintHoldIndicationType.Press);
+    this.m_offering = true;
+    this.m_offerUntil = now + 30.0;
+  }
+
+  private func EndOffer() -> Void {
+    TandemText.Hint(this.m_game, n"TandemSaveOffer", n"QuickSave", false, "", inkInputHintHoldIndicationType.Press);
+    this.m_offering = false;
   }
 
   // The world goes away (TandemSystem.OnPlayerDetach).
   public func Stop() -> Void {
+    if this.m_offering {
+      this.EndOffer();
+    }
     if this.m_listening {
       GameInstance.GetSystemRequestsHandler().UnregisterFromCallback(n"OnSavingComplete", this, n"OnSavingComplete");
       this.m_listening = false;

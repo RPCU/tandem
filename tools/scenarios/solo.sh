@@ -1,6 +1,6 @@
 # Solo (no role, recorder off): tandem changes nothing in the game: no session, no socket, no co-op line
 # shellcheck shell=bash disable=SC2317,SC2154
-ensure off recorder=off
+ensure off recorder=off campaign=closed
 log_file=$(remote "cd '$dir'; ls -t red4ext/logs/tandem-*.log | head -1")
 remote "cd '$dir'; grep -q 'tandem: solo, passive' '$log_file'" || fail "no 'tandem: solo, passive' startup line"
 note "$(remote "cd '$dir'; grep -m1 'tandem: solo, passive' '$log_file'" | cut -c1-200)"
