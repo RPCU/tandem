@@ -37,10 +37,12 @@ cmd phone call tandem-peer
 expect 'holocall: calling tandem-peer: the phone.s own call' 5
 expect 'holocall: tandem-peer: tandem-peer didn.t answer' 20
 # Unavailable: it leaves while our call rings.
-peer join "$address" --mode front --body male --link ask --link-outcome ignore --exit-at 8
+peer join "$address" --mode front --body male --link ask --link-outcome ignore
 expect 'joined \(player [0-9]+' 20
 cmd phone call tandem-peer
 expect 'holocall: calling tandem-peer: the phone.s own call' 5
+pause 3
+pkill -x tandem-peer || true
 expect 'comms: tandem-peer left while we called' 20
 expect 'holocall: tandem-peer: .*unavailable' 3
 # Answered, then hung up with the call's own button: both ends close.
