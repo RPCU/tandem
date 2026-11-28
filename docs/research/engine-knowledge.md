@@ -167,6 +167,7 @@ found through this table, each number once.
 | 13.165 | The summoned car: its states and events, one body per garage vehicle | `vehicles.md` |
 | 13.166 | The garage's sweep: a summoned car it no longer needs goes far and out of view | `vehicles.md` |
 | 13.167 | An NCPD activity's pin by its journal path, its phase read and set from outside | `story.md` |
+| 13.165 | A map pin tracked again from outside (the system's own tracker); Dogtown's open-world pins are not points of interest | `story.md` |
 | 13.153 | A choice of our own on a puppet's interaction component | `story.md` |
 
 ## Top traps (one line each)
