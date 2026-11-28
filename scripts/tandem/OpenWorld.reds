@@ -194,7 +194,9 @@ public class TandemOpenWorld {
     if TandemStory.TrackPin(system, id.value) && mappin.IsPlayerTracked() {
       TandemNative.Log(s"openworld: activity \(marker) tracked again");
     } else {
-      this.Untracked(marker, "the engine's tracker did not take it");
+      // What the system holds now against the pin's id: which half failed.
+      let held = system.GetManuallyTrackedMappinID();
+      this.Untracked(marker, s"the engine's tracker did not take it (pin id \(id.value), the system tracks \(held.value))");
     }
   }
 
