@@ -93,6 +93,12 @@ func serve(args []string) error {
 	openKbps := fs.Int("open-kbps", cfg.OpenRate*8/1000, "open mode: kbit/s per guest link and direction")
 	openBurst := fs.Int("open-burst-kb", cfg.OpenBurst/1000, "open mode: kB per guest link and direction at once")
 	fs.IntVar(&cfg.MaxSessions, "max-sessions", cfg.MaxSessions, "sessions open at once")
+	fs.IntVar(&cfg.MaxHostIDsPerSource, "max-host-ids-per-source", cfg.MaxHostIDsPerSource,
+		"host IDs one IPv4 address or IPv6 /64 binds at once (one-click rejoin)")
+	fs.IntVar(&cfg.HostLookupBurst, "host-lookup-burst", cfg.HostLookupBurst,
+		"lookups by host ID one source may make at once, then one per --host-lookup-interval")
+	fs.DurationVar(&cfg.HostLookupInterval, "host-lookup-interval", cfg.HostLookupInterval,
+		"after the burst, one lookup by host ID per source this often")
 	fs.DurationVar(&cfg.IdleTimeout, "idle", cfg.IdleTimeout, "forget a client silent for this long")
 	fs.DurationVar(&cfg.CodeTTL, "code-ttl", cfg.CodeTTL, "how long a join code lives")
 	fs.IntVar(&cfg.CodeLookupBurst, "code-lookup-burst", cfg.CodeLookupBurst,

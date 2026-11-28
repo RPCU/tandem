@@ -83,6 +83,10 @@ struct NetThread::Impl {
   // ...and the relay replica holding the session ("ip:port"): the secret
   // does not say which one of a fleet it is.
   std::string relayAt;
+  // Host on a relay: this game's host key (host.key), its ID bound there.
+  // Guest: the host's card heard and noted on its recent entry.
+  std::optional<net::HostKey> hostKey;
+  std::optional<proto::HostCard> cardNoted;
   // Consistency: what the player is told (never twice in a short while),
   // and whether our last session was lost (to say we are back).
   consistency::NoticeGate notices;
@@ -176,6 +180,14 @@ struct NetThread::Impl {
                               .direct = Runtime::Get().directOn,
                               .keepCode = KeepsCode(config),
                               .codeSalt = Runtime::Get().codeSalt};
+    // Host IDs (campaigns): a host binds its ID, open to a join by it unless
+    // its campaign is invite only; a guest joins a recent host by its ID.
+    if (config.role == Config::Role::Host) {
+      options.hostKey = hostKey;
+      options.hostOpen = config.campaign != Config::Campaign::Invite;
+    } else if (!relaySecret && !config.hostId.empty()) {
+      options.hostId = net::ParseHostId(config.hostId);
+    }
     if (relaySecret && !relayAt.empty()) {
       net::ParseRelayAddress(relayAt, options.address, options.port);
       options.more.clear(); // where the session is: no other to ask
@@ -301,17 +313,24 @@ struct NetThread::Impl {
         .startedUtc = std::format("{:%Y-%m-%d %H:%M:%S}", std::chrono::floor<std::chrono::seconds>(
                                                               std::chrono::system_clock::now()))};
     const auto startedAt = std::chrono::steady_clock::now();
+    // Hosting on a relay: this game's host ID, bound there and told to the
+    // guests (proto::HostCard).
+    if (config.role == Config::Role::Host && !config.relay.empty() && !hostKey)
+      hostKey = runtime.HostKey();
     const auto relay = RelayOf();
-    // A guest with a join code goes through the relay, after the address
-    // when tandem.ini gives one; without a code, to the address only.
-    const bool byCode = !config.joinCode.empty();
+    // A guest with a join code (or a recent host's ID) goes through the
+    // relay, after the address when tandem.ini gives one; without, to the
+    // address only.
+    const bool byCode = !config.joinCode.empty() || !config.hostId.empty();
     const JoinTarget target{.address = !byCode || config.addressSet ? config.address : "",
                             .port = config.port,
                             .relay = byCode ? relay : std::nullopt};
     std::unique_ptr<Endpoint> endpoint;
-    if (config.role == Config::Role::Host)
+    if (config.role == Config::Role::Host) {
       endpoint = Endpoint::Host(identity, config.port, error, {}, relay);
-    else if (byCode && !relay)
+      if (endpoint && relay && hostKey)
+        endpoint->SetHostCard({.id = net::HostIdOf(*hostKey)});
+    } else if (byCode && !relay)
       error = "a join code needs a relay (relay = host:port in tandem.ini)";
     else
       endpoint = Endpoint::Join(identity, target, error);
@@ -486,7 +505,11 @@ struct NetThread::Impl {
                   // The host, offered again next time, and our V as the one
                   // we join it with (campaigns.hpp): by address, or by its
                   // name when we came with a join code.
-                  if (config.joinCode.empty()) {
+                  if (!config.hostId.empty()) {
+                    // Joined by its ID: its entry first, our V noted for it.
+                    runtime.RememberHostById(config.hostId, e.player.name);
+                    campaign::JoinedWith("id:" + config.hostId);
+                  } else if (config.joinCode.empty()) {
                     runtime.RememberHost({config.address, config.port}, e.player.name);
                     campaign::JoinedWith(campaigns::HostOfAddress(config.address, config.port));
                   } else if (!e.player.name.empty()) {
@@ -1519,6 +1542,22 @@ struct NetThread::Impl {
       }
       if (!ended)
         PublishLives(*endpoint);
+      // Guest: the host's card (its host ID on the relay), kept on its recent
+      // entry once its name is known, and our V noted for it by the ID.
+      if (!endpoint->IsHost())
+        if (const auto card = endpoint->HostCardHeard(); card && card != cardNoted) {
+          const auto host = endpoint->Players().find(endpoint->HostPlayer());
+          if (host != endpoint->Players().end() && !host->second.name.empty()) {
+            cardNoted = card;
+            const auto id = net::HostIdText(card->id);
+            std::optional<hosts::Target> target;
+            if (config.joinCode.empty() && config.hostId.empty())
+              target = hosts::Target{config.address, config.port};
+            runtime.NoteRecentHostId(target, host->second.name, id);
+            campaign::JoinedWith("id:" + id);
+            log::Info("the host's ID heard: {}…", id.substr(0, 8));
+          }
+        }
       for (auto &message : TradeLink::Get().TakeOutbound())
         endpoint->SendTrade(message);
       for (auto &message : Combat::Get().TakeOutbound()) {

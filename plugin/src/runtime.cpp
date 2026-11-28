@@ -26,6 +26,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <random>
 #include <sstream>
 
 namespace tandem::plugin {
@@ -55,6 +56,7 @@ void Runtime::Start(proto::Body body) {
   session.port = m_choice.port;
   session.joinCode = m_choice.joinCode;
   session.addressSet = m_choice.addressSet;
+  session.hostId = m_choice.hostId;
   m_body = body;
   m_status = {.state = SessionStatus::State::Starting};
   std::string what;
@@ -242,6 +244,106 @@ void Runtime::RememberHost(const hosts::Target &target, std::string name) {
   file << hosts::FormatRecent(list);
   if (!file)
     log::Warn("could not write {}", config.recentFile.filename().string());
+}
+
+void Runtime::NoteRecentHostId(std::optional<hosts::Target> target, std::string name,
+                               std::string id) {
+  auto list = RecentHosts();
+  if (!hosts::NoteHostId(list, target, name, std::move(id)))
+    return;
+  std::lock_guard _(m_recentLock);
+  if (config.recentFile.empty())
+    return;
+  std::ofstream file(config.recentFile, std::ios::trunc);
+  file << hosts::FormatRecent(list);
+}
+
+void Runtime::RememberHostById(std::string id, std::string name) {
+  auto list = RecentHosts();
+  hosts::RememberById(list, id, std::move(name));
+  std::lock_guard _(m_recentLock);
+  if (config.recentFile.empty())
+    return;
+  std::ofstream file(config.recentFile, std::ios::trunc);
+  file << hosts::FormatRecent(list);
+}
+
+bool Runtime::JoinByHostId(std::string_view text) {
+  const auto id = net::ParseHostId(text);
+  if (!id || config.relay.empty()) {
+    log::Warn("join by host ID: {}", id ? "no relay in tandem.ini" : "not a host ID");
+    return false;
+  }
+  log::Info("join by host ID through relay {}:{}", config.relay, config.relayPort);
+  bool running = false;
+  proto::Body body{};
+  {
+    std::lock_guard _(m_lock);
+    running = m_net != nullptr;
+    body = m_body;
+  }
+  Choose({.role = Config::Role::Join,
+          .port = config.port,
+          .addressSet = false,
+          .fromMenu = true,
+          .hostId = net::HostIdText(*id)});
+  if (running)
+    Start(body);
+  return true;
+}
+
+std::optional<net::HostKey> Runtime::HostKey() {
+  std::lock_guard _(m_recentLock);
+  if (config.hostKeyFile.empty())
+    return std::nullopt;
+  {
+    std::ifstream file(config.hostKeyFile);
+    std::string text;
+    file >> text;
+    // Kept as 32 hex digits: the same parser as an ID's.
+    if (const auto key = net::ParseHostId(text))
+      return *key;
+  }
+  // None yet: made once, at random (std::random_device: the system's
+  // cryptographic source on Windows), and kept.
+  net::HostKey key{};
+  std::random_device random;
+  for (std::size_t i = 0; i < key.size(); i += 4) {
+    const auto word = random();
+    for (std::size_t j = 0; j < 4; ++j)
+      key[i + j] = static_cast<std::uint8_t>(word >> (8 * j));
+  }
+  std::ofstream file(config.hostKeyFile, std::ios::trunc);
+  file << net::HostIdText(key) << '\n';
+  if (!file) {
+    log::Warn("could not write {}", config.hostKeyFile.filename().string());
+    return std::nullopt;
+  }
+  log::Info("host key made: {}", config.hostKeyFile.filename().string());
+  return key;
+}
+
+void Runtime::QueryPresence(std::vector<net::HostId> ids) {
+  if (ids.empty() || config.relay.empty() || m_presenceBusy.exchange(true))
+    return;
+  if (m_presenceThread.joinable())
+    m_presenceThread.join();
+  m_presenceThread = std::jthread([this, ids = std::move(ids)] {
+    const auto states = net::QueryHosts(config.relay, config.relayPort, ids, 4000);
+    {
+      std::lock_guard _(m_presenceLock);
+      for (std::size_t i = 0; i < ids.size(); ++i)
+        m_presence[ids[i]] = states[i];
+    }
+    log::Info("presence: {} recent host(s) asked of the relay", ids.size());
+    m_presenceBusy = false;
+  });
+}
+
+net::HostPresence Runtime::PresenceOf(const net::HostId &id) const {
+  std::lock_guard _(m_presenceLock);
+  const auto it = m_presence.find(id);
+  return it == m_presence.end() ? net::HostPresence::Unknown : it->second;
 }
 
 void Runtime::RememberCodeHost(std::string code, std::string name) {

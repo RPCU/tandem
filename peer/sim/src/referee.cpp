@@ -56,6 +56,7 @@ TANDEM_SAID_BY(Host, SceneCamera)
 TANDEM_SAID_BY(Host, SceneProp)
 TANDEM_SAID_BY(Host, ScenePlace)
 TANDEM_SAID_BY(Host, Rules)
+TANDEM_SAID_BY(Host, HostCard)
 TANDEM_SAID_BY(Host, SessionLevel)
 TANDEM_SAID_BY(Host, TradeCommit)
 TANDEM_SAID_BY(Host, TimeSkipResult)
@@ -890,6 +891,9 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::NpcReaction>) {
           finite = std::isfinite(m.angle) && Finite(m.way);
           inRange = m.type <= p::kReactionMax;
+        } else if constexpr (std::is_same_v<M, p::HostCard>) {
+          // An ID: never all zero.
+          inRange = std::ranges::any_of(m.id, [](std::uint8_t b) { return b != 0; });
         } else if constexpr (std::is_same_v<M, p::NpcVoice>) {
           // A context, a delay within its bound, flags this version knows.
           inRange = p::Fits(m);

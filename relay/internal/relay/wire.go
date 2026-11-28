@@ -31,6 +31,24 @@
 //	RegisterHostKeep (19) secret (16) | host token (32) | salt (4) | zero padding to 64 bytes
 //	Challenge     (20) stamp (4) | bits (1) | mac (16)  relay -> host
 //	RegisterHostOpen (21) secret (16) | stamp (4) | bits (1) | mac (16) | nonce (8) | zero padding to 64 bytes
+//	HostID        (22) secret (16) | host key (16) | flags (1) | at: family (1) | address (16) | port (2) | zero padding to 64 bytes
+//	HostBound     (23) state (1)                   relay -> host
+//	QueryHost     (24) host ID (16) | zero padding to 64 bytes
+//	HostState     (25) state (1)                   relay -> guest
+//	JoinHost      (26) host ID (16) | zero padding to 64 bytes
+//	HostSession   (27) secret (16) | family (1) | address (0, 4 or 16) | port (0 or 2)  relay -> guest
+//
+// Host IDs (hostid.go): a host game keeps a permanent random host key; its
+// host ID is HostIDOf(key), which the host's game gives its guests. A
+// registered host binds its ID to its session (HostID: its secret, its key,
+// whether a guest may join by the ID, and the replica holding the session,
+// family 0 for the one asked); a guest asks whether the host is there
+// (QueryHost -> HostState: offline, online but not open to a join by ID,
+// joinable) and joins by it (JoinHost -> HostSession: the session's secret
+// and where it is, or HostState when it may not). The binding lives on the
+// ID's owner replica (hostOwner), HostIDTTL after its host's last HostID.
+// Guessing an ID is a 2^128 search, an unknown ID reads as offline, and the
+// lookups are limited per source apart from the code lookups.
 //
 // Open relays (Config.Open, the default): a host with no token is answered
 // a Challenge (26 bytes for its 64): a stamp (seconds), a difficulty and a
@@ -140,6 +158,27 @@ const (
 	typeRegisterHostKeep msgType = 19
 	typeChallenge        msgType = 20
 	typeRegisterHostOpen msgType = 21
+	typeHostID           msgType = 22
+	typeHostBound        msgType = 23
+	typeQueryHost        msgType = 24
+	typeHostState        msgType = 25
+	typeJoinHost         msgType = 26
+	typeHostSession      msgType = 27
+)
+
+// HostIDSize is a host key's and a host ID's size, in bytes.
+const HostIDSize = 16
+
+// HostID's flags: a guest may join the session by the host ID (a host whose
+// campaign is invite only says 0).
+const FlagHostOpen byte = 1
+
+// A host as HostState says it (and HostBound to the host).
+const (
+	HostOffline byte = 0
+	// There, but not open to a join by its ID (invite only, or full).
+	HostOnline   byte = 1
+	HostJoinable byte = 2
 )
 
 // ChallengeMACSize is a Challenge's MAC, in bytes.
@@ -247,6 +286,11 @@ type datagram struct {
 	bits     byte
 	mac      [ChallengeMACSize]byte
 	powNonce uint64
+	// HostID: the host key, its flags and where its session is (invalid:
+	// on the relay asked); QueryHost, JoinHost: the host ID.
+	hostKey [HostIDSize]byte
+	hostID  [HostIDSize]byte
+	at      netip.AddrPort
 }
 
 func parse(b []byte) (datagram, error) {
@@ -328,6 +372,29 @@ func parse(b []byte) (datagram, error) {
 			return d, errMalformed
 		}
 		d.nonce = binary.BigEndian.Uint32(body)
+	case typeHostID:
+		if len(b) != registerSize {
+			return d, errMalformed
+		}
+		copy(d.secret[:], body[:SecretSize])
+		at := body[SecretSize:]
+		copy(d.hostKey[:], at[:HostIDSize])
+		d.flags = at[HostIDSize]
+		addr, port := at[HostIDSize+2:HostIDSize+18], binary.BigEndian.Uint16(at[HostIDSize+18:])
+		switch at[HostIDSize+1] {
+		case 0:
+		case 4:
+			d.at = netip.AddrPortFrom(netip.AddrFrom4([4]byte(addr[:4])), port)
+		case 6:
+			d.at = netip.AddrPortFrom(netip.AddrFrom16([16]byte(addr)), port)
+		default:
+			return d, errMalformed
+		}
+	case typeQueryHost, typeJoinHost:
+		if len(b) != registerSize {
+			return d, errMalformed
+		}
+		copy(d.hostID[:], body[:HostIDSize])
 	default:
 		return d, errMalformed
 	}
@@ -483,6 +550,61 @@ func Punch(nonce uint32, channel uint16, ack bool) []byte {
 	return append(b, 0)
 }
 
+// BindHostID builds a registered host's binding of its host ID: its key, its
+// flags (FlagHostOpen) and the replica holding its session (invalid: the one
+// it sends this to).
+func BindHostID(secret [SecretSize]byte, key [HostIDSize]byte, flags byte, at netip.AddrPort) []byte {
+	b := header(typeHostID, registerSize)
+	b = append(b, secret[:]...)
+	b = append(append(b, key[:]...), flags)
+	var raw [16]byte
+	switch a := at.Addr().Unmap(); {
+	case !at.IsValid():
+		b = append(b, 0)
+	case a.Is4():
+		v4 := a.As4()
+		copy(raw[:], v4[:])
+		b = append(b, 4)
+	default:
+		raw = a.As16()
+		b = append(b, 6)
+	}
+	b = binary.BigEndian.AppendUint16(append(b, raw[:]...), at.Port())
+	return append(b, make([]byte, registerSize-len(b))...)
+}
+
+// QueryHost builds a guest's question: is the host of this ID there?
+func QueryHost(id [HostIDSize]byte) []byte {
+	b := append(header(typeQueryHost, registerSize), id[:]...)
+	return append(b, make([]byte, registerSize-len(b))...)
+}
+
+// JoinHost builds a guest's request for the session of this host ID.
+func JoinHost(id [HostIDSize]byte) []byte {
+	b := append(header(typeJoinHost, registerSize), id[:]...)
+	return append(b, make([]byte, registerSize-len(b))...)
+}
+
+func appendHostState(b []byte, kind msgType, state byte) []byte {
+	return append(appendHeader(b, kind), state)
+}
+
+// At most 40 bytes (an IPv6 address): smaller than the JoinHost it answers.
+func appendHostSession(b []byte, secret [SecretSize]byte, at netip.AddrPort) []byte {
+	b = append(appendHeader(b, typeHostSession), secret[:]...)
+	if !at.IsValid() {
+		return append(b, 0)
+	}
+	if a := at.Addr().Unmap(); a.Is4() {
+		raw := a.As4()
+		b = append(append(b, 4), raw[:]...)
+	} else {
+		raw := a.As16()
+		b = append(append(b, 6), raw[:]...)
+	}
+	return binary.BigEndian.AppendUint16(b, at.Port())
+}
+
 // The relay's answers are appended to a buffer it reuses: no allocation.
 
 // introduceSize: what one Introduce takes (two answer one Addresses).
@@ -562,6 +684,13 @@ type Reply struct {
 	Stamp      uint32
 	Bits       byte
 	MAC        [ChallengeMACSize]byte
+	// HostBound (HasHostBound) and HostState (HasHostState): a host's state
+	// (HostOffline, HostOnline, HostJoinable). HostSession: Secret and
+	// HasSecret, and At, where the session is (invalid: the relay asked).
+	HasHostBound bool
+	HasHostState bool
+	HostState    byte
+	At           netip.AddrPort
 }
 
 // ParseReply decodes a relay -> client datagram.
@@ -629,6 +758,28 @@ func ParseReply(b []byte) (Reply, error) {
 			Nonce:    binary.BigEndian.Uint32(body),
 			Observed: netip.AddrPortFrom(addr, binary.BigEndian.Uint16(body[len(body)-2:])),
 		}, nil
+	case typeHostBound, typeHostState:
+		if len(body) != 1 || body[0] > HostJoinable {
+			return Reply{}, errMalformed
+		}
+		kind := msgType(b[4])
+		return Reply{HasHostBound: kind == typeHostBound, HasHostState: kind == typeHostState, HostState: body[0]}, nil
+	case typeHostSession:
+		if len(body) < SecretSize+1 {
+			return Reply{}, errMalformed
+		}
+		r := Reply{Secret: [SecretSize]byte(body[:SecretSize]), HasSecret: true}
+		at := body[SecretSize:]
+		switch {
+		case len(at) == 1 && at[0] == 0:
+		case len(at) == 1+4+2 && at[0] == 4:
+			r.At = netip.AddrPortFrom(netip.AddrFrom4([4]byte(at[1:5])), binary.BigEndian.Uint16(at[5:]))
+		case len(at) == 1+16+2 && at[0] == 6:
+			r.At = netip.AddrPortFrom(netip.AddrFrom16([16]byte(at[1:17])), binary.BigEndian.Uint16(at[17:]))
+		default:
+			return Reply{}, errMalformed
+		}
+		return r, nil
 	case typeIntroduce:
 		if len(b) != introduceSize {
 			return Reply{}, errMalformed

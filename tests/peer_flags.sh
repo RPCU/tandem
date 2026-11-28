@@ -13,6 +13,7 @@ declare -A value=(
   ["--grab-npcs"]=5 ["--carry-npcs"]=5 ["--hold-npcs"]=5
   ["--relay"]=relay.example.org:27460 ["--code"]=k7q-2m9
   ["--relay-token"]=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+  ["--host-key"]=00112233445566778899aabbccddeeff ["--host-invite"]=--check
   ["--hack-npcs"]=4 ["--hack-action"]=QuickHack.BlindHack ["--hack-effect"]=BaseStatusEffect.Blind
   ["--hack-player"]=6 ["--npc-hack"]=AIQuickHack.HackRevealPosition ["--hack-car"]=5
   ["--npc"]=Character.x ["--detect-at"]=15 ["--detect-for"]=10 ["--camo"]=10 ["--camo-record"]=BaseStatusEffect.OpticalCamoCoolPerkShort ["--shoot"]=3

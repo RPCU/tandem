@@ -1523,6 +1523,21 @@ TEST_CASE("presence, cues and NPC reactions round-trip, on the right channels, a
   CHECK(std::string_view(NameOf(NpcReaction{})) == "NpcReaction");
 }
 
+TEST_CASE("the host's card: its host ID, reliable, never empty") {
+  HostCard card;
+  card.id[0] = 0xAB;
+  card.id[15] = 7;
+  RoundTrips(card);
+  CHECK(Message(HostCard{}).index() == Message(CorpsePose{}).index() + 1); // appended
+  CHECK(std::string_view(NameOf(card)) == "HostCard");
+  CHECK(ChannelOf(card) == Channel::Event);
+  CHECK(IsReliable(card));
+  CHECK_FALSE(tandem::consistency::IsOneShot(card));
+  CHECK(Encode(card).size() < 24);
+  // No ID: refused.
+  CHECK_FALSE(Decode(Encode(HostCard{})).has_value());
+}
+
 TEST_CASE("a body's rest is the corpse owner's reliable word, its ragdoll's bodies") {
   CorpsePose rest{.npc = 7, .position = {4.f, 5.f, 6.f}, .yaw = 1.5f};
   for (std::int16_t i = 0; i < 20; ++i)

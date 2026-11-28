@@ -100,7 +100,9 @@ public class TandemText {
       "the relay sent us to an address we cannot reach (IPv6)",
       "the relay is restarting: try again in a moment",
       "the relay hosts as many sessions from your address as it may",
-      "the join code led to no session"
+      "the join code led to no session",
+      "the host is not online",
+      "the host is not open to a join by its ID (invite only, or full)"
     ];
     let keys = [
       "Reason-Full", "Reason-HostGone", "Reason-Unreachable", "Reason-Connecting",
@@ -114,7 +116,9 @@ public class TandemText {
       "Reason-RelayIpv6",
       "Reason-RelayDraining",
       "Reason-RelaySourceBusy",
-      "Reason-CodeNoSession"
+      "Reason-CodeNoSession",
+      "Reason-HostOffline",
+      "Reason-HostNotOpen"
     ];
 
     let i = 0;
@@ -825,6 +829,11 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Session-JoinGaveUp", "Couldn't join {1}: {2}. You play on in your own world: pause menu, Co-op, to try again");
     this.Text("Tandem-Reason-NoAnswer", "no answer for a minute: their game may be closed, or not open to you");
     this.Text("Tandem-Reason-CodeNoSession", "the join code led to no session: wrong, or it changed since");
+    this.Text("Tandem-Reason-HostOffline", "they are not online now");
+    this.Text("Tandem-Reason-HostNotOpen", "their game is not open to you now (invite only, or full): ask them for a code");
+    this.Text("Tandem-Menu-RecentJoinable", "{1} (online: join)");
+    this.Text("Tandem-Menu-RecentOnline", "{1} (online, not open to you)");
+    this.Text("Tandem-Menu-RecentOffline", "{1} (offline)");
     this.Text("Tandem-Saves-Offer", "Back in your own world. Your V keeps all it earned in {1}'s game: save to keep it for good");
     this.Text("Tandem-Saves-OfferAlone", "Back in your own world. Your V keeps all it earned in co-op: save to keep it for good");
     this.Text("Tandem-Saves-OfferHint", "Save your V");
@@ -1373,6 +1382,11 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Session-JoinGaveUp", "Impossible de rejoindre {1} : {2}. Vous continuez dans votre propre monde : menu pause, Coop, pour réessayer");
     this.Text("Tandem-Reason-NoAnswer", "aucune réponse depuis une minute : son jeu est peut-être fermé, ou pas ouvert pour vous");
     this.Text("Tandem-Reason-CodeNoSession", "le code d'invitation ne mène à aucune session : erroné, ou il a changé depuis");
+    this.Text("Tandem-Reason-HostOffline", "il n'est pas en ligne pour le moment");
+    this.Text("Tandem-Reason-HostNotOpen", "sa partie ne vous est pas ouverte pour le moment (sur invitation, ou complète) : demandez-lui un code");
+    this.Text("Tandem-Menu-RecentJoinable", "{1} (en ligne : rejoindre)");
+    this.Text("Tandem-Menu-RecentOnline", "{1} (en ligne, pas ouvert pour vous)");
+    this.Text("Tandem-Menu-RecentOffline", "{1} (hors ligne)");
     this.Text("Tandem-Saves-Offer", "De retour dans votre monde. Votre V garde tout ce qu'il a gagné dans la partie de {1} : sauvegardez pour le garder pour de bon");
     this.Text("Tandem-Saves-OfferAlone", "De retour dans votre monde. Votre V garde tout ce qu'il a gagné en coop : sauvegardez pour le garder pour de bon");
     this.Text("Tandem-Saves-OfferHint", "Sauvegarder votre V");

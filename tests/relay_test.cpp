@@ -423,6 +423,93 @@ TEST_SUITE("relay") {
     CHECK(again->ThroughRelay());
   }
 
+  TEST_CASE("a recent host by its ID: online, joined with no code; invite only: not by it") {
+    NEEDS_RELAY(relay);
+    std::string error;
+    net::HostKey key{0x42, 0x17};
+    key[2] = static_cast<std::uint8_t>(NextPort()); // a key of this run's
+    const auto id = net::HostIdOf(key);
+    CHECK(net::ParseHostId(net::HostIdText(id)) == id);
+    auto bound = *relay;
+    bound.hostKey = key;
+    bound.hostOpen = true;
+    auto host = Endpoint::Host({"host"}, NextPort(), error, {}, bound);
+    REQUIRE_MESSAGE(host, error);
+    host->SetHostCard({.id = id});
+    REQUIRE(Pump({host.get()}, [&](std::size_t, const auto &) {
+      const auto status = host->Relay();
+      return status && status->hostBound == net::HostPresence::Joinable;
+    }));
+    // The Join list's question: this host joinable, an ID nobody has offline.
+    const auto states = net::QueryHosts(relay->address, relay->port, {id, net::HostId{1}}, 3000);
+    REQUIRE(states.size() == 2);
+    CHECK(states[0] == net::HostPresence::Joinable);
+    CHECK(states[1] == net::HostPresence::Offline);
+    // One click: by the ID, no code; the welcome tells the guest the ID.
+    auto byId = *relay;
+    byId.hostId = id;
+    auto guest = Endpoint::Join({"guest"}, JoinTarget{.relay = byId}, error);
+    REQUIRE_MESSAGE(guest, error);
+    REQUIRE(AllJoined({host.get(), guest.get()}));
+    REQUIRE(Pump({host.get(), guest.get()},
+                 [&](std::size_t, const auto &) { return guest->HostCardHeard().has_value(); }));
+    CHECK(guest->HostCardHeard()->id == id);
+    host->Leave("closing");
+    CHECK(EndOf(*guest, 3s));
+
+    // Invite only: online, and a join by the ID is refused in words.
+    net::HostKey other = key;
+    other[3] = 1;
+    auto invite = *relay;
+    invite.hostKey = other;
+    invite.hostOpen = false;
+    auto closed = Endpoint::Host({"host"}, NextPort(), error, {}, invite);
+    REQUIRE_MESSAGE(closed, error);
+    REQUIRE(Pump({closed.get()}, [&](std::size_t, const auto &) {
+      const auto status = closed->Relay();
+      return status && status->hostBound == net::HostPresence::Online;
+    }));
+    CHECK(net::QueryHosts(relay->address, relay->port, {net::HostIdOf(other)}, 3000)[0] ==
+          net::HostPresence::Online);
+    auto refused = *relay;
+    refused.hostId = net::HostIdOf(other);
+    auto stranger = Endpoint::Join({"guest"}, JoinTarget{.relay = refused}, error, kFast);
+    REQUIRE_MESSAGE(stranger, error);
+    const auto reason = EndOf(*stranger, 3s);
+    REQUIRE(reason);
+    CHECK(*reason == "the host is not open to a join by its ID (invite only, or full)");
+  }
+
+  TEST_CASE("a fleet of relays: a host ID lives on its owner, its session where it is") {
+    const auto fleet = TestFleet();
+    if (!fleet) {
+      MESSAGE("TANDEM_RELAY_FLEET unset: skipped (tests/relay_loopback.sh runs it)");
+      return;
+    }
+    std::string error;
+    // Keys whose IDs each replica owns: one of them is not the session's.
+    for (std::uint8_t k = 0; k < 4; ++k) {
+      auto bound = fleet->front;
+      bound.hostKey = net::HostKey{0x51, k, static_cast<std::uint8_t>(NextPort())};
+      bound.hostOpen = true;
+      auto host = Endpoint::Host({"host"}, NextPort(), error, {}, bound);
+      REQUIRE_MESSAGE(host, error);
+      REQUIRE(Pump({host.get()}, [&](std::size_t, const auto &) {
+        const auto status = host->Relay();
+        return status && status->hostBound == net::HostPresence::Joinable;
+      }));
+      const auto id = net::HostIdOf(*bound.hostKey);
+      CHECK(net::QueryHosts(fleet->front.address, fleet->front.port, {id}, 3000)[0] ==
+            net::HostPresence::Joinable);
+      auto byId = fleet->front;
+      byId.hostId = id;
+      auto guest = Endpoint::Join({"guest"}, JoinTarget{.relay = byId}, error);
+      REQUIRE_MESSAGE(guest, error);
+      REQUIRE(AllJoined({host.get(), guest.get()}));
+      CHECK(guest->Relay()->at == host->Relay()->at);
+    }
+  }
+
   TEST_CASE("a fleet of relays: the entrance and a replica send players on to the owner") {
     const auto fleet = TestFleet();
     if (!fleet) {

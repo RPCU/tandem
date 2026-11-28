@@ -108,6 +108,9 @@ private:
   NatMapping Mapping() const;
   // Guest: the code led nowhere here; true when there is another relay to ask.
   bool NextHome(enet_uint32 now);
+  // Host IDs: the host's binding (to its owner, m_hostAt), its answers.
+  void BindHostId(enet_uint32 now);
+  void OnHostReply(const std::uint8_t *data, std::size_t size, enet_uint32 now);
 
   Role m_role;
   RelayOptions m_options;
@@ -190,5 +193,11 @@ private:
   enet_uint32 m_addressesMs{};
   bool m_addressesSent{};
   enet_uint32 m_introduceAgainMs{};
+  // Host: where our host ID is bound (the relay in use, or its owner after
+  // a redirect), when it was last said, the redirects followed.
+  ENetAddress m_hostAt{};
+  enet_uint32 m_hostBoundMs{};
+  bool m_hostBinding{};
+  int m_hostRedirects{};
 };
 } // namespace tandem::net

@@ -347,8 +347,9 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
   a feature needs outbound traffic; say why in the manifest.
 - Never answer an unregistered address's data; never send a reply larger
   than the request that caused it (both tested). Only registration-type
-  requests (register, resolve a join code, probe), padded to 64 bytes, are
-  answered from an unregistered address (a redirect is such an answer). An
+  requests (register, resolve a join code, probe, a host ID's binding,
+  presence and join), padded to 64 bytes, are answered from an
+  unregistered address (a redirect is such an answer). An
   introduction (two answers to one request) goes only to members of the
   requester's own session, both together smaller than the request.
 - Open by default: a host with no token pays a proof of work per session
@@ -364,7 +365,10 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
   The failed-lookup budget is the whole world's, split between replicas.
 - Join codes stay expensive to guess: keep the per-source and total lookup
   limits (`TestCodeGuessingIsSlow`, `TestCodeFailuresFromEveryoneAreCapped`)
-  and the code space (6 characters of base32, `crypto/rand`).
+  and the code space (6 characters of base32, `crypto/rand`). Host IDs
+  (`hostid.go`) are 128 bits, read as offline when unknown, and looked up
+  on a per-source bucket of their own, never the codes'
+  (`TestHostIDsCannotBeGuessedOrListed`).
 - The wire format (`relay/internal/relay/wire.go`) has a C++ twin in
   `core/src/relay.cpp`: change both, and only by appending message types.
 

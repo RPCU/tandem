@@ -59,7 +59,7 @@ for shard in 0 1; do
   fi
   "$work/tandem-relay" serve --host-tokens "$work/host-tokens" --udp "$udp" --http 127.0.0.1:0 \
     --peers "$peers" --shard "$shard" "${extra[@]}" \
-    --code-lookup-burst 50 --max-sessions-per-source 64 --drain-timeout 1s \
+    --code-lookup-burst 50 --max-sessions-per-source 64 --max-host-ids-per-source 64 --host-lookup-burst 64 --drain-timeout 1s \
     --expect-public-clients=false >"$work/relay$shard.log" 2>&1 &
   up=$(wait_for "$work/relay$shard.log" 's/.*"msg":"relay up".*"udp":"\([^"]*\)".*/\1/p')
   if [ -z "$up" ]; then

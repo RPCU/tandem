@@ -187,14 +187,28 @@ the book in `core/include/tandem/campaigns.hpp` (tested,
   `tests/hosts_test.cpp`), shown "NAME (join code)"; picking one asks for
   today's code ("NAME's join code: their game shows it on the pause menu,
   under Co-op"), the last one as the empty answer (it is still good when
-  the host's relay keeps codes). Online or joinable state is **not shown**:
-  nothing tells it without asking. What the relay offers: a code's lookup
-  (`ResolveCode`) says whether a session holds it, at the price of one of
-  the source's limited lookups (5 at once, then one per 6 s, failures
-  counted in the world's budget), so a list of recent hosts would eat the
-  join's own; an address host has no probe at all. Both would be new
-  features (a presence query on the relay, a probe the host answers); not
-  built.
+  the host's relay keeps codes).
+- **One-click rejoin, the online badge** (relay.md, "Host IDs";
+  2026-11-28, not yet run in game): a host hosting on a relay tells each
+  guest its host ID at the welcome (`proto::HostCard`); the guest keeps it
+  on that host's recent entry (`hosts::NoteHostId`, `id:HEX` in
+  `recent.txt`) and notes its V for it (`id:HEX` in `campaigns.txt`). As
+  the Join list opens, the plugin asks the relay about each recent host
+  with an ID (`TandemNative.QueryPresence`, on its own thread), and the
+  list, the game's own rows, is built again as the answers come
+  (`TandemCoopMenu.Offered`): "NAME (online: join)", "NAME (online, not
+  open to you)" (invite only, or full), "NAME (offline)"; a host with no
+  ID yet (no relay, an older host) keeps its plain row. A joinable host
+  joins in one pick with no code (`JoinByHost`; the pause menu at once,
+  `TandemSystem.CoopJoinHost`; the main menu then the V page, its V from
+  last time first); the others go the code's way, and the first join of a
+  host is always by code or address. A join by ID that may not says so
+  ("their game is not open to you now (invite only, or full): ask them for
+  a code", `Reason-HostNotOpen`; "they are not online now",
+  `Reason-HostOffline`) and gives up at once. An address host has no
+  badge unless it also hosts on a relay. Scenario `coop-host-id` (needs
+  `RELAY=HOST:PORT`, `task relay:run`; the mock player's `--host-key`,
+  `--host-invite`).
 - **How the menu knows a save's playthrough**: the game names one only in
   its saves' list (`SaveMetadataInfo.playthroughID`). The main menu reads
   that list as it opens (its `OnSavesForLoadReady`: a screenshot request
@@ -447,9 +461,9 @@ pause menu's New join code since 2026-11-19.)
   menu; (2026-11-28, to verify in game) co-op campaigns, the guest's V
   per host, joins in words ([Campaigns](#campaigns)). Still open: testing
   a host before loading (today a guest learns in game, in words, that the
-  host is unreachable or refuses it, and plays on in its own world), a
-  host's online state in the recent list (a relay presence query or a
-  probe the host answers: new features, Campaigns), kept codes for hosts
+  host is unreachable or refuses it, and plays on in its own world), the
+  online state of a host joined by address alone (it has no host ID
+  unless it hosts on a relay), kept codes for hosts
   without a relay token (a relay feature: today an open host's code
   changes every session and as it expires, so a friend needs the current
   one), options (max

@@ -52,7 +52,7 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 25: Rules.levelGap (the host's level_gap, said to every game: a guest's
 // menu shows the host's rules, coop-menu.md).
 // 26: LinkDecline's reasons 2-4, a call's outcomes (declined, busy, missed).
-inline constexpr std::uint16_t kProtocolVersion = 26;
+inline constexpr std::uint16_t kProtocolVersion = 27;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3454,6 +3454,18 @@ struct CorpsePose {
 // An NPC, finite numbers, 1 to kMaxRagdollBodies bodies.
 bool Fits(const CorpsePose &corpse);
 
+// The host's card (appended, protocol 27; coop-menu.md, "Campaigns"): the
+// host game's host ID, the relay's name for its sessions
+// (relay/internal/relay/hostid.go). A guest keeps it with the host in its
+// recent hosts: the Join list asks the relay whether the host is online and
+// joins it by the ID, with no code. From the host to each guest, with the
+// world at its welcome and at a resync; only a game hosting on a relay
+// says one. Idempotent: the same ID again changes nothing. Event channel.
+struct HostCard {
+  std::array<std::uint8_t, 16> id{}; // never all zero
+  friend bool operator==(const HostCard &, const HostCard &) = default;
+};
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -3476,7 +3488,7 @@ using MessageVariant = std::variant<
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
-    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose>;
+    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose, HostCard>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,

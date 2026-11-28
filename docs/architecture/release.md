@@ -212,7 +212,9 @@ version 5, the host runs 6`, nothing on the guest's screen (a session
   their game has no Phantom Liberty …"). A host whose own game lacks it
   (only possible with `compat = off`) refuses everyone, with the words the
   other way round. Final, like a version refusal.
-- **`kProtocolVersion` is 26** since a call's outcomes cross
+- **`kProtocolVersion` is 27** since the host tells its guests its host ID
+  (`HostCard`, appended, 2026-11-28: one-click rejoin, relay.md "Host
+  IDs"); 26: a call's outcomes cross
   (`LinkDecline` reasons 2-4: declined, busy, missed; 2026-11-28; 25: `Rules.levelGap`, 2026-11-28, for a guest's co-op menu; 24: a body's
   rest goes to the other games, `CorpsePose`, appended; 23: an NPC's voice
   lines, `NpcVoice`, appended, 2026-11-26; 22: `PlayerMotion` and

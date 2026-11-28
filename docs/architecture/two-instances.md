@@ -523,12 +523,12 @@ plugin now reads four variables at load (`core/include/tandem/instance.hpp`,
 tested in `tests/instance_test.cpp`; Wine passes the Unix environment to
 the game):
 
-| Variable        | Effect                                                                                     |
-| --------------- | ------------------------------------------------------------------------------------------ |
-| `TANDEM_CONFIG` | the settings file instead of `tandem.ini`; `recent.txt` and `campaigns.txt` stay beside it |
-| `TANDEM_CMD`    | the command file instead of `tandem.cmd`; `recordings/` stays beside it                    |
-| `TANDEM_PORT`   | the UDP port, over the file's                                                              |
-| `TANDEM_LOG`    | a log file of tandem's own, besides RED4ext's `tandem-*.log`                               |
+| Variable        | Effect                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------ |
+| `TANDEM_CONFIG` | the settings file instead of `tandem.ini`; `recent.txt`, `campaigns.txt` and `host.key` stay beside it |
+| `TANDEM_CMD`    | the command file instead of `tandem.cmd`; `recordings/` stays beside it                                |
+| `TANDEM_PORT`   | the UDP port, over the file's                                                                          |
+| `TANDEM_LOG`    | a log file of tandem's own, besides RED4ext's `tandem-*.log`                                           |
 
 Paths are the game's: `Z:/data/Steam/tandem-instances/b/tandem.ini` under
 Wine. A relative path starts at the plugin's folder. Built and unit-tested;
