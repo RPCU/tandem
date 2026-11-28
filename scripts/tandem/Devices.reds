@@ -36,13 +36,15 @@
 //   takes nothing from its proxies, and no game forwards a device's hit on
 //   a puppet: Combat.reds).
 //
-// tools/game.sh cmd device | device near [KIND] | device goto [KIND] |
+// tools/game.sh cmd device | device near [KIND] | device goto [KIND [M]] |
 // device tell [KIND] (the session hears what it is, as if our V just made
 // it so: tandem-peer --device-answer then knows it) |
 // device open|close|lock|unlock|on|off|explode|distract|friendly|hostile
 // [KIND] | device floor N|other | device station N
-// KIND: door lift camera turret barrel (whole) ap radio any. near and goto look
-// 200 m around our V (goto puts it beside the device), the rest 40 m.
+// KIND: door autodoor (opens itself) lift camera turret sentry (not the
+// police's) barrel (whole) mine (a placed trap, whole) ap radio any. near and
+// goto look 200 m around our V (goto puts it beside the device, or M m from
+// it on our side), the rest 40 m.
 
 public class TandemDevice {
   public let entity: EntityID;
@@ -976,6 +978,18 @@ public class TandemDevices extends ScriptableSystem {
         }
       } else {
         explosive.SetExplodedState(true);
+        // A record (a join, a resync) for one standing whole in front of
+        // us: the wreck the engine gives one that streams in exploded
+        // (ExplosiveDevice.ResolveGameplayState), with no blast: a record
+        // hurts nobody. Not loaded: that look comes when it streams in.
+        let wreck = loaded ? GameInstance.FindEntityByID(game, device.entity) as ExplosiveDevice : null;
+        if IsDefined(wreck) && explosive.DoExplosiveResolveGameplayLogic() {
+          if wreck.TandemShowExploded() {
+            TandemNative.Log(s"devices: \(TandemDevices.Name(device)) set as the host's wreck, in front of us");
+          } else {
+            TandemDegraded.Fallback("device not matched", s"\(TandemDevices.Name(device)) stays whole here: the host's is exploded");
+          }
+        }
       }
     }
     // A camera or turret turned: friendly to every V here, the way the
@@ -1285,10 +1299,15 @@ public class TandemDevices extends ScriptableSystem {
   // within 40 m, read from the game. attitude: its attitude to our V;
   // puppet: to the first puppet; target: what it follows (none, V, puppet,
   // other); alarm: its security system's state (none: on none); mark: the
-  // player whose hack is marked on it (0: none).
+  // player whose hack is marked on it (0: none); look: an explosive's
+  // entity, whole or wreck (none: not one, or not in our world). KIND may
+  // be a device's entity (hex, as the commands name it) instead.
   public func Query(kind: String, what: String) -> String {
     let distance = 40.0;
-    let device = this.Nearest(kind, distance);
+    let device = this.ByHex(kind);
+    if !IsDefined(device) {
+      device = this.Nearest(kind, distance);
+    }
     if !IsDefined(device) {
       return "none";
     }
@@ -1326,7 +1345,21 @@ public class TandemDevices extends ScriptableSystem {
     if Equals(what, "mark") {
       return IntToString(Cast<Int32>(device.markBy));
     }
+    if Equals(what, "look") {
+      let explosive = body as ExplosiveDevice;
+      return IsDefined(explosive) ? explosive.TandemLook() : "none";
+    }
     return "unknown";
+  }
+
+  // The followed device of that entity (hex, TandemNative.EntityHex).
+  private func ByHex(hex: String) -> ref<TandemDevice> {
+    for device in this.m_devices {
+      if Equals(TandemNative.EntityHex(device.entity), hex) {
+        return device;
+      }
+    }
+    return null;
   }
 
   private static func AttitudeWord(attitude: EAIAttitude) -> String {
@@ -1359,6 +1392,16 @@ public class TandemDevices extends ScriptableSystem {
     }
     if Equals(kind, "door") {
       return IsDefined(ps as DoorControllerPS);
+    }
+    // A door that opens itself for who comes near (EDoorType.AUTOMATIC).
+    if Equals(kind, "autodoor") {
+      let door = ps as DoorControllerPS;
+      return IsDefined(door) && Equals(door.GetDoorType(), EDoorType.AUTOMATIC);
+    }
+    // A placed trap that goes off when a V walks into it, still whole.
+    if Equals(kind, "mine") {
+      let trap = ps as ExplosiveTriggerDeviceControllerPS;
+      return IsDefined(trap) && !trap.IsExploded();
     }
     if Equals(kind, "lift") {
       return IsDefined(ps as LiftControllerPS);
@@ -1467,7 +1510,7 @@ public class TandemDevices extends ScriptableSystem {
       j += 1;
     }
     TandemNative.Log(s"fixture: devices within \(radius) m: \(total) (\(listed))");
-    let kinds: array<String> = ["door", "lift", "camera", "turret", "sentry", "barrel", "ap", "radio"];
+    let kinds: array<String> = ["door", "autodoor", "lift", "camera", "turret", "sentry", "barrel", "mine", "ap", "radio"];
     for kind in kinds {
       let distance = 200.0;
       let device = this.Nearest(kind, distance);
@@ -1557,15 +1600,20 @@ public class TandemDevices extends ScriptableSystem {
       return;
     }
     if Equals(verb, "goto") {
-      // Beside it, on our side of it, at its height.
+      // Beside it (1.5 m, or the metres given: goto KIND M), on our side
+      // of it, at its height.
       let game = this.GetGameInstance();
       let player = GetPlayer(game);
       let object = GameInstance.FindEntityByID(game, device.entity) as GameObject;
+      let beside = ArraySize(words) > 3 ? StringToFloat(words[3]) : 1.5;
+      if beside <= 0.0 {
+        beside = 1.5;
+      }
       let there = object.GetWorldPosition();
       let back = player.GetWorldPosition() - there;
       back.Z = 0.0;
       let far = Vector4.Length(back);
-      let to = far > 0.1 ? there + back * (1.5 / far) : there + new Vector4(1.5, 0.0, 0.0, 0.0);
+      let to = far > 0.1 ? there + back * (beside / far) : there + new Vector4(beside, 0.0, 0.0, 0.0);
       to.W = 1.0;
       TandemTravel.ExpectMove(game);
       GameInstance.GetTeleportationFacility(game).Teleport(player, to, player.GetWorldOrientation().ToEulerAngles());
@@ -1647,6 +1695,39 @@ protected func Notify(notifier: ref<ActionNotifier>, action: ref<ScriptableDevic
 public final func TandemDetonate(instigator: ref<GameObject>) -> Void {
   GameInstance.GetStatPoolsSystem(this.GetGame()).RequestSettingStatPoolValue(Cast<StatsObjectID>(this.GetEntityID()), gamedataStatPoolType.Health, 0.0, instigator, false);
   this.StartExplosionPipeline(instigator);
+}
+
+// An explosive the host's record says went up, standing whole in front of
+// us (a late joiner's or a resync's record): what a whole one has running
+// stopped (as its own explosion stops them: Explode, HandleDeath), then the
+// look the engine gives one that streams in exploded
+// (ResolveGameplayState: ToggleVisibility(false): mesh and collider off,
+// its exploded appearance, no gameplay role, disabled). No attack, no
+// physics pulse, no VFX. True when its mesh is off (read back). On the
+// tick only (TandemDevices.Apply).
+@addMethod(ExplosiveDevice)
+public final func TandemShowExploded() -> Bool {
+  this.KillAllFxInstances();
+  this.EffectsOnStartStop(true);
+  if NotEquals(this.m_loopAudioEvent, n"None") {
+    GameObject.StopSoundEvent(this, this.m_loopAudioEvent);
+  }
+  if IsDefined(this.m_distractionCollider) {
+    this.m_distractionCollider.Toggle(false);
+  }
+  this.RemoveEnvironmentalHazardStimuli();
+  let light = new ChangeLightEvent();
+  light.settings.strength = 0.0;
+  light.settings.color = new Color(Cast<Uint8>(0), Cast<Uint8>(0), Cast<Uint8>(0), Cast<Uint8>(0));
+  this.QueueEvent(light);
+  this.ToggleVisibility(false);
+  return !IsDefined(this.m_mesh) || !this.m_mesh.IsEnabled();
+}
+
+// (test) Its look: wreck (mesh off) or whole.
+@addMethod(ExplosiveDevice)
+public final func TandemLook() -> String {
+  return IsDefined(this.m_mesh) && this.m_mesh.IsEnabled() ? "whole" : "wreck";
 }
 
 // An explosive that went up says so on its state from its entity, with no

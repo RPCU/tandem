@@ -59,7 +59,7 @@ their state (on, off, friendly, destroyed, the alarm) is the host's.
 | The alarm (`SecuritySystemControllerPS`) | safe, alerted, combat | host. Raised by whichever game's device saw its V (on the host: as that V's puppet, where it stands, so the NPCs go there); called off by the host only |
 | Access points (`AccessPointControllerPS`), their networks | breached; each device's "quickhacks open" bit; what the breach's daemons did to each device (their own state) | host. Breached once for everyone; the datamine's money and shards go to who breached (rolled by that game, as corpses and containers are) |
 | Computers, terminals (`ComputerControllerPS`, `TerminalControllerPS`) | status, hacked; what they did to the devices they command (those devices' own state) | host. Reading mails and files: each player in their own game; a quest fact a read sets follows the story rules |
-| Barrels, mines, traps (`ExplosiveDeviceControllerPS` and kin) | exploded (played as an explosion where it is in sight, a record elsewhere); status | host. The blast hurts each game's own V from its own copy, and NPCs in the host's game only; a guest's doing goes off on the host's copy from that guest's puppet (`ExplosiveDevice.TandemDetonate`: its kills and its crime the guest's; not yet run in game) |
+| Barrels, mines, traps (`ExplosiveDeviceControllerPS` and kin) | exploded (played as an explosion where it is in sight, a record elsewhere; a record of one in sight: its wreck, no blast); status | host. The blast hurts each game's own V from its own copy, and NPCs in the host's game only; a guest's doing goes off on the host's copy from that guest's puppet (`ExplosiveDevice.TandemDetonate`: its kills and its crime the guest's; not yet run in game) |
 | Radios, TVs (`MediaDeviceControllerPS`) | on, off; the station or channel | host |
 | Lights, fuse boxes, generators, fans, vending machines, any other device | status (on, off, unpowered, disabled), broken, hacked, distracting (a glitch: on the host a real distraction, so its NPCs come and look) | host. A vending machine's sale: the buyer's own game (money and item are that V's) |
 | Glass, covers, breakable scenery | the moment a piece breaks (`Fracture`): physics destruction has no script state; the session's record of what broke, for who was not there | nobody: a break is for good, whoever's game saw it first tells; the host keeps the record ("Glass and breakable scenery") |
@@ -169,7 +169,13 @@ two are linked: the bits a guest's request (host) or the host's live word
   needs nothing either: its devices stream in again and each asks.
 - **Late joiner.** Gets every record quietly at its join (with the world
   domain); its own devices follow as they come into its world, and those
-  not loaded are set in their state objects at once.
+  not loaded are set in their state objects at once. An explosive the
+  record has exploded, standing whole in our world (a join, a resync), is
+  given the wreck the engine gives one that streams in exploded
+  (`ExplosiveDevice.TandemShowExploded`: what a whole one runs stopped,
+  then its own `ToggleVisibility(false)`, §13.167), read back (its mesh
+  off) or the fallback `device not matched`; no blast is played for a
+  record (it would hurt our V).
 - **An actor that vanishes.** A device is the world's, not a player's:
   what a vanished guest changed stays changed; its request still with the
   host's game is forgotten (the device is whatever the host's game made
@@ -553,10 +559,11 @@ npc=N[@S] --programs LIST [--breach-failed]`: two guests and a late
   (part of `task test`) runs a host and two guests through it. A recorded
   host session (`--play-session`) replays the host's device words too.
 - In game: `tools/game.sh cmd device` (counts), `device near|goto|tell
-[KIND]`, `device open|close|lock|unlock|on|off|explode|distract|friendly|
+[KIND]` (`goto KIND M`: M m from it, on our side), `device open|close|lock|unlock|on|off|explode|distract|friendly|
 hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
-  device of a kind (door lift camera turret barrel ap radio any; a barrel
-  still whole) around V.
+  device of a kind (door autodoor lift camera turret sentry barrel mine ap
+  radio any; a barrel or a mine still whole) around V; `test query device
+KIND|ENTITY look` (an explosive's entity: whole or wreck).
 - Breach Protocol in game: `tools/game.sh cmd breach` (counts),
   `breach ap [PROGRAMS]`, `breach fail ap`, `breach npc [PROGRAMS]` (the
   nearest access point or proxy, its outcome faked as AccessPointSkip
@@ -572,11 +579,18 @@ hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
   marked), `turret-friendly`, `devices-barrel` (shot by the guest), `devices-guest` (the
   game as the guest: its own copy first, the host's word, and its world put
   back on leaving), `devices-media` (a station V picks, then the guest's:
-  `--device-answer station=2`). `DEVICES_AT="X Y Z"` names the spot; V's
-  flat has a door, lifts and a radio, a camera and a barrel need one.
+  `--device-answer station=2`), `devices-barrel-record` (the game as a
+  guest joins a mock host whose record has the barrel in front of V
+  exploded: a wreck at the join, no blast, V unhurt). `DEVICES_AT="X Y Z"`
+  names the spot; V's flat has a door, lifts and a radio. A barrel, a mine,
+  a sentry or an automatic door: unset, the scenario finds one in game
+  (`find_spot`, testing.md "Fixtures").
 - **On two real games** (`two-instances.md`, "Scenarios on two games"; not
   yet run): `pair-devices-door`, `pair-devices-lift`, `pair-devices-camera`,
-  `pair-devices-barrel`, `pair-devices-media`, `pair-glass`, `pair-turret`:
+  `pair-devices-barrel`, `pair-devices-barrel-late` (the partner, out of
+  the session beside a barrel our V then blows up, joins: its wreck at the
+  join), `pair-devices-mine`, `pair-devices-autodoor` (opens for the
+  partner's V on both, shuts on both), `pair-devices-media`, `pair-glass`, `pair-turret`:
   each acts on one game and reads the other's log, then compares both
   games' parity dumps of that device (`compare devices ENTITY`).
 
@@ -615,11 +629,13 @@ hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
   copy appears.
 - **Automatic doors** open for the local V only: each opening is a request
   like any other, so a busy doorway makes a few messages a second; the
-  host's order still decides. No scenario: no fixture with one is known.
-- **An exploded barrel set quietly** (a late joiner's record, a resync)
-  while it is streamed in on our game: its state says exploded, its entity
-  stays whole until it streams in again (no blast is played for a record:
-  it would hurt our V).
+  host's order still decides. Scenario `pair-devices-autodoor` (not yet
+  run).
+- **A wreck put back whole** (known limit): at a guest's leave an
+  explosive the session blew up goes back to its own save's whole state,
+  its entity a wreck until it streams in again. Seen only by that player
+  alone after co-op, and the engine has no way back to whole in place
+  (`ToggleVisibility` also disables the device).
 - **Datamine rewards** go to who breached. Alternative if the players
   prefer it: breach state not shared, each jacks in their own copy.
 - **Breach Protocol, not run in game**: the list is §13.60, "To verify in
