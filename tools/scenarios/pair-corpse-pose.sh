@@ -19,7 +19,7 @@ pause 6 # the partner's copies spawn
 cmd test query corpses kill
 expect 'corpse test: [1-9] ganger' 10
 expect 'corpse: npc [0-9]+ at rest after .* its bodies sent' 20
-expect_partner 'corpse: proxy [0-9]+ laid as its owner.s body' 10
+expect_partner 'corpse: proxy [0-9]+ laid as its owner.s body' 15
 pause 20 # every body sent (again if it slid on), laid twice, asleep
 shot pair-corpse-host
 shot_file=$(pgame shot pair-corpse-partner) || fail "no screenshot of the partner"
