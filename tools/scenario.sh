@@ -82,6 +82,15 @@
 #                          (tools/world-compare.py --instances): no
 #                          difference in CATEGORY (devices, glass, world…),
 #                          for devices only that entity's (hex) when named
+#   pshot NAME             the partner's screenshot kept with the results
+#                          (NAME-partner.png), as shot is ours
+#   boss_fight RECORD NAME a boss fight on both games (bosses.md): RECORD
+#                          (a Character record, kind:K or name:S, as `boss
+#                          spawn` takes it) hostile 15 m ahead of our V, the
+#                          partner beside it; its proxy, both boss bars,
+#                          whom it attacks, the partner's hits on it, a weak
+#                          spot broken here, its phase and its death on both,
+#                          screenshot pairs NAME-*
 #   At the end the partner too has run no hook beside its script tick and
 #   nothing degraded the scenario did not declare; it leaves our session.
 # Every scenario also rejects the mock player's `referee:` lines: the game
@@ -735,6 +744,116 @@ compare() {
   fi
   [ "$status" = 0 ] || fail "the two games differ in $category${entity:+ ($entity)}: $(grep -m1 -E "^  $category: " <<<"$output" || tail -1 <<<"$output")"
   echo "  ok: both games show the same $category${entity:+ of $entity}"
+}
+pshot() { mkdir -p "$out" && pgame shot "$1" >/dev/null && cp "$cache/shots/$1.png" "$out/$1-partner.png"; }
+# A boss fight on two games (bosses.md, "Scenarios"). Our game hosts and
+# runs the boss (a boss is pinned to its game); the partner fights it from
+# 3 m, our V 30 m back so the boss's own pick is free to fall on the
+# partner. God mode on both: the fight's end must not end a V (revive.md).
+# BOSS_LATE=1: the partner joins once the boss is at 45 % (a guest who joins
+# mid-fight: its proxy must start in the host's phase).
+boss_fight() {
+  local record=$1 name=$2 me bx by bz spots phase pphase health after bar pbar targets peffects pspots state
+  ensure host
+  if [ -z "${BOSS_LATE:-}" ]; then
+    partner_join
+    me=$(psince | grep -oE 'in the session as player [0-9]+' | tail -1 | awk '{ print $NF }')
+    pcmd god on
+  fi
+  cmd god on
+  mark
+  cmd boss spawn "$record"
+  expect 'bosses: spawning [^ ]+ 15 m ahead at [-0-9.]+ [-0-9.]+ [-0-9.]+ \(true\)' 10
+  read -r bx by bz < <(since | grep -oE 'spawning [^ ]+ 15 m ahead at [-0-9.]+ [-0-9.]+ [-0-9.]+' | tail -1 | awk '{ print $6, $7, $8 }')
+  note "the boss: $(since | grep -oE 'spawning [^ ]+' | tail -1 | cut -d' ' -f2) at $bx $by $bz"
+  expect 'npc hostile: now hostile' 20
+  expect 'bosses: our boss [0-9]+ [^ ]+ \([a-z]+, type [0-9]+, [0-9]+ weak spots\) shared' 15
+  spots=$(since | grep -oE 'bosses: our boss [0-9]+ [^ ]+ \([a-z]+, type [0-9]+, [0-9]+ weak spots\) shared' | tail -1 | grep -oE '[0-9]+ weak spots' | cut -d' ' -f1)
+  if [ -n "${BOSS_LATE:-}" ]; then
+    # Down to 45 % before anyone joins: its phase moves on here alone.
+    cmd boss health 45
+    expect 'bosses: our boss [0-9]+ set to 45.0% health' 5
+    pause 3
+    partner_join
+    me=$(psince | grep -oE 'in the session as player [0-9]+' | tail -1 | awk '{ print $NF }')
+    pcmd god on
+  fi
+  [ -n "$me" ] || fail "the partner's player number was not in its log"
+  note "the partner is player $me"
+  pmark
+  # The partner 3 m from it, our V 30 m back.
+  pat "$(awk -v x="$bx" 'BEGIN { print x + 3.0 }') $by $bz"
+  at "$bx $(awk -v y="$by" 'BEGIN { print y - 30.0 }') $bz"
+  expect_partner 'bosses: proxy [0-9]+ [^ ]+ \([a-z]+, type [0-9]+, [0-9]+ weak spots\) here' 20
+  # The same phase on both (its PhaseN effect: the ones its scripts read).
+  pause 2
+  query phase boss phase
+  pquery pphase boss phase
+  expect_value "$pphase" = "$phase"
+  # The game's own boss bar on both HUDs.
+  expect_partner 'bosses: boss bar for proxy [0-9]+ [^ ]+ asked on our HUD' 30
+  expect 'bosses: boss bar for our boss [0-9]+ [^ ]+ asked on our HUD' 30
+  pause 2
+  query bar boss bar
+  expect_value "$bar" = shown
+  pquery pbar boss bar
+  expect_value "$pbar" = shown
+  shot "$name-bar"
+  pshot "$name-bar"
+  # Whom it attacks: the partner, 3 m off, for a while; its attacks reach
+  # the partner's V on the partner's game.
+  expect "bosses: our boss [0-9]+ targets player $me" 30
+  expect_partner 'combat: npc hit applied to our V' 40
+  pause 5
+  query targets boss targets
+  note "whom the boss attacked (player:seconds): $targets"
+  expect_value "$targets" '~' "(^|,)$me:"
+  # The partner's hits on its proxy are the host boss's.
+  query health boss health
+  pcmd npc punch 40
+  pcmd npc punch 40
+  pcmd npc punch 40
+  expect "outcomes: [0-9]+ struck by player $me: " 15
+  pause 2
+  query after boss health
+  note "its health before the partner's hits: $health%, after: $after%"
+  # A weak spot broken on the host breaks on the partner's proxy too.
+  if [ "${spots:-0}" -gt 0 ]; then
+    pmark
+    cmd boss spot 0
+    expect 'bosses: our boss [0-9]+ now [0-9]+ effect\(s\) .*, weak spots 0' 10
+    expect_partner 'bosses: proxy [0-9]+ wears its owner.s state: .* [1-9][0-9]* weak spot\(s\) lowered' 10
+    pquery pspots boss spots
+    expect_value "$pspots" '~' '^0(,|$)'
+  else
+    note "no weak spot on this boss: nothing to break"
+  fi
+  query phase boss phase
+  pquery pphase boss phase
+  expect_value "$pphase" = "$phase"
+  pquery peffects boss effects
+  note "its phase: $phase on both; effects it wears on the partner's: $peffects"
+  shot "$name-fight"
+  pshot "$name-fight"
+  # Its death on both, and both bars gone.
+  pmark
+  cmd boss kill
+  expect 'bosses: our boss [0-9]+ [^ ]+ died here' 10
+  expect_partner 'bosses: proxy [0-9]+ [^ ]+ died here' 15
+  pquery state boss state
+  expect_value "$state" = dead
+  pause 3
+  query bar boss bar
+  expect_value "$bar" = hidden
+  pquery pbar boss bar
+  expect_value "$pbar" = hidden
+  shot "$name-dead"
+  pshot "$name-dead"
+  cmd god off
+  pcmd god off
+  reject_partner 'boss state'
+  reject 'watchdog: game thread silent'
+  reject_partner 'watchdog: game thread silent'
 }
 # The partner's end of a scenario: no hook beside its tick, nothing degraded
 # undeclared (as on_game_thread, no_silent_fallback); then it leaves.
