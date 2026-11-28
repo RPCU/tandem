@@ -57,6 +57,14 @@ public class TandemTestReset {
     if IsDefined(spectate) {
       spectate.ClearTest();
     }
+    // Back in our V's body: no camera, turret or car a scenario left it in
+    // (RemoteView.reds; the game's own way out, as a quest ends one).
+    let remote = TandemRemoteView.Ours(this.m_game);
+    if remote.on {
+      TakeOverControlSystem.ReleaseControlOfRemoteControlledVehicle(this.m_game, player.GetEntityID());
+      TakeOverControlSystem.ReleaseControl(this.m_game);
+      TandemNative.Log(s"test reset: out of our V's remote view (\(TandemRemoteView.SortName(remote.sort)))");
+    }
     // Our V's own god mode from "god on" (Revive.reds keeps its own).
     let gods = GameInstance.GetGodModeSystem(this.m_game);
     gods.RemoveGodMode(player.GetEntityID(), gameGodModeType.Invulnerable, n"Default");

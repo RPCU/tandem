@@ -64,7 +64,8 @@ has the systems say again what a session says once (its rules, comms'
 settings, our level, the party HUD's layout, the throws' once-only lines:
 the host's session outlives scenarios, and a scenario reads its log from
 before the reset unless the game was launched for it); takes V out of any vehicle (an instant unmount, then the workspot exit) or
-workspot; ends the test private scene and quest freeze, `story spectate
+workspot, and out of a remote view (a camera, a turret, a car driven
+remotely); ends the test private scene and quest freeze, `story spectate
 missing`, test worlds
 (Elsewhere), the test dilation and `god on`; resets revive (`revive
 fresh`: up, no cooldown); heals V and removes bleeding, burning,
