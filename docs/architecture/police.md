@@ -195,8 +195,22 @@ it does not (a proxy that does not count as a civilian there, research §13.34 q
    game already receives which NPCs have detected its V
    (`NpcStates.detected`): for each officer among them it registers the
    proxy as a viewer with its own prevention system, and unregisters it
-   when the officer loses sight (`TandemPolice.Watch`). The stars go grey
-   and blink out by the game's own rules.
+   when the officer loses sight (`TandemPolice.Watch`), by the body it
+   registered (a proxy handed over to us is no proxy to look up any more).
+   When its own game runs its area again (the other owner went, it holds
+   its region) and when the session ends, every one it registered is
+   unregistered at once (`Unwatch`: Watch stops running then; a proxy
+   still standing there stayed a viewer, its place a spawn origin of our
+   own police from then). While any of them sees our V, the prevention
+   system's "police in combat with the player"
+   (`PoliceAgentRegistry.IsPoliceInCombatWithPalyer`, wrapped) answers yes:
+   its own star logic keeps the stars active and the last known position
+   on our V (research §13.162); the
+   proxies are in no agent registry there, so before the stars went grey
+   the moment they came and stayed grey under their fire. They go grey,
+   searching and lost by the game's own rules once nobody sees our V.
+   `police report` ends with how many of the prevention system's own
+   viewers are proxies (`TandemProxyViewers`: only Watch puts those there).
 9. **It ends** when the offender's stage is 0, or when it leaves or
    vanishes: the owner's units for that player stand down the way the
    game's do (the threat dropped, neutral, relaxed, the game's own "stars
@@ -340,6 +354,14 @@ Not built:
   spawns nothing (`we follow`), that our units and a car come for its
   puppet, none on our V (`0 on our V`, our health never dips, no star of
   ours), and that they stand down with its stars.
+
+- **pair-police-area** (two real games; not yet run): the same, until our
+  officers' proxies are viewers in the partner's prevention system and its
+  stars are active (its `police report`: state 1, not the grey 2); the
+  partner then holds its region (`region hold on`)
+  beside us, its game running its area: none of those proxies may stay
+  among its viewers ("0 proxy viewer(s)", read from its prevention
+  system).
 
 By hand, two games: a guest shoots a civilian near the host (stars on the
 guest only); the host joins the fight against the police (its own stars);

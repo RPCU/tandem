@@ -63,8 +63,15 @@ public class TandemPolice {
   private let m_sentStage: Int32;
   private let m_sentState: Int32;
   private let m_last: Float;
-  // Following: the host's police that see our V now (their proxies' ids).
+  // Following: the host's police that see our V now (their proxies' ids),
+  // and the body each was registered with (unregistered by that body: a
+  // proxy handed over to us, or gone from the NPC map, is no proxy to look
+  // up any more and stayed registered).
   private let m_viewers: array<Uint32>;
+  private let m_viewerBodies: array<EntityID>;
+  // ...and whether any does now: read by the prevention system's own "police
+  // in combat with the player" (PoliceAgentRegistry, below), on any thread.
+  private let m_ownersSee: Bool;
   // Owner: units out for remote players, spawn requests on their way (the
   // spawn system's tickets, and whom each is for), the request for spawn
   // points on its way (0: none) and when the next may go.
@@ -136,6 +143,7 @@ public class TandemPolice {
     this.m_last = now;
     this.SendOurs();
     if TandemArea.Owns() {
+      this.Unwatch();
       this.Answer(system);
     } else {
       this.Watch(system);
@@ -145,6 +153,9 @@ public class TandemPolice {
   // The session is over: nobody is wanted but by their own game, and the
   // units we sent after the others go the game's way.
   public func End() -> Void {
+    // (Before the proxies go: TandemSystem.EndStreet runs before the NPCs
+    // end.) Our own prevention system is the single-player one again.
+    this.Unwatch();
     for unit in this.m_units {
       this.StandDown(unit);
     }
@@ -159,7 +170,6 @@ public class TandemPolice {
     ArrayClear(this.m_ticketPlayers);
     ArrayClear(this.m_ticketKinds);
     ArrayClear(this.m_ticketPoints);
-    ArrayClear(this.m_viewers);
     ArrayClear(this.m_heatPlayers);
     ArrayClear(this.m_heatStages);
     this.m_pointsFor = 0u;
@@ -209,7 +219,9 @@ public class TandemPolice {
           cars += 1;
         }
       }
-      TandemNative.Log(s"police report: our wanted level \(police.GetHeatStageAsInt()) (state \(EnumInt(police.GetStarState()))), \(role);\(others); \(ArraySize(this.m_units)) unit(s) out for the others (\(hostile) on our V), \(cars) car(s), \(avs) AV(s), \(ArraySize(this.m_tickets)) on their way, \(ArraySize(this.m_viewers)) of the host's police see our V");
+      // (The last: the prevention system's own list, read from it.)
+      let proxies = police.TandemProxyViewers(system.Npcs());
+      TandemNative.Log(s"police report: our wanted level \(police.GetHeatStageAsInt()) (state \(EnumInt(police.GetStarState()))), \(role);\(others); \(ArraySize(this.m_units)) unit(s) out for the others (\(hostile) on our V), \(cars) car(s), \(avs) AV(s), \(ArraySize(this.m_tickets)) on their way, \(ArraySize(this.m_viewers)) of the host's police see our V, \(proxies) proxy viewer(s) in our prevention system");
     }
   }
 
@@ -275,12 +287,15 @@ public class TandemPolice {
     let chased = police.IsChasingPlayer();
     let bit = TandemPolice.BitOf(this.m_you);
     let seen: array<Uint32>;
+    let bodies: array<EntityID>;
     if chased {
       for npc in npcs.ProxyIds() {
         if (TandemNative.NpcDetected(npc) & bit) != 0 {
-          let body = GameInstance.GetDynamicEntitySystem().GetEntity(system.ProxyOfNpc(npc)) as ScriptedPuppet;
+          let id = system.ProxyOfNpc(npc);
+          let body = GameInstance.GetDynamicEntitySystem().GetEntity(id) as ScriptedPuppet;
           if IsDefined(body) && body.IsPrevention() {
             ArrayPush(seen, npc);
+            ArrayPush(bodies, id);
             if !ArrayContains(this.m_viewers, npc) {
               PreventionSystem.RegisterAsViewerToPreventionSystem(this.m_game, body);
             }
@@ -288,15 +303,47 @@ public class TandemPolice {
         }
       }
     }
-    for npc in this.m_viewers {
-      if !ArrayContains(seen, npc) {
-        let body = GameInstance.GetDynamicEntitySystem().GetEntity(system.ProxyOfNpc(npc)) as ScriptedPuppet;
-        if IsDefined(body) {
-          PreventionSystem.UnRegisterAsViewerToPreventionSystem(this.m_game, body);
-        }
+    let i = 0;
+    while i < ArraySize(this.m_viewers) {
+      if !ArrayContains(seen, this.m_viewers[i]) {
+        this.Unregister(this.m_viewerBodies[i]);
       }
+      i += 1;
     }
     this.m_viewers = seen;
+    this.m_viewerBodies = bodies;
+    this.m_ownersSee = ArraySize(seen) > 0;
+  }
+
+  private func Unregister(id: EntityID) -> Void {
+    let body = GameInstance.FindEntityByID(this.m_game, id) as ScriptedPuppet;
+    if IsDefined(body) {
+      PreventionSystem.UnRegisterAsViewerToPreventionSystem(this.m_game, body);
+    }
+  }
+
+  // Following: the area owner's officers have our V detected now (their
+  // senses on the owner's game). Reads only, from any thread.
+  public static func OwnersPoliceSee(game: GameInstance) -> Bool {
+    let police = TandemPolice.Of(game);
+    return IsDefined(police) && police.m_ownersSee;
+  }
+
+  // Every proxy we registered as seeing our V, unregistered: our game runs
+  // the area again (Watch no longer runs to drop them, and a body still in
+  // our world kept our stars from ever going grey), or the session ends.
+  private func Unwatch() -> Void {
+    this.m_ownersSee = false;
+    if ArraySize(this.m_viewers) == 0 {
+      return;
+    }
+    for id in this.m_viewerBodies {
+      this.Unregister(id);
+    }
+    TandemNative.Log(s"police: \(ArraySize(this.m_viewers)) of the other owner's police no longer see our V for our prevention system");
+    ArrayClear(this.m_viewers);
+    ArrayClear(this.m_viewerBodies);
+    this.m_ownersSee = false;
   }
 
   public static func BitOf(player: Uint32) -> Int32 {
@@ -1429,6 +1476,37 @@ public final func TandemHeatTable(stage: Int32) -> wref<PreventionHeatTable_Reco
     return null;
   }
   return this.GetDataTableForHeat(IntEnum<EPreventionHeatStage>(stage));
+}
+
+// (test, police report) How many of the viewers our prevention system has
+// of our V are proxies of another game's NPCs: only TandemPolice.Watch puts
+// those there (a proxy's brain is off), and only while another game runs
+// our area.
+@addMethod(PreventionSystem)
+public final func TandemProxyViewers(npcs: ref<TandemNpcs>) -> Int32 {
+  let count = 0;
+  if !IsDefined(npcs) {
+    return count;
+  }
+  for viewer in this.m_viewers {
+    if IsDefined(viewer) && npcs.IsProxyEntity(viewer.GetEntityID()) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+// A follower's V the area owner's officers see is a V the police fight, as
+// vanilla reads it: TryUpdateStarState (final.reds:141358) keeps the stars
+// active and the last known position on our V while any police agent of its
+// registry is in combat with the player, and lets them go grey (2.5 s), then
+// searching and lost, otherwise. The owner's officers are proxies here, in
+// no agent registry: alone, our stars went grey the moment they came and
+// stayed so under their fire. Job thread safe: it only reads (a flag the
+// tick sets, TandemPolice.Watch).
+@wrapMethod(PoliceAgentRegistry)
+public final func IsPoliceInCombatWithPalyer() -> Bool {
+  return wrappedMethod() || TandemPolice.OwnersPoliceSee(this.m_game);
 }
 
 // ---- another player's chase is not our V's heat ----

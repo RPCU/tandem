@@ -81,6 +81,7 @@ PhoneSystem < ScriptableSystem < IScriptableSystem < IScriptable
 PickUpEvents < CarriedObjectEvents < CarriedObjectTransition < DefaultTransition < StateFunctor < IScriptable
 PingSquadEffector < Effector < IScriptable
 PlayerPuppet < ScriptedPuppet < gamePuppet < gamePuppetBase < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
+PoliceAgentRegistry < IScriptable
 PreventionSystem < ScriptableSystem < IScriptableSystem < IScriptable
 ProjectileLauncherRound < ItemObject < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
 QuestMappinController < BaseQuestMappinController < BaseInteractionMappinController < BaseMappinBaseController < inkLogicController < inkILogicController < IScriptable

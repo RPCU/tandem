@@ -236,6 +236,27 @@ effects `PreventionStatusEffect.OnStarDropToZero` and
 `BaseStatusEffect.MemoryWipeLevel2Police`, and
 `StopPoliceBehaviour()`. That is the recipe for standing a unit down. `[S]`
 
+### 13.162 The prevention system's stars follow its agent registry, not its viewers; what a viewer does (2026-11-28, game 2.50, scripts read)
+
+- The star state follows the agent registry, not the viewers.
+  `TryUpdateStarState` (`:141358`, each `PreventionTickRequest`) and
+  `UpdateStarState` (`:141478`) ask `PoliceAgentRegistry.IsPoliceInCombatWithPalyer`
+  (`:144013`: any registered NPC agent `NPCPuppet.IsInCombatWithTarget` the
+  local player): yes keeps the stars `Active` and the last known position
+  on V; no starts the grey transition (2.5 s), then `Searching`, and the
+  last known position check (`CheckPlayerDistanceToLKP`, 175 m) loses V.
+  NPC agents are the units the prevention spawn system spawned on this
+  game: another game's officers, proxies here, are none of them. `[S]`
+  `[2.5-untested]`
+- Viewers (`m_viewers`, `:139631`) are `RegisterAsViewerToPreventionSystem`
+  / `UnRegister…` (`:143118`, `:143130`, both doing nothing at heat 0,
+  queued requests): a registration sets the last known position to V's;
+  the list feeds `m_hasViewers` (the prevention turrets' support,
+  `SetAgentsSupport`) and the spawn origins (`GetFindSpawnPointsOriginsData`,
+  `:140386`: each viewer within range is one). `UpdateViewers` (`:142326`)
+  drops only an undefined or inactive viewer: one never unregistered and
+  still in the world stays. `[S]` `[2.5-untested]`
+
 ### Spawning
 
 Four script functions are the only callers of the native spawn requests
