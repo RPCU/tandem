@@ -66,6 +66,8 @@ constexpr Info kCatalogue[] = {
     {"look not received", Degraded, Fallback,
      "a player sent no look: a stand-in body (the mock player's case)"},
     {"stand-in look", Degraded, Fallback, "a player's look could not be put on: a stand-in body"},
+    {"partner call", Degraded, Fallback,
+     "a partner's call could not be placed on the phone: their request is a notice and hints only"},
     {"wanted stars", Degraded, Fallback,
      "a wanted partner's stars are written as a number, not drawn in the game's art"},
     {"body incomplete", Degraded, Fallback,

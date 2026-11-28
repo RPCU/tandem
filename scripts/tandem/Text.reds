@@ -392,6 +392,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-record-substituted", "something from another player's mods is shown otherwise here");
     this.Text("Tandem-Degraded-Id-look-not-received", "a player sent no look: a stand-in body");
     this.Text("Tandem-Degraded-Id-stand-in-look", "a player's look could not be applied: a stand-in body");
+    this.Text("Tandem-Degraded-Id-partner-call", "a partner's call on the phone as an NPC's (their request is a notice only)");
     this.Text("Tandem-Degraded-Id-wanted-stars", "a wanted partner's stars in the game's own art (shown as a number)");
     this.Text("Tandem-Degraded-Id-body-incomplete", "a player's body is missing a part");
     this.Text("Tandem-Degraded-Id-workspot-not-entered", "an NPC could not take its work spot");
@@ -748,7 +749,6 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Phone-Invited", "Asked {1} to join you");
     this.Text("Tandem-Phone-Unreachable", "{1} can't be reached right now");
     // A call between players on screen (Holocall.reds).
-    this.Text("Tandem-Holocall-Ended", "Call ended");
     this.Text("Tandem-Trade-NotNow", "You can't trade right now");
     this.Text("Tandem-Story-RestrictHolstered", "{1}'s scene: weapons away.");
     this.Text("Tandem-Story-RestrictSlow", "{1}'s scene: take it slow.");
@@ -960,6 +960,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-record-substituted", "un élément des mods d'un autre joueur est affiché autrement ici");
     this.Text("Tandem-Degraded-Id-look-not-received", "un joueur n'a envoyé aucune apparence : corps de substitution");
     this.Text("Tandem-Degraded-Id-stand-in-look", "l'apparence d'un joueur n'a pas pu être appliquée : corps de substitution");
+    this.Text("Tandem-Degraded-Id-partner-call", "l'appel d'un partenaire au téléphone comme celui d'un PNJ (sa demande n'est qu'un avis)");
     this.Text("Tandem-Degraded-Id-wanted-stars", "les étoiles d'un partenaire recherché dans le style du jeu (affichées en chiffre)");
     this.Text("Tandem-Degraded-Id-body-incomplete", "il manque un élément au corps d'un joueur");
     this.Text("Tandem-Degraded-Id-workspot-not-entered", "un PNJ n'a pas pu prendre son poste d'activité");
@@ -1306,7 +1307,6 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Phone-Cancelled", "Appel à {1} annulé");
     this.Text("Tandem-Phone-Invited", "Proposé à {1} de vous rejoindre");
     this.Text("Tandem-Phone-Unreachable", "{1} est injoignable pour l'instant");
-    this.Text("Tandem-Holocall-Ended", "Appel terminé");
     this.Text("Tandem-Trade-NotNow", "Échange impossible pour l'instant");
     this.Text("Tandem-Story-RestrictHolstered", "Scène de {1} : armes rangées.");
     this.Text("Tandem-Story-RestrictSlow", "Scène de {1} : doucement.");

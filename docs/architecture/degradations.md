@@ -179,6 +179,7 @@ names of `engine-access.md`.
 | `record substituted` | degraded | fallback | `plugin/src/mods.cpp` (every substitute the resolver decides), `Npcs.reds` (an attack), `Loot.reds`, `Paint.reds`, `StatusVisuals.reds`, `Trade.reds` | another game's record unknown here (`mod-compat.md`) |
 | `look not received` | degraded | fallback | `System.reds` `StandIn` ("no look received") | a stand-in body; the mock player's case (allowed in every scenario) |
 | `stand-in look` | degraded | fallback | `System.reds` `StandIn` (a look that has no body, still no look) | a stand-in body, or hidden |
+| `partner call` | degraded | fallback | `Holocall.reds` (`PartnerContact` null: `gameJournalContact` not as measured) | a partner's link request rings as a notice and hints, not as the phone's own call (`comms.md`, "The call on screen") |
 | `wanted stars` | degraded | fallback | `PartyHud.reds` `Wanted` (the game's wanted bar not found on the HUD) | a wanted partner's level written in its party entry, not drawn as the game's stars (`police.md`) |
 | `body incomplete` | degraded | fallback | `Body.reds` (no donor, no visible object, no Character extension) | the puppet glides, or NPCs do not see it |
 | `workspot not entered` | degraded | fallback | `NpcAnims.reds` `Step`, `Enter` (no component, the resource refused) | the proxy stands |
