@@ -72,7 +72,7 @@ constexpr Info kCatalogue[] = {
     {"wanted stars", Degraded, Fallback,
      "a wanted partner's stars are written as a number, not drawn in the game's art"},
     {"corpse pose", Degraded, Fallback,
-     "a body's rest pose was not read or drawn: its copy lies as its own ragdoll left it"},
+     "a body's ragdoll was not read or laid: its copy lies as its own ragdoll left it"},
     {"body incomplete", Degraded, Fallback,
      "a puppet's body misses a part of its donor's (it glides, or NPCs do not see it)"},
     {"workspot not entered", Degraded, Fallback, "an NPC could not enter its workspot: it stands"},

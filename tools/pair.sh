@@ -145,11 +145,17 @@ for script in "$@"; do
     done
   }
   ok=1
-  # shellcheck disable=SC1090 # the pair script, by name
+  # Not in an && or || list: errexit would be off inside the subshell, and
+  # a failed check would go on (a 0.46 m body passed so, 2026-11-28).
+  set +e
   (
     set -e
+    # shellcheck disable=SC1090 # the pair script, by name
     source "$file"
-  ) 2>"$evidence/stderr.txt" || ok=0
+  ) 2>"$evidence/stderr.txt"
+  rc=$?
+  set -e
+  [ "$rc" = 0 ] || ok=0
   [ $ok = 1 ] || why=$(tail -1 "$evidence/stderr.txt" 2>/dev/null || true)
   while IFS= read -r r; do
     if since "${r%%:*}" | grep -qE -- "${r#*:}"; then

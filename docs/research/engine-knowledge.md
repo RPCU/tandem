@@ -153,6 +153,7 @@ found through this table, each number once.
 | 13.159 | Where an NPC's voice line starts: one event on the entity, whoever asks | `npcs.md` |
 | 13.160 | The quest's own fade, and the game's choice widget | `story.md` |
 | 13.161 | Where a ragdoll keeps its bones: its graph nodes, its component, the cut multiplayer's replicated state; what did not pose a copy | `presence.md` |
+| 13.162 | A ragdoll's replicated state: the component's read and apply of its bodies (vtable slots 52, 53), used for corpses | `presence.md` |
 | 13.153 | A choice of our own on a puppet's interaction component | `story.md` |
 
 ## Top traps (one line each)

@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -357,7 +358,25 @@ struct TandemPresence : Red::IScriptable {
     if (!proto::Fits(corpse))
       return "its place or heading is not a number";
     Combat::Get().Send(corpse);
+    // The bodies as sent (cm, quaternion × 32767): the mock player's
+    // resting body is one of these (peer RestingBodies).
+    std::string list;
+    for (const auto &b : corpse.bodies)
+      list += std::format("{{{},{},{},{},{},{},{}}} ", b.offset[0], b.offset[1], b.offset[2],
+                          b.rotation[0], b.rotation[1], b.rotation[2], b.rotation[3]);
+    log::Debug("corpse bodies: npc {}: {}", npc, list);
+    SentCorpses()[npc] = std::move(corpse);
     return "";
+  }
+  // Owner: how far the body's ragdoll lies now from what was last sent of
+  // it, the worst of its bodies, in metres (it slid on after it was still:
+  // sent again); -1 when not readable.
+  static float CorpseDrift(std::uint32_t npc, Red::Handle<Red::ent::Entity> entity) {
+    const auto sent = SentCorpses().find(npc);
+    if (sent == SentCorpses().end() || !entity)
+      return -1.f;
+    std::string why;
+    return Worst(sent->second, engine::ReadRagdoll(entity.GetPtr(), why));
   }
   // Every other game: the bodies told since the last ask.
   static Red::DynArray<TandemCorpse> TakeCorpses() {
@@ -401,21 +420,36 @@ struct TandemPresence : Red::IScriptable {
     if (!corpse || !entity)
       return -1.f;
     std::string why;
-    const auto bodies = engine::ReadRagdoll(entity.GetPtr(), why);
-    if (bodies.size() != corpse->bodies.size())
+    return Worst(*corpse, engine::ReadRagdoll(entity.GetPtr(), why));
+  }
+  // The copy went, our NPC's body is no more watched, or the session ended:
+  // the body forgotten (told and sent).
+  static void ForgetCorpse(std::uint32_t npc) {
+    Runtime::Get().ForgetCorpse(npc);
+    SentCorpses().erase(npc);
+  }
+
+  // The worst distance between a told body and a ragdoll read, -1 when they
+  // are not the same bodies.
+  static float Worst(const proto::CorpsePose &corpse,
+                     const std::vector<engine::RagdollBody> &bodies) {
+    if (bodies.empty() || bodies.size() != corpse.bodies.size())
       return -1.f;
     float worst = 0.f;
     for (std::size_t i = 0; i < bodies.size(); ++i) {
-      const auto &told = corpse->bodies[i];
-      const float dx = bodies[i].x - (corpse->position.x + told.offset[0] / 100.f);
-      const float dy = bodies[i].y - (corpse->position.y + told.offset[1] / 100.f);
-      const float dz = bodies[i].z - (corpse->position.z + told.offset[2] / 100.f);
+      const auto &told = corpse.bodies[i];
+      const float dx = bodies[i].x - (corpse.position.x + told.offset[0] / 100.f);
+      const float dy = bodies[i].y - (corpse.position.y + told.offset[1] / 100.f);
+      const float dz = bodies[i].z - (corpse.position.z + told.offset[2] / 100.f);
       worst = std::max(worst, std::sqrt(dx * dx + dy * dy + dz * dz));
     }
     return worst;
   }
-  // The copy went, or the session ended: its owner's body forgotten.
-  static void ForgetCorpse(std::uint32_t npc) { Runtime::Get().ForgetCorpse(npc); }
+  // Owner, game thread only: what was last sent of each of our bodies.
+  static std::map<std::uint32_t, proto::CorpsePose> &SentCorpses() {
+    static std::map<std::uint32_t, proto::CorpsePose> s_sent;
+    return s_sent;
+  }
 
   // Game thread: the lines of the NPCs we show since the last ask.
   static Red::DynArray<TandemNpcVoice> TakeNpcVoices() {
@@ -578,6 +612,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemPresence, "TandemPresence", {
   RTTI_METHOD(TakeCorpses);
   RTTI_METHOD(LayCorpse);
   RTTI_METHOD(CorpseApart);
+  RTTI_METHOD(CorpseDrift);
   RTTI_METHOD(ForgetCorpse);
   RTTI_METHOD(Status);
   RTTI_METHOD(Bearing);

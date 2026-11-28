@@ -431,9 +431,8 @@ n"entRagdollComponent")`, `final.reds:106800`). [2.5-verified] (RTTI)
   `entRagdollComponentReplicatedState : netIComponentState` (0x38:
   `transforms: array:Transform` +0x20, `isSleeping: Bool` +0x30). That is
   the engine's own way to put one game's ragdoll on another's copy: apply
-  that state to the copy's component. Its apply function (in the
-  component's vtable, `0x14305b1e8`) is not found yet. [2.5-verified]
-  (RTTI; not called)
+  that state to the copy's component. Its apply is the component's vtable
+  slot 53 (§13.162). [2.5-verified] (RTTI, Ghidra, in game)
 - Script events on the entity: `RagdollRequestCollectAnimPoseEvent` (the
   ragdoll's bodies take the animated pose: `DropEvents.OnEnter`,
   `final.reds:535890`, a carried body put down), `RagdollPutToSleepEvent`,
@@ -450,4 +449,34 @@ n"entRagdollComponent")`, `final.reds:106800`). [2.5-verified] (RTTI)
   [2.5-verified] (in game)
 - Next: the replicated state (above), or the ragdoll's bodies through the
   physics system; or write the pose before the graph's ragdoll nodes (the
-  `RagdollControl` node's input) rather than at the commit. [unverified]
+  `RagdollControl` node's input) rather than at the commit. Done: the
+  replicated state's apply (§13.162). [2.5-verified]
+### 13.162 A ragdoll's replicated state: its read and its apply (2026-11-28, Ghidra of 2.50, in game on instances a and c)
+
+- `entRagdollComponent`'s vtable (`0x14305b1e8`, 69 slots) overrides
+  slots 52 and 53, empty in `entIComponent`: they are the cut
+  multiplayer's write and apply of `entRagdollComponentReplicatedState`.
+  The component keeps its state at +0x58 and its physics ragdoll's id at
+  +0x1F4. [2.5-verified] (Ghidra, in game)
+  - Slot 52 (hash 317854601, `0x142992dcc`): fills the state's
+    `transforms` from physics (hash 1828463752: (out array, id)) and
+    `isSleeping` from the physics object (+0x345 when its type byte +0x34
+    is 0x0C, a ragdoll).
+  - Slot 53 (hash 352523151, `0x142992d84`): calls physics hash 646325763
+    with (id, {first, end} of the transforms, sleeping): when the count is
+    the ragdoll's body count (hash 1627852665), every body is set to its
+    transform (world space), and at rest its linear and angular velocities
+    are zeroed; it returns false on another count.
+  - The read (hash 1828463752) looks the object up (hash 1570510966, the
+    call at +0x19) and reads its cached bodies (+0x1B0, count +0x1BC;
+    positions as fixed-point integers × `0x1437b97dc`'s scale, then a
+    quaternion): it dereferences the object without a check when it is no
+    ragdoll, so a caller checks type 0x0C first.
+- In game (`tools/pairs/corpse-pose.sh`, three gangers killed and thrown
+  on the host, `engine/ragdoll.cpp`): a Tyger Claw's ragdoll has a fixed
+  body count, the same on both games; the owner's settled bodies, set on
+  the guest's ragdolled copy with that apply, put each copy's bodies within
+  0.01 and 0.03 m of the owner's (read back from the copy's ragdoll), its
+  pose the owner's; a body still sliding when read lay 0.46 m off (sent
+  again since when it slides on). The entity's teleport is not needed (it
+  follows the ragdoll). [2.5-verified] (in game)
