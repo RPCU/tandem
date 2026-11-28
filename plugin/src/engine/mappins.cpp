@@ -6,7 +6,11 @@
 // (Codeware's Raw::PointOfInterestMappin::JournalHash). Its phase setter is
 // a plain function of the game, PointOfInterestMappin_SetPhase in the
 // address library (hash 803085170, Codeware's
-// Raw::PointOfInterestMappin::SetPhase: bool (void *mappin, phase)). Not
+// Raw::PointOfInterestMappin::SetPhase: bool (void *mappin, phase)),
+// decompiled (§13.162): it writes the phase into its MappinSystem's table of
+// saved point-of-interest states (what a save keeps), untracks a pin set
+// completed, and tells the system the pin changed. So every pin a guest
+// sets is put back before its saving unlocks (OpenWorld.reds Leave). Not
 // yet run by tandem in game: the scenario openworld-guest is its check.
 
 // The SDK's headers need its main header first (own group: keep it first).
