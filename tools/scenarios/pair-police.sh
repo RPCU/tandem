@@ -10,6 +10,9 @@
 ensure host
 at "${POLICE_AT:-drake-ave}"
 partner_join
+# Our units fire on the wanted partner: it is not to die of it (a V that
+# leaves its session down dies, revive.md; its next scenario found it dead).
+pcmd god on
 cmd where
 expect 'where: [-0-9.]+ ' 5
 read -r x y z < <(since | grep -oE 'where: [-0-9.]+ [-0-9.]+ [-0-9.]+' | tail -1 | awk '{ print $2, $3, $4 }')

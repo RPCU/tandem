@@ -14,12 +14,16 @@ read -r lift x y z < <(since | sed -nE 's/.*devices: at lift ([0-9a-f]+) LiftCon
 note "the lift: $lift"
 pat "$(awk -v x="$x" 'BEGIN { print x + 0.8 }') $y $z"
 pnear lift "$lift"
+# A known start: the ground floor on both (an earlier run may have left it
+# up: "other" then asked for the floor it stood at, and nothing moved).
+cmd device floor 0
+pause 15
 pquery before position
 shot pair-lift-aboard
 mark
 pmark
 # Our V picks another floor: every game's cabin leaves together.
-cmd device floor other
+cmd device floor 1
 expect "devices: $lift LiftControllerPS is now on, [a-z+]+, value [0-9]+" 15
 expect_partner "devices: $lift LiftControllerPS by player 1: on, [a-z+]+, value [0-9]+, played" 15
 pause 15

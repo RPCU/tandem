@@ -1672,7 +1672,11 @@ public class TandemSystem extends ScriptableSystem {
       // (test) what stands around our V at a scenario's spot, solo too (Fixtures.reds).
       TandemFixtures.Command(this.GetGameInstance(), command);
     } else if Equals(command, "test reset") && !this.m_inGame {
-      // Solo there is nothing of ours to put back (tools/scenario.sh asks).
+      // Solo there is nothing of ours to put back (tools/scenario.sh asks),
+      // but the fallbacks the scenario answers for start here too: a
+      // partner game (two-game scenarios) is solo at its reset, and kept an
+      // earlier scenario's fallback for every later one (2026-11-28).
+      TandemDegraded.ResetFallbacks();
       TandemNative.Log("test reset: ready (solo: nothing to reset)");
     } else if !this.m_inGame && !TandemSystem.SoloCommand(command) {
       TandemNative.Log(s"not in a session: \(command)");
