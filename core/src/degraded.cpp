@@ -43,6 +43,8 @@ constexpr Info kCatalogue[] = {
     {"ragdoll state", Degraded, State,
      "bodies are neither read nor laid as their owner's lie: each copy lies as its own fall left "
      "it"},
+    {"scene test", Degraded, State,
+     "the scene test commands cannot start a scene (tests only; nothing of a session uses them)"},
     // ---- states the plugin and the scripts find ----
     {"drawn prompts", Degraded, State,
      "prompts on players and vendors are drawn by tandem, not the game's interactions"},

@@ -381,6 +381,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-body-slots", "grapples held by the game on other players' bodies (a grabbed NPC is placed in front of them)");
     this.Text("Tandem-Degraded-Id-crowd-spawners", "our own traffic kept from spawning where another player's game runs the street");
     this.Text("Tandem-Degraded-Id-ragdoll-state", "bodies read and laid as their owners' lie (each copy lies as its own fall left it)");
+    this.Text("Tandem-Degraded-Id-scene-test", "the scene test commands (developers' tests only)");
     this.Text("Tandem-Degraded-Id-drawn-prompts", "the game's own prompts on players and vendors (tandem draws them)");
     this.Text("Tandem-Degraded-Id-attitude-relations", "declared faction relations (copied NPC by NPC instead)");
     this.Text("Tandem-Degraded-Id-scene-privacy", "private scenes (every scene counts as important)");
@@ -917,6 +918,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-body-slots", "les prises tenues par le jeu sur le corps des autres joueurs (un PNJ saisi est placé devant eux)");
     this.Text("Tandem-Degraded-Id-crowd-spawners", "notre propre circulation empêchée d'apparaître là où le jeu d'un autre joueur gère la rue");
     this.Text("Tandem-Degraded-Id-ragdoll-state", "les corps lus et couchés comme ceux de leurs propriétaires (chaque copie reste comme sa chute l'a laissée)");
+    this.Text("Tandem-Degraded-Id-scene-test", "les commandes de test des scènes (tests des développeurs seulement)");
     this.Text("Tandem-Degraded-Id-drawn-prompts", "les invites natives du jeu sur les joueurs et les marchands (tandem les dessine)");
     this.Text("Tandem-Degraded-Id-attitude-relations", "les relations de faction déclarées (copiées PNJ par PNJ à la place)");
     this.Text("Tandem-Degraded-Id-scene-privacy", "les scènes privées (toute scène compte comme importante)");

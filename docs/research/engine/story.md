@@ -1265,8 +1265,13 @@ name, ordinal, numRuns}`, the server's visited nodes) was not traced:
   hook (if test 2 shows it sees them) or a hook per node type and per
   event. [unverified]
 
-**To settle in game** (on an instance; each a plugin test command, none
-written yet):
+**To settle in game** (on an instance; the test commands are
+`story scene play …`, `scripts/tandem/SceneTest.reds` and
+`plugin/src/engine/scenetest.cpp`, with `scene_test = on`; the create's
+shape, from the TV's and the client's calls: `(system, out id, u64
+resource, u64 owner, params*, extra* (0x38 bytes zeroed), u8 unread, out
+CString error)`, refused as the invalid id `{0, 0, 0xFF, 0}`; a request
+`{u64 kind, const char *label, 0, 0}`):
 
 1. **Start**: CreateSceneInstance and requests 1, 2 for a short vanilla
    scene under an owner hash of ours: the scene plays (`IsEntityInScene`

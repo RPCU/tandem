@@ -1186,7 +1186,10 @@ public class TandemScenes {
   // ---- commands (tools/game.sh cmd story scene …) ----
 
   public func Command(command: String) -> Void {
-    if Equals(command, "story scene report") {
+    if StrBeginsWith(command, "story scene play") {
+      // (test) a vanilla scene started outside its quest: SceneTest.reds.
+      TandemSceneTest.Command(this.m_game, command);
+    } else if Equals(command, "story scene report") {
       TandemNative.Log(TandemStory.SceneReport());
       TandemNative.Log(s"scene: mode \(this.m_mode), on \(this.m_on), tier \(this.m_tier), flags \(this.m_flags), \(ArraySize(this.m_actors)) actor(s), \(ArraySize(this.m_voices)) voice(s), \(ArraySize(this.m_held)) prop(s), announced play \(this.m_play), camera \(this.m_cameraLive ? "followed" : "ours"), \(TandemStory.SceneViews()) view(s) heard");
     } else if Equals(command, "story scene watch") {

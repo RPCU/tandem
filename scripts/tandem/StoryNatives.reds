@@ -109,6 +109,15 @@ public native class TandemStory extends IScriptable {
   public static native func FreezeHeld() -> Uint32;
   public static native func FreezeLost() -> Bool;
   public static native func FreezeReport() -> String;
+  // (test) A scene started outside its quest (story scene play …,
+  // SceneTest.reds; tandem.ini scene_test = on). Each answers a log line.
+  public static native func ScenePlay(path: String, entry: String, again: Bool) -> String;
+  public static native func SceneStop() -> String;
+  public static native func SceneInfo(path: String) -> String;
+  public static native func SceneCast(on: Bool) -> String;
+  public static native func SceneHand(entity: Uint64) -> String;
+  // The entities bound to scene actors since the last play (EntityID hashes).
+  public static native func SceneCastEntities() -> array<Uint64>;
   public static native func Grouped(grouped: Bool) -> Void;
   public static native func IsGrouped() -> Bool;
   public static native func QuestTrace(on: Bool) -> Void;

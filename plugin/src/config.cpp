@@ -111,6 +111,13 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.probe = false;
     else
       return Bad("probe is on or off");
+  } else if (key == "scene_test") {
+    if (value == "on" || value == "true")
+      config.sceneTest = true;
+    else if (value == "off" || value == "false")
+      config.sceneTest = false;
+    else
+      return Bad("scene_test is on or off");
   } else if (key == "mirror") {
     config.mirror = value == "on" || value == "true";
   } else if (key == "pose") {

@@ -234,7 +234,8 @@ keys and bad values are reported in tandem's log and ignored.
 
 Developer keys, not needed to play (they can crash the game or flood the
 log): `puppet_female`, `puppet_male` (the records puppets are spawned
-from), `probe`, `trace`, `mirror` (animation experiments), `log`
+from), `probe`, `trace`, `mirror` (animation experiments), `scene_test`
+(scenes started outside their quest, for tests), `log`
 (`warn`, `info`, `debug`), `compat = off`
 (start sessions whatever the startup check found).
 
