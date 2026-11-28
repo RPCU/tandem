@@ -234,12 +234,35 @@ ensure() {
     boot_line=$(remote "wc -l < '$mark_file'")
   fi
 }
+# A recording a mock player replays (--replay FILE, --play-session FILE) is
+# not in git: missing here, it is linked from the machine's shared copy
+# (~/.cache/tandem/recordings/NAME), else the scenario fails. A mock host
+# that replays nothing gives the game no NPC and no recorded player
+# (presence-npc-voices waited for a puppet that never came, 2026-11-28).
+recordings_here() {
+  local shared=${XDG_CACHE_HOME:-$HOME/.cache}/tandem/recordings want=0 arg
+  for arg in "$@"; do
+    if [ "$want" = 1 ] && [ ! -f "$arg" ] && [ "$arg" != - ]; then
+      if [ -f "$shared/$(basename "$arg")" ]; then
+        mkdir -p "$(dirname "$arg")"
+        ln -sf "$shared/$(basename "$arg")" "$arg"
+        echo "  harness: $arg linked from $shared"
+      else
+        fail "no $arg here (recordings are not in git): copy it to $shared/$(basename "$arg") (recordings.md)"
+      fi
+    fi
+    want=0
+    case $arg in --replay | --play-session) want=1 ;; esac
+  done
+}
 peer() {
+  recordings_here "$@"
   $game peer "$@" | sed 's/^/  /'
   peer_mark=0 referee_from=0
 }
 peer2() {
   local args=("$@") i
+  recordings_here "$@"
   mkdir -p "$cache"
   # This game's port, as tools/game.sh peer gives the first.
   if [ "$port" != 27450 ]; then
