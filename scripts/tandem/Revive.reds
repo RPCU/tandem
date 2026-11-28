@@ -251,6 +251,7 @@ public class TandemRevive {
     if IsDefined(player) {
       if this.m_listening {
         player.UnregisterInputListener(this, n"Choice1");
+        player.UnregisterInputListener(this, n"Choice1_Hold");
       }
       // Up, or being stood up: nothing of being down stays on it (a V that
       // is down here dies first, TandemSystem.EndSession).
@@ -351,6 +352,9 @@ public class TandemRevive {
     }
     if !this.m_listening {
       player.RegisterInputListener(this, n"Choice1");
+      // The game's own revive prompt is held (Choice1_Hold): its key comes
+      // under that name.
+      player.RegisterInputListener(this, n"Choice1_Hold");
       this.m_listening = true;
     }
     let others = this.Others();
@@ -1663,7 +1667,8 @@ public class TandemRevive {
 
   protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
     TandemNative.HookRan(n"Revive.TandemRevive.OnAction");
-    if !Equals(ListenerAction.GetName(action), n"Choice1") {
+    let name = ListenerAction.GetName(action);
+    if !Equals(name, n"Choice1") && !Equals(name, n"Choice1_Hold") {
       return false;
     }
     // The key itself, for the prompts the game shows (Prompts.reds): the
