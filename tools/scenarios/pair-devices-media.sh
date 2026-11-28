@@ -8,14 +8,13 @@
 ensure host
 at "${DEVICES_AT:-v-door}"
 partner_join
-cmd device near radio
-expect 'devices: nearest radio [0-9a-f]+ [A-Za-z]+ at ' 10
-radio=$(since | grep -oE 'nearest radio [0-9a-f]+' | tail -1 | cut -d' ' -f3)
+# Beside the radio or TV (the partner a metre off our V found a TV 10 m away
+# nearer than our radio, 2026-11-28): both Vs a step from it.
+cmd device goto radio
+expect 'devices: at radio [0-9a-f]+ [A-Za-z]+: ' 10
+read -r radio x y z < <(since | sed -nE 's/.*devices: at radio ([0-9a-f]+) [A-Za-z]+: \(([-0-9.]+), ([-0-9.]+), ([-0-9.]+)\).*/\1 \2 \3 \4/p' | tail -1)
 note "the radio or TV: $radio"
-cmd where
-expect 'where: [-0-9.]+ ' 5
-read -r x y z < <(since | grep -oE 'where: [-0-9.]+ [-0-9.]+ [-0-9.]+' | tail -1 | awk '{ print $2, $3, $4 }')
-pat "$(awk -v x="$x" 'BEGIN { print x + 1.0 }') $y $z"
+pat "$(awk -v x="$x" 'BEGIN { print x + 0.8 }') $y $z"
 pnear radio "$radio"
 cmd device station 0
 pause 4
