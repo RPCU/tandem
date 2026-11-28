@@ -207,6 +207,9 @@ public native struct TandemNpcAnim {
   native let workspot: Uint64;
   native let workspotEntry: Int32;
   native let workspotAnim: CName;
+  // a boss's last AI event to its components, and its count (1-255; 0 none yet)
+  native let aiEvent: CName;
+  native let aiSeq: Int32;
 }
 
 public native struct TandemNpcShot {
@@ -493,7 +496,7 @@ public native class TandemNative extends IScriptable {
   public static native func SendRevive(target: Uint32, step: Int32)
   public static native func TakeRevives() -> array<TandemReviveEvent>
   public static native func SessionLosses() -> Int32
-  public static native func SendNpcAnim(npc: Uint32, highLevel: Int32, upperBody: Int32, stance: Int32, flags: Int32, weapon: TweakDBID, target: Uint32, workspot: Uint64, workspotEntry: Int32, workspotAnim: CName)
+  public static native func SendNpcAnim(npc: Uint32, highLevel: Int32, upperBody: Int32, stance: Int32, flags: Int32, weapon: TweakDBID, target: Uint32, workspot: Uint64, workspotEntry: Int32, workspotAnim: CName, aiEvent: CName, aiSeq: Int32)
   public static native func SendNpcShot(npc: Uint32, effect: Int32, target: Vector4)
   public static native func TakeNpcAnims() -> array<TandemNpcAnim>
   public static native func TakeNpcShots() -> array<TandemNpcShot>

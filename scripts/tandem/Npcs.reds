@@ -270,6 +270,10 @@ public class TandemNpcs {
     return this.m_scaling;
   }
 
+  public func Anims() -> ref<TandemNpcAnims> {
+    return this.m_anims;
+  }
+
   public func Bosses() -> ref<TandemBosses> {
     return this.m_bosses;
   }

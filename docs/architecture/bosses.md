@@ -26,7 +26,7 @@ owner (`WeakSpotHit`), its proxy's health and death the owner's.
 | --- | --- | --- | --- | --- | --- | --- |
 | Royce, The Pickup (q003) | `q003_royce_boss`, `main_boss_royce` (Human, an exo) | `RoyceComponent`; a weak spot (the exo's back) | `Royce.Phase1` at attach; suicide on `BossSuicide` or a lost `Madness`; death: the head explodes on a head hit | the Maelstrom den's arena; his talks before (S: own) | yes | ✓ phase effects on the proxy; ✓ a weak spot the host broke |
 | Sasquatch, Pyramid Song area (q114) | `q114_main_boss_sasquatch`, `main_boss_sasquatch` (Human) | `SasquatchComponent`; a weak spot | `Phase1`, `PainInhibitors`, `Healing` at attach; `WeakspotDestruction`: drops her hammer, fights the local V | the Netwatch effect on V (`NetwatcherGeneral`, removed at her defeat) | yes | ✓ her weak spot broken on both; ✓ the V who broke it is the one she turns on |
-| Oda, Play It Safe (q112) | `main_boss_oda`, `Cyberninja_Oda` (Human) | `OdaComponent`; a weak spot (his mask) | `Oda.Masked` at attach, its removal the fact `q112_oda_mask_destroyed`; `Oda.Emergency` at 70/55/40/25/10 %; cloak and heal by tags | his blades and cloak (AI events); the fight's end: C (watch a) | yes | ✓ mask, cloak, emergency on the proxy; the AI events' blade light (limit 3) |
+| Oda, Play It Safe (q112) | `main_boss_oda`, `Cyberninja_Oda` (Human) | `OdaComponent`; a weak spot (his mask) | `Oda.Masked` at attach, its removal the fact `q112_oda_mask_destroyed`; `Oda.Emergency` at 70/55/40/25/10 %; cloak and heal by tags | his blades and cloak (AI events); the fight's end: C (watch a) | yes | ✓ mask, cloak, emergency on the proxy; ✓ the AI events' blade light |
 | Adam Smasher, the endings (q113, q116) | `main_boss_adam_smasher`, `q113_boss_smasher`, `q116_boss_smasher` (Human) | `AdamSmasherComponent`; plate, torso, launcher and head weak spots (hit shapes switched per phase) | health 80 % plate off, 50 % phase 2 (arm off, every weak spot broken), 30 % `Invulnerable` emergency, 5 % phase 3; hacks jump phases (`Overload`, `SmasherCustomHack`) | teleports around his target (`SmasherFindTeleportPositionAroundTarget`); the rip finisher (`AdamSmasherRipInteraction`); the tower's cutscenes C | yes, dividers from his record | ✓ hack-driven phases on the proxy; ✓ his teleport in the targeted V's view |
 | The Animals' boss, Grand Imperial Mall (q110) | `q110_animals_boss` (Human) | none of its own; a boss takedown (Sasquatch's) | its health | free fight | yes | ✓ the bar on both |
 | Placide, the Voodoo Boys' line (q110: a fight if V turns on them) | `name:placide` (not read) | not read | its health | scenes around it (S, own) | if rarity Boss | to read: `boss find name:placide` |
@@ -34,8 +34,8 @@ owner (`WeakSpotHit`), its proxy's health and death the owner's.
 | An exo boss of a side job (mq062) | `mq062_boss_darius` (Human, a Royce takedown) | not read | its health | | yes | ✓ the bar on both |
 | Cyberpsychos (open world) | `ma_*_cyberpsycho*` and the rest (Human) | none; a Royce takedown for two of them | their health | MaxTac at some (`q305_maxtac`: the bar, MaxTac counts) | yes | ✓ the bar on both |
 | The Chimera (q302) | `kind:chimera` (Chimera) | `ChimeraComponent`; heat sinks and plates (blocked while `ChimeraWeakSpotToggle`) | Immortal; health 70 % phase 2 (repair, healing), 40 % gas cloud, 1 % phase 3 (`InvulnerablePhase3`, weak spots broken); quest and AI tags (`ChimeraArenaMode`, `ChimeraForcePhase2/3`, `ChimeraSuicide`); `chimera_defeated` | Metalstorm (a shot at its combat target); `questUseWeapon_ChimeraMetalstorm_NodeType` (the quest's own target); stomps (camera shake on the V near); C at its phases | yes; hidden while `Chimera.HideBossHealthBar` | ✓ phase effects and blocked weak spots on the proxy; ✓ bar on both, hidden on both |
-| Cerberus, Somewhat Damaged (q305) | `kind:cerberus` (Cerberus) | `CerberusComponent`, `ScannerControlComponent` | its detection of the player (`CerberusDetectionCombat`); scans and eye flares by AI events | the chase: R (own), its scripted kill (`CerberusRangedKillTask`: its target teleported away) | if rarity Boss | ✓ combat on any V's full detection; the kill and the camo (limits 1, 2) |
-| Kurt Hansen, Firestarter (Kurt's stronghold) | `name:kurt` (not read; `kurt_replacer` is a replacer, not him) | `KurtzBossComponent` | `BossNoTakeDownInfinite`; knife and pistol looks by AI events | the stronghold assault; C in its cutscenes | yes | the looks the AI events switch (limit 3) |
+| Cerberus, Somewhat Damaged (q305) | `kind:cerberus` (Cerberus) | `CerberusComponent`, `ScannerControlComponent` | its detection of the player (`CerberusDetectionCombat`); scans and eye flares by AI events | the chase: R (own), its scripted kill (`CerberusRangedKillTask`: its target teleported away) | if rarity Boss | ✓ combat on any V's full detection; ✓ its scripted kill on the guest's game; ✓ a cloaked guest; ✓ its scans and eye flares |
+| Kurt Hansen, Firestarter (Kurt's stronghold) | `name:kurt` (not read; `kurt_replacer` is a replacer, not him) | `KurtzBossComponent` | `BossNoTakeDownInfinite`; knife and pistol looks by AI events | the stronghold assault; C in its cutscenes | yes | ✓ the looks the AI events switch |
 | Phantom Liberty's exo mini-boss (world encounter) | `we_ep1_01_mini_boss_2nd_phase` (a Royce takedown) | not read | its health | | yes | ✓ the bar on both |
 | Phantom Liberty's droid mini-boss (`sts_ep1_12`) | `sts_ep1_12_droid_miniboss` | not read | its health; a quickhack only while its scene is cinematic | | yes | ✓ the bar on both |
 | Minotaur mechs (Militech, Dogtown) | Mech, not a boss | `MinotaurMechComponent` | `JamWeapon`, `SystemCollapse` (quickhacks: `NpcStatus` mirrors them) | its death blast | no | none new |
@@ -121,6 +121,26 @@ of the boss's own machinery from that word.
 
 ## Inside the plugin
 
+- **The behaviour's AI events** (protocol 28: `NpcAnim.aiEvent`,
+  `aiSeq`): the events a boss's behaviour sends its own components (Oda's
+  `BladesOn`/`BladesOff`/`StealthMode`, Kurt's `KnifeOn`/`KnifeOff` and
+  `ScannerOn`/`ScannerOff`, Cerberus's `CerberusScan`, eye flares, a
+  scanner's `ScanShort`/`ScanLong`/`ScanDanger`/`StopScanning`) are heard on
+  the owner (a wrap of each component's `OnAIEvent` queues the name:
+  `TandemFight.QueueBossAiEvent`), sent with the NPC's animation states, a
+  count with each (`TandemNpcAnims.AiEvent`), and queued as the same
+  `AIEvent` on the proxy, whose own components play it: once per count, the
+  last one for a latecomer.
+- **A scripted kill of a V** (`ScriptedKill`, protocol 28): Cerberus's
+  `CerberusRangedKillTask` on a guest's puppet is not run on the puppet
+  (its V's stream would put it back) but queued
+  (`TandemFight.QueueBossKill`) and sent to that V's game, which sends its
+  own V where the task sends its target (the teleportation facility, as the
+  task does): what follows there (the drop, the death or the down,
+  `revive.md`) is that game's own.
+- **Cerberus and a cloaked guest**: `CerberusDetectionOpticalCamo` also
+  answers true for a puppet it detects that wears its V's `Cloak`-tagged
+  camo record (Stealth.reds puts it on the puppet).
 - **`BossState`** (protocol 27, `core/include/tandem/protocol.hpp`): the
   boss's health at the change, the status effects its scripts read
   (sorted, at most 24) and each weak spot's health (percent, at most 16,
@@ -145,8 +165,8 @@ of the boss's own machinery from that word.
 | `SasquatchComponent`, `WeakspotDestruction` | combat with the local V | the V whose fire last took a share of its weak spots, within 10 s |
 | `CerberusDetectionCombat` | the local V's detection | any V fully detected (a wrap: every puppet's detection, read only) |
 | `SmasherFindTeleportPositionAroundTarget.IsInPlayersFOV` | the active camera | the targeted puppet's view (a wrap) |
-| `CerberusDetectionOpticalCamo` | the local V's cloak | the local V's (limit 2) |
-| `CerberusRangedKillTask` | its combat target teleported | the same, a puppet's undone (limit 1) |
+| `CerberusDetectionOpticalCamo` | the local V's cloak | any V detected and cloaked (a wrap) |
+| `CerberusRangedKillTask` | its combat target teleported | a puppet's on its V's own game (`ScriptedKill`) |
 | footsteps, stomp shake, scan's full-screen effect | the local V | right on every game: each copy's component shakes its own V |
 | Metalstorm, the boss's AI attacks | its combat target | either V (`Threats.reds`) |
 
@@ -158,8 +178,8 @@ of the boss's own machinery from that word.
   ours back), `tests/endpoint_test.cpp` (once per change, the late joiner,
   gone with the NPC). Commands (`tools/game.sh cmd`): `boss catalogue`,
   `boss find kind:K|name:S`, `boss spawn RECORD|kind:K|name:S`, `boss
-kill`, `boss health P`, `boss effect RECORD`, `boss spot N`, `boss
-report`; queries `boss bar|effects|spots|target|targets|phase|hits|health|state`.
+kill`, `boss health P`, `boss effect RECORD`, `boss spot N`, `boss ai
+NAME`, `boss scripted-kill`, `boss camo`, `boss cloak`, `boss report`; queries `boss bar|effects|spots|target|targets|phase|hits|health|state`.
 
 ## Scenarios
 
@@ -171,8 +191,11 @@ both HUDs, the boss targeting the partner and its hits reaching the
 partner's V, the partner's hits struck on the host's boss, a weak spot the
 host breaks broken on the partner's proxy, the death on both and both bars
 gone, with screenshot pairs (`NAME-bar`, `NAME-fight`, `NAME-dead`, ours
-and `-partner`). `BOSS_RECORD` overrides each scenario's record. In this
-order:
+and `-partner`). `BOSS_RECORD` overrides each scenario's record;
+`BOSS_AI_EVENT` (Oda, Kurt, Cerberus) checks an AI event heard by the
+partner's proxy, `BOSS_CAMO` (Cerberus) a cloaked partner seen cloaked,
+`BOSS_SCRIPTED_KILL` (Cerberus) its scripted kill done to the partner's V
+on its own game. In this order:
 
 1. `boss-catalogue` (one game): the game's boss records, and those of the
    Chimera, Cerberus, Kurt, Woodman and Placide; fills the rows above.
@@ -186,34 +209,38 @@ order:
 
 ## Known limits
 
-1. **Cerberus's scripted kill** teleports its combat target away
-   (`CerberusRangedKillTask`); on a guest's puppet the guest's own stream
-   puts it back: what kills the host's V in the chase leaves a guest's V
-   alive. A death the quest scripts would need its own message to that V's
-   game; q305's chase only.
-2. **Cerberus and a cloaked guest**: `CerberusDetectionOpticalCamo` reads
-   the local V's `Cloak` effect; a puppet wears a V's camo as a look only
-   (`StatusVisuals`, never its gameplay), so a cloaked guest counts as not
-   cloaked to this one condition.
-3. **AI events to a boss's component** (`OnAIEvent`: Oda's blade light,
-   Kurt's knife and pistol looks, Cerberus's scans and eye flares) come
-   from the owner's behaviour tree; a proxy's is off, so its component
-   never hears them. Next: forward the event names the bosses' components
-   read with the NPC's animation states (`NpcAnims.reds`).
-4. **A grab or paired attack on a guest** (a boss's synchronized animation
-   on its target): its hit reaches the guest's V (`PlayerHit`); the paired
-   animation is the owner's NPC's with the puppet. Not read.
-5. **A quest's own target**: quest nodes that aim an attack at "the
+1. **A paired grab of a guest.** The engine's paired animation is a
+   workspot pair: the V's half through `PlayInDevice(device, V, camera,
+playerWorkspot, deviceWorkspot, syncName, duration)`, the NPC's through
+   `PlayNpcInWorkspot(npc, master = V, reference, npcWorkspot, syncName,
+duration)` (the disposal devices, `final.reds (2.50):208539`; a car's
+   trunk, `:64190`), or a dynamic bind (`SendDynamicSyncBindSignal(actor,
+master)`; `workDynamicSyncBindCommandData`, `workSyncAnimClip` in RTTI).
+   Each takes any game object, so each game could play a pair with its own
+   V and its own proxy, given the device or reference, both workspots and
+   the sync name. But every pair the scripts start with V is V's own
+   (takedowns, disposals, the trunk), already played on V's game; no boss
+   component or AI script starts one on its target, and what a behaviour
+   tree's `AIUseWorkspotCommand` plays is in its data, not in a script. A
+   proxy already replays its NPC's half (`NpcAnim.workspot`); the V's half,
+   the pair's other entry, is not in the NPC's workspot instance. So it is
+   not built; the owner registers it when it happens (`boss state`
+   fallback: a boss in a workspot with a puppet within 3 m), for the
+   in-game runs to name the record.
+2. **A quest's own target**: quest nodes that aim an attack at "the
    player" (`questUseWeapon_ChimeraMetalstorm_NodeType`) aim at the host's
    V, the quest's player; both games see it.
-6. **Facts a proxy's component writes** (Oda's `q112_*`, a weak spot's
+3. **Facts a proxy's component writes** (Oda's `q112_*`, a weak spot's
    `m_addFact`) land on the guest's game too; its own story is frozen in
    the host's (`story.md`), so they move nothing there.
-7. **`boss hits`** counts our V's health drops near a fighting boss, not
+4. **`boss hits`** counts our V's health drops near a fighting boss, not
    the boss's attacks one by one; `boss targets` is the owner's top threat,
    sampled twice a second.
-8. **Weak spots are not scaled** (above: on purpose, to revisit with the
+5. **Weak spots are not scaled** (above: on purpose, to revisit with the
    first group fight).
+6. **AI events of other components** than the five wrapped (a drone's, a
+   non-boss NPC's) are not forwarded: only a boss's are (`TandemBosses`
+   finds the NPC among its bosses).
 
 ## In-game checklist
 

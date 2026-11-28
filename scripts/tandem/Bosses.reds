@@ -174,6 +174,7 @@ public class TandemBosses {
       this.m_lastScan = now;
       this.Scan(npcs);
     }
+    this.TakeQueued(npcs);
     for body in this.m_bodies {
       if !body.dead {
         if body.own {
@@ -496,6 +497,7 @@ public class TandemBosses {
         }
         if body.own && fighting && IsDefined(system) {
           this.CountTarget(body, npc, player, system);
+          this.Paired(body, npc, system);
         }
       }
     }
@@ -561,6 +563,103 @@ public class TandemBosses {
     ArrayPush(body.targetPlayers, who);
     ArrayPush(body.targetSeconds, 0.5);
     TandemNative.Log(s"bosses: our boss \(body.npc) targets player \(who)");
+  }
+
+  // ---- what the boss's behaviour did that its proxies must do ----
+
+  // The queues the hooks below fill (any thread), on our tick.
+  private func TakeQueued(npcs: ref<TandemNpcs>) -> Void {
+    let heard = TandemFight.TakeBossAiEvents();
+    for event in heard {
+      let npc = TandemHacks.NpcOf(this.m_game, event.entity);
+      let body = npc != 0u ? this.Find(npc) : null;
+      // Ours only: a proxy hears the events its owner sends it (NpcAnims).
+      if IsDefined(body) && body.own && npcs.Owns(npc) {
+        if npcs.Anims().AiEvent(npc, event.name) {
+          TandemNative.Log(s"bosses: our boss \(npc)'s AI event \(NameToString(event.name)) to its proxies");
+        }
+      }
+    }
+    let kills = TandemFight.TakeBossKills();
+    let system = GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"TandemSystem") as TandemSystem;
+    for kill in kills {
+      let npc = TandemHacks.NpcOf(this.m_game, kill.npc);
+      let player = IsDefined(system) ? system.PlayerOfPuppet(kill.target) : 0u;
+      if npc != 0u && player != 0u && npcs.Owns(npc) {
+        TandemFight.SendScriptedKill(player, npc, new Vector4(kill.x, kill.y, kill.z, 1.0));
+        TandemNative.Log(s"bosses: our npc \(npc)'s scripted kill of player \(player)'s V: sent to their game");
+      }
+    }
+  }
+
+  // A proxy's owner says its NPC's scripted kill takes our V
+  // (TandemFightEvent kind 17): what it does to its target, done to ours on
+  // our game (Cerberus's: our V sent where its owner's target went).
+  public func Killed(event: TandemFightEvent, npcs: ref<TandemNpcs>) -> Void {
+    let player = GetPlayer(this.m_game);
+    let proxy = npcs.ProxyEntity(event.npc);
+    if !IsDefined(player) || !EntityID.IsDefined(proxy) {
+      TandemNative.Log(s"bosses: npc \(event.npc)'s scripted kill of our V dropped (no proxy of it here)");
+      return;
+    }
+    let to = new Vector4(event.x, event.y, event.z, 1.0);
+    let facing = new EulerAngles();
+    facing.Yaw = player.GetWorldYaw();
+    GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, to, facing);
+    TandemNative.Log(s"bosses: npc \(event.npc)'s scripted kill sends our V to \(to.X) \(to.Y) \(to.Z), as its owner's game did its puppet");
+  }
+
+  // Owner: a paired animation of the boss with a V's puppet (a workspot both
+  // are in, within 3 m: a grab). The puppet's V plays its own body on its
+  // own game; nothing tells it to take the pair's other half (bosses.md,
+  // limit "a paired grab"): said, once a fight.
+  private func Paired(body: ref<TandemBossBody>, npc: ref<NPCPuppet>, system: ref<TandemSystem>) -> Void {
+    if body.fellBack {
+      return;
+    }
+    let spots = GameInstance.GetWorkspotSystem(this.m_game);
+    if !spots.IsActorInWorkspot(npc) {
+      return;
+    }
+    let players = system.PuppetPlayers();
+    for p in players {
+      let puppet = system.PuppetOf(p);
+      if IsDefined(puppet) && Vector4.Distance(puppet.GetWorldPosition(), npc.GetWorldPosition()) < 3.0 && spots.IsActorInWorkspot(puppet) {
+        body.fellBack = true;
+        TandemDegraded.Fallback("boss state", s"npc \(body.npc) (\(TDBID.ToStringDEBUG(body.record))) plays a paired animation with player \(p)'s puppet: only on our game");
+        return;
+      }
+    }
+  }
+
+  // A remote V's puppet these senses detect (at all) while it wears its
+  // V's cloak (a `Cloak`-tagged camo record: Stealth.reds puts its V's on
+  // it), as CerberusDetectionOpticalCamo asks of the local V. `log`: each
+  // puppet said (the test, on the game thread only).
+  // job thread safe: it reads the puppets' ids (Codeware's tag lookup locks), their status effects and the senses.
+  public static func CloakedSeen(game: GameInstance, senses: ref<SenseComponent>, log: Bool) -> Bool {
+    let seen = false;
+    let puppets = GameInstance.GetDynamicEntitySystem().GetTaggedIDs(n"Tandem.Puppet");
+    for id in puppets {
+      let puppet = GameInstance.FindEntityByID(game, id) as GameObject;
+      let cloaked = IsDefined(puppet) && StatusEffectSystem.ObjectHasStatusEffectWithTag(puppet, n"Cloak");
+      let detection = senses.GetDetection(id);
+      if log {
+        TandemNative.Log(s"bosses: camo check: puppet \(EntityID.ToDebugStringDecimal(id)) cloaked \(cloaked), detected \(FloatToStringPrec(detection, 1))%");
+      }
+      if cloaked && detection >= 1.00 {
+        seen = true;
+      }
+    }
+    return seen;
+  }
+
+  // Any thread (the hooks below): an AI event a boss's own component
+  // heard, queued for the tick (a native that only queues).
+  public static func Heard(owner: ref<GameObject>, event: ref<AIEvent>) -> Void {
+    if IsDefined(owner) && IsDefined(event) && TandemNative.IsStarted() {
+      TandemFight.QueueBossAiEvent(owner.GetEntityID(), event.name);
+    }
   }
 
   // ---- small helpers ----
@@ -748,7 +847,10 @@ public class TandemBosses {
   // hostile to every V, 15 m ahead (TandemSystem.SpawnTestHostile). On the
   // nearest boss we run: "boss kill" (it dies), "boss health P" (P percent
   // left), "boss effect RECORD" (that status effect on it), "boss spot N"
-  // (its weak spot N broken). "boss report": each boss.
+  // (its weak spot N broken), "boss ai NAME" (its behaviour's AI event),
+  // "boss scripted-kill" (its scripted kill of the first puppet), "boss
+  // camo" (its camo check of each puppet). "boss cloak": our V cloaked.
+  // "boss report": each boss.
   public func Command(command: String, system: ref<TandemSystem>) -> Void {
     let words = StrSplit(command, " ");
     let verb = ArraySize(words) > 1 ? words[1] : "report";
@@ -769,6 +871,10 @@ public class TandemBosses {
       at.Y += forward.Y * 15.0;
       let id = system.SpawnTestHostile(record, at, player.GetWorldOrientation(), true);
       TandemNative.Log(s"bosses: spawning \(TDBID.ToStringDEBUG(record)) 15 m ahead at \(at.X) \(at.Y) \(at.Z) (\(EntityID.IsDefined(id)))");
+    } else if Equals(verb, "cloak") {
+      let player = GetPlayer(this.m_game);
+      StatusEffectHelper.ApplyStatusEffect(player, t"BaseStatusEffect.OpticalCamoCoolPerkShort", player.GetEntityID());
+      TandemNative.Log("bosses: our V cloaked (test)");
     } else if Equals(verb, "report") {
       this.Report();
     } else {
@@ -781,6 +887,27 @@ public class TandemBosses {
       if Equals(verb, "kill") {
         npc.Kill(GetPlayer(this.m_game), false, false);
         TandemNative.Log(s"bosses: our boss \(body.npc) killed (test)");
+      } else if Equals(verb, "ai") {
+        // As its behaviour sends one: to the entity, its components hear it.
+        let event = new AIEvent();
+        event.name = StringToName(arg);
+        npc.QueueEvent(event);
+        TandemNative.Log(s"bosses: our boss \(body.npc) sent the AI event \(arg) (test)");
+      } else if Equals(verb, "scripted-kill") {
+        // As CerberusRangedKillTask does to a puppet it targets: queued.
+        let players = system.PuppetPlayers();
+        let puppet = ArraySize(players) > 0 ? system.PuppetOf(players[0]) : null;
+        if IsDefined(puppet) {
+          TandemFight.QueueBossKill(npc.GetEntityID(), puppet.GetEntityID(), new Vector4(-2174.81, -2376.33, -192.68, 1.0));
+          TandemNative.Log(s"bosses: our boss \(body.npc)'s scripted kill of player \(players[0])'s puppet (test)");
+        } else {
+          TandemNative.Log("bosses: scripted-kill: no puppet");
+        }
+      } else if Equals(verb, "camo") {
+        let senses = npc.GetSensesComponent();
+        if IsDefined(senses) {
+          TandemNative.Log(s"bosses: camo check of our boss \(body.npc): a cloaked V seen \(TandemBosses.CloakedSeen(this.m_game, senses, true))");
+        }
       } else if Equals(verb, "health") {
         let percent = StringToFloat(arg, 50.0);
         GameInstance.GetStatPoolsSystem(this.m_game).RequestSettingStatPoolValue(Cast<StatsObjectID>(npc.GetEntityID()), gamedataStatPoolType.Health, percent, GetPlayer(this.m_game), true);
@@ -911,4 +1038,84 @@ private final func IsInPlayersFOV(context: ScriptExecutionContext, position: Vec
   let forward = target.GetWorldForward();
   let angle = Vector4.GetAngleDegAroundAxis(direction, forward, target.GetWorldUp());
   return AbsF(angle) < 30.0;
+}
+
+// ---- the AI events a boss's behaviour sends its own components ----
+// (final.reds 2.50: Oda's blades and stealth, Kurt's knife and pistol
+// looks and his scanner, Cerberus's scans and eye flares, a scanner's
+// sweeps.) A proxy's behaviour is off: its owner's events reach it with
+// the NPC's animation states (NpcAnims.reds), queued here on the owner.
+
+// job thread safe: it calls the wrapped handler and queues the event's name (TandemBosses.Heard: a native that only queues).
+@wrapMethod(OdaComponent)
+protected cb func OnAIEvent(aiEvent: ref<AIEvent>) -> Bool {
+  let result = wrappedMethod(aiEvent);
+  TandemBosses.Heard(this.GetOwner(), aiEvent);
+  return result;
+}
+
+// job thread safe: it calls the wrapped handler and queues the event's name (TandemBosses.Heard: a native that only queues).
+@wrapMethod(KurtzBossComponent)
+protected cb func OnAIEvent(aiEvent: ref<AIEvent>) -> Bool {
+  let result = wrappedMethod(aiEvent);
+  TandemBosses.Heard(this.GetOwner(), aiEvent);
+  return result;
+}
+
+// job thread safe: it calls the wrapped handler and queues the event's name (TandemBosses.Heard: a native that only queues).
+@wrapMethod(KurtzComponent)
+protected cb func OnAIEvent(aiEvent: ref<AIEvent>) -> Bool {
+  let result = wrappedMethod(aiEvent);
+  TandemBosses.Heard(this.GetOwner(), aiEvent);
+  return result;
+}
+
+// job thread safe: it calls the wrapped handler and queues the event's name (TandemBosses.Heard: a native that only queues).
+@wrapMethod(CerberusComponent)
+protected cb func OnAIEvent(aiEvent: ref<AIEvent>) -> Bool {
+  let result = wrappedMethod(aiEvent);
+  TandemBosses.Heard(this.GetOwner(), aiEvent);
+  return result;
+}
+
+// job thread safe: it calls the wrapped handler and queues the event's name (TandemBosses.Heard: a native that only queues).
+@wrapMethod(ScannerControlComponent)
+protected cb func OnAIEvent(aiEvent: ref<AIEvent>) -> Bool {
+  let result = wrappedMethod(aiEvent);
+  TandemBosses.Heard(this.GetOwner(), aiEvent);
+  return result;
+}
+
+// Cerberus's scripted kill teleports its combat target to one place
+// (final.reds 2.50 CerberusRangedKillTask.Activate: -2174.81, -2376.33,
+// -192.68). A remote V's puppet moved there is put back by its V's own
+// stream: its V's game does it to its V instead (ScriptedKill).
+// job thread safe: it queues the kill (a native that only queues) or calls the wrapped method.
+@wrapMethod(CerberusRangedKillTask)
+protected func Activate(context: ScriptExecutionContext) -> Void {
+  let target = ScriptExecutionContext.GetArgumentObject(context, n"CombatTarget");
+  let owner = ScriptExecutionContext.GetOwner(context);
+  if !TandemNative.IsStarted() || !IsDefined(target) || !IsDefined(owner) || !TandemThreats.IsPuppet(target) {
+    wrappedMethod(context);
+    return;
+  }
+  TandemFight.QueueBossKill(owner.GetEntityID(), target.GetEntityID(), new Vector4(-2174.81, -2376.33, -192.68, 1.0));
+}
+
+// Cerberus reacts to the local player cloaked and detected
+// (CerberusDetectionOpticalCamo): a remote V's puppet wears its V's camo
+// record (Stealth.reds), so one cloaked and detected counts the same.
+// job thread safe: it reads the NPC's senses, the puppets' ids (Codeware's tag lookup locks) and their status effects, and changes nothing.
+@wrapMethod(CerberusDetectionOpticalCamo)
+protected func Check(context: ScriptExecutionContext) -> AIbehaviorConditionOutcomes {
+  let outcome = wrappedMethod(context);
+  if Equals(outcome, AIbehaviorConditionOutcomes.True) || !TandemNative.IsStarted() {
+    return outcome;
+  }
+  let owner = AIBehaviorScriptBase.GetPuppet(context);
+  let senses = IsDefined(owner) ? owner.GetSensesComponent() : null;
+  if !IsDefined(senses) || !owner.IsCerberus() {
+    return outcome;
+  }
+  return TandemBosses.CloakedSeen(owner.GetGame(), senses, false) ? AIbehaviorConditionOutcomes.True : outcome;
 }
