@@ -43,6 +43,9 @@ public class TandemPropHeld {
   public let part: Int32;
   public let owner: Uint32;
   public let body: ref<PhysicalBodyInterface>;
+  // Its own kinematic state before the owner's word held it: what it is
+  // given back (a body kinematic by design stays so).
+  public let wasKinematic: Bool;
 }
 
 // A touch on our instance of a prop another game runs: where it stood, and
@@ -367,6 +370,7 @@ public class TandemPropSync extends ScriptableSystem {
     held.part = event.part;
     held.owner = event.player;
     held.body = body;
+    held.wasKinematic = body.IsKinematic();
     body.SetIsKinematic(true);
     ArrayPush(this.m_held, held);
     this.m_heldCount += 1;
@@ -407,7 +411,7 @@ public class TandemPropSync extends ScriptableSystem {
         ArrayPush(still, held);
       } else {
         // Its game went quiet with no rest (it left): ours again.
-        held.body.SetIsKinematic(false);
+        held.body.SetIsKinematic(held.wasKinematic);
         this.LogSome(s"props: \(TandemNative.EntityHex(held.entity)) part \(held.part): player \(held.owner) said nothing more: back to our physics");
       }
     }
@@ -419,11 +423,14 @@ public class TandemPropSync extends ScriptableSystem {
     let rest = new Transform(new Vector4(event.x, event.y, event.z, 1.0), new Quaternion(event.qi, event.qj, event.qk, event.qr));
     let index = this.HeldIndex(event.entity, event.part);
     let body: ref<PhysicalBodyInterface>;
+    let wasKinematic = false;
     if index >= 0 {
       body = this.m_held[index].body;
+      wasKinematic = this.m_held[index].wasKinematic;
       ArrayErase(this.m_held, index);
     } else {
       body = TandemPropSync.Body(this.Find(event.entity), event.part);
+      wasKinematic = IsDefined(body) && body.IsKinematic();
     }
     this.StopFollowing(event.entity, event.part);
     this.Answered(event.entity, event.part);
@@ -433,7 +440,7 @@ public class TandemPropSync extends ScriptableSystem {
     }
     body.SetIsKinematic(true);
     body.SetTransform(rest);
-    body.SetIsKinematic(false);
+    body.SetIsKinematic(wasKinematic);
     this.m_placed += 1;
     this.LogSome(s"props: player \(event.player)'s \(TandemNative.EntityHex(event.entity)) part \(event.part) at rest at (\(event.x) \(event.y) \(event.z)): put there");
   }
@@ -506,7 +513,7 @@ public class TandemPropSync extends ScriptableSystem {
 
   private func ReleaseAll() -> Void {
     for held in this.m_held {
-      held.body.SetIsKinematic(false);
+      held.body.SetIsKinematic(held.wasKinematic);
     }
     ArrayClear(this.m_held);
     ArrayClear(this.m_moving);
@@ -543,6 +550,10 @@ public class TandemPropSync extends ScriptableSystem {
     if Equals(verb, "look") {
       let pose = body.GetTransform();
       TandemNative.Log(s"props: looks at \(TandemNative.EntityHex(id)) (\(NameToString(object.GetClassName()))) part 0 at \(pose.position.X) \(pose.position.Y) \(pose.position.Z) simulated \(body.IsSimulated()) kinematic \(body.IsKinematic())");
+    } else if Equals(verb, "push") && body.IsKinematic() {
+      // Kinematic by design (a vending machine): no physics moves it in
+      // any game, so neither does our test push.
+      TandemNative.Log(s"props: \(TandemNative.EntityHex(id)) (\(NameToString(object.GetClassName()))) is kinematic: not a physics prop, not pushed");
     } else if Equals(verb, "push") {
       let speed = ArraySize(words) > 2 ? StringToFloat(words[2]) : TandemPropSync.PushSpeed();
       let way = Vector4.Normalize(object.GetWorldPosition() - ours.GetWorldPosition());

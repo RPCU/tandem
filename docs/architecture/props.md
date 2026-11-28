@@ -138,6 +138,11 @@ player's word.
   hop at the rest.
 - **props-latecomer**: the mock host moved the prop before we joined; our
   body is put at the record's rest within 0.25 m.
+- All three need `PROPS_AT` facing a physics prop: `props look` must say
+  `kinematic false`. A body kinematic by design (the vending machine V
+  faces at `kabuki-market`, 2026-11-28) moves by no physics in any game:
+  `props push` refuses it, and a held instance is given back the kinematic
+  state it had, not forced off.
 
 ## Open
 

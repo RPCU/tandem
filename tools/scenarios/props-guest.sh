@@ -13,6 +13,10 @@ cmd props look
 expect 'props: (looks at [0-9a-f]+|V looks at no placed entity)' 5
 since | grep -q 'props: looks at ' ||
   fail "V looks at no prop at ${PROPS_AT:-kabuki-market}: set PROPS_AT to a spot facing one"
+# A body kinematic by design (a vending machine) is no physics prop: no
+# game moves it, so it proves nothing here.
+since | grep -qE 'props: looks at .* kinematic false' ||
+  fail "V looks at a kinematic body at ${PROPS_AT:-kabuki-market} ($(since | grep -oE 'props: looks at [0-9a-f]+ \([A-Za-z]+\)' | tail -1)): set PROPS_AT to a spot facing a bin, a crate or a chair"
 read -r prop px py pz < <(since | grep -oE 'props: looks at [0-9a-f]+ .* part 0 at [-0-9.]+ [-0-9.]+ [-0-9.]+' | tail -1 | awk '{ print $4, $(NF - 2), $(NF - 1), $NF }')
 note "prop $prop at $px $py $pz"
 peer host --mode front --body male --prop "$prop:$px,$py,$pz@20"
