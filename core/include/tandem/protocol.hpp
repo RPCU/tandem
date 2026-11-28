@@ -2262,8 +2262,14 @@ struct Link {
 // A link request its receiver's game did not take, and why: to the asker
 // only (Event channel; a one-shot; the host stamps `from` and delivers it to
 // `to`). The asker's consent stands, as for a request left unanswered.
-// kLinkDeclineOther: another request came after it and took the call.
+// kLinkDeclineOther: another request came after it and took the call;
+// a call's outcomes (comms.md, "The call on screen"): its receiver declined
+// it, was busy (on a call, in a scene, a menu or a loading screen: declined
+// at once), or let it ring out unanswered (missed).
 inline constexpr std::uint8_t kLinkDeclineOther = 1;
+inline constexpr std::uint8_t kLinkDeclineRefused = 2;
+inline constexpr std::uint8_t kLinkDeclineBusy = 3;
+inline constexpr std::uint8_t kLinkDeclineMissed = 4;
 struct LinkDecline {
   PlayerId from{};
   PlayerId to{};

@@ -66,6 +66,26 @@ public class TandemHolocall {
     }
   }
 
+  // Our call to them was not taken (declined, busy, no answer, gone): the
+  // phone's call view says why for 2 s (the game's own status line), then
+  // the call ends.
+  public func Refused(player: Uint32, status: String, now: Float) -> Void {
+    if this.m_player != player || this.m_mode != 2 {
+      return;
+    }
+    TandemNative.Log(s"holocall: \(this.m_name): \(status)");
+    let request = new questSetPhoneStatusRequest();
+    request.status = StringToName(status);
+    GameInstance.QueueScriptableSystemRequest(this.m_game, n"PhoneSystem", request);
+    this.m_mode = 4;
+    this.m_since = now;
+  }
+
+  // We are calling them now.
+  public func IsCalling(player: Uint32) -> Bool {
+    return this.m_player == player && this.m_mode == 2;
+  }
+
   // Their request stopped ringing unanswered (declined, taken back, gone).
   public func RingStopped(player: Uint32) -> Void {
     if this.m_mode == 1 && this.m_player == player {
@@ -195,6 +215,12 @@ public class TandemHolocall {
           this.Clear();
         }
         break;
+      case 4:
+        // Not taken: its status shown, then the phone's own end.
+        if now - this.m_since > 2.0 || now < this.m_since {
+          this.Clear();
+        }
+        break;
       default:
         this.Clear();
         break;
@@ -258,6 +284,11 @@ public class TandemHolocall {
       request.showAvatar = true;
       request.visuals = questPhoneCallVisuals.Default;
       GameInstance.QueueScriptableSystemRequest(this.m_game, n"PhoneSystem", request);
+    }
+    if this.m_mode == 4 {
+      let status = new questSetPhoneStatusRequest();
+      status.status = n"";
+      GameInstance.QueueScriptableSystemRequest(this.m_game, n"PhoneSystem", status);
     }
     this.m_placed = -1;
     this.ShowHint(false);
