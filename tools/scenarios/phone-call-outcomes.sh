@@ -24,7 +24,8 @@ pause 1
 cmd comms holocall
 expect 'holocall: mode 2 .*the phone: tandem_partner_[0-9]+ phase 1 ours' 5
 shot phone-calling
-expect 'holocall: tandem-peer: tandem-peer declined the call' 10
+expect 'comms: tandem-peer did not take our call \(reason 2\)' 10
+expect 'holocall: tandem-peer: .*declined' 3
 shot phone-declined
 pause 3
 cmd comms holocall
@@ -40,7 +41,8 @@ peer join "$address" --mode front --body male --link ask --link-outcome ignore -
 expect 'joined \(player [0-9]+' 20
 cmd phone call tandem-peer
 expect 'holocall: calling tandem-peer: the phone.s own call' 5
-expect 'holocall: tandem-peer: tandem-peer is unavailable' 20
+expect 'comms: tandem-peer left while we called' 20
+expect 'holocall: tandem-peer: .*unavailable' 3
 # Answered, then hung up with the call's own button: both ends close.
 peer join "$address" --mode front --body male --link ask --link-answer-after 2
 expect 'joined \(player [0-9]+' 20
