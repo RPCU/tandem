@@ -457,7 +457,7 @@ originInCOM, opt offset)`, `SetIsQueryable`. The game's own devices wake a
   surface, no RTTI function on the node, its instance or
   `worldRuntimeSystemDestruction`. [unverified]
 
-### 13.167 An explosive's exploded look without its blast (2026-11-28, read in final.reds, not run)
+### 13.173 An explosive's exploded look without its blast (2026-11-28, read in final.reds, not run)
 
 - Streamed in exploded, an explosive device shows its wreck through its
   own resolve: `ExplosiveDevice.ResolveGameplayState` (129093), when its
