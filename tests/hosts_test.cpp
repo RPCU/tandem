@@ -104,3 +104,27 @@ TEST_CASE("recent hosts survive the file") {
   CHECK(hosts::ParseRecent("garbage\n\n10.0.0.3:1 x\r\nnoport name\n10.0.0.3:1 again\n").size() ==
         1);
 }
+
+TEST_CASE("recent hosts joined by a code: known by name, the newest code kept") {
+  std::vector<hosts::Recent> list;
+  hosts::Remember(list, {"192.0.2.10", 27450}, "Panam");
+  hosts::RememberCode(list, "K7Q2M9", "Judy");
+  // The same host another day, with another code: one entry, first.
+  hosts::RememberCode(list, "ABC234", "judy");
+  // No name to know it by: nothing.
+  hosts::RememberCode(list, "ZZZ222", "");
+  REQUIRE(list.size() == 2);
+  CHECK(list[0].code == "ABC234");
+  CHECK(list[0].name == "judy");
+  CHECK(list[0].target == hosts::Target{});
+  CHECK(list[1].name == "Panam");
+  // An address entry of the same name stays apart.
+  hosts::Remember(list, {"192.0.2.11", 27450}, "judy");
+  CHECK(list.size() == 3);
+  const auto text = hosts::FormatRecent(list);
+  CHECK(text == "192.0.2.11:27450 judy\ncode:ABC234 judy\n192.0.2.10:27450 Panam\n");
+  CHECK(hosts::ParseRecent(text) == list);
+  // A code line without a name, or not a code, is skipped.
+  CHECK(hosts::ParseRecent("code:ABC234\ncode:abc234 x\ncode:ABC23 x\ncode:ABC234 x\n").size() ==
+        1);
+}

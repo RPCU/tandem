@@ -92,11 +92,17 @@ public native struct TandemPlayer {
   native let you: Bool;
 }
 
-// A host this game joined (recent.txt next to the plugin).
+// A host this game joined (recent.txt next to the plugin): by address, or by
+// a join code.
 public native struct TandemHost {
+  // "" for a join code
   native let address: String;
   native let port: Int32;
   native let name: String;
+  // its last join code ("K7Q-2M9"), "" by address
+  native let code: String;
+  // what campaigns.txt knows it by (CampaignNatives.reds)
+  native let key: String;
 }
 
 public native struct TandemHackEvent {

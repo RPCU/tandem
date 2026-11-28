@@ -1,5 +1,6 @@
 // The RED4ext entry points.
 
+#include "campaign.hpp"
 #include "comms.hpp"
 #include "config.hpp"
 #include "degradations.hpp"
@@ -218,6 +219,8 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     runtime.codeSalt = runtime.config.codeSalt;
     runtime.config.commandFile = files.command;
     runtime.config.recentFile = files.recent;
+    runtime.config.campaignsFile = files.campaigns;
+    tandem::plugin::campaign::SetFile(files.campaigns);
     tandem::plugin::ConfigureComms(runtime.config);
     log::SetLevel(static_cast<log::Level>(runtime.config.logLevel));
     if (const auto text = Environment(tandem::instance::kPortVariable); !text.empty()) {

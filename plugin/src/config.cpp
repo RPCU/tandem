@@ -354,6 +354,15 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.lastAddress = hosts::Format(*target);
     else
       return Bad("last_address is host or host:port, not {}", value);
+  } else if (key == "campaign") {
+    if (value == "open")
+      config.campaign = Config::Campaign::Open;
+    else if (value == "invite")
+      config.campaign = Config::Campaign::Invite;
+    else if (value == "closed")
+      config.campaign = Config::Campaign::Closed;
+    else
+      return Bad("campaign is open, invite or closed");
   } else if (key == "log") {
     if (value == "warn" || value == "quiet")
       config.logLevel = 1;
@@ -508,7 +517,20 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return OnOff(config.pings);
   if (key == "last_address")
     return config.lastAddress;
+  if (key == "campaign")
+    return config.campaign == Config::Campaign::Invite   ? "invite"
+           : config.campaign == Config::Campaign::Closed ? "closed"
+                                                         : "open";
   return {};
+}
+
+bool KeepsCode(const Config &config) {
+  // A kept code is a token's: an open host gets a new one every session.
+  if (config.relayToken == net::RelayToken{})
+    return false;
+  if (config.campaign == Config::Campaign::Open)
+    return true;
+  return config.campaign == Config::Campaign::Closed && config.keepCode;
 }
 
 Config LoadConfig(const std::filesystem::path &path) {

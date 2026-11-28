@@ -16,6 +16,8 @@ expect 'coop: main menu: a new game, the session \(role 1\) starts as its world 
 note 'the game shows its New Game: pick a start, a lifepath, make a V, confirm (character creation by hand)'
 mark
 expect 'session: starting as host on UDP 27450' 900
+# Hosted from the co-op menu: a co-op campaign, its world noted.
+expect 'campaign: this world is a co-op campaign' 30
 expect 'coop notice: Co-op join code: [0-9A-Z-]+ \[Session-Code\]' 120
 code=$(since | sed -n 's/.*coop notice: Co-op join code: \([0-9A-Z-]*\) \[Session-Code\].*/\1/p' | tail -1)
 shot coop-new-host

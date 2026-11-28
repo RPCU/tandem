@@ -1,6 +1,6 @@
 # The recorder, solo: segments and their index written, the cost logged, no co-op side effect, no socket
 # shellcheck shell=bash disable=SC2317,SC2154
-ensure off recorder=on recorder_segment_minutes=1
+ensure off recorder=on recorder_segment_minutes=1 campaign=closed
 log_file=$(remote "cd '$dir'; ls -t red4ext/logs/tandem-*.log | head -1")
 remote "cd '$dir'; grep -q 'tandem: solo, passive .*recorder on' '$log_file'" || fail "no 'solo, passive ... recorder on' startup line"
 expect 'recorder: recording solo play' 30

@@ -5,7 +5,8 @@
 // the DLL" (docs/architecture/two-instances.md).
 //
 //   TANDEM_CONFIG  the settings file instead of tandem.ini (recent.txt, the
-//                  hosts this game joined, is kept next to it)
+//                  hosts this game joined, and campaigns.txt, its co-op
+//                  playthroughs, are kept next to it)
 //   TANDEM_CMD     the command file instead of tandem.cmd (recordings/ is
 //                  kept next to it)
 //   TANDEM_PORT    the UDP port, over the settings file's
@@ -36,7 +37,9 @@ struct Files {
   std::filesystem::path config;  // tandem.ini
   std::filesystem::path command; // tandem.cmd
   std::filesystem::path recent;  // recent.txt, next to the settings
-  std::filesystem::path log;     // empty: RED4ext's log only
+  // campaigns.txt, next to the settings (tandem/campaigns.hpp)
+  std::filesystem::path campaigns;
+  std::filesystem::path log; // empty: RED4ext's log only
 
   bool operator==(const Files &) const = default;
 };

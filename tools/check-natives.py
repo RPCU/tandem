@@ -37,6 +37,7 @@ CPP = [
     ROOT / "plugin/src/objects_natives.cpp",
     ROOT / "plugin/src/degraded_natives.cpp",
     ROOT / "plugin/src/body_natives.cpp",
+    ROOT / "plugin/src/campaign_natives.cpp",
 ]
 REDS = [
     ROOT / "scripts/tandem/Natives.reds",
@@ -58,6 +59,7 @@ REDS = [
     ROOT / "scripts/tandem/ObjectsNatives.reds",
     ROOT / "scripts/tandem/DegradedNatives.reds",
     ROOT / "scripts/tandem/BodyNatives.reds",
+    ROOT / "scripts/tandem/CampaignNatives.reds",
 ]
 
 SCALARS = {

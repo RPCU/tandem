@@ -5,11 +5,14 @@
 - **Co-op menu** (`scripts/tandem/Coop.reds`, milestone 7): the session is
   chosen at runtime. The main menu gets a "Co-op" entry whose pages live in
   the menu's own list (wraps of `SingleplayerMenuGameController`'s
-  `PopulateMenuItemList` / `HandleMenuItemActivate`): Start a new co-op
+  `PopulateMenuItemList` / `HandleMenuItemActivate`): Continue co-op
+  campaign and the V a host was last joined with ([Campaigns](#campaigns));
+  Start a new co-op
   game (New co-op game, below); Host a saved game → the
   vanilla Continue or Load game (the game's own load list,
   `SpawnEvent(n"OnLoadGame")`); Join a game → recent hosts (`recent.txt`
-  next to the DLL, written when a host welcomes us) or "Enter a join code"
+  next to the DLL, written when a host welcomes us, by address or by code)
+  or "Enter a join code"
   (the game's message popup with Codeware's text field,
   `GenericMessageNotification.ShowInput`; an address typed there works
   too), then the V (a new one, or a save); Play solo
@@ -88,8 +91,10 @@ yet run in game**).
   machine's addresses.
 - **Guest**: Co-op → **Join a game** → the code's popup at once when there
   is no recent host to pick (else the recent hosts' page, then Enter a join
-  code) → the V page: **Create a new V** (the game's own New Game, as the
-  host's), Continue or Load game (a saved V). Picking one chooses the join
+  code) → the V page: **Your V from last time** first when this host is
+  known (Campaigns, below), then **Create a new V** (the game's own New
+  Game, as the host's), Continue or Load game (another V). Picking one
+  chooses the join
   (`JoinByCode` / `Join`) and its **arrival** (`TandemNative.ChooseArrival`,
   `SessionChoice::arrive`, kept by the plugin across the New Game flow and
   the load like the choice itself, taken once at the welcome:
@@ -131,12 +136,123 @@ yet run in game**).
 - **Level gap**: a level-1 guest beside a veteran host: progression.md,
   "Levels" (`level_gap`).
 
+### Campaigns
+
+Drop-in, drop-out (2026-11-28, **not yet run in game**): the story lives in
+the host's save (the user's decision of 2026-11-28: the host's world, tier
+1 for the guest, `quest-carryover.md`), so hosting is a property of a
+playthrough, not a mode. `System.reds` (`OpenCampaign`, `MarkCampaign`),
+`Coop.reds`, `CampaignNatives.reds` / `plugin/src/campaign_natives.cpp`,
+the book in `core/include/tandem/campaigns.hpp` (tested,
+`tests/campaigns_test.cpp`).
+
+- **A co-op campaign** is a world the co-op menu hosted: Start a new co-op
+  game, Host a saved game and Continue co-op campaign (a menu choice to
+  host, `SessionStatus.fromMenu`, as the world loads), the pause menu's
+  Host this game (`TandemSystem.MarkCampaign`). It is a field of
+  `TandemSystem`'s saved with the world (`persistent let m_campaign`), so
+  every later save of it says so. tandem.ini's `role = host` and the
+  harness's `coop host` mark nothing.
+- **It opens as it loads**, whatever way it is loaded (the game's own
+  Continue or Load game, F9, a death's reload), when nothing else is
+  chosen, by the host's rule `campaign` (a row of the settings page,
+  the host's only: no row on a guest in a session, `TandemSettings.HostOnly`;
+  not one of `Rules`): `open` (the default) hosts at once, with the relay's
+  kept code when tandem.ini has a `relay_token` (`KeepsCode`: the same code
+  every session, so friends drop in with the one they have); `invite` hosts
+  with a new code each session; `closed` plays alone ("Co-op campaign,
+  closed: …", `Session-CampaignClosed`) until Host this game. Opened: "Co-op
+  campaign open: friends can drop in" (`Session-CampaignOpen`), then the
+  code's notice. Nothing else changes for a host alone. The pause menu's
+  status panel opens with the campaign's line ("Co-op campaign: open to
+  friends" / "invite only, a new join code each session" / "closed. Host
+  this game opens it to friends", `TandemCoop.CampaignLine`), then the
+  code and who is in. `code = keep|new` counts only under `closed`.
+- **Continue co-op campaign** (the main menu's Co-op page, first, when one
+  is known; its status line "Co-op campaign: level 12, Japantown"): the
+  newest save of a co-op campaign, hosted as it loads (`StartHost`, then
+  the game's own load of that save: `LoadSaveInGame`, `LoadModdedSave` for
+  one made with mods), whatever the rule says.
+- **The guest's V for each host**: the playthrough it was last welcomed by
+  that host with (the net thread, at the host's `PlayerJoined`:
+  `campaign::JoinedWith`). A host is known by `address:port` joined by
+  address, by its name joined by a code (`name:NAME`, since a code changes
+  between sessions: `campaigns::HostOfName`). The V page then offers **Your
+  V from last time (level N, PLACE)** first (`LastV`), its newest save, one
+  pick (the join chosen, the arrival, that save loaded); the status line
+  says "Your V to join NAME: the one from last time, a new one, or another
+  save". The other rows stay for another V.
+- **Recent hosts joined by code**: `recent.txt` keeps them too
+  (`code:K7Q2M9 NAME`, `hosts::RememberCode`, one entry per name; tested in
+  `tests/hosts_test.cpp`), shown "NAME (join code)"; picking one asks for
+  today's code ("NAME's join code: their game shows it on the pause menu,
+  under Co-op"), the last one as the empty answer (it is still good when
+  the host's relay keeps codes). Online or joinable state is **not shown**:
+  nothing tells it without asking. What the relay offers: a code's lookup
+  (`ResolveCode`) says whether a session holds it, at the price of one of
+  the source's limited lookups (5 at once, then one per 6 s, failures
+  counted in the world's budget), so a list of recent hosts would eat the
+  join's own; an address host has no probe at all. Both would be new
+  features (a presence query on the relay, a probe the host answers); not
+  built.
+- **How the menu knows a save's playthrough**: the game names one only in
+  its saves' list (`SaveMetadataInfo.playthroughID`). The main menu reads
+  that list as it opens (its `OnSavesForLoadReady`: a screenshot request
+  per save, the newest 40, brings each one's metadata to
+  `OnSaveMetadataReady`, as the game's own load list does: `SaveSeen`). A
+  world is known by the save the menu loaded it from (Continue: the
+  newest; Continue co-op campaign, Your V from last time: theirs;
+  `Loading`), checked against its playthrough time at the load (within 30
+  s); otherwise by its playthrough time (`GameInstance.GetPlaythroughTime`)
+  at the load and at each save written (`OnSavingComplete`), kept pending
+  in the book and matched with a save's time (within 5 s, one playthrough
+  alone, after a world's first minute) the next time the main menu reads
+  the list. A new game is so learnt from its first save. A page built
+  before the metadata came is built again when it does (`Offered`, the
+  menu's tick). **Not verified**:
+  that a save's metadata time is the world's `GetPlaythroughTime`, that
+  the screenshot request brings the metadata for every save, and that
+  `OnSavingComplete` comes for autosaves. `coop campaign` (both menus)
+  logs the book. The book: `campaigns.txt` next to tandem.ini (16
+  campaigns, 16 hosts, 32 pending at most).
+- **Joining, in words** (`TandemSystem.WatchJoin`): a join the co-op menu
+  chose (`Arriving`), until its welcome: each problem once ("Can't reach
+  NAME yet (could not reach the host): retrying", `Session-JoinRetrying`);
+  a refusal no retry changes (another version, the session full, no
+  Phantom Liberty, a code no session has, the plugin's own stop) gives up
+  at once, anything else after 60 s of the world's time: "Couldn't join X:
+  REASON. You play on in your own world: pause menu, Co-op, to try again"
+  (`Session-JoinGaveUp`, `Reason-NoAnswer`), out of the session. Before
+  any load, the main menu refuses a code without a relay in a popup
+  (`Popup-NeedsRelay`) and a typed text that is neither code nor address
+  (`Popup-NotATarget`). A host that could not open its port says so
+  (`Session-HostFailed`). A mod mismatch never refuses a join: it is said
+  at the join and on the panel ([Mods](#mods)).
+- **Leaving**: the guest's save offer, worded plainly (progression.md,
+  Leaving).
+- Scenarios (unattended, each one line of verdict): `coop-continue-campaign`
+  (marked, learnt by the main menu, Continue co-op campaign hosts, the mock
+  player drops in), `coop-campaign-open` (the game's own Continue of a
+  campaign hosts alone, a join a while later; `closed` plays alone),
+  `coop-remembered-v` (a join notes our V; the next V page offers it first;
+  the save offer on leaving), `coop-join-errors` (no host at an address,
+  a code without a relay, with `RELAY=HOST:PORT` a code nobody has);
+  `coop-new-host` and `coop-new-guest` (by hand: character creation) check
+  the campaign mark and the V noted. `coop campaign next` loads the next
+  world as one whose save says co-op campaign, `coop campaign
+mark|unmark` (in game), `coop continue` (main menu: the game's own
+  Continue): no save is written. A version mismatch and a full session
+  have no scenario: the mock player cannot speak another protocol version
+  nor fill a session alone.
+
 ### Settings
 
-- **The pages' entries** (`TandemCoopMenu.Build`): main menu Co-op → Start
-  a new co-op game, Host a saved game, Join a game, Join by address, Play
-  solo (once one is chosen), Write a bug report, Co-op settings, Back; the
-  join's V page: Create a new V, Continue, Load game, Back; pause menu Co-op → Host this game,
+- **The pages' entries** (`TandemCoopMenu.Build`): main menu Co-op →
+  Continue co-op campaign (when one is known, Campaigns), Start a new co-op
+  game, Host a saved game, Join a game, Join by address, Play solo (once
+  one is chosen), Write a bug report, Co-op settings, Back; the join's V
+  page: Your V from last time (a known host), Create a new V, Continue,
+  Load game, Back; pause menu Co-op → Host this game,
   Join a game, Join by address, or in a session Invite and New join code
   (host), Partners' mods, Leave session; then Write a bug report, Co-op
   settings, Back. No entry reads as one of the game's own or another mod's
@@ -160,6 +276,8 @@ yet run in game**).
     `Rule-*`, `TandemSettings.HostRulesLine`, from the `Rules` the host
     sent: `TandemFight.FriendlyFire`, `TandemProgress.EnemyScaling`,
     `TandemFight.LevelGap`), on the Co-op page and the settings page alike;
+  - **the host's own** (`HostOnly`: `campaign`, Campaigns above): on a
+    host's page and out of a session, none on a guest in one;
   - **the player's own screen**: `notices`, `markers`, `nameplates`,
     `party_hud`.
 
@@ -176,8 +294,8 @@ yet run in game**).
   `Settings-About-*`, `TandemSettings.About`, `Note`; a host's rule says
   it is everyone's, `Settings-HostsRule`). Its arrays (`Keys`, `Labels`,
   `Abouts`, `Kinds`, `Whens`) have one entry per row in the page's order:
-  name, friendly_fire, enemy_scaling, level_gap, notices, markers,
-  nameplates, party_hud. `tools/menu-check.py` (`task menu:check`, run by
+  name, friendly_fire, enemy_scaling, level_gap, campaign, notices,
+  markers, nameplates, party_hud. `tools/menu-check.py` (`task menu:check`, run by
   `scripts:check` and CI) checks them aligned, one short page (at most 10
   rows, no groups), `HostRules` the three rules `Rules` carries and rows
   of the page, no `IniKeys` key a row, each key (rows and `IniKeys`) taken
@@ -326,9 +444,16 @@ pause menu's New join code since 2026-11-19.)
   tests. Part of milestone 7 (invites, relay). Done: the relay and join
   codes (see [Invites](#invites-the-in-game-flow-for-the-main-menu)); and
   (2026-11-18, to verify in game) everything in Inside the plugin, co-op
-  menu. Still open: testing a host before loading (today a guest learns in
-  game that the host is unreachable), options (name, max players), a lobby
-  list, the entry's place in the list (appended after the menu's own
-  items: an insertion would need a wrap of the overloaded `AddMenuItem`).
-  Labels are keyed texts (`strings.md`, done 2026-11-19); `coop pick TEXT`
-  matches a label in the game's language or in English.
+  menu; (2026-11-28, to verify in game) co-op campaigns, the guest's V
+  per host, joins in words ([Campaigns](#campaigns)). Still open: testing
+  a host before loading (today a guest learns in game, in words, that the
+  host is unreachable or refuses it, and plays on in its own world), a
+  host's online state in the recent list (a relay presence query or a
+  probe the host answers: new features, Campaigns), kept codes for hosts
+  without a relay token (a relay feature: today an open host's code
+  changes every session and as it expires, so a friend needs the current
+  one), options (max
+  players), a lobby list, the entry's place in the list (appended after
+  the menu's own items: an insertion would need a wrap of the overloaded
+  `AddMenuItem`). Labels are keyed texts (`strings.md`, done 2026-11-19);
+  `coop pick TEXT` matches a label in the game's language or in English.

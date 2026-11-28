@@ -48,6 +48,7 @@ add_library(tandem SHARED
   src/degradations.cpp
   src/degraded_natives.cpp
   src/body_natives.cpp
+  src/campaign_natives.cpp
   src/threads.cpp
   src/stall.cpp
   src/observer.cpp
