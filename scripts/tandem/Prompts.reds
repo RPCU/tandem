@@ -384,6 +384,13 @@ public class TandemPrompts {
     }
     this.m_keyDownAt = -1.0;
     this.m_eventAt = this.m_now;
+    // The game's own hold ring completed (Revive's Choice1_Hold): the key is
+    // down now, by the game's word; its release comes to our listener
+    // (Revive.reds, Choice1_Hold). Our listener alone missed it on instance
+    // a (a hold fell back to drawn prompts, 2026-11-27).
+    if Equals(action, gameinputActionType.BUTTON_HOLD_COMPLETE) {
+      this.m_keyHeld = true;
+    }
     b.presses += 1;
     TandemNative.Log(s"prompts: \(TandemPromptKind.PromptWord(kind)) pressed on \(b.label): the game's choice event (\(how))");
     if b.presses == 1 {
