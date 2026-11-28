@@ -21,12 +21,19 @@ cmd device station 1
 expect "devices: station $radio [A-Za-z]+ at " 5
 expect "devices: $radio [A-Za-z]+ is now [a-z]+, [a-z+]+, value 1" 10
 expect_peer "device $radio \\(0x[0-9a-f]+\\): [a-z]+, [a-z+]+, value 1 by player 1, played" 10
+# The radio's own state, read from the game (its parity line: the
+# persistent state's station), not what our code logged it did.
+cmd parity 40
+expect "parity device: $radio [A-Za-z]+ at .* value 1([^0-9]|$)" 10
 shot devices-media-ours
 # The other player picks station 2: a request, ours follows the game's way.
 expect_peer "asked the host for device $radio .*value 2 \\(--device-answer\\)" 10
 expect "devices: player [0-9]+ operated $radio" 10
 expect "devices: $radio [A-Za-z]+ after player [0-9]+'s request: [a-z]+, [a-z+]+, value 2" 10
 expect_peer "device $radio \\(0x[0-9a-f]+\\): [a-z]+, [a-z+]+, value 2 by player [2-9], played" 10
+mark
+cmd parity 40
+expect "parity device: $radio [A-Za-z]+ at .* value 2([^0-9]|$)" 10
 shot devices-media-theirs
 reject "devices: $radio [A-Za-z]+ will not become"
 reject 'watchdog: game thread silent'

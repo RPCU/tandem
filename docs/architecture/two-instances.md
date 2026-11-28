@@ -562,7 +562,8 @@ WHAT` (its test query), and `compare CATEGORY [ENTITY]`: a parity dump
   of both games at one moment (`tools/world-compare.py --instances OURS
 PARTNER --only CATEGORY [--entity HEX]`, within 60 m), failing on any
   difference in that category (for `devices` with an entity, also when
-  either game does not follow it); each comparison goes to the evidence's
+  either game does not follow it), with a screenshot of each game at that
+  moment (`compare-CATEGORY-TIME-INSTANCE.png` in each instance's `run/`); each comparison goes to the evidence's
   `compare.txt`. A failure keeps the partner's log as `partner.log`; at
   the end the partner, too, must have run no hook beside its script tick
   and hold nothing degraded the scenario did not declare.
