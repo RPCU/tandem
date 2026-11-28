@@ -54,7 +54,10 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 26: LinkDecline's reasons 2-4, a call's outcomes (declined, busy, missed).
 // 27: Activity's remote view (ActivityKind::Remote, its RemoteSort in
 // `entry`, its view in `anchor`) and `traffic`: a game of 26 refuses it.
-inline constexpr std::uint16_t kProtocolVersion = 27;
+// 28: TurretHands' kHandsByPlace (a held device no id names, by its place);
+// Seat's remote drive (the slot `tandemRemote`: a game of 27 would seat the
+// puppet in a slot no car has).
+inline constexpr std::uint16_t kProtocolVersion = 28;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -261,6 +264,9 @@ struct Shot {
 // foot; `seat` the slot's CName hash (seat_front_left = the driver's...);
 // `owner` the player whose car it is: the sender itself when it drives its
 // own car, another player when riding in theirs (a copy of it on this game).
+// `seat` is the CName hash of `tandemRemote` when the sender drives its own
+// car remotely (the take control quickhack, remote-views.md): its copy
+// follows the sender's VehicleState, its puppet stays on foot.
 struct Seat {
   PlayerId player{};
   std::uint32_t revision{};
@@ -3100,10 +3106,14 @@ inline constexpr float kTurretHandsHz = 5.f;
 inline constexpr float kTurretHandsHoldS = 1.f;
 inline constexpr std::uint8_t kHandsFiring = 1; // its trigger is held
 inline constexpr std::uint8_t kHandsLetGo = 2;  // the player let go of it
-inline constexpr std::uint8_t kHandsFlags = kHandsFiring | kHandsLetGo;
+// No id every game knows (a spawned device): `entity` is its place
+// (devices::PlaceKey; devices::PlaceOf reads it back), and every other game
+// takes its own sensor device within devices::kPlaceReach of it.
+inline constexpr std::uint8_t kHandsByPlace = 4;
+inline constexpr std::uint8_t kHandsFlags = kHandsFiring | kHandsLetGo | kHandsByPlace;
 struct TurretHands {
   PlayerId player{};      // whose hands: set by the host from the connection
-  std::uint64_t entity{}; // the turret's static id
+  std::uint64_t entity{}; // the device's static id (kHandsByPlace: its place)
   Vec3 at;                // where it points (world)
   std::uint8_t flags{};   // kHands*
   friend bool operator==(const TurretHands &, const TurretHands &) = default;

@@ -10,6 +10,8 @@
 
 #include <doctest/doctest.h>
 
+#include <cmath>
+
 #include <functional>
 #include <map>
 
@@ -637,6 +639,28 @@ TEST_CASE("a turret in a player's hands: shown to the others in its name, never 
   CHECK(held[0].size() == 1);
   CHECK(held[1].size() == 1);
   CHECK(held[2].size() == 2);
+}
+
+TEST_CASE("a held device no id names is named by its place, the same on every game") {
+  const proto::Vec3 at{-915.3f, 1879.6f, 36.19f};
+  const auto key = devices::PlaceKey(at);
+  CHECK((key >> 63) == 1u);
+  const auto back = devices::PlaceOf(key);
+  CHECK(back.x == doctest::Approx(at.x).epsilon(0.0005));
+  CHECK(std::abs(back.x - at.x) <= 0.125f);
+  CHECK(std::abs(back.y - at.y) <= 0.125f);
+  CHECK(std::abs(back.z - at.z) <= 0.125f);
+  // Two games' copies a few centimetres apart: one key, or neighbours
+  // within reach of each other.
+  const auto near = devices::PlaceOf(devices::PlaceKey({at.x + 0.05f, at.y - 0.04f, at.z}));
+  CHECK(std::abs(near.x - back.x) < devices::kPlaceReach);
+  CHECK(devices::PlaceKey({1.f, 2.f, 3.f}) != devices::PlaceKey({1.f, 2.f, 4.f}));
+  // Far corners of the map and below the ground.
+  const proto::Vec3 far{-6000.f, 7000.f, -250.f};
+  const auto farBack = devices::PlaceOf(devices::PlaceKey(far));
+  CHECK(farBack.x == doctest::Approx(far.x));
+  CHECK(farBack.y == doctest::Approx(far.y));
+  CHECK(farBack.z == doctest::Approx(far.z));
 }
 
 TEST_CASE("a turret's holds: first come; a second claim refused once a second; a let-go or a "

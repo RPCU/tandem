@@ -918,7 +918,8 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           inRange = m.entity != 0 && (m.kind != p::DeviceFireKind::Shot || m.timeUs != 0);
         } else if constexpr (std::is_same_v<M, p::TurretHands>) {
           finite = Finite(m.at);
-          inRange = m.entity != 0;
+          // A device by its place: the place's key has its top bit.
+          inRange = m.entity != 0 && ((m.flags & p::kHandsByPlace) == 0 || (m.entity >> 63) != 0);
         } else if constexpr (std::is_same_v<M, p::TurretBusy>) {
           // A named turret, held by a player.
           inRange = m.entity != 0 && m.holder != p::kNoPlayer;

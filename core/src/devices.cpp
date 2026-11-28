@@ -175,6 +175,28 @@ std::vector<BreachHolds::Decision> BreachHolds::End() {
   return out;
 }
 
+std::uint64_t PlaceKey(const proto::Vec3 &place) {
+  constexpr std::int64_t kHalf = 1 << 20;
+  std::uint64_t key = 1ull << 63;
+  int shift = 42;
+  for (const float v : {place.x, place.y, place.z}) {
+    const auto q =
+        std::clamp<std::int64_t>(std::llround(static_cast<double>(v) * 4.0), -kHalf, kHalf - 1);
+    key |= static_cast<std::uint64_t>(q + kHalf) << shift;
+    shift -= 21;
+  }
+  return key;
+}
+
+proto::Vec3 PlaceOf(std::uint64_t key) {
+  constexpr std::int64_t kHalf = 1 << 20;
+  const auto at = [&](int shift) {
+    const auto q = static_cast<std::int64_t>((key >> shift) & ((1ull << 21) - 1)) - kHalf;
+    return static_cast<float>(q) / 4.f;
+  };
+  return {at(42), at(21), at(0)};
+}
+
 TurretHolds::Answer TurretHolds::On(proto::PlayerId player, const proto::TurretHands &hands,
                                     std::uint64_t nowUs) {
   const bool letGo = (hands.flags & proto::kHandsLetGo) != 0;

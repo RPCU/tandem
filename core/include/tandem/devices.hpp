@@ -153,6 +153,14 @@ private:
 
 // ---- A turret in a player's hands (devices.md) ----
 //
+// A held device no id names in every game (spawned: a dynamic EntityID) is
+// named by where it stands, packed in 64 bits: the top bit set, then x, y
+// and z in quarter metres, 21 bits each (±262 km). Each game takes its own
+// sensor device within kPlaceReach of that place as the one held.
+inline constexpr float kPlaceReach = 1.5f;
+std::uint64_t PlaceKey(const proto::Vec3 &place);
+proto::Vec3 PlaceOf(std::uint64_t key);
+//
 // Host: who holds each turret, first come. A player's word (TurretHands)
 // makes it the holder of a turret nobody holds; it holds it until its let-go
 // or until unheard of for kTurretHandsHoldS. Another player's word on it
