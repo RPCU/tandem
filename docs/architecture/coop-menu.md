@@ -188,13 +188,14 @@ yet run in game**).
   every row read ": V", 2026-11-20). Picking an on/off or a choice moves
   to the next value; the name opens the message popup with Codeware's
   text field. Each change goes through `TandemNative.SetSetting(key,
-  value)`: the plugin checks it with tandem.ini's own parser
+value)`: the plugin checks it with tandem.ini's own parser
   (`ApplySetting`, `plugin/src/config.cpp`), saves that one line
   (`tandem::settings::SetKey`, `core/`, tested: the other keys, the
   comments and the line endings stay; a key only in a comment is
   appended, not uncommented; a value with a line break, `;` or `#` is
   refused) through a file written aside, and applies it.
   `TandemNative.Setting(key)` reads one back.
+
 - **The host's rules come from the host**: the host's game sends them as
   `Rules` (flags, `enemyHealth`, `levelGap`: `TandemFight.ConfiguredRules`
   / `SendRules`, checked every 2 s, `Outcomes.reds`) when its tandem.ini's
@@ -235,7 +236,7 @@ yet run in game**).
   file the game read, `Config::file`). The harness's `tools/game.sh role`
   files swap around it: a setting changed while a test `tandem.ini` is in
   place lands in that one. Tests: `coop settings` logs them all, `coop
-  set KEY VALUE` changes one (scenario `settings`); scenario
+set KEY VALUE` changes one (scenario `settings`); scenario
   `settings-page`, unattended, both roles in one run (`ensure host`, then
   `ensure join friendly_fire=off`), each page read back from the screen
   (`coop menu shown`): the host's rows and a rule reaching the mock guest,
