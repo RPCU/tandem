@@ -57,6 +57,8 @@ public:
     float turretHandsHz{12.f};
     // NPC voice lines: 10 a second an owner, three owners relayed by a host.
     float npcVoiceHz{32.f};
+    // A game's moving props: 10 a second while any moves (props.md).
+    float propStatesHz{14.f};
     float eventsHz{400.f};      // every reliable message together (hint)
     float bytesPerSecond{2e5f}; // everything together (hint)
     // At the game's digests (3 s); Attach raises it for an endpoint whose

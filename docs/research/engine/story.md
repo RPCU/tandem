@@ -1310,3 +1310,99 @@ written yet):
   is better only for non-interactive cinematic scenes (no choice,
   randomizer or quest node; a camera of their own), where the guest would
   get the scene natively: worth a narrow version once tests 1 to 3 pass.
+
+  camera stays, registered as what it is. [unverified]
+
+### 13.167 An NCPD activity's pin, by its journal path, and its phase set from outside (2026-11-28, read in final.reds (2.50), Codeware's source and the 2.50 exe decompiled; not run)
+
+For `docs/architecture/story.md`, "Open-world activities". F is
+`final.reds (2.50)`; CW is Codeware's `src/` (MIT).
+
+- **Which pins**: the game's own test for the NCPD scanner's pins is
+  `MinimapPOIMappinController.IsNcpdScanner` (F:434330): the variants
+  `MinorActivityVariant`, `Zzz06_NCPDGigVariant`, `GangWatchVariant`,
+  `OutpostVariant`, `HiddenStashVariant` (all drawn `map_bounty`,
+  `MappinUIUtils.MappinToTexturePart`, F:275587). [2.5-verified offline]
+- **Their identity**: each is a `PointOfInterestMappin` (F:276234) whose
+  `GetJournalPathHash()` names its `gameJournalPointOfInterestMappin`
+  entry: static journal data, the same hash in every game. Codeware reads
+  the same field (`Raw::PointOfInterestMappin::JournalHash`, +0x8C of the
+  0x100-byte `gamemappinsPointOfInterestMappin`). Codeware's
+  `MappinSystem.GetAllMappins()` lists every registered pin.
+  [2.5-verified offline] [unverified: that every NCPD pin of the map is
+  registered at once, wherever V is]
+- **Done** is the pin's phase `CompletedPhase` (0; `gamedataMappinPhase`,
+  F:1333): Codeware's `OpenWorldSystem` answers `completed` from it alone
+  (`MakeActivityState`, `GetPoiMappinPhase` by the journal hash). The map,
+  the minimap and the world pins read `IMappin.GetPhase()` at each update
+  (F:275385, F:403273, F:434194) and dim a completed one
+  (`CompletedPOIOpacity`). [2.5-verified offline]
+- **Setting it**: no script function does (`MappinSystem` has
+  `SetMappinActive`, `ChangeMappinVariant`, no phase setter, F:44139).
+  The engine's own setter of a pin is `PointOfInterestMappin_SetPhase`
+  (address-library hash 803085170, at 0x142d3f2c8; Codeware's
+  `Raw::PointOfInterestMappin::SetPhase`), decompiled: `(mappin in rcx,
+phase in edx, all 32 bits)`. It looks the pin's journal hash (+0x8C) up
+  in its system's table of saved point-of-interest states (the pin's
+  `MappinSystem` at +0xE0; the table at system +0x110: keys at +0x118, a
+  count at +0x124, 6-byte records at +0x128 of phase u16, variant u16,
+  active bit; lookup 0x140d6cf2c, the same one
+  `GetPointOfInterestMappinSavedState`, 0x142d44f68, reads), and when the
+  record's phase differs writes the new one there, under the table's
+  lock: **the phase lives in the system's saved state, so it reaches the
+  save.** Set to `CompletedPhase`, a pin the player tracks is untracked
+  (system +0x1B8, 0x142d44a70). Then it tells its system the pin changed
+  (0x142d3efc4: system vtable +0x390, unless the pin's +0x94 is set), and
+  the map redraws it. A journal hash with no record is left alone (a
+  phase other than completed returns at once). `IMappin.GetPhase` is the
+  pin's vtable +0x190 (0x14104106c), which asks the object at +0xB0
+  (its slot +0x20); the setter's answer is that object's slot +0x30.
+  Codeware calls it `bool (mappin, phase)`. Its other path, the system's
+  vtable +0x1D0 `SetPoiMappinPhase(journal hash, phase)`, is what its
+  activity reset calls. [2.5-verified
+  offline: decompiled with tools/re] [unverified in game: the drawn pin,
+  and that GetPhase reads the record back; `openworld-guest` reads it]
+- **The activity's scene** is a child phase of
+  `base\open_world\minor_activities\open_world_minor_activities.questphase`
+  (CW `QuestPhaseRegistry.cpp:10`) with its communities, spawners, facts
+  and loot (CW `OpenWorldSystem.cpp`, `ProcessActivity`); holding that
+  phase's nodes keeps a game from setting the scene again. A community
+  already active from the save spawns its people all the same.
+  [2.5-verified offline for the resource; the hold: unverified]
+
+### 13.168 A map pin tracked again from outside; what Dogtown's open-world pins are (2026-11-28, read in final.reds (2.50) and the 2.50 exe disassembled; not run)
+
+For `docs/architecture/story.md`, "Open-world activities". F is
+`final.reds (2.50)`.
+
+- **Who tracks a pin**: the world map's `TrackMappin(controller)` native
+  (`gameuiWorldMapMenuGameController`, 0x142d5ca28) calls 0x142d5913c,
+  which takes the controller's pin (its weak handle at +0xA0) and calls its
+  `MappinSystem`'s vtable +0x220 with the pin's `NewMappinID` (pin +0x40),
+  or +0x228 when there is none. +0x228 is 0x142d44a20, the same function
+  the script native `MappinSystem.UntrackMappin` jumps to (F:51151); +0x220
+  is 0x142d449bc (address-library hash 3769177737): under the system's
+  lock (+0x198) it stores the id as the manually tracked pin (+0x1B8, what
+  `GetManuallyTrackedMappinID` answers, F:51147, and what
+  `PointOfInterestMappin_SetPhase` clears for a completed pin, §13.167),
+  then tells the system (0x142d426a8: system, old id, new id). So
+  `void (system, NewMappinID by value)` tracks a pin as the player does.
+  Scripts read it back with `IMappin.IsPlayerTracked()` and give the id
+  with `IMappin.GetNewMappinID()` (`NewMappinID.value`, Uint64, F:177615).
+  [2.5-verified offline: disassembled with tools/re] [unverified in game:
+  the drawn track, the GPS path; `openworld-track` reads it]
+- **No script call tracks a given pin**: `MappinSystem` has
+  `SetMappinTrackingAlternative`, `GetManuallyTrackedMappinID`,
+  `UntrackMappin` (F:51145-51151) and no track; the world map's needs its
+  controller. [2.5-verified offline]
+- **Dogtown's open-world pins are not points of interest**: the 2.0 world
+  encounters (`Zzz12_WorldEncounterVariant`, drawn as `outpost`,
+  F:276540) get their own minimap widget only outside its
+  `IsExactlyA(n"gamemappinsPointOfInterestMappin")` branch (F:337908):
+  another mappin class, with no phase in the system's saved
+  point-of-interest table (§13.167) to mirror. No script system runs
+  Phantom Liberty's airdrops (no airdrop class in F; only their loot
+  status effects, F:41290): their quest phases do. [2.5-verified offline
+  for the scripts] [unverified: that the airdrops are world encounters,
+  their mappin class and their quest; that Dogtown has no NCPD scanner
+  pins]

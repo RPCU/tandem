@@ -69,7 +69,24 @@ bool Fits(const CorpsePose &corpse) {
 
 bool Fits(const NpcVoice &voice) {
   return voice.context != 0 && voice.delayMs <= kNpcVoiceMaxDelayMs &&
-         (voice.flags & ~kVoiceFlags) == 0;
+         (voice.flags & ~kVoiceFlags) == 0 &&
+         ((voice.flags & kVoiceTrigger) != 0
+              ? voice.voContext <= kVoContextMinorActivity || voice.voContext == kVoContextDefault
+              : voice.variation == 0 && voice.variations == 0 && voice.voContext == 0);
+}
+
+bool Fits(const OwnCar &car) {
+  const auto finite = [](float v) { return std::isfinite(v); };
+  if ((car.flags & ~kOwnCarFlags) != 0 || !finite(car.position.x) || !finite(car.position.y) ||
+      !finite(car.position.z) || !finite(car.orientation.i) || !finite(car.orientation.j) ||
+      !finite(car.orientation.k) || !finite(car.orientation.r))
+    return false;
+  return car.vehicle != 0 || car == OwnCar{.player = car.player};
+}
+
+bool Fits(const PropStates &states) {
+  return states.props.size() <= kMaxPropsPerState &&
+         std::ranges::none_of(states.props, [](const PropEntry &prop) { return prop.entity == 0; });
 }
 
 bool Fits(const TrafficLights &lights) {
@@ -570,9 +587,17 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *degraded = std::get_if<Degraded>(&message); degraded && !Fits(*degraded))
     return std::nullopt;
+  if (const auto *car = std::get_if<OwnCar>(&message); car && !Fits(*car))
+    return std::nullopt;
   if (const auto *voice = std::get_if<NpcVoice>(&message); voice && !Fits(*voice))
     return std::nullopt;
   if (const auto *corpse = std::get_if<CorpsePose>(&message); corpse && !Fits(*corpse))
+    return std::nullopt;
+  if (const auto *props = std::get_if<PropStates>(&message); props && !Fits(*props))
+    return std::nullopt;
+  if (const auto *rest = std::get_if<PropRest>(&message); rest && rest->entity == 0)
+    return std::nullopt;
+  if (const auto *push = std::get_if<PropPush>(&message); push && push->entity == 0)
     return std::nullopt;
   if (const auto *lights = std::get_if<TrafficLights>(&message); lights && !Fits(*lights))
     return std::nullopt;
@@ -648,6 +673,12 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *gates = std::get_if<StoryGates>(&message);
       gates && (gates->flags & ~kGateFlags) != 0)
     return std::nullopt;
+  if (const auto *done = std::get_if<OpenWorldDone>(&message);
+      done &&
+      (done->markers.size() > kMaxOpenWorldDone ||
+       std::ranges::adjacent_find(done->markers, std::greater_equal<>{}) != done->markers.end() ||
+       std::ranges::find(done->markers, std::uint32_t{0}) != done->markers.end()))
+    return std::nullopt;
   if (const auto *visuals = std::get_if<StatusVisuals>(&message);
       visuals && (visuals->records.size() > kMaxStatusVisuals ||
                   std::ranges::adjacent_find(visuals->records, std::greater_equal<>{}) !=
@@ -703,6 +734,7 @@ Channel ChannelOf(const Message &message) {
                  std::holds_alternative<Noise>(message) ||
                  std::holds_alternative<NpcShot>(message) ||
                  std::holds_alternative<TrafficStates>(message) ||
+                 std::holds_alternative<PropStates>(message) ||
                  std::holds_alternative<MountedFire>(message) ||
                  std::holds_alternative<GunnerAim>(message) ||
                  std::holds_alternative<ActorPose>(message) ||
@@ -732,6 +764,7 @@ bool IsStory(const Message &message) {
          std::holds_alternative<ScenePlace>(message) ||
          std::holds_alternative<WorldPrefabs>(message) ||
          std::holds_alternative<StoryGates>(message) ||
+         std::holds_alternative<OpenWorldDone>(message) ||
          (message.index() >= kId<SceneState> && message.index() <= kId<SceneLine>) ||
          std::holds_alternative<VehicleUnlock>(message);
 }
@@ -741,10 +774,11 @@ bool IsCombat(const Message &message) {
          (message.index() >= kId<Throw> && message.index() <= kId<Defended>) ||
          (message.index() >= kId<PlayerLevel> && message.index() <= kId<NpcLevel>) ||
          std::holds_alternative<CarLend>(message) || std::holds_alternative<CarPaint>(message) ||
-         std::holds_alternative<Degraded>(message) || std::holds_alternative<NpcScale>(message) ||
-         std::holds_alternative<NpcVendor>(message) || std::holds_alternative<ThrowPath>(message) ||
-         std::holds_alternative<NpcPlaced>(message) || std::holds_alternative<NpcDeath>(message) ||
-         std::holds_alternative<Race>(message) || std::holds_alternative<WeakSpotHit>(message) ||
+         std::holds_alternative<OwnCar>(message) || std::holds_alternative<Degraded>(message) ||
+         std::holds_alternative<NpcScale>(message) || std::holds_alternative<NpcVendor>(message) ||
+         std::holds_alternative<ThrowPath>(message) || std::holds_alternative<NpcPlaced>(message) ||
+         std::holds_alternative<NpcDeath>(message) || std::holds_alternative<Race>(message) ||
+         std::holds_alternative<WeakSpotHit>(message) ||
          std::holds_alternative<HackTraced>(message) ||
          std::holds_alternative<TrafficLights>(message) ||
          std::holds_alternative<CorpsePose>(message);
@@ -937,7 +971,12 @@ const char *NameOfKind(std::size_t kind) {
                                    "Degraded",
                                    "TrafficLights",
                                    "NpcVoice",
-                                   "CorpsePose"};
+                                   "CorpsePose",
+                                   "OwnCar",
+                                   "OpenWorldDone",
+                                   "PropStates",
+                                   "PropRest",
+                                   "PropPush"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

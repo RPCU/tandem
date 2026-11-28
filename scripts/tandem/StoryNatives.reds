@@ -29,6 +29,15 @@ public native struct TandemScenePlace {
   native let r: Float;
 }
 
+// One activity pin to set (docs/architecture/story.md, "Open-world
+// activities"): its marker (journal path hash) to `phase`
+// (gamedataMappinPhase); `track`: the player's track given back after.
+public native struct TandemActivityStep {
+  native let marker: Uint32;
+  native let phase: Int32;
+  native let track: Bool;
+}
+
 public native struct TandemStoryEvent {
   // 1 in the session (player: us, hash: the host), 2 session ended,
   // 3 player joined, 4 player left;
@@ -59,6 +68,8 @@ public native struct TandemStoryEvent {
   // made true in our world by TandemStory.PrefabsTick);
   // 46 a player's story gates (player, flags: 1 the Watson lockdown lifted,
   // 2 Dogtown open, 4 its V in Watson, 8 in Dogtown);
+  // 47 the host's open-world activities done changed (player: the host,
+  // index: how many; shown on our pins by TandemStory.ActivitiesSteps);
   // scene replay (a guest; docs/architecture/scene-replay.md):
   // 50 the host's scene begins (line: the scene, hash: its play, state: the
   // host's tier, flags: 1 skipping 2 held 8 staged, duration: seconds it has
@@ -158,6 +169,22 @@ public native class TandemStory extends IScriptable {
   public static native func PrefabsTick(host: Bool, grouped: Bool) -> Int32;
   public static native func PrefabsLift() -> Int32;
   public static native func PrefabsReport() -> String;
+  // Open-world activities (docs/architecture/story.md, "Open-world
+  // activities"): our activity phases wait (grouped) or run; (host) our
+  // done pins sent when they changed, how many; (guest) the pins to set now,
+  // the leave's, what the host's set added since (to credit), our own phase
+  // of a pin we set (-1 none); a pin's phase the engine's way; a pin
+  // tracked again the engine's way (the MappinSystem, the pin's
+  // NewMappinID value); a line for the logs.
+  public static native func ActivitiesGrouped(grouped: Bool) -> Void;
+  public static native func ActivitiesSend(markers: array<Uint32>, phases: array<Int32>) -> Int32;
+  public static native func ActivitiesSteps(grouped: Bool, markers: array<Uint32>, phases: array<Int32>, tracked: array<Bool>) -> array<TandemActivityStep>;
+  public static native func ActivitiesLift() -> array<TandemActivityStep>;
+  public static native func ActivitiesAdded() -> array<Uint32>;
+  public static native func ActivityOwnPhase(marker: Uint32) -> Int32;
+  public static native func SetPoiPhase(mappin: ref<IMappin>, phase: Int32) -> Bool;
+  public static native func TrackPin(system: ref<MappinSystem>, id: Uint64) -> Bool;
+  public static native func ActivitiesReport() -> String;
   // Story gates (docs/architecture/story.md, "Story gates"): ours sent when
   // they changed; a player's as heard (-1 never); the gates the host's story
   // has open and the guest's closed (1 Watson, 2 Dogtown); (guest) the gate

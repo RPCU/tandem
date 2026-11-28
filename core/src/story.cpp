@@ -73,6 +73,15 @@ bool Record::Note(const proto::Message &message) {
     m_prefabs = *prefabs;
     return changed;
   }
+  if (const auto *done = std::get_if<proto::OpenWorldDone>(&message)) {
+    // The whole set each time, as the prefabs: a repeat changes nothing.
+    // The first one, an empty one too, is news: a guest's mirror waits for
+    // the host's word before it shows anything (openworld::Mirror).
+    const bool changed = !m_openWorldSaid || done->markers != m_openWorld.markers;
+    m_openWorld = *done;
+    m_openWorldSaid = true;
+    return changed;
+  }
   if (const auto *gates = std::get_if<proto::StoryGates>(&message)) {
     const auto it = m_gates.find(gates->player);
     const bool changed = it == m_gates.end() || it->second != *gates;
@@ -179,6 +188,12 @@ std::uint32_t Record::Digest(const std::function<bool(proto::NpcId)> &shown) con
   hash.Add(std::uint64_t{m_prefabs.prefabs.size()} | std::uint64_t{1} << 40);
   for (const auto prefab : m_prefabs.prefabs)
     hash.Add(prefab);
+  // The host's open-world activities done: one lost would show a done
+  // hustle open on a guest's map (and run it) for good.
+  hash.Add(std::uint64_t{m_openWorld.markers.size()} | std::uint64_t{1} << 41 |
+           std::uint64_t{m_openWorldSaid} << 42);
+  for (const auto marker : m_openWorld.markers)
+    hash.Add(std::uint64_t{marker});
   return hash.Value();
 }
 
@@ -232,6 +247,8 @@ std::vector<proto::Message> Record::ForJoiner(std::uint64_t hostNowUs) const {
     out.push_back(m_restrictions);
   if (PrefabsOn())
     out.push_back(m_prefabs);
+  if (m_openWorldSaid)
+    out.push_back(m_openWorld);
   for (const auto &[player, gates] : m_gates)
     out.push_back(gates);
   if (m_scene) {

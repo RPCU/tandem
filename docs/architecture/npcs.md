@@ -400,8 +400,8 @@ same|differs, on its first tick: same`, debug) and every 2 s within
 
 ## Voices
 
-`scripts/tandem/NpcVoices.reds`, `proto::NpcVoice` (protocol 23; not yet
-run in game). An NPC's barks start in the game's scripts through
+`scripts/tandem/NpcVoices.reds`, `proto::NpcVoice` (protocol 23; voice
+triggers protocol 30; not yet run in game). An NPC's barks start in the game's scripts through
 `GameObject.PlayVoiceOver` (70 callers in 2.50: `OnHit`'s
 `vo_any_damage_hit`, the hit reaction component's pain by zone, death
 (`stlh_death`, `start_dead`), combat start, the squad's warnings, fear,
@@ -432,14 +432,31 @@ NPC's own voice. A proxy has no brain to start them.
   (`TandemPresence.IsNpcProxy`, lock-free): the owner's line says it; one
   the engine itself starts on a proxy (its brain is off: rare) cannot be
   held back from the event (a handler cannot cancel it) and is heard.
-- **Not covered**: `entTriggerVOEvent` lines (a trigger's base name and
-  variation, also queued on the entity by the engine's voice interface,
-  §13.159: `NpcVoice` has no field for them, a protocol change; which
-  lines use them is not known), scene lines (`scene-replay.md`'s), and
-  `answeringEntityID` (a squad's reply to another NPC: sent with none).
+- **Voice triggers** (protocol 30): the lines the audio system picks for
+  an NPC itself, its combat and idle chatter (the combat VO manager's
+  triggers, each with its variations: research §13.172), reach the NPC as
+  another event, `entTriggerVOEvent`: a base name, the variation picked
+  and their number, the VO context it overrides with. A second handler
+  (`OnTandemTriggerVo`) queues each (`QueueNpcTriggerVoice`, queue only);
+  the tick sends ours as `NpcVoice` with `kVoiceTrigger` (`context` the
+  base name; `variation`, `variations`, `voContext`), under the same
+  limits. Every proxy queues the same event, that very variation, the
+  way the engine's voice interface queues it (`TandemNpcVoices.Trigger`,
+  tagged `Scripts:TandemNpcVoice`, which our handler lets by). A trigger
+  our own game's audio picks for a proxy cannot be held back (an event)
+  and is heard beside the owner's: counted (`a proxy's own` in the
+  report; the first logged) to learn whether it happens.
+- **Not covered**: `answeringEntityID` (a squad's reply to another NPC:
+  sent with none) and the trigger event's 20 unnamed bytes (`+0x50`, from
+  the audio system's request: left zero, §13.172). Scene lines are scene
+  replay's (`SceneLine`, the dialog line event queued on the speaker's
+  proxy: `scene-replay.md`), barks of a scene too.
 - To hear in game: the proxy says the line the owner's NPC said, once, in
   the guest's language; nothing doubled when the guest shoots a proxy
-  (`presence-npc-voices` checks the path; ears check the rest).
+  (`presence-npc-voices` checks the path, the triggers' too;
+  `presence-npc-voices-host` the owner's handler and send of a trigger;
+  ears check the rest, and a fight with the host's NPCs names the real
+  triggers: `voice: npc N says trigger NAME`).
 
 ## When an NPC's animation is read
 

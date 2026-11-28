@@ -138,7 +138,7 @@ The owner simulates; everyone else displays.
 | a shop: a vendor's stock, prices, sold items (vendors, ripperdocs, vending machines) | each player's game (save) | the vendor NPC is the world's; beside a partner's vendor, our own game's vendor of the same placed NPC opens; one killed in the session is hidden everywhere (`architecture/progression.md`) |
 | a vehicle someone drives | the driver's game | puppet vehicle, passengers mounted |
 | a car's custom paint (CrystalCoat, TwinTone) | the car's owner's game | every copy of that car painted as said, late joiners too (`architecture/vehicles.md`, Paint) |
-| a player's garage (owned cars, unlocks) | that player's game (save) | a partner may drive one by its owner's word (`lend`); the garage stays the owner's (`architecture/garage.md`) |
+| a player's garage (owned cars, unlocks) | that player's game (save) | a partner may drive one by its owner's word (`lend`); the garage stays the owner's; its summoned car is shown as its car copy from its arrival (`architecture/garage.md`) |
 | a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game | copy, riders and NPCs seated; host's scene: a seat or a ride along |
 | an NCART train (scripted transit) | each rider's own game | never shared: puppet in a train of ours, else hidden |
 | a world vehicle: traffic, parked, police, a wreck, a chase car | the game that runs it: the owner of its area (`Endpoint::AreaOwner`) that announced it, until it is handed over as an NPC is (its riders with it) | proxy, or their own instance of a placed vehicle; the first player to get in has it (`architecture/traffic.md`) |
@@ -146,6 +146,7 @@ The owner simulates; everyone else displays.
 | the session's dead: placed NPCs killed or knocked out (the ledger) | recorded by the NPC's owner, kept by the host for the session | every game keeps its own copy out of its world (hidden, never killed: no save changes), with a body where a recent one fell (`architecture/regions.md` §14) |
 | spawns: crowds, encounters | each game around its own V | held back only where a higher-ranked linked player's region covers it |
 | quests: facts, journal, phases, scenes | host | followed, never run on their own |
+| an NCPD activity (hustle, reported crime, gang watch, outpost, stash): its scene, done | the world of the group's leader: the host's while grouped, a player's own apart | a grouped guest's own activities wait, its map shows the host's done state for the session only, a finish seen with the host credited once (`architecture/story.md`, "Open-world activities") |
 | the story's gameplay restrictions (no weapons, no sprint… during the host's scene) | host (its V's, reported) | worn on its own V by a guest in the host's story moment, taken off when it leaves it (`architecture/story.md`) |
 | the host's scripted moment (a scene, a quest ride, a set piece, another world) | host (read from its V, reported) | a guest in it plays it from its own V; it watches through the host's camera, its own V parked and unseen, only while it cannot take part (a cutscene, another world, the host's V beyond its reach, the quest's camera), back at once after (`architecture/story.md`, "Spectating") |
 | time of day, weather | host | applied |
@@ -167,6 +168,7 @@ The owner simulates; everyone else displays.
 | a V's pings, tags, link consent, waypoint | that player's game | shown; tags only to players linked with it (`architecture/comms.md`) |
 | quest and important items, rewards | every player's own V | whoever gets one, every V gets it; a guest gives the host's quest props (tag `Quest`, keycards) back when it leaves, and keeps iconics and rewards |
 | devices: doors, lifts, cameras, turrets, barrels, the alarm | host | own copy first, then the host's word; `architecture/devices.md` |
+| a placed physics prop something moved (a bin, a crate, a chair): its motion and its rest | the game that runs the area round it (`AreaOwner`), one at a time while it moves; its rest kept by the host for the session | their own instance held to its word, put at its rest; a V's touch on another game's prop is a push to it (`architecture/props.md`); debris with no shared name (car parts, limbs) each game's own |
 | quest prefabs: the interiors and props the host's quests streamed in | host (its quests' prefab handler) | loaded in a grouped guest's world while the host has them, put back apart and on leave (`architecture/story.md`, "Quest prefabs") |
 | a turret's aim and shots | host (its turret); a shot at a V is decided by that V's game | their copy never fires on its own: it draws the host's turret's shots, and fires for real at its own V on the host's word; each game's copy senses its own V and says so |
 | a guest's use of the host's objects while grouped (a quest switch, an objective item, a quest container, a terminal) | host's game: judged from its own data, done by its V on its own copy, first come first served | asks; its own copy does it at once for feel (not what would cast its V); a choice that casts the doer is host-only, greyed "NAME must do this"; apart, or on its own things: its own, as solo (`architecture/story.md`, "Quest interactions") |
@@ -325,6 +327,7 @@ plugin") and its open problems.
 - `combat-coverage.md`: every way of fighting (weapon classes, melee, block and parry, throwables, grenades, launchers, cyberware, quickhacks, environment, finishers) by attacker and target, with its state and evidence; thrown objects' copies, friendly fire, NPC melee at a guest, companions.
 - `stealth.md`: takedowns, finishers, carried bodies, "the player" reactions, per-player detection.
 - `loot.md`: per-player loot, dropped items, quest items.
+- `props.md`: physics props: which ones are shared (placed props something moved, near a V; debris with no shared name is not) and why, the area owner's motion and rest, a push asked of the owner, the session's record of rests, budget, consistency.
 - `devices.md`: doors, lifts, cameras, turrets, the alarm, access points, computers, barrels, media and other devices: the host's word, a guest's own copy first, revisions, digest, a guest's world put back after; glass and breakable scenery (a break told and replayed), a turret's fire (the host's turret's aim and shots drawn on every copy).
 - `revive.md`: down, revive, respawn, shared game over.
 - `story.md`: quest freeze, journal, calls, texts, dialogue, scenes, the story's restrictions on a guest in the host's moment, rewards; open: scenes for guests, story decisions, quests together.

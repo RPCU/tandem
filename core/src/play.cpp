@@ -396,8 +396,10 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
                       std::is_same_v<M, proto::Heat> || std::is_same_v<M, proto::Throw> ||
                       std::is_same_v<M, proto::ThrowEnd> || std::is_same_v<M, proto::Activity> ||
                       std::is_same_v<M, proto::CarLend> || std::is_same_v<M, proto::CarPaint> ||
+                      std::is_same_v<M, proto::OwnCar> ||
                       std::is_same_v<M, proto::StoryRestrictions> ||
                       std::is_same_v<M, proto::WorldPrefabs> ||
+                      std::is_same_v<M, proto::OpenWorldDone> ||
                       std::is_same_v<M, proto::StoryGates>)
           return host(m.player);
         else if constexpr (std::is_same_v<M, proto::VehicleRadio>) {

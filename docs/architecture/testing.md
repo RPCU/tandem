@@ -142,6 +142,26 @@ visits each (`FIXTURES="a b"`, `RADIUS`), notes those lines and a
 screenshot, `glass break` at kabuki-market. Every spot is **unverified**
 until the survey has run in game.
 
+**Spots found in game** (`find_spot KIND MIN MAX`, `tools/scenario.sh`; no
+fixture is known with a barrel, a mine, a sentry or an automatic door):
+our V is put MIN to MAX m from a device of KIND (`device near`'s kinds)
+and the spot kept in this game's `$cache/spots.txt` (`KIND MIN MAX X Y Z`,
+local, tried first next time and checked again). Else it tries every
+fixture, then the `SPOT_TRIES` (16) activity pins nearest our V that
+`cmd fixture pins [N]` lists (`Fixtures.reds`: the NCPD scanner's hustles,
+gang watches, outposts, stashes, through `MappinSystem.GetAllMappins`:
+gang ground, where barrels, traps and sentries stand; `fixture: pin
+VARIANT at D m (X Y Z)` each, then `fixture: pins done`). At each place
+(`at SPOT try`: one V does not reach is skipped) the nearest such device
+within MIN to MAX m is the spot; one farther within 200 m, V goes
+(MIN+MAX)/2 m from it (`device goto KIND M`) and asks again. None anywhere
+fails the scenario. `at_device VAR KIND MIN MAX` takes the scenario's
+`*_AT` when set: `pair-devices-barrel`, `pair-devices-barrel-late`,
+`pair-devices-mine`, `devices-barrel`, `devices-barrel-record` (barrel or
+mine, 10 to 40 m), `pair-turret` (sentry, 10 to 40 m), `turret-host`,
+`turret-guest` (sentry, within 200 m), `pair-devices-autodoor`
+(automatic door, 12 to 40 m). Not yet run in game.
+
 <!-- prettier-ignore -->
 | Fixture | X Y Z yaw | Source | Expected there | Scenarios |
 | --- | --- | --- | --- | --- |
@@ -618,7 +638,9 @@ decline`, `busy KIND|off`, `busy report`, `apartment report`. Scenarios
   `start_combat`, `enemy_warning`, `vo_any_damage_hit`,
   `hit_reaction_heavy`, `fear_beg`, `stlh_death`), `host --corpse-npcs
 N` one die every N s and its body's rest follow 1 s later
-  (`CorpsePose`, a ganger's ragdoll as one lay, where it stood); `--status REC@FROM-TO[,REC@FROM-TO]` puts status effects on its V
+  (`CorpsePose`, a ganger's ragdoll as one lay, where it stood); with
+  `--voice-npcs`, `--voice-trigger NAME` also that voice trigger half a
+  period later (variation 1 to 3 of 3, `kVoiceTrigger`); `--status REC@FROM-TO[,REC@FROM-TO]` puts status effects on its V
   from FROM to TO s after another player is there (no TO: kept), sent as
   `StatusVisuals` for the others' puppet of it to show. Presence, cues,
   status visuals, non-twitch reactions and NPC voice lines it hears are

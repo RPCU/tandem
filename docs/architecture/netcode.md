@@ -45,6 +45,7 @@ wire alongside:
 | fight, 24 NPCs (half walking, all within 35 m) | 137.1 / 187.1 (297.7 with the near ones at 30 Hz) | 59.4 / 83.4 | 63.6 / 125.8 | up: PoseFrame 31.2, PlayerMotion 12.7, Cue 1.6; down: NpcMotion 57.2, PoseFrame 28.5 |
 | a dense street, 96 NPCs (half walking, 45 within 35 m) | 131.5 / 638.9 | — | 57.6 / 245.3 | down: NpcMotion 186.4, PoseFrame 28.5 |
 | a street, 24 cars at 10 m/s (12 within 50 m) | 131.5 / 263.2 | — | 32.7 / 164.1 | down: TrafficStates 129.5, PoseFrame 18.6 |
+| a blast, 16 props fly (protocol 29, `props.md`) | 131.9 / 178.6 | — | 33.1 / 79.5 | down: PropStates 43.6, PoseFrame 18.6, PropRest 0.7; up: PropPush 0.4 |
 | driving, the host a passenger | 147.0 / 131.6 | 52.1 / 41.4 | 60.5 / 45.2 | up: PoseFrame 18.7, VehicleMotion 13.4, PlayerMotion 12.7 |
 | apart (500 m) | 131.5 / 131.7 | 8.6 / 8.8 | 9.2 / 9.5 | PoseFrame 2.9, PlayerMotion 2.1 |
 | 4 players on foot, a guest's link | 133.6 / 386.5 | 54.9 / 145.1 | 59.6 / 157.3 | down: three Vs' PoseFrame 87.0 |

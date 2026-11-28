@@ -183,6 +183,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_radio: ref<TandemRadio>;
   // Cars' custom paint (Paint.reds).
   private let m_paint: ref<TandemPaint>;
+  // Summoned cars (Summons.reds): ours said, the others' shown from their arrival.
+  private let m_summons: ref<TandemSummons>;
   private let m_time: ref<TandemTime>;
   // The NCART, rides and quest vehicles (Transit.reds).
   private let m_transit: ref<TandemTransit>;
@@ -440,6 +442,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_radio.Start(this.GetGameInstance());
     this.m_paint = new TandemPaint();
     this.m_paint.Start(this.GetGameInstance());
+    this.m_summons = new TandemSummons();
+    this.m_summons.Start(this.GetGameInstance());
     this.m_time = new TandemTime();
     this.m_time.Start(this.GetGameInstance());
     this.m_transit = new TandemTransit();
@@ -596,6 +600,7 @@ public class TandemSystem extends ScriptableSystem {
       this.m_radio = null;
     }
     this.m_paint = null;
+    this.m_summons = null;
     if IsDefined(this.m_time) {
       this.m_time.Stop();
       this.m_time = null;
@@ -995,6 +1000,10 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_paint;
   }
 
+  public func Summons() -> ref<TandemSummons> {
+    return this.m_summons;
+  }
+
   // Slowed time (Time.reds), driven by Tick.
   public func TimeSync() -> ref<TandemTime> {
     return this.m_time;
@@ -1282,6 +1291,11 @@ public class TandemSystem extends ScriptableSystem {
       this.m_presence.Tick(this.Now(), this, this.m_you);
     }
     this.FollowLentCars();
+    // Summoned cars (Summons.reds): after the seats (a car its owner got
+    // into is its Seat's), before the held bodies are let go.
+    if IsDefined(this.m_summons) && this.m_playing {
+      this.m_summons.Tick(this.Now(), this.m_you, this);
+    }
     this.TickHeld();
     this.Rebuild();
     TandemNative.PerfMark(11);
@@ -1520,6 +1534,12 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     if StrBeginsWith(command, "garage") {
+      if StrBeginsWith(command, "garage cars") {
+        if IsDefined(this.m_summons) {
+          this.m_summons.Command(command, this);
+        }
+        return;
+      }
       this.LogLends();
       let story = TandemStorySystem.Get(this.GetGameInstance());
       if IsDefined(story) {
@@ -2039,6 +2059,9 @@ public class TandemSystem extends ScriptableSystem {
       // (test, Objects.reds) "glass": counts; "glass break|part": the
       // replay of a break at what V looks at.
       TandemObjectSync.Get(this.GetGameInstance()).Command(command);
+    } else if StrBeginsWith(command, "props") {
+      // (test, Props.reds) "props": counts; "props look|push [M/S]|at HEX".
+      TandemPropSync.Get(this.GetGameInstance()).Command(command);
     } else if StrBeginsWith(command, "takedown") {
       TandemTakedowns.Get(this.GetGameInstance()).Command(command);
     } else if Equals(command, "test reset") {
@@ -2728,6 +2751,103 @@ public class TandemSystem extends ScriptableSystem {
       i += 1;
     }
     return 0u;
+  }
+
+  // A remote player is at the wheel of this car here (Summons.reds: a
+  // partner drives a summoned car by its owner's word).
+  public func PartnerAtWheel(id: EntityID) -> Bool {
+    return this.DrivenByOther(id, 0u);
+  }
+
+  // Our garage's summoned car (Summons.reds): the car of our own a partner
+  // may drive while we are away from it (FollowLentCars), as the last one
+  // our V drove is, while our V sits in no car.
+  public func NoteOwnCar(id: EntityID) -> Void {
+    let game = this.GetGameInstance();
+    let player = GetPlayer(game);
+    let car: wref<VehicleObject>;
+    if IsDefined(player) && !VehicleComponent.GetVehicle(game, player, car) {
+      this.m_ownCar = id;
+    }
+  }
+
+  // A copy of `owner`'s car made for its summoned car (Summons.reds): a
+  // parked copy of theirs, as one they left (their Seat takes it again).
+  public func ParkCopy(id: EntityID, owner: Uint32) -> Void {
+    ArrayPush(this.m_parked, id);
+    ArrayPush(this.m_parkedOwner, owner);
+    ArrayPush(this.m_parkedOwners, owner);
+  }
+
+  // A remote player's puppet sits in this car here.
+  public func SeatedInBy(id: EntityID) -> Bool {
+    for puppet in this.m_puppets {
+      if EntityID.IsDefined(puppet.seatedIn) && puppet.seatedIn == id {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // A partner's old summoned car (Summons.reds Sweep): deleted when it is no
+  // one's car here (no puppet drives it, no leaving puppet's removal holds
+  // it), nobody sits in it, and our V is not in it; out of the parked list.
+  // Its caller has seen it free of anyone for TandemSummons.FreeSeconds (a
+  // copy freed 0.3 s after an unmount froze the game: engine/vehicles.md
+  // §13.101). False: kept.
+  public func RemoveOldCopy(id: EntityID) -> Bool {
+    let game = this.GetGameInstance();
+    if !EntityID.IsDefined(id) || this.CarOwner(id) != 0u || this.SeatedInBy(id) {
+      return false;
+    }
+    for gone in this.m_leaving {
+      if gone.car == id {
+        return false;
+      }
+    }
+    let player = GetPlayer(game);
+    let car = TandemTraffic.Body(game, id);
+    if IsDefined(car) && VehicleComponent.IsVehicleOccupied(game, car) {
+      return false;
+    }
+    if IsDefined(player) && IsDefined(car) && VehicleComponent.IsMountedToProvidedVehicle(game, player.GetEntityID(), car) {
+      return false;
+    }
+    let i = ArrayFindFirst(this.m_parked, id);
+    if i >= 0 {
+      ArrayErase(this.m_parked, i);
+      if i < ArraySize(this.m_parkedOwner) {
+        ArrayErase(this.m_parkedOwner, i);
+      }
+      if i < ArraySize(this.m_parkedOwners) {
+        ArrayErase(this.m_parkedOwners, i);
+      }
+    }
+    TandemEntities.Delete(id);
+    return true;
+  }
+
+  // The parked copy of `owner`'s car of that record nearest to `near` (30 m
+  // at most), out of the parked list: its owner gets back in (Reseat).
+  private func TakeParkedCopy(owner: Uint32, record: TweakDBID, near: Vector4) -> EntityID {
+    let none = EntityID.FromHash(0ul);
+    let car = this.ParkedCopyOf(owner, record, near);
+    if !IsDefined(car) {
+      return none;
+    }
+    let id = car.GetEntityID();
+    let i = ArrayFindFirst(this.m_parked, id);
+    if i < 0 {
+      return none;
+    }
+    ArrayErase(this.m_parked, i);
+    if i < ArraySize(this.m_parkedOwner) {
+      ArrayErase(this.m_parkedOwner, i);
+    }
+    if i < ArraySize(this.m_parkedOwners) {
+      ArrayErase(this.m_parkedOwners, i);
+    }
+    return id;
   }
 
   // A remote player other than `owner` is at the wheel of this car here.
@@ -3762,8 +3882,16 @@ public class TandemSystem extends ScriptableSystem {
         at = body.GetWorldPosition();
       }
       at.W = 1.0;
-      puppet.car = TandemVehicles.SpawnCopy(record, at, TandemNative.RemoteVehicleOrientation(puppet.player));
-      TandemNative.Log(s"player \(puppet.player): drives \(TDBID.ToStringDEBUG(record)), copy spawning");
+      // Its own car we have a copy of already (its summoned car, the one it
+      // left parked): that body, never a second one on top of it.
+      let parked = this.TakeParkedCopy(puppet.player, record, at);
+      if EntityID.IsDefined(parked) {
+        puppet.car = parked;
+        TandemNative.Log(s"player \(puppet.player): drives \(TDBID.ToStringDEBUG(record)), its parked copy");
+      } else {
+        puppet.car = TandemVehicles.SpawnCopy(record, at, TandemNative.RemoteVehicleOrientation(puppet.player));
+        TandemNative.Log(s"player \(puppet.player): drives \(TDBID.ToStringDEBUG(record)), copy spawning");
+      }
     }
     puppet.seatedSlot = TandemNative.RemoteSeatSlot(puppet.player);
     puppet.wantsSeat = true;

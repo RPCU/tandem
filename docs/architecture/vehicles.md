@@ -16,7 +16,9 @@
   are never deleted while the game runs (deleting one that
   had someone seated in it froze the game): a car someone got out of stays
   parked (what crashed, and a guarded deletion to prove in game:
-  engine-knowledge §13.101). Puppets leave in steps over several frames (out of the seat, then
+  engine-knowledge §13.101). The one exception, that guarded deletion: a
+  partner's old summoned car, once out of sight and free for 5 s
+  (`garage.md` 1a, "Old"). Puppets leave in steps over several frames (out of the seat, then
   the body). A V downed in a seat stays in it, is revived from beside the
   car, and an out V may respawn into a partner's free seat
   ([`revive.md`](revive.md)).
@@ -231,10 +233,13 @@ seat|stream` (a seated puppet's hips: their height only, or its
   `lend`) and, allowed, its game drives the copy and sends its
   `VehicleState`, its `Seat` naming the owner. The other games move their
   copy of that car to the driver's state (`FollowLentCars`), the owner's
-  game its real car (the last own car its V drove), and stop following
-  the owner's state for it. An owner riding in its own car with nobody at
-  the wheel sends its car's state, so a car a partner parked stays where
-  it stopped.
+  game its real car (the last own car its V drove, or its summoned car),
+  and stop following the owner's state for it. An owner riding in its own
+  car with nobody at the wheel sends its car's state, so a car a partner
+  parked stays where it stopped. A player's summoned car is its car copy
+  from its arrival (`garage.md` 1a, `Summons.reds`): a parked copy of that
+  player's; an owner getting back into a car it left takes that parked
+  copy (within 30 m) rather than spawning a second one.
 - **Radio** (`scripts/tandem/Radio.reds`, engine-knowledge §13.43): the
   driver owns the car's radio. While our V drives its own car, our game
   reads the car's receiver four times a second (on, station as an

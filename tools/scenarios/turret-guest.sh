@@ -2,14 +2,14 @@
 # shellcheck shell=bash disable=SC2317,SC2154
 # Where: TURRET_AT (a fixture or "X Y Z": a security turret we follow, a
 # "sentry", within 200 m: V goes beside it, and `turret provoke` makes it
-# take V; default arasaka-park; the police's are not followed, as
+# take V; unset: find_spot sentry 0 200; the police's are not followed, as
 # turret-host). V is shot at: the test reset's god mode keeps it alive.
 # To look at: `turret shot` first: the copy turns to what V looks at and one
 # tracer leaves its barrels. Then the copy locks V, stays silent for half a
 # second (the host's word on its way), and fires ten shots at V with its
 # own tracers and sounds; V's health falls by our own game's hits.
 ensure join
-at "${TURRET_AT:-arasaka-park}"
+at_device TURRET_AT sentry 0 200
 peer host --mode idle --body female --turret-shots 10 --device-answer on
 expect 'in the session as player' 30
 mark

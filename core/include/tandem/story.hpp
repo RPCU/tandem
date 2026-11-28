@@ -30,8 +30,10 @@ public:
   // journal and the tracked entry, what lasts and what a resync (ForJoiner)
   // sends whole, the scene that plays with its cast (a lost end would hold
   // a guest's proxies for good), the host's story restrictions (a lost
-  // lift would keep a guest's weapons away for good) and its world prefabs
-  // (a lost change would keep an interior loaded, or missing, for good). Calls, hubs, effects and
+  // lift would keep a guest's weapons away for good), its world prefabs
+  // (a lost change would keep an interior loaded, or missing, for good) and
+  // its open-world activities done (a lost one would show a done hustle
+  // open on a guest's map for good). Calls, hubs, effects and
   // lines are short-lived and sent again on every change; StoryStates and StoryGates are left out
   // (a guest is never sent its own). `shown`: the NPCs the digest's viewer is
   // told of (the host's digest for one guest: its cast and props name only
@@ -56,6 +58,11 @@ public:
   // The host's quests have prefabs loaded now (WorldPrefabs).
   bool PrefabsOn() const { return !m_prefabs.prefabs.empty(); }
   const proto::WorldPrefabs &Prefabs() const { return m_prefabs; }
+  // The host's world has open-world activities done (OpenWorldDone);
+  // its set was said at all (an empty one too: a joiner is told none).
+  bool OpenWorldOn() const { return !m_openWorld.markers.empty(); }
+  bool OpenWorldSaid() const { return m_openWorldSaid; }
+  const proto::OpenWorldDone &OpenWorld() const { return m_openWorld; }
   // A player's story gates as last said (none: never said).
   std::optional<proto::StoryGates> GatesOf(proto::PlayerId player) const;
 
@@ -74,6 +81,8 @@ private:
   std::vector<proto::SceneLine> m_lines;                // begun and not cut, newest last
   proto::StoryRestrictions m_restrictions;              // on the host's V now (empty: none)
   proto::WorldPrefabs m_prefabs;                        // the host's quests' now (empty: none)
+  proto::OpenWorldDone m_openWorld;                     // the host's activities done (empty: none)
+  bool m_openWorldSaid{};                               // ...said at all this session
   std::map<proto::PlayerId, proto::StoryGates> m_gates; // every player's, as said
 };
 // How many begun lines the record keeps (ForJoiner leaves out the ones that

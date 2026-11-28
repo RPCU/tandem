@@ -43,6 +43,8 @@ constexpr Info kCatalogue[] = {
     {"ragdoll state", Degraded, State,
      "bodies are neither read nor laid as their owner's lie: each copy lies as its own fall left "
      "it"},
+    {"activity marks", Degraded, State,
+     "a grouped guest's map shows its own NCPD activities, not the host's world's"},
     // ---- states the plugin and the scripts find ----
     {"drawn prompts", Degraded, State,
      "prompts on players and vendors are drawn by tandem, not the game's interactions"},
@@ -53,6 +55,8 @@ constexpr Info kCatalogue[] = {
     {"scene voice", Degraded, State, "V's voice in a replayed scene is the game's pick"},
     {"nameplate projection", Degraded, State,
      "nameplates are placed by tandem's own projection, not the engine's"},
+    {"prop velocity", Degraded, State,
+     "a push on a prop another game runs is given as an impulse of a nominal mass"},
     // ---- fallbacks: a lesser path taken for one body, once ----
     {"prompt drawn", Degraded, Fallback, "one body's prompt is drawn, not the game's own"},
     {"vehicle teleported", Degraded, Fallback,
@@ -98,6 +102,18 @@ constexpr Info kCatalogue[] = {
     {"puppet not driven", Degraded, Fallback, "a puppet has no move component to drive"},
     {"hit shown by twitch", Degraded, Fallback,
      "a hit a V took is shown as the body's twitch: the game's pipeline played nothing"},
+    {"summoned car unseen", Degraded, Fallback,
+     "a partner's summoned car has no copy here: it appears when they get in"},
+    {"activity not marked", Degraded, Fallback,
+     "one NCPD activity's map pin would not take the host's state: it shows our own"},
+    {"activity untracked", Degraded, Fallback,
+     "an NCPD activity the player tracked, shown done during the session, is not tracked again"},
+    {"prop not held", Degraded, Fallback,
+     "another game's moving prop has no such body here: ours stays where it is"},
+    {"prop put back", Degraded, Fallback,
+     "a prop our game touched in another game's area got no word from it: put back"},
+    {"prop not recorded", Degraded, Fallback,
+     "the session's record of moved props is full: a player who comes later sees it unmoved"},
 };
 
 std::size_t OrderOf(std::string_view id) {
