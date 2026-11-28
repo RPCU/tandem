@@ -140,6 +140,7 @@ public native class TandemPresence extends IScriptable {
   public static native func TakeCorpses() -> array<TandemCorpse>;
   public static native func LayCorpse(npc: Uint32, entity: ref<Entity>) -> String;
   public static native func CorpseApart(npc: Uint32, entity: ref<Entity>) -> Float;
+  public static native func CorpseDrift(npc: Uint32, entity: ref<Entity>) -> Float;
   public static native func ForgetCorpse(npc: Uint32) -> Void;
   public static native func Status(life: Int32, place: Int32, tier: Int32, storyFlags: Int32, paused: Bool, flags: Int32) -> Int32;
   public static native func Bearing(camera: Vector4, forward: Vector4, halfFov: Float, target: Vector4) -> TandemBearing;

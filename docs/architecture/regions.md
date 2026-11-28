@@ -329,36 +329,37 @@ companions, the session lost.
 
 ### Corpses
 
-`scripts/tandem/Corpses.reds`, `proto::CorpsePose` (protocol 24; not yet
-run in game). A death is its owner's word, and every game ragdolls its own
-copy: the same body came to rest another way on each screen. The owner's
-body is the truth.
+`scripts/tandem/Corpses.reds`, `engine/ragdoll.cpp`, `proto::CorpsePose`
+(protocol 24; run in game on instances a and c, `tools/pairs/corpse-pose.sh`).
+A death is its owner's word, and every game ragdolls its own copy: the same
+body came to rest another way on each screen. The owner's body is the
+truth, and it crosses as the game's cut multiplayer replicated a ragdoll:
+each of its bodies' transforms (`entRagdollComponentReplicatedState`'s read
+and apply, research `engine/presence.md` §13.162).
 
 - **The owner**: each shared NPC it reports dead or knocked out is
-  watched; once still (3 s after the fall, under 2 cm for 1 s; or 8 s after), its pose
-  is read once with the scene actors' read (`TandemPresence.ReadCorpse`,
-  `engine::SetPoseActorSource`, diverted from the scene stream by
-  `Runtime::ReadCorpse`) and sent with the entity's place and heading
-  (`SendCorpse`), an `IsCombat` message: the corpse's owner's word, as its
-  wounds (`Endpoint::SpeaksFor`), to the games linked with it. A body
-  whose pose is not read within 2 s (not the humanoid rig): `corpse pose`
-  fallback.
-- **Every other game**: its copy is laid where the owner's lies when it
-  is more than 0.3 m off (the teleportation facility), and drawn in the
-  owner's pose by the scene actors' write, held (`BindCorpse`,
-  `Runtime::ActorPoseOf` returns the corpse's pose when no scene streams
-  that NPC) while the copy is there. Six at most at once: a seventh lets
-  go of the farthest beyond 50 m, else stays as its ragdoll left it
-  (`corpse pose`).
+  watched; once still (3 s after the fall, under 2 cm for 1 s; or 8 s
+  after), its ragdoll's bodies are read (`TandemPresence.SendCorpse`) and
+  sent with the entity's place and heading, each body as cm from that
+  place and a quaternion (14 bytes; a ganger's ragdoll fits a datagram),
+  an `IsCombat` message: the corpse's owner's word, as its wounds
+  (`Endpoint::SpeaksFor`), to the games linked with it. Watched 20 s from
+  the fall: a body that slides on more than 10 cm from what was sent is
+  sent again (`CorpseDrift`, 3 times at most). A body whose ragdoll cannot
+  be read: `corpse pose` fallback.
+- **Every other game**: its copy's ragdoll's bodies are set where the
+  owner's lie, at rest (`LayCorpse`), when the copy is there (or comes
+  again), once more 1 s after (its own fall may still move it), then it
+  sleeps (`RagdollPutToSleepEvent`). A copy whose ragdoll has other bodies
+  (another rig) or none keeps its own fall's (`corpse pose`). No cap: a lay
+  is a one-off write, nothing is held per frame. `test query corpses`
+  reads every copy's bodies back against its owner's (`CorpseApart`).
+- **Measured** (2026-11-28, three gangers thrown): copies within 0.01 and
+  0.03 m of the owner's bodies; one still sliding when read, 0.46 m (then
+  sent again since).
 - **Not kept**: a game that links later, or joins, sees its own ragdoll's
   rest (as before); the ledger's bodies are still "a place of death" (§14).
   Idempotent: a repeat lays the body the same way.
-- **To prove in game**: whether the actor read after the entity job sees a
-  ragdoll's settled bones, and whether the commit's write shows over the
-  copy's own ragdoll (both measured on scene actors only, never on a
-  ragdoll), and whether a body thrown farther than 4 m from its entity's
-  place (the hips' range, `kPoseHipsScale`) is drawn right; `corpse-rest`
-  checks the path, eyes the rest.
 
 ## 6. Crowd density
 

@@ -23,7 +23,7 @@ minute; last: only side by side).
 | --- | --- | --- | --- | --- | --- |
 | 1 | NPC voices: combat barks, pain, civilians' chatter and screams | partly (not run in game) | the owner's word on each line its NPC's script starts (`NpcVoice`, `npcs.md` "Voices"), said by every proxy's own voice; lines the engine starts without the script call are each game's (none on a proxy); scene lines are replayed (`scene-replay.md`) | — once heard; a bark the engine starts natively is missing on the partner's proxy | not readable (audio) |
 | 2 | Traffic, parked cars, car colours and lights, traffic and walk lights, pop-in, one-sided collisions | partly | area owner's (`traffic.md`); traffic lights and the owner's looks and headlights on proxies are on branch `rides-b` (`TrafficLights`, `npc list`), being fixed on instances a/c | cars appear, differ in colour, lights disagree, a car hit on one screen only | `street-compare.py`, spawned |
-| 3 | Corpses: where they lie and their pose | partly (not run in game) | a death is the owner's word; every game ragdolls its own proxy, then lays it where the owner's body lies, in its rest pose (`CorpsePose`, `regions.md` §5, "Corpses"); a late linker sees its own ragdoll's; a ledger body is laid down with no death played (`regions.md` §14: "a place of death, not a ragdoll's pose") | the same body sprawled another way, metres apart after a blast, a fall or a car; a body that slid down stairs on one screen only | placed, spawned (position) |
+| 3 | Corpses: where they lie and their pose | same (run in game 2026-11-28: copies within 0.01–0.03 m) | a death is the owner's word; every game ragdolls its own proxy, then sets its ragdoll's bodies where the owner's lie, the cut multiplayer's replicated ragdoll state (`CorpsePose`, `regions.md` §5, "Corpses"); a late linker sees its own ragdoll's; a ledger body is laid down with no death played (`regions.md` §14: "a place of death, not a ragdoll's pose") | the same body sprawled another way, metres apart after a blast, a fall or a car; a body that slid down stairs on one screen only | placed, spawned (position) |
 | 4 | Physics props and debris: bins, crates, cones, cans, car parts, limbs | different | no owner, no sync (`world.md`, open: "which ones … is to decide"); each game's physics pushes its own; a destroyed car's parts fly per game (`traffic.md`, Explosions) | a bin knocked over on one screen stands on the other; debris lies elsewhere; the partner walks through a crate that is not there for it | not readable (no targeting component) |
 | 5 | A player's summoned car (driving in, parked) | different | seen by the others "only once its owner sits in it" (`garage.md` row 1a, open) | the partner's car appears from nothing when they get in; while it drives up, nothing comes | spawned |
 | 6 | Decals: blood, bullet holes, scorch | partly | each game draws its own: a puppet's shot is a real NPC shot on the partner's game, with its impact and decal (`presence.md` §3); a proxy's hit reactions are its owner's word, their blood each game's; scorch follows the explosion each game runs | holes roughly where the shots went; blood pools under bodies that lie elsewhere (row 3); a long fight's walls differ in detail | not readable |
@@ -61,10 +61,9 @@ view, time bubbles (`time.md`), a V's own body (`players.md`).
    in game): the owner's script-started lines on every proxy's own voice.
    Left: lines the engine starts natively, and hearing it.
 2. **Traffic and the street** (row 2): the other agent's work.
-3. **Corpse poses** (row 3): built (`CorpsePose`, protocol 24: the
-   owner's settled body read and drawn on every copy with the scene
-   actors' pose machinery), not run in game: whether a ragdoll's bones
-   read and write there is to see.
+3. **Corpse poses** (row 3): done (`CorpsePose`, protocol 24: the
+   owner's settled ragdoll's bodies set on every copy's ragdoll, research
+   §13.162; `tools/pairs/corpse-pose.sh`). Left: a game that links later.
 4. **Physics props** (row 4): no owner today. A first step is the props
    a V or a car touched near both Vs, as a placed entity's transform.
 5. **The summoned car** (row 5): share it as a parked vehicle from its

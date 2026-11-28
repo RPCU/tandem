@@ -6,8 +6,10 @@
 // settled (3 s after it fell and still for 1 s, or 8 s after), its owner
 // reads its ragdoll's bodies, as the game's cut multiplayer replicated a
 // ragdoll (research engine/presence.md §13.162), and sends them with the
-// body's place, once. Every game that shows it sets its copy's ragdoll's
-// bodies there, at rest, and lets it sleep: the copy lies as the owner's.
+// body's place; a body that slides on more than 10 cm within 20 s of its
+// fall is sent again (3 times at most). Every game that shows it sets its
+// copy's ragdoll's bodies there, at rest, and lets it sleep: the copy lies
+// as the owner's.
 // A body that cannot be read or laid keeps its own fall's, registered
 // (`corpse pose`).
 
@@ -17,6 +19,9 @@ public class TandemCorpseWatch {
   public let since: Float;
   public let stillSince: Float;
   public let last: Vector4;
+  // Sent (how many times), and when its drift was last measured.
+  public let sends: Int32;
+  public let checkedAt: Float;
 }
 
 public class TandemCorpseShown {
@@ -101,7 +106,10 @@ public class TandemCorpses {
     let kept: array<ref<TandemCorpseWatch>>;
     for watch in this.m_watched {
       let body = GameInstance.FindEntityByID(this.m_game, watch.id) as ScriptedPuppet;
-      if IsDefined(body) {
+      if !IsDefined(body) || now - watch.since > 20.0 {
+        // Gone, or long at rest: no more watched.
+        TandemPresence.ForgetCorpse(watch.npc);
+      } else if watch.sends == 0 {
         let at = body.GetWorldPosition();
         if Vector4.Distance(at, watch.last) > 0.02 {
           watch.last = at;
@@ -109,20 +117,38 @@ public class TandemCorpses {
         }
         // 3 s at least: the entity may stand still while its ragdoll falls.
         if (now - watch.since >= 3.0 && now - watch.stillSince >= 1.0) || now - watch.since >= 8.0 {
-          this.Send(watch, body, at, now);
+          if this.Send(watch, body, now) {
+            ArrayPush(kept, watch);
+          }
         } else {
           ArrayPush(kept, watch);
         }
+      } else if now - watch.checkedAt >= 1.0 {
+        watch.checkedAt = now;
+        let drift = TandemPresence.CorpseDrift(watch.npc, body);
+        if drift > 0.1 && watch.sends < 4 {
+          TandemNative.LogDebug(s"corpse: npc \(watch.npc) slid \(FloatToStringPrec(drift, 2)) m after it was sent: sent again");
+          this.Send(watch, body, now);
+        }
+        ArrayPush(kept, watch);
+      } else {
+        ArrayPush(kept, watch);
       }
     }
     this.m_watched = kept;
   }
 
-  private func Send(watch: ref<TandemCorpseWatch>, body: ref<ScriptedPuppet>, at: Vector4, now: Float) -> Void {
+  private func Send(watch: ref<TandemCorpseWatch>, body: ref<ScriptedPuppet>, now: Float) -> Bool {
+    let at = body.GetWorldPosition();
     let why = TandemPresence.SendCorpse(watch.npc, body, at, Deg2Rad(body.GetWorldYaw()));
     if NotEquals(why, "") {
       TandemDegraded.Fallback("corpse pose", s"npc \(watch.npc): its body could not be read (\(why)); the other games' copies lie as their own falls left them");
-      return;
+      return false;
+    }
+    watch.sends += 1;
+    watch.checkedAt = now;
+    if watch.sends > 1 {
+      return true;
     }
     this.m_sent += 1;
     let line = s"corpse: npc \(watch.npc) at rest after \(FloatToStringPrec(now - watch.since, 1)) s: its bodies sent";
@@ -131,6 +157,7 @@ public class TandemCorpses {
     } else {
       TandemNative.LogDebug(line);
     }
+    return true;
   }
 
   // ---- every other game: the bodies told, laid on our copies ----
@@ -229,8 +256,24 @@ public class TandemCorpses {
     return true;
   }
 
+  // The counts, then every copy here: how far its ragdoll's bodies lie now
+  // from its owner's last word, read from the ragdoll itself.
   public func Report() -> Void {
-    TandemNative.Log(s"corpse: sent \(this.m_sent) (our NPCs' bodies), laid \(this.m_laid) (copies; the worst \(FloatToStringPrec(this.m_worst, 2)) m from its owner's), \(ArraySize(this.m_shown)) told, \(ArraySize(this.m_watched)) settling");
+    TandemNative.Log(s"corpse: sent \(this.m_sent) (our NPCs' bodies), laid \(this.m_laid) (copies; the worst \(FloatToStringPrec(this.m_worst, 2)) m from its owner's when measured), \(ArraySize(this.m_shown)) told, \(ArraySize(this.m_watched)) watched");
+    let system = TandemSystem.Of(this.m_game);
+    let npcs = IsDefined(system) ? system.NpcsSync() : null;
+    if !IsDefined(npcs) {
+      return;
+    }
+    for shown in this.m_shown {
+      let id = npcs.ProxyEntity(shown.npc);
+      let body = GameInstance.FindEntityByID(this.m_game, id) as ScriptedPuppet;
+      if IsDefined(body) {
+        TandemNative.Log(s"corpse: proxy \(shown.npc) now \(FloatToStringPrec(TandemPresence.CorpseApart(shown.npc, body), 2)) m from its owner's body (laid \(shown.lays) times)");
+      } else {
+        TandemNative.Log(s"corpse: proxy \(shown.npc) has no copy here");
+      }
+    }
   }
 
   private func Now() -> Float {
