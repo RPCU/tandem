@@ -26,8 +26,9 @@ public:
   std::vector<proto::Message> TakeOutbound();
   // Net thread: the session's rules as the endpoint knows them now.
   void SetRules(proto::Rules rules) {
-    m_rules.store(static_cast<std::uint16_t>(rules.flags | rules.enemyHealth << 8),
-                  std::memory_order_relaxed);
+    m_rules.store(
+        static_cast<std::uint32_t>(rules.flags | rules.enemyHealth << 8 | rules.levelGap << 16),
+        std::memory_order_relaxed);
   }
 
   // Game thread. A throw that waited longer than combat::kThrowStaleUs (a
@@ -37,7 +38,8 @@ public:
   proto::Rules Rules() const {
     const auto rules = m_rules.load(std::memory_order_relaxed);
     return {.flags = static_cast<std::uint8_t>(rules & 0xFF),
-            .enemyHealth = static_cast<std::uint8_t>(rules >> 8)};
+            .enemyHealth = static_cast<std::uint8_t>((rules >> 8) & 0xFF),
+            .levelGap = static_cast<std::uint8_t>((rules >> 16) & 0xFF)};
   }
   // Throws dropped as stale since the start.
   std::uint32_t StaleThrows() const { return m_staleThrows.load(std::memory_order_relaxed); }
@@ -78,9 +80,10 @@ private:
   std::mutex m_lock;
   std::vector<Inbound> m_inbound;
   std::vector<proto::Message> m_outbound;
-  // proto::Rules: its flags, and its enemyHealth above them (none said yet:
-  // every flag off).
-  std::atomic<std::uint16_t> m_rules{static_cast<std::uint16_t>(proto::Rules{}.enemyHealth << 8)};
+  // proto::Rules: its flags, its enemyHealth above them, its levelGap above
+  // that (none said yet: every flag off).
+  std::atomic<std::uint32_t> m_rules{
+      static_cast<std::uint32_t>(proto::Rules{}.enemyHealth << 8 | proto::Rules{}.levelGap << 16)};
   std::atomic<std::uint32_t> m_staleThrows{};
 };
 } // namespace tandem::plugin

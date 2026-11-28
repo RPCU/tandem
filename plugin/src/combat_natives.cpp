@@ -245,23 +245,29 @@ struct TandemFight : Red::IScriptable {
         Vec(copy), proto::ThrowPath{.position = Vec(position), .velocity = Vec(velocity)}));
   }
   // Host: the session's rules, sent when they change: ConfiguredRules' word
-  // (proto::kRule* in the low byte, enemyHealth in the next).
+  // (proto::kRule* in the low byte, enemyHealth in the next, levelGap in the
+  // third).
   static void SendRules(std::int32_t rules) {
     Combat::Get().Send(proto::Rules{.flags = static_cast<std::uint8_t>(rules & proto::kRuleFlags),
                                     .enemyHealth = static_cast<std::uint8_t>(std::min<std::int32_t>(
-                                        (rules >> 8) & 0xFF, proto::kMaxEnemyHealth))});
+                                        (rules >> 8) & 0xFF, proto::kMaxEnemyHealth)),
+                                    .levelGap = static_cast<std::uint8_t>(std::min<std::int32_t>(
+                                        (rules >> 16) & 0xFF, proto::kMaxLevelGap))});
   }
   // Host: the rules tandem.ini asks for (friendly_fire, enemy_scaling,
-  // enemy_scaling_health), as one word: one number for the scripts to
-  // compare with what they sent.
+  // enemy_scaling_health, level_gap), as one word: one number for the
+  // scripts to compare with what they sent.
   static std::int32_t ConfiguredRules() {
     const auto &config = Runtime::Get().config;
-    proto::Rules rules{.flags = config.friendlyFire ? proto::kRuleFriendlyFire : std::uint8_t{0}};
+    proto::Rules rules{.flags = config.friendlyFire ? proto::kRuleFriendlyFire : std::uint8_t{0},
+                       .levelGap = config.levelGap};
     rules = scaling::WithRule(rules, config.enemyScaling, config.enemyScalingHealth);
-    return rules.flags | rules.enemyHealth << 8;
+    return rules.flags | rules.enemyHealth << 8 | rules.levelGap << 16;
   }
   // The session's rules as this game knows them: the Vs hurt each other.
   static bool FriendlyFire() { return combat::FriendlyFire(Combat::Get().Rules()); }
+  // The session's level gap as this game knows them (0: the plain mean).
+  static std::int32_t LevelGap() { return Combat::Get().Rules().levelGap; }
   // Guest: a host NPC's attack on our V was blocked (1) or parried (2) here.
   static void SendDefended(std::uint32_t npc, std::int32_t how) {
     if (how != static_cast<std::int32_t>(proto::DefendKind::Blocked) &&
@@ -393,6 +399,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemFight, "TandemFight", {
   RTTI_METHOD(SendRules);
   RTTI_METHOD(ConfiguredRules);
   RTTI_METHOD(FriendlyFire);
+  RTTI_METHOD(LevelGap);
   RTTI_METHOD(SendDefended);
   RTTI_METHOD(SendWeakSpot);
   RTTI_METHOD(SendTraced);
