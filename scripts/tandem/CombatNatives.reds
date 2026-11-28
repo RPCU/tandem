@@ -69,10 +69,12 @@ public native class TandemFight extends IScriptable {
   public static native func SendThrowPath(id: Uint32, position: Vector4, velocity: Vector4)
   public static native func PathFix(copy: Vector4, position: Vector4, velocity: Vector4) -> Int32
   // ConfiguredRules' word: proto::kRule* in the low byte, the health percent
-  // per extra player (enemy scaling) in the next.
+  // per extra player (enemy scaling) in the next, the level gap in the third.
   public static native func SendRules(rules: Int32)
   public static native func ConfiguredRules() -> Int32
   public static native func FriendlyFire() -> Bool
+  // The session's level gap (the host's level_gap; 0: the plain mean).
+  public static native func LevelGap() -> Int32
   public static native func SendDefended(npc: Uint32, how: Int32)
   public static native func SendWeakSpot(npc: Uint32, record: TweakDBID, index: Int32, drain: Float)
   public static native func SendTraced(npc: Uint32)

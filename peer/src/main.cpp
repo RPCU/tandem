@@ -3880,9 +3880,10 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
                        static_cast<int>(e->how));
   if (const auto *r = std::get_if<proto::Rules>(&message))
     return std::format("the session's rules: friendly fire {}, enemy scaling {} (health +{} % "
-                       "per extra player)",
+                       "per extra player), level gap {}",
                        (r->flags & proto::kRuleFriendlyFire) ? "on" : "off",
-                       (r->flags & proto::kRuleEnemyScaling) ? "on" : "off", r->enemyHealth);
+                       (r->flags & proto::kRuleEnemyScaling) ? "on" : "off", r->enemyHealth,
+                       r->levelGap);
   if (const auto *s = std::get_if<proto::NpcScale>(&message))
     return std::format("npc {} is scaled for {} players", s->npc, s->players);
   if (const auto *d = std::get_if<proto::Defended>(&message))
@@ -7203,14 +7204,16 @@ int main(int argc, char **argv) {
     if ((options.friendlyFire || options.enemyScaling) && options.host && !rulesSent &&
         endpoint->IsJoined()) {
       const bool friendly = options.friendlyFire.value_or(false);
+      // (The level gap the mock host's endpoint has always used: the plain
+      // mean.)
       const auto rules = tandem::scaling::WithRule(
-          {.flags = friendly ? tandem::proto::kRuleFriendlyFire : std::uint8_t{0}},
+          {.flags = friendly ? tandem::proto::kRuleFriendlyFire : std::uint8_t{0}, .levelGap = 0},
           options.enemyScaling.value_or(false), options.enemyScalingHealth);
       rulesSent = endpoint->SendCombat(rules);
       Log("the session's rules: friendly fire {}, enemy scaling {} (health +{} % per extra "
-          "player)",
+          "player), level gap {}",
           friendly ? "on" : "off", options.enemyScaling.value_or(false) ? "on" : "off",
-          rules.enemyHealth);
+          rules.enemyHealth, rules.levelGap);
     }
     // --throw: a grenade 10 m ahead of our V (+Y), exploding 2 s later.
     if (options.throwSeconds && endpoint->IsJoined() && now >= nextThrow) {

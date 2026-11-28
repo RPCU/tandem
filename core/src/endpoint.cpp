@@ -4852,12 +4852,18 @@ bool Endpoint::SendCombat(proto::Message message) {
     return false; // the host's rules
   if (const auto *difficulty = std::get_if<proto::Difficulty>(&message))
     m_difficulty = *difficulty;
-  if (const auto *rules = std::get_if<proto::Rules>(&message)) {
+  const auto *rules = std::get_if<proto::Rules>(&message);
+  if (rules) {
     if (m_rules == *rules)
       return true; // said already
     m_rules = *rules;
   }
   Broadcast(message);
+  // The rules' level gap is the session's from now on: its level follows.
+  if (rules && rules->levelGap != m_levelGap) {
+    m_levelGap = rules->levelGap;
+    UpdateSessionLevel(m_pending);
+  }
   return true;
 }
 

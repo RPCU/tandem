@@ -99,12 +99,12 @@ public class TandemOutcomes {
           TandemNative.Log(s"outcomes: the session plays at our difficulty \(level)");
         }
         // The session's rules, tandem.ini's (friendly_fire, enemy_scaling,
-        // enemy_scaling_health).
+        // enemy_scaling_health, level_gap).
         let rules = TandemFight.ConfiguredRules();
         if rules != this.m_sentRules {
           this.m_sentRules = rules;
           TandemFight.SendRules(rules);
-          TandemNative.Log(s"outcomes: the session's rules: friendly fire \((rules & 1) != 0 ? "on" : "off"), enemy scaling \(TandemOutcomes.ScalingText(rules & 2, (rules / 256) % 256))");
+          TandemNative.Log(s"outcomes: the session's rules: friendly fire \((rules & 1) != 0 ? "on" : "off"), enemy scaling \(TandemOutcomes.ScalingText(rules & 2, (rules / 256) % 256)), level gap \((rules / 65536) % 256)");
         }
       }
     }

@@ -1557,7 +1557,11 @@ TEST_CASE("throws, their ends, the session's rules and a defence survive encodin
   RoundTrips(ThrowEnd{.player = 2, .id = 9, .how = ThrowEndKind::Stuck, .position = {1, 2, 3}});
   RoundTrips(Rules{.flags = kRuleFriendlyFire});
   RoundTrips(Rules{.flags = kRuleFriendlyFire | kRuleEnemyScaling, .enemyHealth = 85});
+  // The host's level_gap (v24): off, and its largest.
+  RoundTrips(Rules{.flags = kRuleEnemyScaling, .levelGap = 0});
+  RoundTrips(Rules{.levelGap = kMaxLevelGap});
   CHECK(Rules{}.enemyHealth == 60);
+  CHECK(Rules{}.levelGap == 8);
   RoundTrips(Defended{.player = 2, .npc = 7, .how = DefendKind::Parried});
   CHECK(std::string_view(NameOf(Throw{})) == "Throw");
   CHECK(std::string_view(NameOf(ThrowEnd{})) == "ThrowEnd");
@@ -1600,6 +1604,8 @@ TEST_CASE("throws, rules and defences of kinds the receiver does not know are re
   bytes = Encode(Rules{.flags = 4});
   CHECK_FALSE(Decode(bytes).has_value());
   bytes = Encode(Rules{.flags = kRuleEnemyScaling, .enemyHealth = kMaxEnemyHealth + 1});
+  CHECK_FALSE(Decode(bytes).has_value());
+  bytes = Encode(Rules{.levelGap = kMaxLevelGap + 1});
   CHECK_FALSE(Decode(bytes).has_value());
   bytes = Encode(Defended{.how = static_cast<DefendKind>(0)});
   CHECK_FALSE(Decode(bytes).has_value());

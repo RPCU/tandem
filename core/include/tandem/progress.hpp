@@ -25,8 +25,10 @@ std::uint8_t MeanLevel(std::span<const std::uint8_t> levels);
 // tandem.ini `level_gap` (the host's): enemies are scaled to the mean, but
 // never more than this many levels above the session's lowest player, so a
 // new V beside a veteran is not one shot by its NPCs (0: the plain mean).
+// The host's rules carry it to every game (proto::Rules::levelGap).
 inline constexpr std::uint8_t kDefaultLevelGap = 8;
-inline constexpr std::uint8_t kMaxLevelGap = 60;
+inline constexpr std::uint8_t kMaxLevelGap = proto::kMaxLevelGap;
+static_assert(proto::Rules{}.levelGap == kDefaultLevelGap);
 // The session's level: MeanLevel, capped at `gap` above the lowest level
 // (gap 0: no cap). 0 with no player.
 std::uint8_t SessionLevelOf(std::span<const std::uint8_t> levels, std::uint8_t gap);

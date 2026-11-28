@@ -82,9 +82,12 @@ Alone, or with everyone at the host's level, nothing is touched. Guests are
 told once ("Co-op: enemies are scaled to level N").
 
 **The level gap** (`level_gap`, the host's tandem.ini and settings page,
-from the next session; default 8, `off` for the plain mean; 2026-11-21,
+a host's rule: `Rules.levelGap` carries it to every game, the host's
+endpoint applies it as it sends it, so a change applies at once, and a
+guest's menu shows the host's; default 8, `off` for the plain mean; 2026-11-21,
 not yet run in game; tests "level_gap keeps the session's level…", "the
-host's level_gap caps…", `tests/progress_test.cpp`). A new V (level 1)
+host's level_gap caps…", "the host's rules carry its level_gap…",
+`tests/progress_test.cpp`). A new V (level 1)
 beside a level-40 host: the mean is 21, enemies 20 levels above the new V,
 whose health and damage are a level-1 V's (the levels act only through the
 stats, §13.38.1): it is downed in a hit or two, while the host meets

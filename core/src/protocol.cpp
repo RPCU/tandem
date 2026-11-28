@@ -522,7 +522,8 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *end = std::get_if<ThrowEnd>(&message); end && end->how > ThrowEndKind::Gone)
     return std::nullopt;
   if (const auto *rules = std::get_if<Rules>(&message);
-      rules && ((rules->flags & ~kRuleFlags) != 0 || rules->enemyHealth > kMaxEnemyHealth))
+      rules && ((rules->flags & ~kRuleFlags) != 0 || rules->enemyHealth > kMaxEnemyHealth ||
+                rules->levelGap > kMaxLevelGap))
     return std::nullopt;
   if (const auto *scale = std::get_if<NpcScale>(&message);
       scale && (scale->players == 0 || scale->players > kMaxPlayerId))

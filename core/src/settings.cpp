@@ -14,8 +14,10 @@ std::string_view Trim(std::string_view text) {
 } // namespace
 
 bool IsEditable(std::string_view key) {
-  // (code_salt: not on the page, saved by its "new code" action;
-  // last_address: by the co-op menu's Join by address.)
+  // The settings page's rows, and the keys off it that `coop set` still
+  // changes (Settings.reds IniKeys, relay_token). (code_salt: saved by the
+  // pause menu's "new code" action; last_address: by the co-op menu's Join
+  // by address.)
   static constexpr std::array<std::string_view, 22> kKeys{
       "name",     "recorder",     "friendly_fire", "enemy_scaling", "notices",
       "markers",  "nameplates",   "party_hud",     "relay",         "relay_token",
