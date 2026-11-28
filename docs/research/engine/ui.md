@@ -422,3 +422,22 @@ entityID, isActive}` (`:203110`). The only script caller is the drop
   vendor entry appears for a proxy (the list's size before and after a
   session, `cmd vendor`); `IsAccessible` for a vendor the save has not
   reached.
+
+### 13.163 A call of the game's, for a contact that is no journal entry (2026-11-28, Ghidra of 2.50, final.reds)
+
+- `PhoneSystem.OnTriggerCall(questTriggerCallRequest)` (F:230213) takes
+  any contact name: it plays `ui_phone_incoming_call` (or
+  `ui_phone_initiation_call` when the player calls), writes
+  `UI_ComDevice.PhoneCallInformation` and the `phonecall_A_with_B` fact.
+  `NewHudPhoneGameController.OnPhoneCall` and `IncomingCallGameController`
+  find the contact by `GetIncomingContact`: the journal's contacts whose
+  `GetId()` is the name; none found, the widget has no name. [2.5-verified]
+  (final.reds)
+- `gameJournalContact` (0xD8; `name: LocalizationString` +0xA0, `type`
+  +0xC8, `avatarID` +0xCC, `isCallableDefault` +0xD5; `id` +0x40 of
+  `gameJournalEntry`) is not abstract in RTTI. Its `GetLocalizedName`
+  (`0x141193f7c`) returns the name's text at +0xA8 as it is, and
+  `GetAvatarID` (`0x141194020`) the TweakDBID at +0xCC, when the journal
+  manager's check passes (none given: always). So an instance made at run
+  time with a name and an avatar is a contact the call UI draws.
+  [2.5-verified] (Ghidra; in game: `phone-holocall-ring`, to run)

@@ -49,7 +49,8 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // (`before`): a receiver that lost it puts it back (netcode.md, Loss).
 // 23: NpcVoice appended (an NPC's voice lines, npcs.md "Voices").
 // 24: CorpsePose appended (a body's rest, regions.md §5).
-inline constexpr std::uint16_t kProtocolVersion = 24;
+// 25: LinkDecline's reasons 2-4, a call's outcomes (declined, busy, missed).
+inline constexpr std::uint16_t kProtocolVersion = 25;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
