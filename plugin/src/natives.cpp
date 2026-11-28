@@ -24,6 +24,7 @@
 #include "runtime.hpp"
 #include "threads.hpp"
 
+#include "tandem/campaigns.hpp"
 #include "tandem/devices.hpp"
 #include "tandem/mods.hpp"
 #include "tandem/movement.hpp"
@@ -142,11 +143,13 @@ struct TandemPlayer {
   bool you{};
 };
 
-// A host this game joined (recent.txt).
+// A host this game joined (recent.txt): by address, or by a join code.
 struct TandemHost {
-  Red::CString address;
+  Red::CString address; // "" for a join code
   std::int32_t port{};
   Red::CString name;
+  Red::CString code; // its last join code ("K7Q-2M9"), "" by address
+  Red::CString key;  // what campaigns.txt knows it by (campaigns::HostOf...)
 };
 // Guest: one of the host's NPCs hit our V (proto::PlayerHit). Plain fields,
 // as above.
@@ -388,7 +391,11 @@ struct TandemNative : Red::IScriptable {
     const auto target = hosts::Parse(text.c_str(), Runtime::Get().config.port);
     if (!target)
       return {};
-    return {Red::CString(target->address.c_str()), target->port, {}};
+    TandemHost host;
+    host.address = Red::CString(target->address.c_str());
+    host.port = target->port;
+    host.key = Red::CString(campaigns::HostOfAddress(target->address, target->port).c_str());
+    return host;
   }
 
   // Why ParseAddress refuses it: "" (it does not), "empty", "port", "name",
@@ -448,9 +455,20 @@ struct TandemNative : Red::IScriptable {
 
   static Red::DynArray<TandemHost> RecentHosts() {
     Red::DynArray<TandemHost> out;
-    for (const auto &recent : Runtime::Get().RecentHosts())
-      out.EmplaceBack(TandemHost{Red::CString(recent.target.address.c_str()), recent.target.port,
-                                 Red::CString(recent.name.c_str())});
+    for (const auto &recent : Runtime::Get().RecentHosts()) {
+      TandemHost host;
+      host.name = Red::CString(recent.name.c_str());
+      if (recent.code.empty()) {
+        host.address = Red::CString(recent.target.address.c_str());
+        host.port = recent.target.port;
+        host.key = Red::CString(
+            campaigns::HostOfAddress(recent.target.address, recent.target.port).c_str());
+      } else {
+        host.code = Red::CString(net::DisplayJoinCode(recent.code).c_str());
+        host.key = Red::CString(campaigns::HostOfName(recent.name).c_str());
+      }
+      out.EmplaceBack(host);
+    }
     return out;
   }
 
@@ -1244,7 +1262,7 @@ struct TandemNative : Red::IScriptable {
     auto &runtime = Runtime::Get();
     if (runtime.ChosenRole() != Config::Role::Host || runtime.RelayCode().empty())
       return false;
-    if (runtime.config.keepCode)
+    if (KeepsCode(runtime.config))
       runtime.ChangeSetting("code_salt", std::to_string(runtime.config.codeSalt + 1));
     ++runtime.newCodeRequests;
     log::Info("relay: a new join code asked for");
@@ -2315,6 +2333,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemHost, "TandemHost", {
   RTTI_PROPERTY(address);
   RTTI_PROPERTY(port);
   RTTI_PROPERTY(name);
+  RTTI_PROPERTY(code);
+  RTTI_PROPERTY(key);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemTimeChange, "TandemTimeChange", {

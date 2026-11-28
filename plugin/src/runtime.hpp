@@ -295,6 +295,8 @@ public:
   // the game thread, written by the net thread when a host welcomes us.
   std::vector<hosts::Recent> RecentHosts() const;
   void RememberHost(const hosts::Target &target, std::string name);
+  // A host joined by a join code (normalized), known by its name.
+  void RememberCodeHost(std::string code, std::string name);
 
   // tandem-relay, net thread -> game thread: the host's join code to show
   // ("K7Q-2M9", "" none yet or no relay) and what the link is doing (""

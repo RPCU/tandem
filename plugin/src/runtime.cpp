@@ -244,6 +244,18 @@ void Runtime::RememberHost(const hosts::Target &target, std::string name) {
     log::Warn("could not write {}", config.recentFile.filename().string());
 }
 
+void Runtime::RememberCodeHost(std::string code, std::string name) {
+  auto list = RecentHosts();
+  hosts::RememberCode(list, std::move(code), std::move(name));
+  std::lock_guard _(m_recentLock);
+  if (config.recentFile.empty())
+    return;
+  std::ofstream file(config.recentFile, std::ios::trunc);
+  file << hosts::FormatRecent(list);
+  if (!file)
+    log::Warn("could not write {}", config.recentFile.filename().string());
+}
+
 void Runtime::SetRelay(std::string code, std::string status) {
   std::lock_guard _(m_lock);
   m_relayCode = std::move(code);

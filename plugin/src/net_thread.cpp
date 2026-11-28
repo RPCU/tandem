@@ -1,6 +1,7 @@
 #include "net_thread.hpp"
 
 #include "activity.hpp"
+#include "campaign.hpp"
 #include "combat.hpp"
 #include "comms.hpp"
 #include "degradations.hpp"
@@ -15,6 +16,7 @@
 #include "story.hpp"
 #include "trade.hpp"
 
+#include "tandem/campaigns.hpp"
 #include "tandem/combat.hpp"
 #include "tandem/compat.hpp"
 #include "tandem/consistency.hpp"
@@ -172,7 +174,7 @@ struct NetThread::Impl {
                               .secret = relaySecret,
                               .code = relaySecret ? std::string() : config.joinCode,
                               .direct = Runtime::Get().directOn,
-                              .keepCode = config.keepCode,
+                              .keepCode = KeepsCode(config),
                               .codeSalt = Runtime::Get().codeSalt};
     if (relaySecret && !relayAt.empty()) {
       net::ParseRelayAddress(relayAt, options.address, options.port);
@@ -480,9 +482,18 @@ struct NetThread::Impl {
                 log::Info("{} joined (player {}, body {})", e.player.name, e.player.id,
                           static_cast<int>(e.player.body));
                 runtime.NotePlayerName(e.player.id, e.player.name);
-                if (!endpoint->IsHost() && config.joinCode.empty() &&
-                    e.player.id == endpoint->HostPlayer())
-                  runtime.RememberHost({config.address, config.port}, e.player.name);
+                if (!endpoint->IsHost() && e.player.id == endpoint->HostPlayer()) {
+                  // The host, offered again next time, and our V as the one
+                  // we join it with (campaigns.hpp): by address, or by its
+                  // name when we came with a join code.
+                  if (config.joinCode.empty()) {
+                    runtime.RememberHost({config.address, config.port}, e.player.name);
+                    campaign::JoinedWith(campaigns::HostOfAddress(config.address, config.port));
+                  } else if (!e.player.name.empty()) {
+                    runtime.RememberCodeHost(config.joinCode, e.player.name);
+                    campaign::JoinedWith(campaigns::HostOfName(e.player.name));
+                  }
+                }
                 shared = true;
                 runtime.PushEvent(
                     {ScriptEvent::Kind::PlayerJoined, e.player.id, e.player.name, e.player.body});

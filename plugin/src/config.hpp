@@ -140,6 +140,10 @@
 //   pings = on           ; off: you neither send nor see pings
 //   last_address =       ; the co-op menu's Join by address: the last one joined
 //                        ; ("host:port", an empty answer joins it again)
+//   campaign = open      ; a co-op campaign of yours as it loads: open (hosted,
+//                        ; friends drop in; with relay_token the same join
+//                        ; code every session), invite (hosted, a new code each
+//                        ; session), closed (alone until Host this game)
 //   relay = a, b, c      ; several relays: a host registers on the nearest (its
 //                        ; probes' round trip), a guest asks each for the code
 //   code = new           ; keep: the host's join code is the relay's kept one for
@@ -309,6 +313,12 @@ struct Config {
   bool pings{true};
   // The co-op menu's Join by address: the last address joined ("host:port").
   std::string lastAddress;
+  // A host's co-op campaign (a playthrough the co-op menu hosted; Coop.reds,
+  // docs/architecture/coop-menu.md "Campaigns") as it loads: open (hosted,
+  // the relay's kept code with a host token), invite (hosted, a new code
+  // each session), closed (played alone until Host this game).
+  enum class Campaign { Open, Invite, Closed };
+  Campaign campaign{Campaign::Open};
   // The log's level: 1 warn, 2 info, 3 debug (log::Level).
   int logLevel{2};
   // Not from the file: tandem.cmd next to it, a command for the running game;
@@ -318,7 +328,13 @@ struct Config {
   // (pilot_natives.cpp).
   std::filesystem::path pilotStateFile;
   std::filesystem::path recentFile;
+  // campaigns.txt, the co-op playthroughs (tandem/campaigns.hpp).
+  std::filesystem::path campaignsFile;
 };
+
+// Whether a session hosted now asks the relay for its token's kept code: a
+// co-op campaign's rule decides (open keeps it, invite never), else `code`.
+bool KeepsCode(const Config &config);
 
 // Missing file: the defaults (off). Unknown keys and bad values are logged.
 Config LoadConfig(const std::filesystem::path &path);
