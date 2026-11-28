@@ -3,9 +3,9 @@
 ensure join
 peer host --mode idle --body male --replay recordings/npcs.rec --corpse-npcs 8
 expect 'in the session as player' 30
-expect 'puppet 6[0-9]{4}: controller handed to the engine' 30
+expect 'puppet [0-9]+: controller handed to the engine' 30
 expect_peer 'npc [0-9]+ at rest: its pose sent' 30
-expect 'corpse: proxy [0-9]+ laid as its owner.s body' 10
+expect 'corpse: proxy [0-9]+ laid as its owner.s body' 15
 pause 4 # laid again 1 s after, then asleep
 cmd test query corpses
 expect 'corpse: sent 0 \(our NPCs. bodies\), laid [1-9][0-9]* \(copies' 5

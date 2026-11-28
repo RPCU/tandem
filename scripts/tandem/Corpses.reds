@@ -32,6 +32,11 @@ public class TandemCorpseShown {
   public let laidAt: Float;
   public let lays: Int32;
   public let measured: Bool;
+  // Its first try and the last: a copy's ragdoll gets its physics body
+  // some time after its death (none 3 s after it, instance c 2026-11-28),
+  // so a lay that fails is tried again each second, 10 s at most.
+  public let firstTry: Float;
+  public let triedAt: Float;
 }
 
 public class TandemCorpses {
@@ -203,16 +208,27 @@ public class TandemCorpses {
     ArrayPush(this.m_shown, shown);
   }
 
-  // A copy laid when it comes (or comes again), laid once more 1 s after
-  // (its own fall may still have been moving it), then let sleep; 2 s
-  // after the first, how far it lies from its owner's is measured once.
+  // A copy laid when it comes (or comes again), tried each second until its
+  // ragdoll takes it (10 s at most), laid once more 1 s after (its own fall
+  // may still have been moving it), then let sleep; 1 s after that, how far
+  // it lies from its owner's is measured once.
   private func Show(shown: ref<TandemCorpseShown>, body: ref<ScriptedPuppet>, id: EntityID, now: Float) -> Void {
     if id != shown.id {
       shown.id = id;
       shown.lays = 0;
       shown.measured = false;
-      if !this.Lay(shown, body, now) {
+      shown.firstTry = now;
+      shown.triedAt = -1.0;
+    }
+    if shown.lays == 0 {
+      if shown.triedAt >= 0.0 && now - shown.triedAt < 1.0 && now >= shown.triedAt {
+        return;
+      }
+      shown.triedAt = now;
+      let why = this.Lay(shown, body, now);
+      if NotEquals(why, "") && now - shown.firstTry >= 10.0 {
         // Not laid: left as its own fall left it, for good.
+        TandemDegraded.Fallback("corpse pose", s"npc \(shown.npc): its copy could not be laid as its owner's body in 10 s (\(why)); it lies as its own fall left it");
         shown.lays = 2;
         shown.measured = true;
       }
@@ -236,15 +252,15 @@ public class TandemCorpses {
     }
   }
 
-  private func Lay(shown: ref<TandemCorpseShown>, body: ref<ScriptedPuppet>, now: Float) -> Bool {
+  // "" when laid, else why not.
+  private func Lay(shown: ref<TandemCorpseShown>, body: ref<ScriptedPuppet>, now: Float) -> String {
     let why = TandemPresence.LayCorpse(shown.npc, body);
     if NotEquals(why, "") {
-      TandemDegraded.Fallback("corpse pose", s"npc \(shown.npc): its copy could not be laid as its owner's body (\(why)); it lies as its own fall left it");
-      return false;
+      return why;
     }
     if shown.lays == 0 {
       this.m_laid += 1;
-      let line = s"corpse: proxy \(shown.npc) laid as its owner's body (its ragdoll's bodies set, at rest)";
+      let line = s"corpse: proxy \(shown.npc) laid as its owner's body (its ragdoll's bodies set, at rest) after \(FloatToStringPrec(now - shown.firstTry, 1)) s";
       if this.m_laid == 1 {
         TandemNative.Log(line + " (the first body)");
       } else {
@@ -253,7 +269,7 @@ public class TandemCorpses {
     }
     shown.lays += 1;
     shown.laidAt = now;
-    return true;
+    return "";
   }
 
   // The counts, then every copy here: how far its ragdoll's bodies lie now

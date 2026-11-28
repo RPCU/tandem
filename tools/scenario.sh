@@ -598,10 +598,12 @@ if [ -n "$partner" ]; then
     exit 2
   }
   pport=${TANDEM_PARTNER_PORT:-$((game_port + 100))}
-  pdir=$(TANDEM_INSTANCE=$partner TANDEM_GAME_PORT=$pport $game where | sed -n 's/^dir=//p') || exit 2
+  # Not our GAME_DIR (exported above): the partner's own folder (its ini,
+  # deploy and log were ours when it leaked, a partner_join restarted our game).
+  pdir=$(GAME_DIR='' TANDEM_INSTANCE=$partner TANDEM_GAME_PORT=$pport $game where | sed -n 's/^dir=//p') || exit 2
   eval "pdir=$pdir"
 fi
-pgame() { TANDEM_INSTANCE=$partner TANDEM_GAME_PORT=$pport TANDEM_PEER_OF=$partner $game "$@"; }
+pgame() { GAME_DIR=$pdir TANDEM_INSTANCE=$partner TANDEM_GAME_PORT=$pport TANDEM_PEER_OF=$partner $game "$@"; }
 pmark() {
   read -r pmark_file pmark_line < <(remote "cd '$pdir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); echo \"\$f \$(wc -l < \"\$f\")\"")
 }
