@@ -318,6 +318,11 @@ struct TandemFight : Red::IScriptable {
         Combat::Get().NotePaint(*paint);
         continue;
       }
+      // Each player's summoned car: kept here for Summons.reds (TandemNative).
+      if (const auto *car = std::get_if<proto::OwnCar>(&message)) {
+        Combat::Get().NoteOwnCar(*car);
+        continue;
+      }
       // What each other game runs without: kept for Degraded.reds
       // (TandemDegraded), which tells the player.
       if (const auto *degraded = std::get_if<proto::Degraded>(&message)) {

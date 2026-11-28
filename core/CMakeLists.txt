@@ -15,6 +15,7 @@ add_library(tandem_core STATIC
   src/session_event_make.cpp
   src/endpoint_regions.cpp
   src/story.cpp
+  src/openworld.cpp
   src/prefabs.cpp
   src/moments.cpp
   src/carryover.cpp
@@ -44,6 +45,8 @@ add_library(tandem_core STATIC
   src/traffic.cpp
   src/vehicle_combat.cpp
   src/endpoint_traffic.cpp
+  src/endpoint_props.cpp
+  src/props.cpp
   src/endpoint_vehicles.cpp
   src/devices.cpp
   src/regions.cpp

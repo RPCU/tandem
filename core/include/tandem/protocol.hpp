@@ -52,7 +52,11 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 25: Rules.levelGap (the host's level_gap, said to every game: a guest's
 // menu shows the host's rules, coop-menu.md).
 // 26: LinkDecline's reasons 2-4, a call's outcomes (declined, busy, missed).
-inline constexpr std::uint16_t kProtocolVersion = 26;
+// 27: OwnCar appended (a player's summoned car, garage.md 1a).
+// 28: OpenWorldDone appended (the host's open-world activities done,
+// story.md "Open-world activities"; a game of 27 cannot read it).
+// 29: PropStates, PropRest, PropPush appended (physics props, props.md).
+inline constexpr std::uint16_t kProtocolVersion = 29;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3453,6 +3457,117 @@ struct CorpsePose {
 };
 // An NPC, finite numbers, 1 to kMaxRagdollBodies bodies.
 bool Fits(const CorpsePose &corpse);
+// A player's own car out in the world (appended, protocol 27; garage.md
+// row 1a): the car its garage summoned, from the moment it comes, whether
+// its owner sits in it or not. Its owner's game to everyone (the host
+// stamps the player, keeps the latest for late joiners and resyncs, and
+// forgets it when the player goes), on change only: another car, it starts
+// to drive in on its own, it stops where it stands. While kOwnCarMoving is
+// set and its owner sits in no car, that player's VehicleState stream is
+// this car (the stream a driven car uses: one per player, so no new rate).
+// Every other game shows it as that player's car copy, the one its Seat
+// later puts the owner's puppet in: one body from its arrival on.
+// `vehicle` 0: no car out (what nobody said: kept nowhere). Event channel.
+inline constexpr std::uint8_t kOwnCarMoving = 1; // it drives on its own: the stream is it
+// Its summon ended here (the game's Arrived, or AlreadySummoned): its owner's
+// game honked and flashed it; every copy does the same once (research
+// §13.165).
+inline constexpr std::uint8_t kOwnCarArrived = 2;
+inline constexpr std::uint8_t kOwnCarFlags = kOwnCarMoving | kOwnCarArrived;
+struct OwnCar {
+  PlayerId player{};
+  std::uint64_t vehicle{}; // its TweakDB record (0: no car out)
+  std::uint8_t flags{};    // kOwnCar*
+  Vec3 position;           // where it stands, or where it starts to move from
+  Quat orientation;
+  RecordHint hint; // the vehicle's type and seats, for a game without the record
+  friend bool operator==(const OwnCar &, const OwnCar &) = default;
+};
+// Flags this version knows, finite numbers, and no car is nothing else
+// (one wire form for it, so a repeat is equal).
+bool Fits(const OwnCar &car);
+// ---- The host's open-world activities (docs/architecture/story.md,
+// "Open-world activities") ----
+//
+// The NCPD scanner activities the host's world has done (its hustles,
+// reported crimes, gang watches, outposts, hidden stashes: the map pins the
+// game's own MinimapPOIMappinController.IsNcpdScanner names): each by its
+// point-of-interest mappin's journal path hash (PointOfInterestMappin
+// .GetJournalPathHash: static journal data, the same in every game), done
+// when that mappin's phase is CompletedPhase. Host to guests, the whole set
+// on every change (sorted, no 0; empty: none), a story message: kept for
+// late joiners, in the story digest, an explicit "none" in a story resync,
+// as WorldPrefabs. A guest grouped with the host shows the host's phase on
+// its own pins and credits what it saw done; nothing reaches its save.
+inline constexpr std::size_t kMaxOpenWorldDone = 512;
+struct OpenWorldDone {
+  PlayerId player{}; // whose world (the host): set by the host's endpoint
+  std::vector<std::uint32_t> markers;
+  friend bool operator==(const OpenWorldDone &, const OpenWorldDone &) = default;
+};
+
+// ---- Physics props (appended, protocol 29; docs/architecture/props.md) ----
+// A placed prop with a physics body (a bin, a crate, a chair, a cone that is
+// an entity) that something moved: a V, a car, a shot, a blast. The game
+// that runs the area round it (Endpoint::AreaOwner) simulates it and says
+// how it moves (PropStates) and where it comes to rest (PropRest); every
+// other game holds its own instance of the same placed prop to that word.
+// A prop is named by its entity's static id (sector data: the same in every
+// game) and `part`, the index of the moved body among the entity's physical
+// components. While one game speaks for a moving prop, the host passes on
+// no other game's word about it (props::Speakers, first word wins, until
+// kPropHoldUs after its last).
+
+// One moving prop in a PropStates: 33 bytes. Orientation and velocity are
+// packed as a TrafficEntry's (traffic::PackOrientation, PackVelocity).
+struct PropEntry {
+  std::uint64_t entity{};
+  std::uint8_t part{};
+  Vec3 position;
+  std::array<std::int16_t, 3> orientation{};
+  std::array<std::int16_t, 3> velocity{};
+  friend bool operator==(const PropEntry &, const PropEntry &) = default;
+};
+// At 10 Hz a full packet is 16 props: under 5 kB/s however many fly.
+inline constexpr std::size_t kMaxPropsPerState = 16;
+struct PropStates {       // State channel, ~10 Hz while any prop of ours moves
+  PlayerId owner{};       // whose game simulates them: set by the host from the connection
+  std::uint64_t timeUs{}; // when its game read them (host clock)
+  std::vector<PropEntry> props;
+  friend bool operator==(const PropStates &, const PropStates &) = default;
+};
+// At most kMaxPropsPerState, each a placed entity.
+bool Fits(const PropStates &states);
+
+// Where a moved prop came to rest (Event channel): the session's record of
+// it (the host's, props::Record), kept for late joiners and for players who
+// come there later, in the world digest. Idempotent: equal to the record,
+// nothing changes.
+struct PropRest {
+  PlayerId owner{}; // whose game said it: set by the host from the connection
+  std::uint64_t entity{};
+  std::uint8_t part{};
+  Vec3 position;
+  Quat orientation;
+  friend bool operator==(const PropRest &, const PropRest &) = default;
+};
+
+// A push our V (or the car it drives) gave a prop another game runs (Event
+// channel, one-shot): our own instance moved at once, for feel; the owner
+// gives its real prop the same velocity (unless it moves already: its
+// puppet of our V pushed it there), and its word puts ours right. To the
+// prop's speaker, else the owner of the pusher's area, through the host.
+// Dropped older than kPropPushMaxAgeUs (a stall: a late kick is wrong).
+inline constexpr std::uint64_t kPropPushMaxAgeUs = 500'000;
+struct PropPush {
+  PlayerId player{}; // whose V pushed: set by the host from the connection
+  std::uint64_t entity{};
+  std::uint8_t part{};
+  Vec3 position;          // where our instance stood before the push
+  Vec3 velocity;          // the velocity the push gave it (m/s)
+  std::uint64_t timeUs{}; // when (host clock)
+  friend bool operator==(const PropPush &, const PropPush &) = default;
+};
 
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
@@ -3476,7 +3591,8 @@ using MessageVariant = std::variant<
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
     SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace, LinkDecline, WorldPrefabs, StoryGates, WeakSpotHit, HackTraced, TurretBusy,
-    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose>;
+    TrafficHack, CarPaint, HitTaken, Degraded, TrafficLights, NpcVoice, CorpsePose, OwnCar,
+    OpenWorldDone, PropStates, PropRest, PropPush>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
@@ -3486,11 +3602,12 @@ bool operator==(const Message &a, const Message &b);
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
 // VehicleUnlock, StoryRestrictions, QuestInteract, SceneProp, ScenePlace,
-// WorldPrefabs, StoryGates):
+// WorldPrefabs, StoryGates, OpenWorldDone):
 // endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit, Throw … Defended, ThrowPath),
-// a level (PlayerLevel … NpcLevel), a car's lending or paint (CarLend, CarPaint), what a
+// a level (PlayerLevel … NpcLevel), a car's lending or paint (CarLend, CarPaint), a
+// player's summoned car (OwnCar), what a
 // game runs without (Degraded), an NPC's
 // scale (NpcScale), a vendor (NpcVendor), a placed NPC (NpcPlaced), a
 // death of the ledger (NpcDeath), a street race (Race), what a proxy

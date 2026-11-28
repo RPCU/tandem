@@ -33,6 +33,8 @@ public class TandemStorySystem extends ScriptableSystem {
   private let m_spectate: ref<TandemSpectate>;
   // The host's quest prefabs in our world, the story's gates (StoryWorld.reds).
   private let m_world: ref<TandemStoryWorld>;
+  // The host's open-world activities on our map (OpenWorld.reds).
+  private let m_openWorld: ref<TandemOpenWorld>;
   private let m_curtain: ref<TandemCurtain>;
 
   // Host: the journal snapshot is owed (sent once the world plays), and the
@@ -198,6 +200,8 @@ public class TandemStorySystem extends ScriptableSystem {
     this.m_interact.Start(this.GetGameInstance(), this);
     this.m_world = new TandemStoryWorld();
     this.m_world.Start(this.GetGameInstance(), this);
+    this.m_openWorld = new TandemOpenWorld();
+    this.m_openWorld.Start(this.GetGameInstance(), this);
     this.m_curtain = new TandemCurtain();
     this.m_curtain.Start(this.GetGameInstance());
     // Journal changes: the host sends them; every game keeps the last quest
@@ -302,6 +306,10 @@ public class TandemStorySystem extends ScriptableSystem {
       this.m_playing = true;
     }
     this.HandleEvents();
+    // Our activity pins just put back: still as our world has them.
+    if this.m_you == 0u && this.m_playing && IsDefined(this.m_openWorld) {
+      this.m_openWorld.AfterLeave(this.Now());
+    }
     // Session items out of a session: a leave that found no V, or a save
     // that held them (Begin).
     if this.m_you == 0u && this.m_playing && ArraySize(this.m_sessionItems) > 0 {
@@ -325,6 +333,9 @@ public class TandemStorySystem extends ScriptableSystem {
       }
       if IsDefined(this.m_world) {
         this.m_world.Tick(this.Now(), this.m_isHost, this.Grouped());
+      }
+      if IsDefined(this.m_openWorld) {
+        this.m_openWorld.Tick(this.Now(), this.m_isHost, this.Grouped());
       }
     }
     this.Schedule();
@@ -505,6 +516,9 @@ public class TandemStorySystem extends ScriptableSystem {
             if IsDefined(this.m_world) {
               this.m_world.Leave(false);
             }
+            if IsDefined(this.m_openWorld) {
+              this.m_openWorld.Leave(false, this.Now());
+            }
           }
           this.EndPrivate();
           this.m_you = 0u;
@@ -591,6 +605,13 @@ public class TandemStorySystem extends ScriptableSystem {
         case 46:
           if IsDefined(this.m_world) {
             this.m_world.OnGates(event.player, event.flags);
+          }
+          break;
+        case 47:
+          // The host's open-world activities done (shown on our pins at
+          // the next check).
+          if !this.m_isHost && IsDefined(this.m_openWorld) {
+            this.m_openWorld.OnHost(event.index);
           }
           break;
         case 50:
@@ -1131,6 +1152,14 @@ public class TandemStorySystem extends ScriptableSystem {
         this.m_journal.UntrackEntry();
       }
       this.m_ownTrackedKept = false;
+    }
+    // Our activity pins as our own world has them (nothing of the host's
+    // reaches our save): after the journal is put back, whose entries the
+    // engine's pins follow (an activity's pin read done after the put-back
+    // of its entry, openworld-guest 2026-11-28); looked at again for a few
+    // seconds (AfterLeave).
+    if IsDefined(this.m_openWorld) {
+      this.m_openWorld.Leave(true, this.Now());
     }
     let restored = ArraySize(this.m_touched);
     // What we did with the host, for the next save.
@@ -1865,6 +1894,21 @@ public class TandemStorySystem extends ScriptableSystem {
 
   // ---- the ledger (core/carryover.hpp) ----
 
+  // Guest: an open-world activity the host's world finished with us
+  // (OpenWorld.reds): credited once, by its pin's journal path hash, as a
+  // tier 2 entry with no journal quest (own: 3 done in our world, 1 not).
+  // Nothing of it is done in our world.
+  public func NoteActivity(marker: Uint32, own: Int32) -> Void {
+    if marker == 0u || !this.IsGuest() {
+      return;
+    }
+    let host = this.NameOf(this.m_host);
+    TandemStory.CarryQuest(marker, 255, own, host);
+    TandemStory.CarryCompleted(marker);
+    this.Persist();
+    TandemNative.Log(s"ledger: activity \(marker) done with \(host)\(own == 3 ? " (done in our world too)" : "")");
+  }
+
   // The ledger changed: its words into our persistent field, for the next
   // save (never one in a session: the guest's lock).
   private func Persist() -> Void {
@@ -1966,6 +2010,12 @@ public class TandemStorySystem extends ScriptableSystem {
     } else if Equals(command, "story prefabs") || Equals(command, "story gates") {
       if IsDefined(this.m_world) {
         this.m_world.Report(StrAfterFirst(command, "story "));
+      }
+    } else if Equals(command, "story activities") || StrBeginsWith(command, "story activity ") {
+      // The host's open-world activities on our map; one pin (open, done,
+      // or a marker).
+      if IsDefined(this.m_openWorld) {
+        this.m_openWorld.Report(Equals(command, "story activities") ? "" : StrAfterFirst(command, "story activity "));
       }
     } else if Equals(command, "story items") {
       TandemNative.Log(s"story: \(ArraySize(this.m_sessionItems)) session item record(s) held");

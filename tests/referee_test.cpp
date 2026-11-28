@@ -260,6 +260,40 @@ TEST_CASE("referee: a car's paint is its owner's word, passed on, never back") {
   CHECK(Rules(host).empty());
 }
 
+TEST_CASE("referee: a summoned car is its owner's word, passed on, never back") {
+  auto guest = Guest();
+  guest.Received(
+      1,
+      proto::OwnCar{
+          .player = 3, .vehicle = 9, .flags = proto::kOwnCarMoving, .position = {10.f, 20.f, 3.f}},
+      kSecond);
+  guest.Received(1, proto::OwnCar{.player = 3, .vehicle = 9, .position = {4.f, 2.f, 3.f}},
+                 kSecond);                                // parked
+  guest.Received(1, proto::OwnCar{.player = 3}, kSecond); // gone
+  CHECK(Rules(guest).empty());
+  // Our own back, a player nobody knows, a flag of no version, no car with
+  // a place, a place that is no number.
+  guest.Received(1, proto::OwnCar{.player = 2, .vehicle = 9}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
+  guest.Received(1, proto::OwnCar{.player = 9, .vehicle = 9}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"ids.unknown-player"});
+  guest.Received(1, proto::OwnCar{.player = 3, .vehicle = 9, .flags = 8}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1, proto::OwnCar{.player = 3, .flags = proto::kOwnCarMoving}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1,
+                 proto::OwnCar{.player = 3,
+                               .vehicle = 9,
+                               .position = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.not-finite"});
+  // Host: a guest says it in its own name.
+  auto host = Host();
+  host.Received(2, proto::OwnCar{.player = 2, .vehicle = 9, .flags = proto::kOwnCarMoving},
+                kSecond);
+  CHECK(Rules(host).empty());
+}
+
 TEST_CASE("referee: a device's fire is the host's turret's, what a copy sees a guest's") {
   using Kind = proto::DeviceFireKind;
   auto host = Host();
@@ -453,6 +487,21 @@ TEST_CASE("referee: world prefabs are the host's world, story gates each player'
   CHECK(Broke(guest, "authority.host-only"));
   guest.Received(1, proto::StoryGates{.player = 2, .flags = 0}, kSecond);
   CHECK(Broke(guest, "authority.own-state-back"));
+}
+
+TEST_CASE("referee: open-world activities done are the host's world's") {
+  // A guest may not speak for the host's world.
+  auto host = Host();
+  host.Received(2, proto::OpenWorldDone{.player = 2, .markers = {0x10}}, kSecond);
+  CHECK(Broke(host, "authority.host-only"));
+
+  auto guest = Guest();
+  guest.Received(1, proto::OpenWorldDone{.player = 1, .markers = {0x10, 0x20}}, kSecond);
+  guest.Received(1, proto::OpenWorldDone{.player = 1}, kSecond);
+  CHECK(Rules(guest).empty());
+  // Said to be another player's world.
+  guest.Received(1, proto::OpenWorldDone{.player = 3, .markers = {0x10}}, kSecond);
+  CHECK(Broke(guest, "authority.host-only"));
 }
 
 TEST_CASE("referee: the host may not say what only a guest asks") {
@@ -1302,4 +1351,34 @@ TEST_CASE("referee: what a game runs without is its own word, passed on, never b
   auto host = Host();
   host.Received(2, proto::Degraded{.player = 2, .entries = {{.id = "looks"}}}, kSecond);
   CHECK(Rules(host).empty());
+}
+
+TEST_CASE("referee: a prop's motion and push are another game's word, in its own name") {
+  auto guest = Guest();
+  const proto::PropEntry bin{.entity = 0xB1B1, .position = {1.f, 2.f, 3.f}};
+  guest.Received(1, proto::PropStates{.owner = 3, .props = {bin}}, kSecond);
+  guest.Received(1, proto::PropPush{.player = 3, .entity = 0xB1B1}, kSecond);
+  // Our own rest comes back for the record: fine.
+  guest.Received(1, proto::PropRest{.owner = 2, .entity = 0xB1B1}, kSecond);
+  CHECK(Rules(guest).empty());
+  // Our own motion or push back; a prop that is no placed entity.
+  guest.Received(1, proto::PropStates{.owner = 2, .props = {bin}}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
+  guest.Received(1, proto::PropPush{.player = 2, .entity = 0xB1B1}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
+  guest.Received(1, proto::PropStates{.owner = 3, .props = {{.entity = 0}}}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+
+  // A guest speaks in its own name, no faster than its game's rounds.
+  auto host = Host();
+  host.Received(2, proto::PropStates{.owner = 3, .props = {bin}}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.not-yours"});
+  host.Received(2,
+                proto::PropRest{.entity = 0xB1B1,
+                                .position = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}},
+                kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"value.not-finite"});
+  for (std::uint64_t i = 0; i < 200; ++i)
+    host.Received(2, proto::PropStates{.props = {bin}}, kSecond + i * 1000);
+  CHECK(Broke(host, "rate.over-budget"));
 }

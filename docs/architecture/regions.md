@@ -578,7 +578,8 @@ belongs to the world of the player who starts it), and how each point is met.
      holder's game even when the helper gets there first;
    - **none of its NPCs is handed over** (`regions::Taker` returns nobody
      for an owner that holds; its own game refuses too);
-   - it **leads its group**: the helpers' own copy of that gig waits.
+   - it **leads its group**: the helpers' own copy of that gig waits, and
+     so do their NCPD activities (`story.md`, "Open-world activities").
      A holder that leaves the session holds nothing (the host says so).
 4. **Quest NPCs are never handed over between games.** Pinned (§4, §9):
    never asked for, never inherited, refused by their own game.

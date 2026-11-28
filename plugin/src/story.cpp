@@ -108,6 +108,11 @@ void Story::Note(const StoryInbound &inbound) {
     // afresh. A guest's own prefabs stay for its script's leave (PrefabsLift).
     m_prefabsSent.clear();
     m_prefabsSaid = false;
+    // Its open-world activities too; a guest's pins stay for its script's
+    // leave (ActivitiesLift).
+    m_openWorldSent.clear();
+    m_openWorldSaid = false;
+    m_openWorldAdded.clear();
     m_gatesSent = -1;
     m_gates.clear();
     m_gateWatcher.Clear();

@@ -164,6 +164,7 @@ names of `engine-access.md`.
 | `vehicle move` | degraded | state | `engine/vehiclemove.cpp` (layout, hash); `System.reds` `MovePath` (5 bodies and none followed); when asked for (`vehicle_move = kinematic`, the default, or `velocity`) | the engine's move asked for, unavailable: vehicles are teleported every frame |
 | `crowd spawners` | degraded | state | `engine/crowd.cpp` (code, vtable) | where another game runs the street, our own traffic and parked cars still spawn there and are removed out of sight (`../research/engine/traffic-police.md` §13.158) |
 | `ragdoll state` | degraded | state | `engine/ragdoll.cpp` (code, each component's vtable slot) | bodies are neither read nor laid as their owner's lie: each copy lies as its own fall left it (`../research/engine/presence.md` §13.162) |
+| `activity marks` | degraded | state | `engine/mappins.cpp` (layout, hash; a fault of the setter) | a grouped guest's map shows its own NCPD activities, not the host's world's (`story.md`, "Open-world activities") |
 | `body slots` | degraded | state | `engine/slots.cpp` (layout) | a puppet's body gets no grapple slot: a grappled NPC is held in front of it, teleported each tick (`grapple held`) |
 | `drawn prompts` | degraded | state | `Prompts.reds` (`prompts.tweak` not loaded; the test command `prompts off`); chosen: `native_prompts = off` | prompts on players and vendors drawn by tandem |
 | `attitude relations` | degraded | state | `Attitudes.reds` `Declared` (did NOT take; "in part" is the save's run-time changes, carried by the runtime copy) | attitudes copied agent by agent (`npcs.md`) |
@@ -171,6 +172,7 @@ names of `engine-access.md`.
 | `interaction casts` | degraded | state | `engine/casts.cpp` | every interaction counts as casting its doer |
 | `scene voice` | degraded | state | `story_natives.cpp` | V's voice in a replayed scene is the game's pick |
 | `nameplate projection` | degraded | state | `PartyHud.reds` (no carrier on the HUD, no slot; `presence hud projection script`) | nameplates placed by our own projection, not the engine's (`presence.md`) |
+| `prop velocity` | degraded | state | `Props.reds` `Give` (the body's RTTI `SetLinearVelocity` not there) | another V's push given as an impulse of a nominal 10 kg (`props.md`) |
 | `prompt drawn` | degraded | fallback | `Prompts.reds` (`Adopt`, `Fallback`), `Body.reds` | one body's prompt is drawn |
 | `vehicle teleported` | degraded | fallback | `System.reds` `MoveBody` (a body that does not follow, a move refused), `Vehicles.reds` | one vehicle teleported, not moved |
 | `street body respawned` | degraded | fallback | `Traffic.reds` `Check` | a street vehicle's body was gone, spawned again |
@@ -197,7 +199,13 @@ names of `engine-access.md`.
 | `quest signals dropped` | degraded | fallback | `engine/quests.cpp` | signals held for a frozen story are lost |
 | `no room` | degraded | fallback | `runtime.cpp`, `engine/posestream.cpp` | no slot for another puppet, pose or rig |
 | `puppet not driven` | degraded | fallback | `engine/hooks.cpp` | a puppet without a move component |
+| `activity not marked` | degraded | fallback | `OpenWorld.reds` `Apply` (the pin's phase read back is not the one set) | one NCPD activity's pin shows our own state |
+| `activity untracked` | degraded | fallback | `OpenWorld.reds` `TrackAgain` (the pin not on our map at its put-back, or its track read back is off) | an NCPD activity the player tracked, shown done during the session, is not tracked again |
 | `hit shown by twitch` | degraded | fallback | `HitsTaken.reds` (the pipeline played nothing, or chose an AI task) | a hit a V took shown as the body's twitch (a hit by nobody the games know twitches by design: not registered) |
+| `summoned car unseen` | degraded | fallback | `Summons.reds` (no copy could be spawned of a partner's summoned car) | the car appears only when its owner gets in (its `Seat` spawns a copy) |
+| `prop not held` | degraded | fallback | `Props.reds` `Hold` (the entity here has no physical mesh of that index) | another game's moving prop not shown moving here (`props.md`) |
+| `prop put back` | degraded | fallback | `Props.reds` `Answer` (no word in 2 s from the game that runs our area) | our instance of a prop we touched put back where it stood |
+| `prop not recorded` | degraded | fallback | `net_thread.cpp` (`props::Record` full, 1024) | a prop moved after that stands unmoved for a player who comes later |
 
 Looked at and left out, each for its reason: a rule that drops a message (a
 hit with friendly fire off, a stale or repeated message, an authority

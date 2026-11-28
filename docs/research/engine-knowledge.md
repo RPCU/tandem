@@ -164,6 +164,11 @@ found through this table, each number once.
 | 13.178 | The weapon's shot replay: attack record, target, offset on the target; the shoot under `AI_ShootAt` | `multiplayer-leftovers.md` |
 | 13.179 | Dead ends, and the cut design against tandem's (vehicles, props, destruction, inventory, weather, game systems; domain by domain) | `multiplayer-leftovers.md` |
 | 13.180 | Playing one scene on every game: CreateSceneInstance from code, the one actor dispatcher, findNetworkPlayer in single player, the cut multiplayer's client path, what a copy emits | `story.md` |
+| 13.165 | The summoned car: its states and events, one body per garage vehicle | `vehicles.md` |
+| 13.166 | The garage's sweep: a summoned car it no longer needs goes far and out of view | `vehicles.md` |
+| 13.167 | An NCPD activity's pin by its journal path, its phase read and set from outside | `story.md` |
+| 13.168 | A map pin tracked again from outside (the system's own tracker); Dogtown's open-world pins are not points of interest | `story.md` |
+| 13.169 | Physics props: what a script reaches of a prop's body, and which props have no entity | `devices.md` |
 | 13.153 | A choice of our own on a puppet's interaction component | `story.md` |
 
 ## Top traps (one line each)
