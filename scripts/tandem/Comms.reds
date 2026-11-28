@@ -834,6 +834,12 @@ public class TandemComms {
     if state == 2 && this.m_offerFrom == player {
       return this.AcceptOffer();
     }
+    // A request of ours that stands with no call on (one they did not take,
+    // or from before they joined again): a new call, which rings again.
+    if state == 1 && !this.m_holocall.IsCalling(player) {
+      TandemCommsNative.SetLink(player, false);
+      state = 0;
+    }
     let on = state == 0 || state == 2;
     let what = "hanging up on";
     if state == 0 {
