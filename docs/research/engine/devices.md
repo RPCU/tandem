@@ -456,3 +456,32 @@ originInCOM, opt offset)`, `SetIsQueryable`. The game's own devices wake a
   body's pose and speed or hold it kinematic, is not known: no script
   surface, no RTTI function on the node, its instance or
   `worldRuntimeSystemDestruction`. [unverified]
+
+### 13.167 An explosive's exploded look without its blast (2026-11-28, read in final.reds, not run)
+
+- Streamed in exploded, an explosive device shows its wreck through its
+  own resolve: `ExplosiveDevice.ResolveGameplayState` (129093), when its
+  state `DoExplosiveResolveGameplayLogic()` (136869: `m_doExplosiveEngineerLogic`
+  and `m_provideExplodeAction`) and `IsExploded()`, calls
+  `ToggleVisibility(false)` (129270): `m_mesh` and `m_collider` off, its
+  `componentON_i` on and `componentOFF_i` off, the exploded appearance
+  when `m_switchAppearanceOnExplosion`, `SetGameplayRoleToNone`, and the
+  state `ForceDisableDevice`. No attack, no pulse, no VFX.
+  [2.5-untested]
+- A live explosion (`StartExplosionPipeline`, 129147, then `Explode`, 129189) also stops what a whole one runs: `KillAllFxInstances`,
+  `EffectsOnStartStop(true)`, its `m_loopAudioEvent`, a `ChangeLightEvent`
+  of strength 0; `HandleDeath` (129130) turns its `m_distractionCollider`
+  off and `RemoveEnvironmentalHazardStimuli` (129546). The mesh swap comes
+  last (`SwapMeshDelayedEvent` after `GetTimeToMeshSwap()`: the same
+  `ToggleVisibility(false)`). [2.5-untested]
+- `SetExplodedState` (136876) only writes `m_exploded` and sends the state's
+  changed event: an entity standing whole stays whole until its resolve
+  runs again (its next stream-in). [2.5-untested]
+- Kin: `SensorDevice` (cameras, turrets, 134230), `C4` (495920) and
+  `ExplosiveTriggerDevice` (placed traps, 496916) extend `ExplosiveDevice`,
+  their states `ExplosiveDeviceControllerPS`. A door's kind is
+  `DoorControllerPS.GetDoorType()` (189977): `EDoorType.AUTOMATIC` opens
+  for an authorized V near it (`IsSomeoneAuthorizedNearby`, 201966).
+  [2.5-untested]
+- Used: `ExplosiveDevice.TandemShowExploded` (`Devices.reds`, a record of
+  an exploded barrel applied while it stands in our world).

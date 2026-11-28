@@ -170,6 +170,7 @@ found through this table, each number once.
 | 13.169 | Physics props: what a script reaches of a prop's body, and which props have no entity | `devices.md` |
 | 13.171 | How many of the city's physics props are world nodes: about 9 in 10 near V; their name, what is known of their bodies | `devices.md` |
 | 13.172 | Voice triggers: the audio system's own lines for an NPC (combat and idle chatter), `entTriggerVOEvent` built and queued | `npcs.md` |
+| 13.173 | An explosive's exploded look without its blast (its resolve's `ToggleVisibility`); its kin; an automatic door | `devices.md` |
 | 13.153 | A choice of our own on a puppet's interaction component | `story.md` |
 
 ## Top traps (one line each)
