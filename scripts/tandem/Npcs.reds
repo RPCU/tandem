@@ -2090,18 +2090,38 @@ public class TandemNpcs {
       let farBody = IsDefined(far) && far.ready && !far.dead && !far.down && !far.seatWaits && !EntityID.IsDefined(far.seatedIn) ? this.ProxyBody(far.id) as GameObject : null;
       if IsDefined(farBody) {
         let told = new Vector4(npc.x, npc.y, npc.z, 1.0);
-        if Vector4.Distance(farBody.GetWorldPosition(), told) > 20.0 {
-          if far.strayAt <= 0.0 {
-            far.strayAt = now;
-          }
+        let off = Vector4.Distance(farBody.GetWorldPosition(), told);
+        // Over 20 m at once; over 3 m when it stays so for 2 s and its owner
+        // sits in no workspot: a copy left standing where its owner got up
+        // (17 m off, kabuki-market 2026-11-28). (Drawn 0.1 s behind, a
+        // walking copy is 0.2 m behind its owner, a running one 0.5.)
+        let stray = off > 20.0 || off > 3.0 && !this.m_anims.OwnerInWorkspot(npc.npc);
+        if stray && far.strayAt <= 0.0 {
+          far.strayAt = now;
+        }
+        if stray && (off > 20.0 || now - far.strayAt >= 2.0) {
           let seen = TandemSight.Seen(this.m_game, farBody, 1.8, 0.5);
-          if !seen || now - far.strayAt > 20.0 {
-            TandemNative.Log(s"consistency: proxy \(npc.npc) was \(Vector4.Distance(farBody.GetWorldPosition(), told)) m from its owner's NPC: put back");
+          if !seen || now - far.strayAt > (off > 20.0 ? 20.0 : 10.0) {
+            // A copy still in a workspot its owner left (or held for one)
+            // does not move, put back or not: 56 to 71 m behind its owner, put
+            // back every second in vain (kabuki-market, 2026-11-28). Out of
+            // it and given back to the controller first.
+            let puppet = farBody as ScriptedPuppet;
+            let workspots = GameInstance.GetWorkspotSystem(this.m_game);
+            let inSpot = IsDefined(puppet) && workspots.IsActorInWorkspot(puppet);
+            if inSpot {
+              workspots.StopNpcInWorkspot(puppet);
+            }
+            TandemNative.HoldPuppet(TandemNative.NpcPuppetId(npc.npc), false);
+            // (and its movement controller back: a workspot takes it off)
+            TandemNative.AttachController(TandemNative.NpcPuppetId(npc.npc), farBody);
+            this.m_anims.Released(npc.npc);
+            TandemNative.Log(s"consistency: proxy \(npc.npc) was \(Vector4.Distance(farBody.GetWorldPosition(), told)) m from its owner's NPC: put back\(inSpot ? " (out of a workspot its owner left)" : "")");
             GameInstance.GetTeleportationFacility(this.m_game).Teleport(farBody, told, TandemYawAngles(Rad2Deg(npc.yaw)));
             far.strayAt = 0.0;
             this.m_strays += 1;
           }
-        } else {
+        } else if !stray {
           far.strayAt = 0.0;
         }
       }

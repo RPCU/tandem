@@ -244,6 +244,9 @@ public class TandemSpot {
   public let leftAt: Float;
   public let lastPlace: Vector4;
   public let sampledAt: Float;
+  // Its owner's NPC's place as last seen before entering, and since when.
+  public let ownerAt: Vector4;
+  public let ownerStillSince: Float;
   // How often it is jumped to its entry again (0: the default, 6 s);
   // shorter once its tree ran to its exit sooner (Step, state 2).
   public let period: Float;
@@ -314,6 +317,7 @@ public class TandemSpot {
           this.state = 0;
           if hold != 0u {
             TandemNative.HoldPuppet(hold, false);
+            TandemNative.AttachController(hold, body);
           }
           TandemDegraded.Fallback("workspot not entered", s"\(label) left workspot \(this.path) at once: left standing");
         } else if !workspots.IsActorInWorkspot(body) {
@@ -349,6 +353,11 @@ public class TandemSpot {
           this.leftAt = now;
           if hold != 0u {
             TandemNative.HoldPuppet(hold, false);
+            // The workspot took its movement controller off as it went in
+            // ("controller detached"): never put back, the copy stayed where
+            // it had sat while its owner walked on (15 to 31 m off,
+            // kabuki-market 2026-11-28).
+            TandemNative.AttachController(hold, body);
           }
         }
         break;
@@ -393,6 +402,32 @@ public class TandemSpot {
     if path == this.path {
       return; // that one failed: not again until it changes
     }
+    // Its owner's NPC walks to its spot inside the workspot: entered at
+    // once, the copy sat down where the owner was still walking (4.7 m off,
+    // kabuki-market 2026-11-27). Entered once the owner has stood still 1 s.
+    if hold != 0u {
+      let owner = TandemNative.RemotePosition(hold);
+      if owner.W > 0.0 {
+        if Vector4.Distance(owner, this.ownerAt) > 0.05 {
+          this.ownerAt = owner;
+          this.ownerStillSince = now;
+        }
+        if now - this.ownerStillSince < 1.0 {
+          return;
+        }
+        // Where its owner's sits, not where the copy stood: a copy still
+        // walking (or late to spawn) played its owner's bench 7 to 40 m off
+        // and stayed there (kabuki-market, 2026-11-27). A brain-off copy
+        // takes no teleport: its movement controller, free, brings it there
+        // first (it moves a far body in one frame).
+        // (A copy the controller cannot bring there in 4 s is entered where
+        // it stands, as before.)
+        if Vector4.Distance(body.GetWorldPosition(), owner) > 0.5 && now - this.ownerStillSince < 5.0 {
+          TandemNative.HoldPuppet(hold, false);
+          return;
+        }
+      }
+    }
     let spot = TandemSpot.ComponentOf(body);
     if !IsDefined(spot) {
       let others = 0;
@@ -417,14 +452,6 @@ public class TandemSpot {
     // entity's origin: where the body stands.
     spot.SetLocalTransform(new Vector4(0.0, 0.0, 0.0, 1.0), new Quaternion(0.0, 0.0, 0.0, 1.0));
     if hold != 0u {
-      // Where its owner's sits, not where the copy stood: a copy still
-      // walking (or late to spawn) played its owner's bench 7 m off, and
-      // stayed there once its owner got up (kabuki-market, 2026-11-27).
-      let at = TandemNative.RemotePosition(hold);
-      if at.W > 0.0 && Vector4.Distance(body.GetWorldPosition(), at) > 0.3 {
-        at.W = 1.0;
-        GameInstance.GetTeleportationFacility(game).Teleport(body, at, TandemYawAngles(Rad2Deg(TandemNative.RemoteYaw(hold))));
-      }
       TandemNative.HoldPuppet(hold, true);
     }
     GameInstance.GetWorkspotSystem(game).PlayNpcInWorkspot(body, body, body, TandemNpcAnims.SpotName(), n"None", 0.3);
@@ -835,6 +862,28 @@ public class TandemNpcAnims {
       words += s" target \(a.target) -> \(b.target)";
     }
     return words;
+  }
+
+  // A proxy taken out of its workspot by hand (Npcs.reds, a copy far from
+  // its owner): its spot starts over, entered again only at the owner's next.
+  // Its owner's NPC is in a workspot, by the owner's last word.
+  public func OwnerInWorkspot(id: Uint32) -> Bool {
+    for proxy in this.m_proxies {
+      if proxy.npc == id {
+        return (proxy.anim.flags & 2) != 0;
+      }
+    }
+    return false;
+  }
+
+  public func Released(id: Uint32) -> Void {
+    for proxy in this.m_proxies {
+      if proxy.npc == id && IsDefined(proxy.spot) {
+        proxy.spot.state = 0;
+        proxy.spot.path = 0ul;
+        proxy.spot.leftAt = 0.0;
+      }
+    }
   }
 
   public func Forget(id: Uint32) -> Void {
