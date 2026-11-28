@@ -256,11 +256,14 @@ the first group session.
   Played once from its start, the copy's tree runs to its exit while the
   host's NPC stays (its spot keeps it there): a copy out of its workspot
   by itself goes back in at the host's entry (`TandemSpot` `replays`), once
-  it held 3 s; out sooner is a `workspot not entered` fallback, never a
-  loop (a seated NPC seen sitting, standing, sitting again, 2026-11-23).
-  The copy is jumped to its entry again every 6 s; one whose tree ran to
-  its exit sooner (an entry's sequence under 6 s) is jumped at 0.6 of the
-  time it ran from then on, not under 1.5 s (`TandemSpot.period`). And a
+  it held 3 s. Out sooner after its first jump (an entry's sequence of
+  1.7 s ran to its exit in every copy jumped to it, pair-corpse-pose
+  2026-11-28) it goes back in once, jumped sooner (below); out within 3 s
+  again is a `workspot not entered` fallback, never a loop (a seated NPC
+  seen sitting, standing, sitting again, 2026-11-23). The copy is jumped
+  to its entry again every 6 s; one whose tree ran to its exit sooner (an
+  entry's sequence under 6 s) is jumped at 0.6 of the time it ran from
+  then on, not under 1 s, until its resource changes (`TandemSpot.period`). And a
   proxy takes no stimulus of its own game (`ShouldEventBeProcessed`,
   `Stealth.reds`): a fear or a flinch in its workspot played the
   workspot's reaction and its exit while its owner sat on. Those two were

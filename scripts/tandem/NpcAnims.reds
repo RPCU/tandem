@@ -237,6 +237,10 @@ public class TandemSpot {
   public let since: Float;
   // Times the copy left the workspot by itself while its owner stayed.
   public let replays: Int32;
+  // Out within 3 s of going in once already at this resource (its entry's
+  // sequence ran to the exit before the first keep-alive jump): a second
+  // time is the fallback, never a loop.
+  public let quickOut: Bool;
   // When it was last jumped to its entry, last checked for being in.
   public let jumpedAt: Float;
   public let checkedAt: Float;
@@ -287,6 +291,8 @@ public class TandemSpot {
         break;
       case 2:
         if want != this.path {
+          this.quickOut = false;
+          this.period = 0.0; // the next resource's entries are its own
           this.state = 3;
           this.since = now;
           workspots.SendSlowExitSignal(body);
@@ -312,7 +318,22 @@ public class TandemSpot {
           break;
         }
         this.checkedAt = now;
-        if !workspots.IsActorInWorkspot(body) && now - this.since < 3.0 {
+        if !workspots.IsActorInWorkspot(body) && now - this.since < 3.0 && !this.quickOut && now - this.jumpedAt > 0.0 {
+          // Out within 3 s of going in, after its jump: the owner's entry's
+          // sequence is shorter than that (an entry of 1.7 s ran to its exit
+          // in every copy jumped to it; the first copies out within 3 s were
+          // left standing, pair-corpse-pose 2026-11-28). Once back in at the
+          // entry, jumped again at 0.6 of the time it ran.
+          let ran = now - this.jumpedAt;
+          this.quickOut = true;
+          this.period = MaxF(1.0, ran * 0.6);
+          this.replays += 1;
+          this.state = 0;
+          let path = this.path;
+          this.path = 0ul;
+          this.Enter(game, body, hold, path, now, label);
+          TandemNative.LogDebug(s"\(label) left workspot \(path) \(ran) s after its jump: back in, jumped every \(this.period) s");
+        } else if !workspots.IsActorInWorkspot(body) && now - this.since < 3.0 {
           // Out again within 3 s of going in: not played in a loop.
           this.state = 0;
           if hold != 0u {
@@ -331,8 +352,9 @@ public class TandemSpot {
           // is jumped again sooner from now on: at 0.6 of the time it ran
           // (read twice a second), not under 1.5 s.
           let ran = now - this.jumpedAt;
+          this.quickOut = false;
           if ran > 0.0 && ran < this.Period() {
-            this.period = MaxF(1.5, ran * 0.6);
+            this.period = MaxF(1.0, ran * 0.6);
             TandemNative.LogDebug(s"\(label) workspot \(this.path) ran to its exit \(ran) s after its jump: jumped every \(this.period) s");
           }
           this.replays += 1;
