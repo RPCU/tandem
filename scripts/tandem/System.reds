@@ -2776,6 +2776,54 @@ public class TandemSystem extends ScriptableSystem {
     ArrayPush(this.m_parkedOwners, owner);
   }
 
+  // A remote player's puppet sits in this car here.
+  public func SeatedInBy(id: EntityID) -> Bool {
+    for puppet in this.m_puppets {
+      if EntityID.IsDefined(puppet.seatedIn) && puppet.seatedIn == id {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // A partner's old summoned car (Summons.reds Sweep): deleted when it is no
+  // one's car here (no puppet drives it, no leaving puppet's removal holds
+  // it), nobody sits in it, and our V is not in it; out of the parked list.
+  // Its caller has seen it free of anyone for TandemSummons.FreeSeconds (a
+  // copy freed 0.3 s after an unmount froze the game: engine/vehicles.md
+  // §13.101). False: kept.
+  public func RemoveOldCopy(id: EntityID) -> Bool {
+    let game = this.GetGameInstance();
+    if !EntityID.IsDefined(id) || this.CarOwner(id) != 0u || this.SeatedInBy(id) {
+      return false;
+    }
+    for gone in this.m_leaving {
+      if gone.car == id {
+        return false;
+      }
+    }
+    let player = GetPlayer(game);
+    let car = TandemTraffic.Body(game, id);
+    if IsDefined(car) && VehicleComponent.IsVehicleOccupied(game, car) {
+      return false;
+    }
+    if IsDefined(player) && IsDefined(car) && VehicleComponent.IsMountedToProvidedVehicle(game, player.GetEntityID(), car) {
+      return false;
+    }
+    let i = ArrayFindFirst(this.m_parked, id);
+    if i >= 0 {
+      ArrayErase(this.m_parked, i);
+      if i < ArraySize(this.m_parkedOwner) {
+        ArrayErase(this.m_parkedOwner, i);
+      }
+      if i < ArraySize(this.m_parkedOwners) {
+        ArrayErase(this.m_parkedOwners, i);
+      }
+    }
+    TandemEntities.Delete(id);
+    return true;
+  }
+
   // The parked copy of `owner`'s car of that record nearest to `near` (30 m
   // at most), out of the parked list: its owner gets back in (Reseat).
   private func TakeParkedCopy(owner: Uint32, record: TweakDBID, near: Vector4) -> EntityID {
