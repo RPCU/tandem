@@ -133,7 +133,7 @@ public class TandemTestQuery {
     } else if Equals(what, "position") {
       if IsDefined(player) {
         let at = player.GetWorldPosition();
-        value = s"\(FloatToStringPrec(at.X, 2)) \(FloatToStringPrec(at.Y, 2)) \(FloatToStringPrec(at.Z, 2))";
+        value = s"\(FloatToStringPrec(at.X, 2)) \(FloatToStringPrec(at.Y, 2)) \(FloatToStringPrec(at.Z, 2)) \(FloatToStringPrec(player.GetWorldYaw(), 1))";
       }
     } else if Equals(what, "mounted") {
       let who: ref<GameObject> = player;

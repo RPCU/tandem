@@ -63,7 +63,7 @@ view, time bubbles (`time.md`), a V's own body (`players.md`).
 2. **Traffic and the street** (row 2): the other agent's work.
 3. **Corpse poses** (row 3): done (`CorpsePose`, protocol 24: the
    owner's settled ragdoll's bodies set on every copy's ragdoll, research
-   §13.162; `tools/pairs/corpse-pose.sh`). Left: a game that links later.
+   §13.162; `tools/scenarios/pair-corpse-pose.sh`). Left: a game that links later.
 4. **Physics props** (row 4): no owner today. A first step is the props
    a V or a car touched near both Vs, as a placed entity's transform.
 5. **The summoned car** (row 5): share it as a parked vehicle from its
