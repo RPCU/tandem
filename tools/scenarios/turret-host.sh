@@ -1,7 +1,7 @@
 # As a host: the mock guest's copy of a turret near V "has its V"; our turret takes the guest's puppet as a target, turns to it, fires, and every shot is told
 # shellcheck shell=bash disable=SC2317,SC2154
 # Where: TURRET_AT (a fixture or "X Y Z": a security turret we follow, a
-# "sentry", within 200 m: V goes beside it; default arasaka-park). The
+# "sentry", within 200 m: V goes beside it; unset: find_spot sentry 0 200). The
 # police's street-corner turrets are not followed (devices.md): a spot
 # with only those fails on "no sentry within 200 m" (drake-ave, and the 33 m
 # around arasaka-park's gate, 2026-11-21).
@@ -9,7 +9,7 @@
 # and fires at it; the puppet takes no damage here (its player's game
 # decides); V is fired at only when the turret has V too.
 ensure host
-at "${TURRET_AT:-arasaka-park}"
+at_device TURRET_AT sentry 0 200
 mark
 cmd device near sentry
 expect 'devices: nearest sentry [0-9a-f]+ SecurityTurretControllerPS at ' 10
