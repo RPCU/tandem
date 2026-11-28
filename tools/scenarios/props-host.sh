@@ -8,12 +8,18 @@
 # game of the prop's touches (PhysicalCollisionEvent: props.md, Open).
 # To look at: the prop tumbling as alone.
 ensure host
-at "${PROPS_AT:-kabuki-market}"
-mark
-cmd props look
-expect 'props: (looks at [0-9a-f]+|V looks at no placed entity)' 5
+# V turns at the spot until it looks at a prop (eight headings at most: a
+# fixture's own heading faced none, 2026-11-28).
+read -r px py pz _ <<<"$(spot "${PROPS_AT:-kabuki-market}")"
+for yaw in 0 45 90 135 180 225 270 315; do
+  at "$px $py $pz $yaw"
+  mark
+  cmd props look
+  expect 'props: (looks at [0-9a-f]+|V looks at no placed entity)' 5
+  since | grep -q 'props: looks at ' && break
+done
 since | grep -q 'props: looks at ' ||
-  fail "V looks at no prop at ${PROPS_AT:-kabuki-market}: set PROPS_AT to a spot facing one"
+  fail "V looks at no prop at ${PROPS_AT:-kabuki-market}, whichever way it turns: set PROPS_AT to a spot facing one"
 prop=$(since | grep -oE 'props: looks at [0-9a-f]+' | tail -1 | awk '{ print $4 }')
 note "prop $prop"
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male

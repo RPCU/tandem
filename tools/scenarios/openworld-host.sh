@@ -7,10 +7,12 @@ ensure host
 mark
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male
 expect 'joined \(player [0-9]+' 20
-expect 'openworld: our world has [0-9]+ NCPD activit(y|ies) done, said to the guests' 15
-said=$(since | grep -oE 'openworld: our world has [0-9]+ NCPD' | tail -1 | awk '{ print $5 }')
+# What our world said (once a session, and kept for a guest that comes
+# later: the line may be an earlier scenario's), from the game's report.
+pause 5
 cmd story activities
-expect 'openworld: [0-9]+ NCPD activity pins here, [0-9]+ shown done' 5
+expect 'openworld: [0-9]+ NCPD activity pins here, [0-9]+ shown done; .*we said [0-9]+ done' 5
+said=$(since | grep -oE 'we said [0-9]+ done' | tail -1 | awk '{ print $3 }')
 shown=$(since | grep -oE 'NCPD activity pins here, [0-9]+ shown done' | tail -1 | awk '{ print $5 }')
 expect_value "$said" = "$shown"
 if [ "$said" = 0 ]; then
