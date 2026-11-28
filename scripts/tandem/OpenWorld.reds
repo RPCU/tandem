@@ -18,7 +18,10 @@
 // - Guest, apart (or leaving): every pin we set goes back to its own phase,
 //   and our own activities run (their held signals given back). Nothing of
 //   the host's is in our save: the session never saves, and the leave puts
-//   the pins back before saving unlocks.
+//   the pins back before saving unlocks. A pin the player tracked when we set
+//   it done (the engine's setter untracks it, §13.162) is tracked again with
+//   it, the system's own tracker (§13.165), unless the player has tracked
+//   another pin since.
 // Names checked against the 2.50 scripts and Codeware (MappinSystem
 // .GetAllMappins); final.reds lines in the comments.
 
@@ -37,8 +40,9 @@ public class TandemOpenWorld {
   private let m_hostDone: Int32;
   private let m_waiting: Bool;
   private let m_toldWaiting: Bool;
-  // Pins the engine would not set, said once each.
+  // Pins the engine would not set, or track again, said once each.
   private let m_refused: array<Uint32>;
+  private let m_untracked: array<Uint32>;
 
   public func Start(game: GameInstance, story: ref<TandemStorySystem>) -> Void {
     this.m_game = game;
@@ -81,7 +85,7 @@ public class TandemOpenWorld {
     // ours stay ours).
     let mirrored = waiting && leader == this.m_story.HostPlayer();
     this.Credit(mirrored);
-    let steps = TandemStory.ActivitiesSteps(mirrored, this.m_markers, phases);
+    let steps = TandemStory.ActivitiesSteps(mirrored, this.m_markers, phases, this.Tracked());
     if ArraySize(steps) > 0 {
       let set = this.Apply(steps);
       TandemNative.Log(s"openworld: \(set) of \(ArraySize(steps)) pin(s) set \(mirrored ? "to the host's" : "back to our own (apart)")");
@@ -119,9 +123,19 @@ public class TandemOpenWorld {
     return out;
   }
 
+  // Whether the player tracks each scanned pin now.
+  private func Tracked() -> array<Bool> {
+    let out: array<Bool>; // assigned on every path
+    for mappin in this.m_pins {
+      ArrayPush(out, IsDefined(mappin) && mappin.IsPlayerTracked());
+    }
+    return out;
+  }
+
   // Sets each step's pin the engine's way, read back: answers how many
   // took. One that does not is our own pin left as our game has it, said
-  // once (the fallback).
+  // once (the fallback). A step that gives the player's track back tracks
+  // the pin after.
   private func Apply(steps: array<TandemActivityStep>) -> Int32 {
     let set = 0;
     for step in steps {
@@ -139,9 +153,43 @@ public class TandemOpenWorld {
           TandemDegraded.Fallback("activity not marked", s"pin \(marker) would not take phase \(phase)");
         }
       }
+      if step.track {
+        this.TrackAgain(marker, mappin);
+      }
     }
     this.m_shown = set;
     return set;
+  }
+
+  // The player tracked this pin when we set it done: tracked again the
+  // system's own way and read back (IsPlayerTracked), unless the player
+  // has tracked another pin since (theirs wins).
+  private func TrackAgain(marker: Uint32, mappin: ref<IMappin>) -> Void {
+    let system = GameInstance.GetMappinSystem(this.m_game);
+    if !IsDefined(system) || !IsDefined(mappin) {
+      this.Untracked(marker, "its pin is not on our map");
+      return;
+    }
+    let current = system.GetManuallyTrackedMappinID();
+    let id = mappin.GetNewMappinID();
+    if current.value != 0ul && current.value != id.value {
+      TandemNative.Log(s"openworld: activity \(marker) left untracked: the player tracks another pin");
+      return;
+    }
+    if TandemStory.TrackPin(system, id.value) && mappin.IsPlayerTracked() {
+      TandemNative.Log(s"openworld: activity \(marker) tracked again");
+    } else {
+      this.Untracked(marker, "the engine's tracker did not take it");
+    }
+  }
+
+  // A track we could not give back: the fallback, said once a pin.
+  private func Untracked(marker: Uint32, why: String) -> Void {
+    TandemNative.Log(s"openworld: activity \(marker) not tracked again: \(why)");
+    if !ArrayContains(this.m_untracked, marker) {
+      ArrayPush(this.m_untracked, marker);
+      TandemDegraded.Fallback("activity untracked", s"pin \(marker): \(why)");
+    }
   }
 
   // What the host's world finished since the last check: ours too when we
@@ -210,14 +258,29 @@ public class TandemOpenWorld {
     ArrayClear(this.m_pins);
     ArrayClear(this.m_markers);
     ArrayClear(this.m_refused);
+    ArrayClear(this.m_untracked);
   }
 
   // `cmd story activities` (counts); `cmd story activity open` and
   // `… done` (our nearest pin not done, or done: its marker, phase,
-  // distance); `cmd story activity MARKER` (that pin, by its decimal hash).
+  // distance, tracked); `cmd story activity MARKER` (that pin, by its
+  // decimal hash); `… track MARKER` (tracks it the system's way, as the
+  // world map does), `… untrack` (the player's track off).
   public func Report(what: String) -> Void {
     if ArraySize(this.m_pins) == 0 {
       this.Scan(0.0);
+    }
+    if Equals(what, "untrack") {
+      let system = GameInstance.GetMappinSystem(this.m_game);
+      if IsDefined(system) {
+        system.UntrackMappin();
+      }
+      TandemNative.Log("openworld: the player's track is off");
+      return;
+    }
+    if StrBeginsWith(what, "track ") {
+      this.TrackFor(StrAfterFirst(what, "track "));
+      return;
     }
     if Equals(what, "") {
       let done = 0;
@@ -258,6 +321,28 @@ public class TandemOpenWorld {
       return;
     }
     let found = this.m_pins[best];
-    TandemNative.Log(s"openworld: activity \(this.m_markers[best]) phase \(EnumInt(found.GetPhase())) at \(bestDistance) m (\(what))");
+    TandemNative.Log(s"openworld: activity \(this.m_markers[best]) phase \(EnumInt(found.GetPhase())) at \(bestDistance) m (\(what)), tracked \(found.IsPlayerTracked() ? "yes" : "no")");
+  }
+
+  // `cmd story activity track MARKER`: that pin tracked as the world map
+  // tracks one (the system's own tracker), read back.
+  private func TrackFor(what: String) -> Void {
+    let i = 0;
+    while i < ArraySize(this.m_pins) {
+      if Equals(s"\(this.m_markers[i])", what) {
+        let mappin = this.m_pins[i];
+        if !IsDefined(mappin) {
+          TandemNative.Log(s"openworld: activity \(what) tracked by the test: no");
+          return;
+        }
+        let system = GameInstance.GetMappinSystem(this.m_game);
+        let id = mappin.GetNewMappinID();
+        let took = IsDefined(system) && TandemStory.TrackPin(system, id.value) && mappin.IsPlayerTracked();
+        TandemNative.Log(s"openworld: activity \(what) tracked by the test: \(took ? "yes" : "no")");
+        return;
+      }
+      i += 1;
+    }
+    TandemNative.Log(s"openworld: no \(what) NCPD activity pin on our map");
   }
 }
