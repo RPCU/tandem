@@ -560,7 +560,9 @@ off` on it: started once ours plays), leave any session, take its test
   `expect_partner`/`reject_partner` (its log since its mark), `pquery VAR
 WHAT` (its test query), `pnear KIND ID` (it follows that device: its
   `device near KIND` asked every 3 s, 45 s at most, as its devices stream
-  in), and `compare CATEGORY [ENTITY]`: a parity dump
+  in), `pshot NAME` (its screenshot, `NAME-partner.png`), `boss_fight
+RECORD NAME` (a whole boss fight on both games, `bosses.md`), and
+  `compare CATEGORY [ENTITY]`: a parity dump
   of both games at one moment (`tools/world-compare.py --instances OURS
 PARTNER --only CATEGORY [--entity HEX]`, within 60 m), failing on any
   difference in that category (for `devices` with an entity, also when

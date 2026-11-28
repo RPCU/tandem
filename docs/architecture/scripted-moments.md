@@ -245,6 +245,11 @@ replacer.
 
 ## Gaps
 
+The boss fights the rows name (Royce, Oda, Sasquatch, Smasher, the
+Animals' boss, the Chimera, Cerberus, Kurt and the rest) are free fights
+here; what each boss is made of and how both games show the same one:
+[bosses.md](bosses.md).
+
 Big ones, for the user:
 
 1. **A moment that takes the host far away** (reason c): built (2026-11-21, not run).

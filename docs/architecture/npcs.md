@@ -127,7 +127,8 @@ change; that the hit reaction component's total health is the unscaled one
 
 Decided by the user 2026-11-19: the numbers as built (above; damage, XP
 and loot unscaled); one rule for bosses (a lighter boss curve is the alternative if
-bosses become sponges); the count radius 100/130 m (moved to
+bosses become sponges; checked 2026-11-28, `bosses.md`, "Health scaled,
+not a sponge": not needed); the count radius 100/130 m (moved to
 `enemy_scaling` keys only if a quest's arena is larger); XP revisited after
 the first group session.
 

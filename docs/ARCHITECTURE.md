@@ -162,6 +162,7 @@ The owner simulates; everyone else displays.
 | a thrown object (grenade, knife, launcher round, smart round) | the thrower's game | a copy from the puppet that hurts nobody, ended where the real one ended |
 | the session's rules (friendly fire, enemy scaling) | host (`tandem.ini`) | followed |
 | an NPC's scaling for the players near it (health, poise, armour) | the NPC's owner, by the host's rule | proxies carry the same modifiers (`NpcScale`; `architecture/npcs.md`) |
+| a boss's scripted state: its phase effects, invulnerable windows, weak spots | the boss's game (pinned: the host for the story's) | every proxy wears the same effects and weak spots, its own copy of the boss's component reacting to them; the game's own boss bar on every HUD near the fight (`BossState`; `architecture/bosses.md`) |
 | loot: corpses and containers | each player's game | rolled per player: each loots their own copy |
 | items a V drops on purpose | host | lie in every game; the first pickup keeps it |
 | a V's pings, tags, link consent, waypoint | that player's game | shown; tags only to players linked with it (`architecture/comms.md`) |
@@ -328,6 +329,7 @@ plugin") and its open problems.
 - `devices.md`: doors, lifts, cameras, turrets, the alarm, access points, computers, barrels, media and other devices: the host's word, a guest's own copy first, revisions, digest, a guest's world put back after; glass and breakable scenery (a break told and replayed), a turret's fire (the host's turret's aim and shots drawn on every copy).
 - `revive.md`: down, revive, respawn, shared game over.
 - `story.md`: quest freeze, journal, calls, texts, dialogue, scenes, the story's restrictions on a guest in the host's moment, rewards; open: scenes for guests, story decisions, quests together.
+- `bosses.md`: every boss and mini-boss fight of the base game and Phantom Liberty (records, components, weak spots, phases and what drives them, scripted attacks, the boss bar), the co-op design for each part (one boss, the same phase on both games, either V its target, one bar, weak spots, cutscenes, arenas, downs, loot, a latecomer), what is built, the scenarios and known limits.
 - `scripted-moments.md`: the audit of the host's scripted moments (`story.md`, "Spectating"): each base-game and Phantom Liberty moment, played from the guest's own V or watched through the host's camera and why, the gaps and the in-game checklist.
 - `scene-replay.md`: a guest watches the host's scenes: the stage, the cast, lines and actor poses (`scene_replay`, on by default).
 - `progression.md`: levels (enemies scaled to the mean of the players' levels), XP rules, economy (vendors, crafting, stash, garage, apartments), a guest's saves (the leave steps, crashes, what is never saved), decisions.

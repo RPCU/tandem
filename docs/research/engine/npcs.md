@@ -418,3 +418,77 @@ within 20 s of every ride, five rides in five, at one of two places.
 - Not through these events: scene lines (`scnDialogLine`, scene-replay's)
   and the quest node `questPlayVoiceset_NodeType` (whether it queues an
   `entGameplayVOEvent`, its `isQuest`, is not read). [unverified]
+
+## 13.181 Bosses' own scripts: phases, weak spots, the boss bar, and what reads the local player (2026-11-28, game 2.50, final.reds (2.50) read)
+
+Each boss's behaviour beyond its behaviour tree is a `ScriptableComponent`
+of its entity, so it runs on every copy of the entity (a proxy's too: its
+AI, senses and target tracker are off, its components are not).
+[2.5-untested] (scripts)
+
+- **Phases are status effects, moved by health listeners and by tags.**
+  `AdamSmasherHealthChangeListener` (`:293716`) on the Health pool: ≤80 %
+  `AdamSmasher.Smashed`, the `FrontPlate` hit shape off and `TorsoWeakspot`
+  on; ≤50 % `Phase1` → `Phase2` (every weak spot destroyed, the right arm
+  dismembered, the launcher's hit shape on); ≤30 % `AdamSmasher.Invulnerable`
+  and `Emergency`; ≤5 % `Phase3` (`HeadReinforced` off, `Head` on,
+  `BossNoTakeDown`). `AdamSmasherComponent.OnStatusEffectApplied`
+  (`:295470`) jumps phases on tags: `Overload` with 4 `CyberwareMalfunction`
+  stacks, `ChimeraSuicide`/`ChimeraBlackWall`, `SmasherCustomHack`,
+  `SmasherCustomHackTakedown`, `BossGrenadeHackEffect` (→
+  `WeakspotDestructionStatusEffect`). `ChimeraHealthChangeListener`
+  (`:293615`): ≤70 % phase 2 (a delayed event; `Chimera.Phase2`,
+  `ChimeraRepairing`, `ChimeraHealing`, health set to 70), ≤40 % the gas
+  cloud, ≤1 % phase 3 (`InvulnerablePhase3`, every weak spot destroyed);
+  `ChimeraComponent` (`:294648`) puts `Chimera.Phase1` and god mode Immortal
+  on at attach, reads `chimera_defeated` (fact), and reacts to
+  `ChimeraArenaMode` (health 90), `ChimeraWeakSpotDestroyed` (−2 % / −5 %),
+  `ChimeraWeakSpotToggle` (its weak spots' `blockDamage` and `blockHighlight`,
+  `WeakspotRequestAttributeChangeEvent`), `ChimeraForcePhase2/3`,
+  `ChimeraSuicide`, `MemoryWipe`, `Blind`, `ChimeraCameraHeavyShake`.
+  `OdaEmergencyListener` (`:292329`): `Oda.Emergency` at 70/55/40/25/10 %;
+  `OdaComponent` (`:292397`): `Oda.Masked` at attach, its removal sets
+  `q112_oda_mask_destroyed`; `WeakspotDestruction` takes his cloak off;
+  `q112_oda_mask_deflected_bullet`, `q112_oda_dealt_damage_with_mantis`
+  facts. `RoyceComponent` (`:292187`): `Royce.Phase1`; `BossSuicide`,
+  `Madness` → suicide; his listener (`:293673`) is empty.
+  `SasquatchComponent` (`:291282`): `Phase1`, `PainInhibitors`, `Healing`.
+  `KurtzBossComponent` (`:289281`): `BossNoTakeDownInfinite`, his
+  appearance switched by the AI events `KnifeOn`/`KnifeOff`.
+  `MinotaurMechComponent` (`:290746`): `JamWeapon`, `SystemCollapse`.
+  [2.5-untested] (scripts)
+- **Weak spots** are entities of their own (`ScriptedWeakspotObject`,
+  `:291366`), health in their `WeakspotHealth` pool. Destroyed
+  (`DestroyWeakspot`): its record's fact added (`m_addFact`, on the game
+  that runs the copy), a status effect on its owner
+  (`m_StatusEffectOnDestroyID`, e.g. the `WeakspotDestruction` tag the
+  components read), its attack fired, its mesh and collider off; the delayed
+  destroy names the local V as instigator (`:291529`). The bosses' own
+  components break theirs with `DestroyWeakspot(owner)` then
+  `ScriptedWeakspotObject.Kill`. [2.5-untested] (scripts)
+- **The boss bar** (`BossHealthBarGameController`, `:182057`) shows a boss
+  or MaxTac NPC when a `BossCombatNotifier` is queued on the player
+  (`ReevaluateBossHealthBar`, `:182265`/`:182276`: only for a target that
+  `IsPlayer()`, or a boss whose hostile threats hold one), when the player
+  damages it (`gameTargetDamageEvent`), or from its nameplate (`:415485`).
+  Its dividers are the record's `BossHealthBarThresholds`; the effect
+  `Chimera.HideBossHealthBar` keeps it hidden; it goes on the threat's
+  defeat, death or removal. [2.5-untested] (scripts)
+- **What reads the local player** (`GetLocalPlayerControlledGameObject`,
+  `GetPlayer`): `BossStealthComponent` (`:289114`) starts combat with it on
+  any `Quickhack` effect; `SasquatchComponent` on `WeakspotDestruction`
+  (she drops her hammer); `CerberusDetectionCombat` (`:291259`) and
+  `CerberusDetectionOpticalCamo` (`:291958`), behaviour conditions on its
+  detection; `CerberusRangedKillTask` (`:459761`) teleports its
+  `CombatTarget` to (−2174.81, −2376.33, −192.68);
+  `SmasherFindTeleportPositionAroundTarget` (`:457920`) takes "the player's
+  FOV" from the active camera; `ScannerControlComponent`'s full-screen scan
+  effect, the heavy footstep events (Smasher, Royce, the Minotaur, the
+  Chimera) and the Chimera's stomp shake go to the local V (right on every
+  game: each V feels its own). The Chimera's Metalstorm
+  (`AISubActionChimeraMetalstorm_Record_Implementation`, `:418746`) is a
+  `ShootWithWeapon` on the combat target. [2.5-untested] (scripts)
+- **Boss takedowns** read the target's phase effects
+  (`GetBossNameBasedOnRecord`, `:284115`: Smasher's three records, Oda's
+  two, Royce's exos, Sasquatch's three; `GetCurrentBossPhase`), offered on
+  the `BossTakedownLayer`. [2.5-untested] (scripts)
