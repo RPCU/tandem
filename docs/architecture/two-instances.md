@@ -572,13 +572,14 @@ PARTNER --only CATEGORY [--entity HEX]`, within 60 m), failing on any
 - **The scenarios** (parity.md rows 7, 11–14, 16, 23): `pair-devices-door`,
   `pair-devices-lift` (the partner carried by its own cabin, more than 2 m
   up or down), `pair-devices-camera` (turned by the partner: friendly to
-  both Vs on both games, marked on ours, then back), `pair-devices-barrel`
-  (`DEVICES_AT` a spot 10 to 40 m from a barrel: none is known),
-  `pair-devices-media`, `pair-glass`, `pair-turret` (`TURRET_AT` near a
-  sentry: none is known), `pair-police` (the partner wanted: our units and
-  car after its puppet, none on our V, its own stars, standing down).
-  Automatic doors and mines have no scenario: no fixture is known for
-  either.
+  both Vs on both games, marked on ours, then back), `pair-devices-barrel`,
+  `pair-devices-barrel-late` (a late joiner beside the barrel we blew up:
+  its wreck at the join), `pair-devices-mine`, `pair-devices-autodoor`,
+  `pair-devices-media`, `pair-glass`, `pair-turret`, `pair-police` (the
+  partner wanted: our units and car after its puppet, none on our V, its
+  own stars, standing down). A barrel, a mine, a sentry or an automatic
+  door: `DEVICES_AT` / `TURRET_AT`, else found in game (`find_spot`,
+  testing.md "Fixtures").
 
 ## Costs
 

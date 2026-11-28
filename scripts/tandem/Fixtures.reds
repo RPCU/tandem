@@ -8,12 +8,24 @@
 // nearest NPC in a workspot within 200 m. World glass has no entity: not
 // listed (the survey breaks it with `glass break`). Solo or in a session;
 // the last line is "fixture: done".
+//
+// (test) fixture pins [N]: the N (default 16) nearest open-world activity
+// pins of our world (the NCPD scanner's hustles, reported crimes, gang
+// watches, outposts, hidden stashes: gang ground, where barrels, mines and
+// sentries stand), nearest first: the places scenario.sh's find_spot tries
+// when no fixture has the device it needs. One "fixture: pin" line each,
+// then "fixture: pins done".
 public class TandemFixtures {
   public static func Command(game: GameInstance, command: String) -> Void {
     let words = StrSplit(command, " ");
     let verb = ArraySize(words) > 1 ? words[1] : "";
+    if Equals(verb, "pins") {
+      let wanted = ArraySize(words) > 2 ? StringToInt(words[2], 16) : 16;
+      TandemFixtures.Pins(game, wanted);
+      return;
+    }
     if !Equals(verb, "check") {
-      TandemNative.Log(s"fixture: unknown command: \(command) (fixture check [M])");
+      TandemNative.Log(s"fixture: unknown command: \(command) (fixture check [M], fixture pins [N])");
       return;
     }
     let radius = 60.0;
@@ -34,6 +46,54 @@ public class TandemFixtures {
     TandemDevices.Get(game).Survey(radius);
     TandemFixtures.People(game, player, radius);
     TandemNative.Log("fixture: done");
+  }
+
+  private static func IsActivity(variant: gamedataMappinVariant) -> Bool {
+    return Equals(variant, gamedataMappinVariant.MinorActivityVariant) || Equals(variant, gamedataMappinVariant.Zzz06_NCPDGigVariant) || Equals(variant, gamedataMappinVariant.GangWatchVariant) || Equals(variant, gamedataMappinVariant.OutpostVariant) || Equals(variant, gamedataMappinVariant.HiddenStashVariant);
+  }
+
+  // The nearest activity pins (MappinSystem.GetAllMappins, Codeware).
+  private static func Pins(game: GameInstance, wanted: Int32) -> Void {
+    let player = GetPlayer(game);
+    let system = GameInstance.GetMappinSystem(game);
+    if !IsDefined(player) || !IsDefined(system) {
+      TandemNative.Log("fixture: pins: no V or no mappin system");
+      TandemNative.Log("fixture: pins done");
+      return;
+    }
+    let here = player.GetWorldPosition();
+    let all = system.GetAllMappins();
+    let places: array<Vector4>;
+    let names: array<String>;
+    let far: array<Float>;
+    for mappin in all {
+      if IsDefined(mappin) && TandemFixtures.IsActivity(mappin.GetVariant()) {
+        let at = mappin.GetWorldPosition();
+        ArrayPush(places, at);
+        ArrayPush(names, EnumValueToString("gamedataMappinVariant", Cast<Int64>(EnumInt(mappin.GetVariant()))));
+        ArrayPush(far, Vector4.Distance(here, at));
+      }
+    }
+    let told = 0;
+    let used: array<Bool>;
+    for place in places {
+      ArrayPush(used, false);
+    }
+    while told < wanted && told < ArraySize(places) {
+      let best = -1;
+      let i = 0;
+      while i < ArraySize(places) {
+        if !used[i] && (best < 0 || far[i] < far[best]) {
+          best = i;
+        }
+        i += 1;
+      }
+      used[best] = true;
+      let spot = places[best];
+      TandemNative.Log(s"fixture: pin \(names[best]) at \(far[best]) m (\(spot.X) \(spot.Y) \(spot.Z))");
+      told += 1;
+    }
+    TandemNative.Log(s"fixture: pins done (\(told) of \(ArraySize(places)) activity pins)");
   }
 
   // The NPCs around our V: vendors (placed, alive) and those playing a

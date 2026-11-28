@@ -2,14 +2,13 @@
 # shellcheck shell=bash disable=SC2317,SC2154
 # needs two games
 # Where: TURRET_AT (a fixture or "X Y Z": a sentry, a security turret that
-# is not the police's, within 60 m; none is known yet, testing.md
-# "Fixtures": `fixture check` lists the nearest).
+# is not the police's, within 40 m, as `device friendly` and the query
+# take it; unset: found in game, find_spot sentry 10 40).
 # To look at and listen to: both copies of the turret turn to the partner's
 # V together and fire with their sounds; the partner is hurt by its own
 # copy's shots only; green and silent on both once turned.
 ensure host
-[ -n "${TURRET_AT:-}" ] || fail "TURRET_AT names no spot near a sentry (none is known: testing.md, Fixtures)"
-at "$TURRET_AT"
+at_device TURRET_AT sentry 10 40
 partner_join
 cmd device near sentry
 expect 'devices: nearest sentry [0-9a-f]+ [A-Za-z]+ at ' 10

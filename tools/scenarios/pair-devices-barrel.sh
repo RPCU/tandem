@@ -2,13 +2,12 @@
 # shellcheck shell=bash disable=SC2317
 # needs two games
 # Where: DEVICES_AT (a fixture or "X Y Z": a spot 10 to 40 m from a whole
-# explosive barrel; V's flat has none, so name one).
+# explosive barrel; unset: found in game, find_spot barrel 10 40).
 # To look at and listen to: one blast on each screen, with its sound, at the
 # same moment give or take a ping; the wreck left on both; neither V hurt
 # at that distance.
 ensure host
-[ -n "${DEVICES_AT:-}" ] || fail "DEVICES_AT names no spot 10 to 40 m from a whole barrel (none is known near a fixture)"
-at "$DEVICES_AT"
+at_device DEVICES_AT barrel 10 40
 partner_join
 cmd device near barrel
 expect 'devices: nearest barrel [0-9a-f]+ [A-Za-z]+ at ' 10

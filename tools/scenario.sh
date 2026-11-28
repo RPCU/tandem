@@ -37,6 +37,9 @@
 #   at NAME|"X Y Z [YAW]"  our V teleported to a named spot (fixture:
 #                          tools/scenarios/fixtures.txt) and settled there;
 #                          spot NAME prints its X Y Z YAW, fixtures the names
+#   find_spot KIND MIN MAX our V MIN to MAX m from a device of KIND, found in
+#                          game ($found, $found_device, $found_class);
+#                          at_device VAR KIND MIN MAX: at $VAR when set
 #   pilot ROUTINE [FLAGS]  the test pilot plays ROUTINE on our real V
 #                          (tools/pilot/routines/ROUTINE.pilot, through
 #                          tools/game.sh pilot run): it walks, drives, fights
@@ -423,7 +426,98 @@ at() {
       return 0
     fi
   done
+  # (at SPOT try: a place find_spot tries; one V does not reach is skipped.)
+  [ "${2:-}" != try ] || {
+    echo "  not at $1 ($where) within 45 s (last: ${line:-no position}): skipped"
+    return 1
+  }
   fail "our V did not come to $1 ($where) within 45 s (last: ${line:-no position})"
+}
+# await REGEX SECS: the last game log line since the mark that matches,
+# printed; status 1 when none came within SECS (no failure: the caller
+# decides).
+await() {
+  local start=$SECONDS line
+  while ((SECONDS - start < $2)); do
+    line=$(since | grep -E "$1" | tail -1 || true)
+    if [ -n "$line" ]; then
+      echo "${line%$'\r'}"
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+# find_spot KIND MIN MAX: our V stands MIN to MAX m from a device of KIND
+# (`device near`'s kinds: barrel, mine, sentry, autodoor, camera…), for
+# the scenarios whose *_AT names no spot (testing.md, "Fixtures": none known
+# has a barrel or a sentry). The spot is $found ("X Y Z"), the device $found_device
+# (hex) and its class $found_class. Tried in order: the spot this game found
+# last ($cache/spots.txt: KIND MIN MAX X Y Z, checked again), every fixture,
+# then the SPOT_TRIES (16) activity pins nearest the test field the game
+# lists (`fixture pins`: the NCPD's gang ground). At each place: the
+# nearest such device within MIN to MAX m of where V lands is the spot;
+# one farther within 200 m, V goes (MIN+MAX)/2 m from it on its side
+# (`device goto KIND M`) and asks again. None anywhere fails the scenario.
+found='' found_device='' found_class=''
+spot_here() {
+  local kind=$1 min=$2 max=$3 line far
+  mark
+  cmd device near "$kind"
+  line=$(await "devices: (nearest $kind [0-9a-f]+ [A-Za-z]+ at [0-9.]+ m|no $kind within)" 10) || return 1
+  [[ $line =~ nearest\ $kind\ ([0-9a-f]+)\ ([A-Za-z]+)\ at\ ([0-9.]+)\ m ]] || return 1
+  far=${BASH_REMATCH[3]}
+  if awk -v d="$far" -v lo="$min" -v hi="$max" 'BEGIN { exit !(d >= lo && d <= hi) }'; then
+    found_device=${BASH_REMATCH[1]} found_class=${BASH_REMATCH[2]}
+    cmd test query position
+    line=$(await 'test query: position = ' 10) || return 1
+    found=$(awk '{ print $1, $2, $3 }' <<<"${line#*position = }")
+    return 0
+  fi
+  return 2
+}
+find_spot() {
+  local kind=$1 min=$2 max=$3 file=$cache/spots.txt saved place status line
+  local -a places=()
+  saved=$(awk -v k="$kind" -v lo="$min" -v hi="$max" '$1 == k && $2 == lo && $3 == hi { print $4, $5, $6 }' "$file" 2>/dev/null | tail -1)
+  [ -z "$saved" ] || places+=("$saved")
+  while read -r place; do places+=("$place"); done < <(fixtures)
+  mark
+  cmd fixture pins "${SPOT_TRIES:-16}"
+  if await 'fixture: pins done' 10 >/dev/null; then
+    while read -r place; do places+=("$place"); done < <(since | sed -n 's/.*fixture: pin [A-Za-z0-9_]* at [0-9.]* m (\([-0-9.]*\) \([-0-9.]*\) \([-0-9.]*\)).*/\1 \2 \3/p')
+  fi
+  for place in "${places[@]}"; do
+    echo "  find_spot $kind ($min-$max m): trying $place"
+    at "$place" try || continue
+    status=0
+    spot_here "$kind" "$min" "$max" || status=$?
+    if [ "$status" = 2 ]; then
+      moved device goto "$kind" "$(awk -v lo="$min" -v hi="$max" 'BEGIN { print (lo + hi) / 2 }')"
+      status=0
+      spot_here "$kind" "$min" "$max" || status=$?
+    fi
+    if [ "$status" = 0 ]; then
+      mkdir -p "$cache"
+      {
+        grep -v "^$kind $min $max " "$file" 2>/dev/null || true
+        echo "$kind $min $max $found"
+      } >"$file.new" && mv "$file.new" "$file"
+      note "find_spot: $kind $found_device $found_class within $min-$max m of $found (kept in $file)"
+      mark
+      return 0
+    fi
+  done
+  fail "find_spot: no $kind within $min-$max m of any fixture or of the ${SPOT_TRIES:-16} nearest activity pins"
+}
+# at_device VAR KIND MIN MAX: at the spot VAR (a scenario's *_AT) names,
+# else find_spot KIND MIN MAX.
+at_device() {
+  if [ -n "${!1:-}" ]; then
+    at "${!1}"
+  else
+    find_spot "$2" "$3" "$4"
+  fi
 }
 shot() { mkdir -p "$out" && $game shot "$1" >/dev/null && cp "$cache/shots/$1.png" "$out/"; }
 
