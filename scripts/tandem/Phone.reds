@@ -372,6 +372,11 @@ public final func TandemOwnCallUp() -> Bool {
 // again (one phone, one call). Grouped, as before.
 @wrapMethod(PhoneSystem)
 private final func OnTriggerCall(request: ref<questTriggerCallRequest>) {
+  // A partner's call (Holocall.reds): no story call, nothing sent.
+  if TandemHolocall.IsPartner(request.caller) || TandemHolocall.IsPartner(request.addressee) {
+    wrappedMethod(request);
+    return;
+  }
   if this.m_tandemMirror && Equals(request.callPhase, questPhoneCallPhase.IncomingCall) {
     let guest = TandemStorySystem.Get(this.GetGameInstance());
     if IsDefined(guest) && guest.IsGuest() && guest.Apart() {
@@ -410,6 +415,12 @@ private final func OnTriggerCall(request: ref<questTriggerCallRequest>) {
 // Host: our own answer is sent so every phone shows it picked up.
 @wrapMethod(PhoneSystem)
 private final func OnPickupPhone(request: ref<PickupPhoneRequest>) {
+  // A partner's call: the game's own pickup (its ringtone stops); the link's
+  // answer is Comms.reds' (the same keys).
+  if TandemHolocall.IsPartner(request.CallInformation.contactName) {
+    wrappedMethod(request);
+    return;
+  }
   let story = TandemStorySystem.Get(this.GetGameInstance());
   if IsDefined(story) && story.IsGuest() && this.m_tandemMirror {
     // Not ours to answer: the call rings on, the reason on our screen.
@@ -439,6 +450,10 @@ private final func OnPickupPhone(request: ref<PickupPhoneRequest>) {
 // our own quests when they resume).
 @wrapMethod(PhoneSystem)
 private final func SetPhoneFact(isPlayerCalling: Bool, contactName: CName, state: questPhoneTalkingState) {
+  // A partner's call wakes no quest.
+  if TandemHolocall.IsPartner(contactName) {
+    return;
+  }
   if this.m_tandemMirror {
     let story = TandemStorySystem.Get(this.GetGameInstance());
     if IsDefined(story) && story.IsGuest() {
