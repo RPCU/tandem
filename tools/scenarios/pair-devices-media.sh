@@ -16,9 +16,19 @@ cmd where
 expect 'where: [-0-9.]+ ' 5
 read -r x y z < <(since | grep -oE 'where: [-0-9.]+ [-0-9.]+ [-0-9.]+' | tail -1 | awk '{ print $2, $3, $4 }')
 pat "$(awk -v x="$x" 'BEGIN { print x + 1.0 }') $y $z"
-pmark
-pcmd device near radio
-expect_partner "devices: nearest radio $radio " 10
+# Its devices stream in after the teleport (none within 200 m 5 s after it
+# stood there, 2026-11-28): asked every 3 s, 45 s at most.
+found=''
+for _ in $(seq 1 15); do
+  pmark
+  pcmd device near radio
+  sleep 3
+  if psince | grep -q "devices: nearest radio $radio "; then
+    found=1
+    break
+  fi
+done
+[ -n "$found" ] || fail "the partner never followed the radio $radio (device near radio, 45 s)"
 cmd device station 0
 pause 4
 mark

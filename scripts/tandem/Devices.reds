@@ -1522,8 +1522,10 @@ public class TandemDevices extends ScriptableSystem {
     }
     let what = Equals(kind, "") ? "device" : kind;
     // tell names the same device near found (devices-barrel: near found one
-    // 42 m away, tell then none within 40 m).
-    let distance = Equals(verb, "near") || Equals(verb, "goto") || Equals(verb, "tell") ? 200.0 : 40.0;
+    // 42 m away, tell then none within 40 m); a lift's floor too, from its
+    // cabin (the partner rode 47.7 m down from the lift's controller, then
+    // found none within 40 m, pair-devices-lift 2026-11-28).
+    let distance = Equals(verb, "near") || Equals(verb, "goto") || Equals(verb, "tell") || Equals(verb, "floor") ? 200.0 : 40.0;
     let range = distance;
     let device = this.Nearest(kind, distance);
     if !IsDefined(device) {
@@ -1648,7 +1650,7 @@ public let m_tandemBefriendAt: Float;
 // becomes: SensorDevice.SetDeviceFriendly makes it friendly to the local
 // player, its group the player's, its senses off our V); asked again 2 s
 // later at most (fresh: not yet friendly to our V is enough). Each puppet
-// it is hostile to then gets the attitude it has to our V, and its senses
+// it holds another attitude to then gets the one it has to our V, and its senses
 // drop the puppet (SetDetectionOverwrite, as SetDeviceFriendly does for our
 // V). 1: our V asked, 2: puppets turned, 3: both, 0: nothing to do. On the
 // tick only.
@@ -1680,7 +1682,10 @@ public func TandemKeepFriendly(puppets: array<ref<GameObject>>, fresh: Bool) -> 
   let turned = false;
   for puppet in puppets {
     let theirs = puppet.GetAttitudeAgent();
-    if IsDefined(theirs) && Equals(mine.GetAttitudeTowards(theirs), EAIAttitude.AIA_Hostile) {
+    // Not only a hostile one: a guest's copy of the host's camera was
+    // neutral to the host's puppet and stayed so, while friendly to the
+    // guest's V (pair-devices-camera, 2026-11-28).
+    if IsDefined(theirs) && NotEquals(mine.GetAttitudeTowards(theirs), toV) {
       mine.SetAttitudeTowards(theirs, toV);
       if IsDefined(this.m_senseComponent) {
         this.m_senseComponent.SetDetectionOverwrite(puppet.GetEntityID());

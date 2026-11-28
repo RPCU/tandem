@@ -236,7 +236,7 @@ effects `PreventionStatusEffect.OnStarDropToZero` and
 `BaseStatusEffect.MemoryWipeLevel2Police`, and
 `StopPoliceBehaviour()`. That is the recipe for standing a unit down. `[S]`
 
-### 13.162 The prevention system's stars follow its agent registry, not its viewers; what a viewer does (2026-11-28, game 2.50, scripts read)
+### 13.170 The prevention system's stars follow its agent registry, not its viewers; what a viewer does (2026-11-28, game 2.50, scripts read)
 
 - The star state follows the agent registry, not the viewers.
   `TryUpdateStarState` (`:141358`, each `PreventionTickRequest`) and

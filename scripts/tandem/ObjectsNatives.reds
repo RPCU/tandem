@@ -51,4 +51,7 @@ public native class TandemObjects extends IScriptable {
   // what the others said is kept: the net thread empties it between sessions).
   public static native func Reset()
   public static native func Report() -> String
+  // (the parity dump) the session's record of what broke: its pieces and
+  // digest, the same on every game that heard it all.
+  public static native func Record() -> String
 }
