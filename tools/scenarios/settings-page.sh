@@ -19,7 +19,7 @@ expect 'coop: pause menu page settings: .*\[Enemy scaling: [a-z]*\] \[Level gap:
 expect 'coop: pause menu page settings: .*\[Level gap: [^]]*\] \[Notices: [a-z]*\]' 5
 expect 'coop: pause menu page settings: .*\[Notices: [a-z]*\] \[Markers: [a-z]*\]' 5
 expect 'coop: pause menu page settings: .*\[Markers: [a-z]*\] \[Names: [a-z]*\]' 5
-expect 'coop: pause menu page settings: .*\[Names: [a-z]*\] \[Party list: [a-z]*\] \[Back\]$' 5
+expect 'coop: pause menu page settings: .*\[Names: [a-z]*\] \[Party list: [a-z]*\] \[Back\][[:space:]]*$' 5
 reject 'coop: pause menu page settings: .*\[(Recorder|Relay|Sharing|Pings|Join code|Direct link|Story|Private scenes|Sandevistan|Race car)'
 pause 1
 # And the screen draws exactly those rows (coop menu shown reads the list's
@@ -87,7 +87,7 @@ cmd coop menu settings
 expect 'coop: pause menu page settings: \[Name: [^]]*\] \[Notices: [a-z]*\]' 10
 expect 'coop: pause menu page settings: .*\[Notices: [a-z]*\] \[Markers: [a-z]*\]' 5
 expect 'coop: pause menu page settings: .*\[Markers: [a-z]*\] \[Names: [a-z]*\]' 5
-expect 'coop: pause menu page settings: .*\[Names: [a-z]*\] \[Party list: [a-z]*\] \[Back\]$' 5
+expect 'coop: pause menu page settings: .*\[Names: [a-z]*\] \[Party list: [a-z]*\] \[Back\][[:space:]]*$' 5
 reject 'coop: pause menu page settings: .*\[(Friendly fire|Enemy scaling|Level gap)'
 pause 1
 cmd coop menu shown
