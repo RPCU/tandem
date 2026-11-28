@@ -263,19 +263,47 @@ def others(a, b, near):
 
 
 def ask(names, radius, shots):
-    """A fresh dump from each instance, asked of both at once; their logs."""
+    """A fresh dump from each instance, asked of both at once; their logs
+    since the ask. A dump that did not come within 10 s is asked again (a
+    command written just after another one of the scenario's was lost, and
+    an older dump 982 s and 699 m off was compared, 2026-11-28); none is
+    taken from before the ask."""
     tool = os.path.join(HERE, "instance.sh")
+
+    def log(n):
+        out = subprocess.run([tool, "log", n, "20000"], capture_output=True, text=True, check=True)
+        return out.stdout.splitlines(keepends=True)
+
+    # The last line each log had: what comes after it is the ask's (the
+    # window of 20000 lines moves on as the log grows).
+    before = []
+    for n in names:
+        lines = log(n)
+        before.append(lines[-1] if lines else "")
     procs = [subprocess.Popen([tool, "cmd", n, f"parity {radius:g}"]) for n in names]
     if shots:
         procs += [subprocess.Popen([tool, "shot", n, f"{shots}-{n}.png"]) for n in names]
     for p in procs:
         p.wait()
-    time.sleep(2.0)
-    logs = []
-    for n in names:
-        out = subprocess.run([tool, "log", n, "20000"], capture_output=True, text=True, check=True)
-        logs.append(out.stdout.splitlines(keepends=True))
-    return logs
+    logs = [None] * len(names)
+    for attempt in range(2):
+        deadline = time.time() + 10.0
+        while time.time() < deadline and any(l is None for l in logs):
+            time.sleep(1.0)
+            for i, n in enumerate(names):
+                if logs[i] is None:
+                    lines = log(n)
+                    at = len(lines) - 1 - lines[::-1].index(before[i]) if before[i] in lines else -1
+                    fresh = lines[at + 1:]
+                    if any(END.search(l) for l in fresh):
+                        logs[i] = fresh
+        missing = [i for i, l in enumerate(logs) if l is None]
+        if not missing:
+            break
+        for i in missing:
+            print(f"-- no fresh dump from {names[i]} in 10 s: asked again")
+            subprocess.run([tool, "cmd", names[i], f"parity {radius:g}"])
+    return [l if l is not None else [] for l in logs]
 
 
 def main():
