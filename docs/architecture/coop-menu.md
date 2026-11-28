@@ -50,6 +50,9 @@
   `coop host [PORT]`, `coop join ADDRESS[:PORT]`, `coop address
 [ADDRESS[:PORT]]`, `coop leave` (in game,
   any time), `coop menu PAGE`, `coop pick TEXT` (drive an open menu),
+  `coop menu shown` (what the open page draws, read back from its
+  widgets: "shows page P as built: N rows", else each row that draws
+  other than built; each status line drawn: `TandemCoopMenu.LogShown`),
   `coop name [reset]`, `coop name answer TEXT`, `coop name cancel` (the name
   prompt; scenario `names-prompt`).
   `tandem.ini`'s role stays the default (and the harness's): it is chosen
@@ -234,10 +237,12 @@ yet run in game**).
   place lands in that one. Tests: `coop settings` logs them all, `coop
   set KEY VALUE` changes one (scenario `settings`); scenario
   `settings-page`, unattended, both roles in one run (`ensure host`, then
-  `ensure join`): the host's page and a rule reaching the guest, then the
-  guest's page and its "Host's rules" line, shots `settings-host`,
-  `settings-changed`, `settings-guest`, one PASS or FAILED line (not yet
-  run in game).
+  `ensure join friendly_fire=off`), each page read back from the screen
+  (`coop menu shown`): the host's rows and a rule reaching the mock guest,
+  then the guest's rows, its "Host's rules" line, and the host's friendly
+  fire hurting our V over our own `off` (`health low` below `health`);
+  shots `settings-host`, `settings-changed`, `settings-guest`, one PASS or
+  FAILED line (not yet run in game).
 - The pause menu's page seen in game 2026-11-23 (English, then in
   groups; its one-page form of 2026-11-28 not yet). Esc in the pause menu is the menu
   scenario's, not the controller's input: `MenuScenario_PauseMenu.OnBack`

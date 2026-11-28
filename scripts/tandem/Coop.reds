@@ -720,6 +720,42 @@ public class TandemCoopMenu {
     return text;
   }
 
+  // What the page shows, read back from its widgets (coop menu shown: the
+  // tests read the screen, not only our items): each row as its list item
+  // draws it against the row we built ("as built", or each one that
+  // differs), then each status line drawn.
+  public func LogShown(list: wref<ListController>) -> Void {
+    let which = this.inGame ? "pause" : "main";
+    let page = TandemCoopMenu.PageName(this.page);
+    let size = IsDefined(list) ? list.Size() : 0;
+    let built = ArraySize(this.items);
+    let differ = 0;
+    if size != built {
+      TandemNative.Log(s"coop: \(which) menu draws \(size) rows on page \(page), built \(built)");
+      differ += 1;
+    }
+    let i = 0;
+    while i < size && i < built {
+      let widget = list.GetItemAt(i);
+      let row = IsDefined(widget) ? widget.GetController() as ListItemController : null;
+      let drawn = IsDefined(row) ? inkTextRef.GetText(row.m_labelPathRef) : "";
+      let item = this.items[i];
+      if NotEquals(drawn, item.label) {
+        TandemNative.Log(s"coop: \(which) menu row \(i) draws \"\(drawn)\", built \"\(item.label)\"");
+        differ += 1;
+      }
+      i += 1;
+    }
+    if differ == 0 {
+      TandemNative.Log(s"coop: \(which) menu shows page \(page) as built: \(size) rows");
+    }
+    for line in this.lines {
+      if IsDefined(line) && line.IsVisible() {
+        TandemNative.Log(s"coop: \(which) menu status: \(line.GetText())");
+      }
+    }
+  }
+
   // ---- the status panel and the clock ----
 
   public func CreatePanel(root: wref<inkCompoundWidget>, owner: ref<IScriptable>) -> Void {
@@ -1339,8 +1375,9 @@ private func TandemJoinDirect(typed: String) -> Void {
   this.TandemGo(TandemCoopPage.Save);
 }
 
-// tools/game.sh cmd coop ...: coop menu PAGE | coop pick TEXT | coop host
-// [PORT] | coop join ADDRESS | coop address [TEXT] | coop solo | coop status.
+// tools/game.sh cmd coop ...: coop menu PAGE | coop menu shown | coop pick
+// TEXT | coop host [PORT] | coop join ADDRESS | coop address [TEXT] | coop
+// solo | coop status.
 @addMethod(SingleplayerMenuGameController)
 private func TandemCommand(command: String) -> Void {
   let words = StrSplit(command, " ");
@@ -1352,7 +1389,9 @@ private func TandemCommand(command: String) -> Void {
   if ArraySize(words) > 2 {
     arg = StrAfterFirst(command, s"\(verb) ");
   }
-  if Equals(verb, "menu") {
+  if Equals(verb, "menu") && Equals(arg, "shown") {
+    this.m_tandem.LogShown(this.m_menuListController);
+  } else if Equals(verb, "menu") {
     this.TandemGo(TandemCoopMenu.PageOf(arg));
   } else if Equals(verb, "pick") {
     let item = this.m_tandem.Find(arg);
@@ -1878,8 +1917,8 @@ protected cb func OnTandemDirect(data: ref<inkGameNotificationData>) -> Bool {
   return true;
 }
 
-// coop menu PAGE | coop pick TEXT, while the pause menu is open (the rest
-// of the coop commands are TandemSystem's).
+// coop menu PAGE | coop menu shown | coop pick TEXT, while the pause menu is
+// open (the rest of the coop commands are TandemSystem's).
 @addMethod(PauseMenuGameController)
 private func TandemCommand(command: String) -> Void {
   let words = StrSplit(command, " ");
@@ -1891,7 +1930,9 @@ private func TandemCommand(command: String) -> Void {
   if ArraySize(words) > 2 {
     arg = StrAfterFirst(command, s"\(verb) ");
   }
-  if Equals(verb, "menu") {
+  if Equals(verb, "menu") && Equals(arg, "shown") {
+    this.m_tandem.LogShown(this.m_menuListController);
+  } else if Equals(verb, "menu") {
     this.TandemGo(TandemCoopMenu.PageOf(arg));
   } else {
     let item = this.m_tandem.Find(arg);
