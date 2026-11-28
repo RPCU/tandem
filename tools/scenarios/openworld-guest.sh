@@ -56,6 +56,9 @@ pkill -x tandem-peer
 expect 'session ended' 60
 expect 'openworld: [1-9][0-9]* of [1-9][0-9]* pin\(s\) back to our own \(leave\)' 20
 expect 'save: our story is back as it was' 20
+# (Put back after the journal, and looked at again for 6 s: a pin the
+# journal's put-back moved is set back once more, said.)
+pause 2
 cmd story activity "$marker"
 expect "openworld: activity $marker phase $own at " 10
 if [ -n "$ours" ]; then

@@ -640,9 +640,10 @@ openworld.hpp`, `engine/mappins.cpp`, the freeze's activity class in
       the setter missing the state `activity marks` (`degradations.md`).
       The pins the guest set remember their own phase and are the only ones
       put back: when the host's state matches theirs again, when the guest
-      goes apart, at the leave (`GuestLeave`, before its journal goes back
-      and saving unlocks). A pin its own game puts back (streamed in again)
-      is set again.
+      goes apart, at the leave (`GuestLeave`, after its journal goes back,
+      whose entries the engine's pins follow, and before saving unlocks;
+      for 6 s after it, a pin moved again is set back once more and said).
+      A pin its own game puts back (streamed in again) is set again.
     - _Credit_: an activity the host's set gains while the guest is
       grouped and within 150 m of the host's V (the reward rule) is a
       ledger entry, once (`TandemStorySystem.NoteActivity`: tier 2, kind

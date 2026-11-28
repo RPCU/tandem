@@ -306,6 +306,10 @@ public class TandemStorySystem extends ScriptableSystem {
       this.m_playing = true;
     }
     this.HandleEvents();
+    // Our activity pins just put back: still as our world has them.
+    if this.m_you == 0u && this.m_playing && IsDefined(this.m_openWorld) {
+      this.m_openWorld.AfterLeave(this.Now());
+    }
     // Session items out of a session: a leave that found no V, or a save
     // that held them (Begin).
     if this.m_you == 0u && this.m_playing && ArraySize(this.m_sessionItems) > 0 {
@@ -513,7 +517,7 @@ public class TandemStorySystem extends ScriptableSystem {
               this.m_world.Leave(false);
             }
             if IsDefined(this.m_openWorld) {
-              this.m_openWorld.Leave(false);
+              this.m_openWorld.Leave(false, this.Now());
             }
           }
           this.EndPrivate();
@@ -1125,11 +1129,6 @@ public class TandemStorySystem extends ScriptableSystem {
     if IsDefined(this.m_world) {
       this.m_world.Leave(true);
     }
-    // Our activity pins as our own world has them (nothing of the host's
-    // reaches our save).
-    if IsDefined(this.m_openWorld) {
-      this.m_openWorld.Leave(true);
-    }
     this.ReleaseHolds();
     this.TakeOffEffects();
     // Back to the default before the journal is put back (our own gig
@@ -1153,6 +1152,14 @@ public class TandemStorySystem extends ScriptableSystem {
         this.m_journal.UntrackEntry();
       }
       this.m_ownTrackedKept = false;
+    }
+    // Our activity pins as our own world has them (nothing of the host's
+    // reaches our save): after the journal is put back, whose entries the
+    // engine's pins follow (an activity's pin read done after the put-back
+    // of its entry, openworld-guest 2026-11-28); looked at again for a few
+    // seconds (AfterLeave).
+    if IsDefined(this.m_openWorld) {
+      this.m_openWorld.Leave(true, this.Now());
     }
     let restored = ArraySize(this.m_touched);
     // What we did with the host, for the next save.

@@ -39,6 +39,13 @@ public class TandemOpenWorld {
   private let m_toldWaiting: Bool;
   // Pins the engine would not set, said once each.
   private let m_refused: array<Uint32>;
+  // Guest, after a leave: what was put back, looked at again until
+  // m_liftUntil (the engine's own rules may move a pin after the journal's
+  // put-back).
+  private let m_lifted: array<TandemActivityStep>;
+  private let m_liftPins: array<ref<IMappin>>;
+  private let m_liftUntil: Float;
+  private let m_liftCheck: Float;
 
   public func Start(game: GameInstance, story: ref<TandemStorySystem>) -> Void {
     this.m_game = game;
@@ -192,7 +199,9 @@ public class TandemOpenWorld {
 
   // The session is over (a guest: before its journal goes back): every pin
   // we set, back to its own phase; our activities run again.
-  public func Leave(isGuest: Bool) -> Void {
+  public func Leave(isGuest: Bool, now: Float) -> Void {
+    ArrayClear(this.m_lifted);
+    ArrayClear(this.m_liftPins);
     if isGuest {
       if ArraySize(this.m_pins) == 0 {
         this.Scan(0.0);
@@ -200,6 +209,15 @@ public class TandemOpenWorld {
       let steps = TandemStory.ActivitiesLift();
       if ArraySize(steps) > 0 {
         TandemNative.Log(s"openworld: \(this.Apply(steps)) of \(ArraySize(steps)) pin(s) back to our own (leave)");
+        for step in steps {
+          let i = ArrayFindFirst(this.m_markers, step.marker);
+          if i >= 0 {
+            ArrayPush(this.m_lifted, step);
+            ArrayPush(this.m_liftPins, this.m_pins[i]);
+          }
+        }
+        this.m_liftUntil = now + 6.0;
+        this.m_liftCheck = now;
       }
       TandemStory.ActivitiesGrouped(true);
     }
@@ -210,6 +228,31 @@ public class TandemOpenWorld {
     ArrayClear(this.m_pins);
     ArrayClear(this.m_markers);
     ArrayClear(this.m_refused);
+  }
+
+  // Out of a session, the seconds after a guest's leave: a pin put back
+  // that the engine moved again (its journal entry's put-back) is set to
+  // its own phase once more, said; then nothing is kept.
+  public func AfterLeave(now: Float) -> Void {
+    if ArraySize(this.m_lifted) == 0 || now - this.m_liftCheck < 1.0 {
+      return;
+    }
+    this.m_liftCheck = now;
+    let i = 0;
+    while i < ArraySize(this.m_lifted) && i < ArraySize(this.m_liftPins) {
+      let mappin = this.m_liftPins[i];
+      let step = this.m_lifted[i];
+      if IsDefined(mappin) && EnumInt(mappin.GetPhase()) != step.phase {
+        let was = EnumInt(mappin.GetPhase());
+        let took = TandemStory.SetPoiPhase(mappin, step.phase) && EnumInt(mappin.GetPhase()) == step.phase;
+        TandemNative.Log(s"openworld: pin \(step.marker) moved to phase \(was) after the leave, set back to our own \(step.phase) (\(took))");
+      }
+      i += 1;
+    }
+    if now >= this.m_liftUntil {
+      ArrayClear(this.m_lifted);
+      ArrayClear(this.m_liftPins);
+    }
   }
 
   // `cmd story activities` (counts); `cmd story activity open` and
