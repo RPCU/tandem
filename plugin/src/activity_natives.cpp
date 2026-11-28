@@ -42,6 +42,8 @@ struct TandemBusyState {
   Red::CName anim{};
   float x{}, y{}, z{}; // kActivityAnchored: where the body is held
   float yaw{};
+  float viewX{}, viewY{}, viewZ{}; // a remote view (kind 9): where it is
+  std::uint32_t traffic{};         // ... the shared vehicle it drives (0: none)
 };
 static_assert(alignof(TandemBusyState) <= 8, "the script VM aligns struct locals to 8");
 
@@ -190,6 +192,10 @@ TandemBusyState ToScript(const proto::Activity &state) {
   out.y = state.anchor.y;
   out.z = state.anchor.z;
   out.yaw = state.yaw;
+  out.viewX = state.view.x;
+  out.viewY = state.view.y;
+  out.viewZ = state.view.z;
+  out.traffic = state.traffic;
   return out;
 }
 
@@ -253,6 +259,18 @@ struct TandemActivity : Red::IScriptable {
         .anim = anim.hash,
         .anchor = {position.X, position.Y, position.Z},
         .yaw = sync::YawOf({orientation.i, orientation.j, orientation.k, orientation.r})};
+    Activities::Get().SetLocal(state);
+  }
+  // Our V's remote view (proto::ActivityKind::Remote): `sort` its
+  // proto::RemoteSort, `device` the object's EntityID hash, `view` where it
+  // is, `traffic` the shared vehicle it drives (0: none).
+  static void SetOursRemote(std::int32_t sort, std::uint64_t device, Red::Vector4 view,
+                            std::uint32_t traffic) {
+    const proto::Activity state{.kind = proto::ActivityKind::Remote,
+                                .device = device,
+                                .entry = static_cast<std::uint32_t>(std::clamp(sort, 0, 255)),
+                                .view = {view.X, view.Y, view.Z},
+                                .traffic = traffic};
     Activities::Get().SetLocal(state);
   }
 
@@ -428,6 +446,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemBusyState, "TandemBusyState", {
   RTTI_PROPERTY(y);
   RTTI_PROPERTY(z);
   RTTI_PROPERTY(yaw);
+  RTTI_PROPERTY(viewX);
+  RTTI_PROPERTY(viewY);
+  RTTI_PROPERTY(viewZ);
+  RTTI_PROPERTY(traffic);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemSkipEvent, "TandemSkipEvent", {
@@ -469,6 +491,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemRaceEvent, "TandemRaceEvent", {
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemActivity, "TandemActivity", {
   RTTI_METHOD(SetOurs);
+  RTTI_METHOD(SetOursRemote);
   RTTI_METHOD(Others);
   RTTI_METHOD(Changes);
   RTTI_METHOD(AskSkip);

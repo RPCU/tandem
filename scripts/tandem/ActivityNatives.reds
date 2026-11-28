@@ -4,7 +4,8 @@
 public native struct TandemBusyState {
   native let player: Uint32;
   // 0 nothing, 1 a workspot, 2 a bed, 3 a screen, 4 a minigame, 5 a shop,
-  // 6 a menu, 7 photo mode, 8 a contest
+  // 6 a menu, 7 photo mode, 8 a contest, 9 a remote view (entry: its sort,
+  // RemoteView.reds; device: the object)
   native let kind: Int32;
   // 1 anchored: hold the body at x, y, z, yaw; 2 lying; 4 its game stands still
   native let flags: Int32;
@@ -18,6 +19,11 @@ public native struct TandemBusyState {
   native let y: Float;
   native let z: Float;
   native let yaw: Float;
+  // a remote view: where it is, the shared vehicle it drives (0: none)
+  native let viewX: Float;
+  native let viewY: Float;
+  native let viewZ: Float;
+  native let traffic: Uint32;
 }
 
 // The workspot an actor plays in, read from the game's workspot system
@@ -81,6 +87,9 @@ public native struct TandemRaceEvent {
 
 public native class TandemActivity extends IScriptable {
   public static native func SetOurs(kind: Int32, flags: Int32, device: Uint64, workspot: Uint64, entry: Int32, anim: CName, position: Vector4, orientation: Quaternion) -> Void;
+  // Our V's remote view (kind 9): its sort (RemoteView.reds), the object's
+  // EntityID hash, where the view is, the shared vehicle it drives (0: none).
+  public static native func SetOursRemote(sort: Int32, device: Uint64, view: Vector4, traffic: Uint32) -> Void;
   public static native func Others() -> array<TandemBusyState>;
   public static native func Changes() -> Uint32;
   public static native func AskSkip(reason: Int32, fromSeconds: Int32, toSeconds: Int32) -> Void;

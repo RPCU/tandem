@@ -197,7 +197,8 @@ public class TandemText {
       "Saves-NotRestored", "Mods-Replaced-Item", "Trade-Unknown", "Exit-Saving", "Exit-NotSaved",
       "Checkpoint-Saving", "Checkpoint-Failed",
       "Interact-HostOnly", "Interact-Taken", "Interact-TooFar",
-      "Interact-Missing", "Interact-Busy", "Trade-NotNow", "Phone-Unreachable", "Turrets-Busy"
+      "Interact-Missing", "Interact-Busy", "Trade-NotNow", "Phone-Unreachable", "Turrets-Busy",
+      "Turrets-BusyCamera", "Remote-CarBusy", "Remote-CarTheirs"
     ];
     if ArrayContains(asks, key) {
       return 2;
@@ -317,6 +318,10 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Party-Out", "Out");
     this.Text("Tandem-Party-Scene", "In a scene");
     this.Text("Tandem-Party-Menu", "In a menu");
+    this.Text("Tandem-Party-Camera", "In a camera");
+    this.Text("Tandem-Party-Turret", "At a turret");
+    this.Text("Tandem-Party-RemoteCar", "Driving remotely");
+    this.Text("Tandem-Party-Remote", "Remote control");
     this.Text("Tandem-Party-Cyberspace", "Cyberspace");
     this.Text("Tandem-Party-Braindance", "Braindance");
     this.Text("Tandem-Party-Johnny", "As Johnny");
@@ -388,6 +393,8 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-scene-voice", "V's own voice in replayed scenes");
     this.Text("Tandem-Degraded-Id-nameplate-projection", "name plates placed by the game's engine (tandem places them itself)");
     this.Text("Tandem-Degraded-Id-hit-shown-by-twitch", "a hit on a player shown as a plain twitch, not the game's own reaction");
+    this.Text("Tandem-Degraded-Id-remote-car-unseen", "a player's car driven remotely, seen by the others where it was left");
+    this.Text("Tandem-Degraded-Id-held-device-unshared", "a device in a player's hands that the other games cannot turn with it");
     this.Text("Tandem-Degraded-Id-prompt-drawn", "a prompt drawn by tandem instead of the game's own");
     this.Text("Tandem-Degraded-Id-vehicle-teleported", "a vehicle teleported instead of moved smoothly");
     this.Text("Tandem-Degraded-Id-street-body-respawned", "a street vehicle that vanished was spawned again");
@@ -494,6 +501,9 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Interact-Missing", "Not there in {1}'s world right now");
     this.Text("Tandem-Interact-Busy", "{1} is busy: try again in a moment");
     this.Text("Tandem-Turrets-Busy", "{1} is controlling this turret");
+    this.Text("Tandem-Turrets-BusyCamera", "{1} is looking through this camera");
+    this.Text("Tandem-Remote-CarBusy", "{1} is driving this car");
+    this.Text("Tandem-Remote-CarTheirs", "{1}'s car: only they can take control of it");
     this.Text("Tandem-Devices-HackedBy", "Hacked by {1}");
     this.Text("Tandem-Devices-HackedByDescription", "{1} hacked this device, for as long as the hack lasts");
     // Loot, markers.
@@ -857,6 +867,10 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Party-Out", "Hors combat");
     this.Text("Tandem-Party-Scene", "Dans une scène");
     this.Text("Tandem-Party-Menu", "Dans un menu");
+    this.Text("Tandem-Party-Camera", "Dans une caméra");
+    this.Text("Tandem-Party-Turret", "Aux commandes d'une tourelle");
+    this.Text("Tandem-Party-RemoteCar", "Conduite à distance");
+    this.Text("Tandem-Party-Remote", "Contrôle à distance");
     this.Text("Tandem-Party-Cyberspace", "Cyberespace");
     this.Text("Tandem-Party-Braindance", "Danse sensorielle");
     this.Text("Tandem-Party-Johnny", "Dans la peau de Johnny");
@@ -924,6 +938,8 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-scene-voice", "la voix de V dans les scènes rejouées");
     this.Text("Tandem-Degraded-Id-nameplate-projection", "les plaques de nom placées par le moteur du jeu (tandem les place lui-même)");
     this.Text("Tandem-Degraded-Id-hit-shown-by-twitch", "un coup reçu par un joueur affiché comme un simple sursaut, pas la réaction du jeu");
+    this.Text("Tandem-Degraded-Id-remote-car-unseen", "le véhicule d'un joueur conduit à distance, vu par les autres là où il a été laissé");
+    this.Text("Tandem-Degraded-Id-held-device-unshared", "un appareil aux mains d'un joueur que les autres jeux ne peuvent pas tourner avec lui");
     this.Text("Tandem-Degraded-Id-prompt-drawn", "une invite dessinée par tandem au lieu de celle du jeu");
     this.Text("Tandem-Degraded-Id-vehicle-teleported", "un véhicule téléporté au lieu d'être déplacé en douceur");
     this.Text("Tandem-Degraded-Id-street-body-respawned", "un véhicule de rue disparu a été recréé");
@@ -1025,6 +1041,9 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Interact-Missing", "Pas là dans le monde de {1} pour l'instant");
     this.Text("Tandem-Interact-Busy", "{1} est occupé(e) : réessayez dans un instant");
     this.Text("Tandem-Turrets-Busy", "{1} contrôle cette tourelle");
+    this.Text("Tandem-Turrets-BusyCamera", "{1} regarde par cette caméra");
+    this.Text("Tandem-Remote-CarBusy", "{1} conduit ce véhicule");
+    this.Text("Tandem-Remote-CarTheirs", "Le véhicule de {1} : seul ce joueur peut en prendre le contrôle");
     this.Text("Tandem-Devices-HackedBy", "Piraté par {1}");
     this.Text("Tandem-Devices-HackedByDescription", "{1} a piraté cet appareil, le temps que dure le piratage");
     this.Text("Tandem-Loot-Taken", "Quelqu'un l'a déjà pris");

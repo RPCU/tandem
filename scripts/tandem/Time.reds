@@ -561,15 +561,19 @@ public class TandemTime {
     // host and on a guest. Ours is also our `own` below: a V scanning, or in
     // a Sandevistan, is slowed by another V's bubble only by the ratio.
     let own = TandemNative.TimeBubbleScale(this.m_sentAbilities, this.m_sentScale);
+    // A bubble is centred on what its V sees and acts on: its remote view
+    // while it has one (a camera's takeover, a car driven remotely:
+    // RemoteView.reds; remote-views.md), else its body.
+    let body = player.GetWorldPosition();
     if own < 1.0 {
       ArrayPush(owners, system.You());
       ArrayPush(scales, own);
-      ArrayPush(at, player.GetWorldPosition());
+      ArrayPush(at, TandemRemoteView.OurCentre(this.m_game, body));
     }
     for other in TandemNative.TimePlayers() {
       let abilities = TandemNative.TimeAbilities(other);
       let scale = TandemNative.TimeBubbleScale(abilities, TandemNative.TimeScale(other));
-      let spot = TandemNative.RemotePosition(other);
+      let spot = TandemRemoteView.CentreOf(other, TandemNative.RemotePosition(other));
       if scale < 1.0 && spot.W != 0.0 {
         if (abilities & 7) != 0 {
           scansOnly = false;
@@ -609,10 +613,10 @@ public class TandemTime {
     }
     let changes = TandemNative.UpdateTimeBubbles(owners, scales, at, ids, positions);
     if ArraySize(changes) > 0 {
-      this.ReportBubbles(owners);
+      this.ReportBubbles(owners, at, system.You());
     }
-    let by = TandemNative.TimeSlowedBy(system.You(), own, player.GetWorldPosition(), owners, scales, at, this.m_selfSet);
-    this.SlowSelf(player, TandemNative.TimePlayerFactor(system.You(), own, player.GetWorldPosition(), owners, scales, at, this.m_selfSet), scansOnly, by);
+    let by = TandemNative.TimeSlowedBy(system.You(), own, body, owners, scales, at, this.m_selfSet);
+    this.SlowSelf(player, TandemNative.TimePlayerFactor(system.You(), own, body, owners, scales, at, this.m_selfSet), scansOnly, by);
   }
 
   // Our V inside another V's bubble is slowed like the NPCs in it, unless
@@ -623,8 +627,9 @@ public class TandemTime {
   // a dilation being active (it would bar our V's own Sandevistan, whose
   // enter condition refuses under a foreign dilation, final.reds:523680),
   // the per-entity dilation on V is used instead (checked once).
-  // Not slowed: a dead or downed V, and a V in a vehicle (a car has no time
-  // of its own to slow with it).
+  // Not slowed: a dead or downed V, a V in a vehicle (a car has no time of
+  // its own to slow with it), and a V in a remote view (the camera, turret or
+  // car it acts through has none either: RemoteView.reds).
   // With an ability of its own (`own`: the scanner too), the factor is the
   // ratio of the other's bubble to it (PlayerFactor), and it is the whole
   // slow: the scanner and the Sandevistan exempt our V from their global
@@ -639,6 +644,12 @@ public class TandemTime {
   private func SlowSelf(player: ref<GameObject>, factor: Float, scansOnly: Bool, by: Uint32) -> Void {
     if player.IsDead() || VehicleComponent.IsMountedToVehicle(this.m_game, player) {
       factor = 1.0;
+    }
+    if factor < 0.999 {
+      let remote = TandemRemoteView.Ours(this.m_game);
+      if remote.on {
+        factor = 1.0;
+      }
     }
     if !this.m_selfSet && factor >= 0.999 || this.m_selfSet && AbsF(factor - this.m_selfFactor) < 0.01 {
       return;
@@ -780,7 +791,7 @@ public class TandemTime {
   }
 
   // One line per bubble whose size changed, and per bubble that ended.
-  private func ReportBubbles(owners: array<Uint32>) -> Void {
+  private func ReportBubbles(owners: array<Uint32>, at: array<Vector4>, you: Uint32) -> Void {
     let i = 0;
     while i < ArraySize(this.m_bubbleOwners) {
       if !ArrayContains(owners, this.m_bubbleOwners[i]) {
@@ -789,13 +800,20 @@ public class TandemTime {
       i += 1;
     }
     let sizes: array<Int32>;
+    let k = 0;
     for owner in owners {
       let size = TandemNative.TimeBubbleMembers(owner);
       let index = ArrayFindFirst(this.m_bubbleOwners, owner);
       if index < 0 || this.m_bubbleSizes[index] != size {
-        TandemNative.Log(s"time: bubble of player \(owner): \(size) NPC(s)");
+        // Where it is centred: its V, or its remote view (RemoteView.reds).
+        let centre = at[k];
+        let ours = TandemRemoteView.Ours(this.m_game);
+        let theirs = TandemRemoteView.ViewOf(owner);
+        let view = owner == you ? ours.on : theirs.W != 0.0;
+        TandemNative.Log(s"time: bubble of player \(owner): \(size) NPC(s), centred on its \(view ? "remote view" : "V") at \(centre.X) \(centre.Y) \(centre.Z)");
       }
       ArrayPush(sizes, size);
+      k += 1;
     }
     this.m_bubbleOwners = owners;
     this.m_bubbleSizes = sizes;

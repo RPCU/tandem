@@ -93,6 +93,10 @@ public class TandemActivities {
   private let m_device: Uint64;
   // Our bed's jump was seen in this workspot: we lie asleep in it (kind 2).
   private let m_sleeping: Bool;
+  // Our V's remote view (RemoteView.reds), and where we last said it is.
+  private let m_remote: ref<TandemRemoteView>;
+  private let m_remoteView: Vector4;
+  private let m_remoteTraffic: Uint32;
 
   // ---- the interaction we are in (a workspot, or a scene holding our V) ----
   private let m_inter: Bool;
@@ -149,10 +153,16 @@ public class TandemActivities {
     this.m_system = system;
     this.m_contests = new TandemContests();
     this.m_contests.Start(game);
+    this.m_remote = new TandemRemoteView();
+    this.m_remote.Start(game);
   }
 
   public func Contests() -> ref<TandemContests> {
     return this.m_contests;
+  }
+
+  public func Remote() -> ref<TandemRemoteView> {
+    return this.m_remote;
   }
 
   // (test reset) no test kind of ours left set (`busy KIND`), nor a contest's.
@@ -265,6 +275,10 @@ public class TandemActivities {
     // Device.SetZoomBlackboardValues), and which device.
     let psm = player.GetPlayerStateMachineBlackboard();
     let zoomed = IsDefined(psm) && psm.GetBool(GetAllBlackboardDefs().PlayerStateMachine.IsUIZoomDevice);
+    // A camera's takeover, a turret's, a car driven remotely (RemoteView.reds):
+    // the body stands where it is, the view is elsewhere.
+    let remote = IsDefined(this.m_remote) ? this.m_remote.Sample() : null;
+    let viewing = IsDefined(remote) && remote.on;
     if this.m_test != 0 {
       kind = this.m_test;
       flags = 1;
@@ -280,6 +294,10 @@ public class TandemActivities {
     } else if this.m_menu != 0 {
       kind = this.m_menu;
       flags = 1;
+    } else if viewing {
+      kind = 9;
+      entry = remote.sort;
+      device = IsDefined(remote.object) ? Cast<Uint64>(EntityID.GetHash(remote.object.GetEntityID())) : 0ul;
     } else if zoomed {
       kind = 3;
       flags = 1;
@@ -302,7 +320,7 @@ public class TandemActivities {
         anim = IsNameValid(spot.idle) ? spot.idle : spot.anim;
       }
     }
-    if kind != 0 && this.StandsStill() {
+    if kind != 0 && kind != 9 && this.StandsStill() {
       flags += 4;
     }
     this.m_wasInSpot = inSpot;
@@ -310,6 +328,25 @@ public class TandemActivities {
     // without it (a new epoch: the host checks a guest at once).
     if this.m_kind == 7 && kind != 7 {
       TandemSync.WorldRebuilt(4);
+    }
+    // A remote view: said again when the view moved 8 m (a car driven) or
+    // the shared vehicle it drives changed (handed to us, announced).
+    if kind == 9 {
+      if this.m_kind == 9 && entry == this.m_entry && device == this.m_device && remote.traffic == this.m_remoteTraffic && Vector4.Distance(remote.view, this.m_remoteView) < 8.0 {
+        return;
+      }
+      TandemActivity.SetOursRemote(entry, device, remote.view, remote.traffic);
+      if this.m_kind != 9 || device != this.m_device {
+        TandemNative.Log(s"activities: our V is busy \(TandemActivities.KindName(kind)) (sort \(entry), device \(device), shared vehicle \(remote.traffic))");
+      }
+      this.m_kind = kind;
+      this.m_flags = 0;
+      this.m_workspot = 0ul;
+      this.m_entry = entry;
+      this.m_device = device;
+      this.m_remoteView = remote.view;
+      this.m_remoteTraffic = remote.traffic;
+      return;
     }
     if kind == this.m_kind && flags == this.m_flags && workspot == this.m_workspot && entry == this.m_entry && device == this.m_device {
       return;
@@ -997,6 +1034,8 @@ public class TandemActivities {
         return "in photo mode";
       case 8:
         return "in a contest";
+      case 9:
+        return "in a remote view";
       default:
         return "?";
     }

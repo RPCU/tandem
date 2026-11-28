@@ -65,6 +65,8 @@ public class TandemCar {
   public let readyAt: Float;
   public let wrecked: Bool;
   public let siren: Bool;
+  // Proxies: our V drives it remotely (Drive leaves it to our game).
+  public let remote: Bool;
   // Proxies: its headlights as we last set them (0 not yet, 1 off, 2 on).
   public let lamps: Int32;
   // When its headlights were last checked against its owner's (Drive).
@@ -346,6 +348,44 @@ public class TandemTraffic {
       }
     }
     return 0u;
+  }
+
+  // A car our V took (it got in): a player's car from then on, never shared.
+  public func Taken(body: EntityID) -> Bool {
+    return ArrayContains(this.m_taken, body);
+  }
+
+  // (test, RemoteView.reds) the nearest vehicle body we know within
+  // `within` metres: a shared one (ours or a proxy) first, else one of our
+  // world's.
+  public func NearestBody(at: Vector4, within: Float) -> ref<VehicleObject> {
+    let best: ref<VehicleObject>;
+    let bestFar = within;
+    for car in this.m_cars {
+      let body = TandemTraffic.Body(this.m_game, car.body);
+      if IsDefined(body) {
+        let where = body.GetWorldPosition();
+        let far = Vector4.Distance(at, where);
+        if far < bestFar {
+          best = body;
+          bestFar = far;
+        }
+      }
+    }
+    if IsDefined(best) {
+      return best;
+    }
+    for vehicle in this.m_live {
+      if IsDefined(vehicle) {
+        let where = vehicle.GetWorldPosition();
+        let far = Vector4.Distance(at, where);
+        if far < bestFar {
+          best = vehicle;
+          bestFar = far;
+        }
+      }
+    }
+    return best;
   }
 
   // The shared vehicle a body is the proxy of (0: none, or one we run).
@@ -841,7 +881,10 @@ public class TandemTraffic {
     let body = IsDefined(car) ? TandemTraffic.Body(this.m_game, car.body) : null;
     let player = GetPlayer(this.m_game);
     let boarded = IsDefined(body) && IsDefined(player) && VehicleComponent.IsMountedToProvidedVehicle(this.m_game, player.GetEntityID(), body);
-    if !IsDefined(car) || !car.mine || !IsDefined(body) || car.claimed || boarded || ArrayContains(this.m_taken, car.body) || TandemElsewhere.AwayFromBody(this.m_game) {
+    // Not one our V drives remotely either (the host hands it to nobody
+    // then: remote-views.md; a word that crossed its start).
+    let remote = IsDefined(body) && body.IsVehicleRemoteControlled();
+    if !IsDefined(car) || !car.mine || !IsDefined(body) || car.claimed || boarded || remote || ArrayContains(this.m_taken, car.body) || TandemElsewhere.AwayFromBody(this.m_game) {
       TandemStreet.Answer(event.id, false);
       TandemNative.Log(s"street: handover of vehicle \(event.id) to player \(event.player) refused");
       return;
@@ -904,7 +947,16 @@ public class TandemTraffic {
     car.health = event.amount;
     TandemTraffic.Spare(this.m_game, body, false);
     let inherited = (event.reason & 16) != 0;
-    if !inherited {
+    // Given to us because our V drives it remotely (remote-views.md): it is
+    // where we drive it already, and our V's hands drive it, not traffic.
+    let remote = body.IsVehicleRemoteControlled();
+    if remote {
+      let system = TandemSystem.Of(this.m_game);
+      if IsDefined(system) {
+        system.ReleaseBody(body.GetEntityID());
+      }
+      body.PhysicsWakeUp();
+    } else if !inherited {
       // Where the giver left it (our proxy was drawn a little in the past).
       GameInstance.GetTeleportationFacility(this.m_game).Teleport(body, new Vector4(event.x, event.y, event.z, 1.0), Quaternion.ToEulerAngles(new Quaternion(event.i, event.j, event.k, event.r)));
     }
@@ -916,7 +968,7 @@ public class TandemTraffic {
       // One of our own crowd's, given and back: into its lane again.
       body.TandemHold(false);
       car.held = false;
-    } else if (event.flags & 5) == 0 {
+    } else if (event.flags & 5) == 0 && !remote {
       // A car on the move with a driver: it keeps the giver's speed and
       // joins our traffic (as a cab does when it goes free, final.reds:217147).
       body.TandemDriveOn(new Vector4(event.dx, event.dy, event.dz, 0.0));
@@ -924,7 +976,7 @@ public class TandemTraffic {
     car.own = false;
     TandemStreet.Answer(event.id, true);
     this.m_taken2 += 1;
-    TandemNative.Log(s"street: handover in: vehicle \(car.id) from player \(event.player)\(inherited ? " (inherited)" : ""), health \(event.amount), \(Vector4.Length(new Vector4(event.dx, event.dy, event.dz, 0.0))) m/s");
+    TandemNative.Log(s"street: handover in: vehicle \(car.id) from player \(event.player)\(inherited ? " (inherited)" : "")\(remote ? " (our V drives it remotely)" : ""), health \(event.amount), \(Vector4.Length(new Vector4(event.dx, event.dy, event.dz, 0.0))) m/s");
   }
 
   // Whoever runs a vehicle changed. Ours without our giving it (our world
@@ -954,6 +1006,20 @@ public class TandemTraffic {
     for car in this.m_cars {
       if !car.mine && !car.claimed {
         let body = TandemTraffic.Body(this.m_game, car.body);
+        // Our V drives it remotely (the take control quickhack): ours to
+        // move until the host hands it to us (remote-views.md), a frame or
+        // two; never pulled back to its owner's states meanwhile.
+        if IsDefined(body) && body.IsVehicleRemoteControlled() {
+          if !car.remote {
+            car.remote = true;
+            system.ReleaseBody(body.GetEntityID());
+            body.PhysicsWakeUp();
+            TandemNative.Log(s"street: our V drives vehicle \(car.id) remotely: no longer moved to its owner's states");
+          }
+          body = null;
+        } else if car.remote {
+          car.remote = false;
+        }
         if IsDefined(body) {
           if !car.ready {
             car.ready = true;
@@ -1663,7 +1729,8 @@ public class TandemTraffic {
 
   private func FlagsOf(vehicle: ref<VehicleObject>) -> Int32 {
     let flags = 0;
-    if !VehicleComponent.HasActiveDriverMounted(this.m_game, vehicle.GetEntityID()) {
+    // Driven remotely (the take control quickhack): driven, no driver in it.
+    if !VehicleComponent.HasActiveDriverMounted(this.m_game, vehicle.GetEntityID()) && !vehicle.IsVehicleRemoteControlled() {
       flags += 1;
     }
     if vehicle.IsPrevention() {
