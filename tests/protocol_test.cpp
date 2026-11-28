@@ -1576,7 +1576,7 @@ TEST_CASE("a summoned car survives encoding: reliable, small, appended, one form
   RoundTrips(arriving);
   RoundTrips(OwnCar{.player = 2, .vehicle = 0x2a1b, .position = {4.f, 5.f, 6.f}}); // parked
   RoundTrips(OwnCar{.player = 3});                                                 // none out
-  CHECK(Message(OwnCar{}).index() == Message(CorpsePose{}).index() + 1);             // appended
+  CHECK(Message(OwnCar{}).index() == Message(CorpsePose{}).index() + 1);           // appended
   CHECK(std::string(NameOf(OwnCar{})) == "OwnCar");
   CHECK(ChannelOf(OwnCar{}) == Channel::Event);
   CHECK(IsReliable(OwnCar{}));
