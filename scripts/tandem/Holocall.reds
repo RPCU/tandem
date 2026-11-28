@@ -28,6 +28,11 @@ public class TandemHolocall {
   private let m_placed: Int32;
   private let m_contacts: array<ref<JournalContact>>;
   private let m_hint: Bool;
+  // On the call: what can be done with them (TandemPhoneContacts' actions,
+  // the phone's rows: the same list), as the call's choices, and the texts
+  // last shown.
+  private let m_actions: array<Int32>;
+  private let m_shownTexts: String;
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
@@ -219,9 +224,12 @@ public class TandemHolocall {
         break;
       case 3:
         this.Place(this.m_player, this.m_name, this.m_ours, 1);
-        if now - this.m_since > 8.0 || now < this.m_since {
-          // A link lasts the session: the call is its first seconds, then
-          // the party HUD shows it (presence.md).
+        if this.Choices() {
+          break; // one was picked: the call is over
+        }
+        // A link lasts the session: the call is its first seconds (30 with
+        // its choices up), then the party HUD shows it (presence.md).
+        if now - this.m_since > (ArraySize(this.m_actions) > 0 ? 30.0 : 8.0) || now < this.m_since {
           TandemNative.Log(s"holocall: the call with \(this.m_name) closed, the link stays");
           this.Clear();
         }
@@ -237,6 +245,94 @@ public class TandemHolocall {
         break;
     }
     this.ShowHint(this.CanHangUp() && this.m_placed >= 0);
+  }
+
+  // On the call, its choices: everything the phone's row of that player
+  // offers (TandemPhoneContacts.Actions: trade, go to them, ask them here,
+  // the link last, "Hang up" on a call), the face-to-face prompts' remote
+  // ones, as a holocall's dialogue choices. True: one was picked and done.
+  private func Choices() -> Bool {
+    let story = TandemStorySystem.Get(this.m_game);
+    let dialogue = IsDefined(story) ? story.Dialogue() : null;
+    let contacts = TandemPhoneContacts.Of(this.m_game);
+    if !IsDefined(dialogue) || !IsDefined(contacts) {
+      return false;
+    }
+    let pick = dialogue.TakeCallPick();
+    if pick >= 0 && pick < ArraySize(this.m_actions) {
+      let action = this.m_actions[pick];
+      let player = this.m_player;
+      TandemNative.Log(s"holocall: \(contacts.Label(player, action, true)) chosen on the call with \(this.m_name)");
+      // The call view goes first (its choices with it); the link stays but
+      // for a hang-up.
+      this.Clear();
+      contacts.Do(player, action);
+      return true;
+    }
+    let actions: array<Int32>;
+    let texts: array<String>;
+    let key = "";
+    let all = contacts.Actions();
+    for action in all {
+      if action != 1 {
+        ArrayPush(actions, action);
+      }
+    }
+    ArrayPush(actions, 1);
+    for action in actions {
+      let text = contacts.Label(this.m_player, action, false);
+      ArrayPush(texts, text);
+      key += text + "|";
+    }
+    if !Equals(key, this.m_shownTexts) || !dialogue.CallHubShown() {
+      if dialogue.ShowCallHub(TandemHolocall.HubId(this.m_player), this.m_name, texts) {
+        this.m_actions = actions;
+        this.m_shownTexts = key;
+      } else if ArraySize(this.m_actions) > 0 {
+        ArrayClear(this.m_actions);
+        this.m_shownTexts = "";
+      }
+    }
+    return false;
+  }
+
+  public static func HubId(player: Uint32) -> Int32 {
+    return 7790000 + Cast<Int32>(player % 1000u);
+  }
+
+  // (test, comms callhub) the call's choices as shown, in English, and
+  // whether the game's widget draws them.
+  public func ChoicesReport() -> String {
+    let story = TandemStorySystem.Get(this.m_game);
+    let dialogue = IsDefined(story) ? story.Dialogue() : null;
+    let contacts = TandemPhoneContacts.Of(this.m_game);
+    if !IsDefined(dialogue) || !IsDefined(contacts) || !dialogue.CallHubShown() || ArraySize(this.m_actions) == 0 {
+      return "holocall: no choices on the call";
+    }
+    let options = "";
+    for action in this.m_actions {
+      options += (StrLen(options) > 0 ? " | " : "") + contacts.Label(this.m_player, action, true);
+    }
+    return s"holocall: choices with \(this.m_name): \(options) (drawn \(dialogue.CallHubDrawn()))";
+  }
+
+  // (test, comms callpick TEXT) the option of that English text, as its key.
+  public func PickChoice(text: String) -> Bool {
+    let story = TandemStorySystem.Get(this.m_game);
+    let dialogue = IsDefined(story) ? story.Dialogue() : null;
+    let contacts = TandemPhoneContacts.Of(this.m_game);
+    if !IsDefined(dialogue) || !IsDefined(contacts) {
+      return false;
+    }
+    let i = 0;
+    while i < ArraySize(this.m_actions) {
+      if Equals(contacts.Label(this.m_player, this.m_actions[i], true), text) {
+        dialogue.PickCall(i);
+        return true;
+      }
+      i += 1;
+    }
+    return false;
   }
 
   // The phone system told the phase (0 ringing, 1 on the call), once.
@@ -303,6 +399,15 @@ public class TandemHolocall {
     }
     this.m_placed = -1;
     this.ShowHint(false);
+    if ArraySize(this.m_actions) > 0 {
+      let story = TandemStorySystem.Get(this.m_game);
+      let dialogue = IsDefined(story) ? story.Dialogue() : null;
+      if IsDefined(dialogue) {
+        dialogue.CloseCallHub();
+      }
+      ArrayClear(this.m_actions);
+      this.m_shownTexts = "";
+    }
     this.m_mode = 0;
     this.m_player = 0u;
   }

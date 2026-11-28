@@ -1405,6 +1405,7 @@ public class TandemComms {
 
   // tools/game.sh cmd: comms report | comms ping | comms link [NAME] |
   // comms unlink [NAME] | comms accept | comms decline | comms tag |
+  // comms callhub | comms callpick TEXT (a call's choices) |
   // comms target | comms objective
   public func Command(command: String) -> Void {
     if Equals(command, "comms hacks") {
@@ -1458,6 +1459,11 @@ public class TandemComms {
       this.HangUp();
     } else if Equals(command, "comms holocall") {
       TandemNative.Log(this.m_holocall.Report());
+    } else if Equals(command, "comms callhub") {
+      TandemNative.Log(this.m_holocall.ChoicesReport());
+    } else if StrBeginsWith(command, "comms callpick") {
+      let text = StrAfterFirst(StrAfterFirst(command, " "), " ");
+      TandemNative.Log(s"holocall: pick \(text): \(this.m_holocall.PickChoice(text))");
     } else if Equals(command, "comms tag") {
       let player = GetPlayer(this.m_game);
       let target = IsDefined(player) ? GameInstance.GetTargetingSystem(this.m_game).GetLookAtObject(player, true, true) : null;

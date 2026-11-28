@@ -551,7 +551,9 @@ TANDEM_INSTANCE=a TANDEM_PARTNER=c tools/sweep.sh pair-devices-door pair-devices
   the partner run the same build with co-op off (`tools/game.sh ensure
 off` on it: started once ours plays), leave any session, take its test
   reset and `coop join 127.0.0.1:PORT` (the game machine's loopback, our
-  port); it arrives beside our V. Its own port is
+  port); it arrives beside our V (a partner found on its death screen or
+  in the main menu is stopped and started again first; its solo test reset
+  starts its fallbacks afresh, as ours does). Its own port is
   `TANDEM_PARTNER_PORT` (default ours + 100: two instances default to
   27550 both). After the scenario it leaves (`coop leave`), so the next
   one's mock player is alone with our game.
