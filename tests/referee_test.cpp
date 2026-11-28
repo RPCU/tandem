@@ -260,6 +260,40 @@ TEST_CASE("referee: a car's paint is its owner's word, passed on, never back") {
   CHECK(Rules(host).empty());
 }
 
+TEST_CASE("referee: a summoned car is its owner's word, passed on, never back") {
+  auto guest = Guest();
+  guest.Received(
+      1,
+      proto::OwnCar{
+          .player = 3, .vehicle = 9, .flags = proto::kOwnCarMoving, .position = {10.f, 20.f, 3.f}},
+      kSecond);
+  guest.Received(1, proto::OwnCar{.player = 3, .vehicle = 9, .position = {4.f, 2.f, 3.f}},
+                 kSecond);                                // parked
+  guest.Received(1, proto::OwnCar{.player = 3}, kSecond); // gone
+  CHECK(Rules(guest).empty());
+  // Our own back, a player nobody knows, a flag of no version, no car with
+  // a place, a place that is no number.
+  guest.Received(1, proto::OwnCar{.player = 2, .vehicle = 9}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
+  guest.Received(1, proto::OwnCar{.player = 9, .vehicle = 9}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"ids.unknown-player"});
+  guest.Received(1, proto::OwnCar{.player = 3, .vehicle = 9, .flags = 8}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1, proto::OwnCar{.player = 3, .flags = proto::kOwnCarMoving}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1,
+                 proto::OwnCar{.player = 3,
+                               .vehicle = 9,
+                               .position = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.not-finite"});
+  // Host: a guest says it in its own name.
+  auto host = Host();
+  host.Received(2, proto::OwnCar{.player = 2, .vehicle = 9, .flags = proto::kOwnCarMoving},
+                kSecond);
+  CHECK(Rules(host).empty());
+}
+
 TEST_CASE("referee: a device's fire is the host's turret's, what a copy sees a guest's") {
   using Kind = proto::DeviceFireKind;
   auto host = Host();

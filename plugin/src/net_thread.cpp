@@ -66,6 +66,8 @@ struct NetThread::Impl {
   std::optional<proto::CarLend> lastLend;
   // Our car's custom paint (said by the scripts when it changes): again too.
   std::optional<proto::CarPaint> lastPaint;
+  // Our summoned car (said by the scripts when it changes): again too.
+  std::optional<proto::OwnCar> lastOwnCar;
   std::optional<proto::Seat> lastSeat;
   std::optional<proto::VehicleRadio> lastRadio;
   std::optional<proto::Stealth> lastStealth;
@@ -341,6 +343,8 @@ struct NetThread::Impl {
       endpoint->SendCombat(*lastLend);
     if (lastPaint)
       endpoint->SendCombat(*lastPaint);
+    if (lastOwnCar)
+      endpoint->SendCombat(*lastOwnCar);
     // What this game runs without (degradations.hpp): said to the session
     // from its start and at every change.
     auto degradedSeen = Degradations::Get().Local().Changes();
@@ -497,6 +501,8 @@ struct NetThread::Impl {
                 runtime.PushEvent({ScriptEvent::Kind::PlayerLeft, e.player, {}, {}});
                 // Its car's paint goes with it (a namesake's car is stock).
                 Combat::Get().PushInbound(proto::CarPaint{.player = e.player});
+                // And its summoned car: no one's now (its copy stays parked).
+                Combat::Get().PushInbound(proto::OwnCar{.player = e.player});
                 // And what its game ran without.
                 Combat::Get().PushInbound(proto::Degraded{.player = e.player});
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Left, .player = e.player});
@@ -1515,6 +1521,8 @@ struct NetThread::Impl {
           lastLend = *lend;
         if (const auto *paint = std::get_if<proto::CarPaint>(&message))
           lastPaint = *paint;
+        if (const auto *car = std::get_if<proto::OwnCar>(&message))
+          lastOwnCar = *car;
         if (!endpoint->SendCombat(message))
           if (const auto *area = std::get_if<proto::AreaHit>(&message))
             log::Info("hit on player {} dropped: not in the session, or friendly fire is off",

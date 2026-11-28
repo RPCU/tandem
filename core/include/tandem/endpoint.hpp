@@ -853,6 +853,12 @@ public:
   // nowhere). Only cars that have one: stock paint is kept nowhere. A
   // guest's own is not kept here; the host's is.
   const std::map<proto::PlayerId, proto::CarPaint> &CarPaints() const { return m_paints; }
+  // Each player's summoned car out in the world, as they said (OwnCar
+  // through SendCombat, as CarPaint: ours kept and said as soon as we are
+  // in; the host stamps who, keeps everyone's and tells all; a repeat is
+  // applied nowhere; no car is kept nowhere; it goes with its player). A
+  // guest's own is not kept here; the host's is (garage.md 1a).
+  const std::map<proto::PlayerId, proto::OwnCar> &OwnCars() const { return m_ownCars; }
   // What each player's game runs without, as they said (Degraded through
   // SendCombat, as CarPaint: ours kept and said as soon as we are in; the
   // host stamps who, keeps everyone's and tells all; a repeat is applied
@@ -1862,6 +1868,11 @@ private:
   std::map<proto::PlayerId, proto::CarPaint> m_paints;
   void SendLocalPaintNow();
   bool NotePaint(const proto::CarPaint &paint, std::vector<SessionEvent> &out);
+  // A player's summoned car, the same way.
+  std::optional<proto::OwnCar> m_localOwnCar;
+  std::map<proto::PlayerId, proto::OwnCar> m_ownCars;
+  void SendLocalOwnCarNow();
+  bool NoteOwnCar(const proto::OwnCar &car, std::vector<SessionEvent> &out);
   // What each game runs without, the same way: ours, and the others' that
   // have something off.
   std::optional<proto::Degraded> m_localDegraded;

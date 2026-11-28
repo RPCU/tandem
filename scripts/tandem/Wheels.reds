@@ -126,6 +126,22 @@ public class TandemWheelsSync {
     return this.m_you != 0u;
   }
 
+  // A car of ours rolls on after we left it: we say where it is (Roll).
+  public func Rolls() -> Bool {
+    return IsDefined(this.m_rolling);
+  }
+
+  // That player's car rolls on here with nobody at the wheel (FollowRollers
+  // moves its copy).
+  public func FollowsRoller(player: Uint32) -> Bool {
+    for roller in this.m_rollers {
+      if roller.player == player {
+        return true;
+      }
+    }
+    return false;
+  }
+
   public func Tick(now: Float, you: Uint32, system: ref<TandemSystem>) -> Void {
     this.m_now = now;
     if you != this.m_you {
