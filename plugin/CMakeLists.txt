@@ -67,6 +67,7 @@ add_library(tandem SHARED
   src/engine/scenes.cpp
   src/engine/slots.cpp
   src/engine/physics.cpp
+  src/engine/ragdoll.cpp
   src/engine/vehiclemove.cpp
   src/engine/casts.cpp
   src/engine/workspots.cpp)

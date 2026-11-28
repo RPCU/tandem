@@ -893,9 +893,17 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           // A context, a delay within its bound, flags this version knows.
           inRange = p::Fits(m);
         } else if constexpr (std::is_same_v<M, p::CorpsePose>) {
-          // An NPC named, a place and a heading.
+          // An NPC named, a place and a heading, its ragdoll's bodies (1 to
+          // kMaxRagdollBodies), each turned by a unit quaternion.
           finite = Finite(m.position) && std::isfinite(m.yaw);
-          inRange = m.pose.npc != 0;
+          inRange = m.npc != 0 && !m.bodies.empty() && m.bodies.size() <= p::kMaxRagdollBodies &&
+                    std::ranges::all_of(m.bodies, [](const p::RagdollBody &body) {
+                      double sum = 0;
+                      for (const auto c : body.rotation)
+                        sum += double(c) * c;
+                      const double unit = 32767.0 * 32767.0;
+                      return sum > 0.9 * unit && sum < 1.1 * unit;
+                    });
         } else if constexpr (std::is_same_v<M, p::Waypoint>) {
           // A place on the map, of a kind this version knows (Objective: v9).
           finite = Finite(m.position);
@@ -1507,10 +1515,10 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
           NeedShown(m.npc, name);
         } else if constexpr (std::is_same_v<M, p::CorpsePose>) {
           // The body of an NPC we were told of, and never one of ours back.
-          NeedNpc(m.pose.npc, name);
-          if (OwnerOf(m.pose.npc) == m_self)
+          NeedNpc(m.npc, name);
+          if (OwnerOf(m.npc) == m_self)
             Add("authority.own-state-back",
-                std::format("the host sent us npc {}'s body, which our game runs", m.pose.npc));
+                std::format("the host sent us npc {}'s body, which our game runs", m.npc));
         } else if constexpr (std::is_same_v<M, p::NpcSeat>) {
           if (m.owner != p::kNoPlayer)
             NeedNpc(m.npc, name);

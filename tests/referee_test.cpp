@@ -1253,15 +1253,23 @@ TEST_CASE("referee: a body's rest is of an NPC we were told of, never ours back"
   auto guest = Guest();
   guest.Received(1, proto::NpcSpawn{.npc = 7, .record = 1}, kSecond);
   guest.Received(1, proto::NpcGone{.npc = 7, .reason = proto::kGoneDead}, kSecond);
-  guest.Received(1, proto::CorpsePose{.pose = {.npc = 7}, .position = {1.f, 2.f, 3.f}}, kSecond);
+  const std::vector<proto::RagdollBody> bodies{
+      {.offset = {0, 0, 10}, .rotation = {0, 0, 0, 32767}}};
+  guest.Received(1, proto::CorpsePose{.npc = 7, .position = {1.f, 2.f, 3.f}, .bodies = bodies},
+                 kSecond);
   CHECK(Rules(guest).empty());
-  guest.Received(1, proto::CorpsePose{.pose = {.npc = 8}}, kSecond);
+  guest.Received(1, proto::CorpsePose{.npc = 8, .bodies = bodies}, kSecond);
   CHECK(Rules(guest) == std::vector<std::string>{"ids.unknown-npc"});
-  guest.Received(1, proto::CorpsePose{.pose = {.npc = 7}, .yaw = std::nanf("")}, kSecond);
+  guest.Received(1, proto::CorpsePose{.npc = 7, .yaw = std::nanf(""), .bodies = bodies}, kSecond);
   CHECK(Rules(guest) == std::vector<std::string>{"value.not-finite"});
+  // No bodies, or a body turned by no rotation.
+  guest.Received(1, proto::CorpsePose{.npc = 7}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1, proto::CorpsePose{.npc = 7, .bodies = {{.offset = {1, 2, 3}}}}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
   const auto ours = regions::MakeNpcId(2, 1);
   guest.Sent(1, proto::NpcSpawn{.npc = ours, .record = 2}, kSecond);
-  guest.Received(1, proto::CorpsePose{.pose = {.npc = ours}}, kSecond);
+  guest.Received(1, proto::CorpsePose{.npc = ours, .bodies = bodies}, kSecond);
   CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
 }
 

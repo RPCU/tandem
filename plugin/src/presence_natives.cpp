@@ -8,19 +8,23 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "combat.hpp"
-#include "engine/posestream.hpp"
+#include "engine/ragdoll.hpp"
 #include "log.hpp"
 #include "presence.hpp"
 #include "runtime.hpp"
 
-#include "tandem/pose.hpp"
 #include "tandem/presence.hpp"
 #include "tandem/session.hpp"
 
 #include <RED4ext/Scripting/Natives/Generated/ent/EntityID.hpp>
+#include <RED4ext/Scripting/Natives/entEntity.hpp>
 #include <RedLib.hpp>
 
 #include <algorithm>
+#include <cmath>
+#include <format>
+#include <string>
+#include <vector>
 
 namespace tandem::plugin {
 // Something a remote V was heard doing (presence::Event). Plain fields: the
@@ -323,43 +327,95 @@ struct TandemPresence : Red::IScriptable {
          .flags = static_cast<std::uint8_t>(inVehicle ? proto::kVoiceInVehicle : 0)});
   }
   // ---- bodies at rest (Corpses.reds; regions.md, "Corpses") ----
-  // Owner, game thread: the next pose read of the body is its rest's (the
-  // scene actors' read, engine/posestream.cpp).
-  static void ReadCorpse(std::uint32_t npc, Red::Handle<Red::ent::Entity> entity) {
+  // Owner, game thread: the settled body's ragdoll read (engine/ragdoll.cpp)
+  // and sent with its place. "" when sent, else why not.
+  static Red::CString SendCorpse(std::uint32_t npc, Red::Handle<Red::ent::Entity> entity,
+                                 Red::Vector4 position, float yaw) {
     if (npc == 0 || !entity)
-      return;
-    Runtime::Get().ReadCorpse(npc);
-    engine::SetPoseActorSource(npc, entity);
-  }
-  // Owner: the read came: sent with its place (true), and the read let go.
-  static bool SendCorpse(std::uint32_t npc, Red::Vector4 position, float yaw) {
-    const auto read = Runtime::Get().TakeCorpseRead(npc);
-    if (!read)
-      return false;
-    engine::SetPoseActorSource(npc, {});
-    Combat::Get().Send(proto::CorpsePose{.pose = pose::ForActor(npc, *read),
-                                         .position = {position.X, position.Y, position.Z},
-                                         .yaw = yaw});
-    return true;
-  }
-  // Owner: the read never came (a body the stream cannot read): let go.
-  static void StopCorpseRead(std::uint32_t npc) {
-    Runtime::Get().ForgetCorpse(npc);
-    engine::SetPoseActorSource(npc, {});
+      return "no body";
+    std::string why;
+    const auto bodies = engine::ReadRagdoll(entity.GetPtr(), why);
+    if (bodies.empty())
+      return why.c_str();
+    if (bodies.size() > proto::kMaxRagdollBodies)
+      return std::format("its ragdoll has {} bodies, more than {}", bodies.size(),
+                         proto::kMaxRagdollBodies)
+          .c_str();
+    proto::CorpsePose corpse{
+        .npc = npc, .position = {position.X, position.Y, position.Z}, .yaw = yaw};
+    const auto cm = [](float from, float to) {
+      return static_cast<std::int16_t>(
+          std::clamp(std::lround((to - from) * 100.f), -32767L, 32767L));
+    };
+    const auto unit = [](float c) {
+      return static_cast<std::int16_t>(std::clamp(std::lround(c * 32767.f), -32767L, 32767L));
+    };
+    for (const auto &b : bodies)
+      corpse.bodies.push_back(
+          {.offset = {cm(position.X, b.x), cm(position.Y, b.y), cm(position.Z, b.z)},
+           .rotation = {unit(b.i), unit(b.j), unit(b.k), unit(b.r)}});
+    if (!proto::Fits(corpse))
+      return "its place or heading is not a number";
+    Combat::Get().Send(corpse);
+    return "";
   }
   // Every other game: the bodies told since the last ask.
   static Red::DynArray<TandemCorpse> TakeCorpses() {
     Red::DynArray<TandemCorpse> out;
     for (const auto &c : Runtime::Get().TakeCorpseArrivals())
-      out.EmplaceBack(TandemCorpse{c.pose.npc, c.position.x, c.position.y, c.position.z, c.yaw});
+      out.EmplaceBack(TandemCorpse{c.npc, c.position.x, c.position.y, c.position.z, c.yaw});
     return out;
   }
-  // Our copy drawn in the owner's rest pose (no entity: let go, forgotten).
-  static void BindCorpse(std::uint32_t npc, Red::Handle<Red::ent::Entity> entity) {
-    engine::BindPoseActor(npc, entity);
+  // Every other game, game thread: our copy's ragdoll's bodies set where the
+  // owner's lie, at rest. "" when done, else why not.
+  static Red::CString LayCorpse(std::uint32_t npc, Red::Handle<Red::ent::Entity> entity) {
+    const auto corpse = Runtime::Get().CorpseOf(npc);
+    if (!corpse)
+      return "its owner's body was not told";
     if (!entity)
-      Runtime::Get().ForgetCorpse(npc);
+      return "no copy";
+    std::vector<engine::RagdollBody> bodies;
+    bodies.reserve(corpse->bodies.size());
+    for (const auto &b : corpse->bodies) {
+      float q[4];
+      double norm = 0;
+      for (int c = 0; c < 4; ++c) {
+        q[c] = b.rotation[c] / 32767.f;
+        norm += double(q[c]) * q[c];
+      }
+      const auto scale = norm > 0 ? static_cast<float>(1.0 / std::sqrt(norm)) : 1.f;
+      bodies.push_back({.x = corpse->position.x + b.offset[0] / 100.f,
+                        .y = corpse->position.y + b.offset[1] / 100.f,
+                        .z = corpse->position.z + b.offset[2] / 100.f,
+                        .i = q[0] * scale,
+                        .j = q[1] * scale,
+                        .k = q[2] * scale,
+                        .r = norm > 0 ? q[3] * scale : 1.f});
+    }
+    return engine::WriteRagdoll(entity.GetPtr(), bodies).c_str();
   }
+  // Every other game: how far the copy's ragdoll's bodies lie from its
+  // owner's told ones, the worst of them, in metres; -1 when not readable.
+  static float CorpseApart(std::uint32_t npc, Red::Handle<Red::ent::Entity> entity) {
+    const auto corpse = Runtime::Get().CorpseOf(npc);
+    if (!corpse || !entity)
+      return -1.f;
+    std::string why;
+    const auto bodies = engine::ReadRagdoll(entity.GetPtr(), why);
+    if (bodies.size() != corpse->bodies.size())
+      return -1.f;
+    float worst = 0.f;
+    for (std::size_t i = 0; i < bodies.size(); ++i) {
+      const auto &told = corpse->bodies[i];
+      const float dx = bodies[i].x - (corpse->position.x + told.offset[0] / 100.f);
+      const float dy = bodies[i].y - (corpse->position.y + told.offset[1] / 100.f);
+      const float dz = bodies[i].z - (corpse->position.z + told.offset[2] / 100.f);
+      worst = std::max(worst, std::sqrt(dx * dx + dy * dy + dz * dz));
+    }
+    return worst;
+  }
+  // The copy went, or the session ended: its owner's body forgotten.
+  static void ForgetCorpse(std::uint32_t npc) { Runtime::Get().ForgetCorpse(npc); }
 
   // Game thread: the lines of the NPCs we show since the last ask.
   static Red::DynArray<TandemNpcVoice> TakeNpcVoices() {
@@ -518,11 +574,11 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemPresence, "TandemPresence", {
   RTTI_METHOD(TakeLocalNpcVoices);
   RTTI_METHOD(SendNpcVoice);
   RTTI_METHOD(TakeNpcVoices);
-  RTTI_METHOD(ReadCorpse);
   RTTI_METHOD(SendCorpse);
-  RTTI_METHOD(StopCorpseRead);
   RTTI_METHOD(TakeCorpses);
-  RTTI_METHOD(BindCorpse);
+  RTTI_METHOD(LayCorpse);
+  RTTI_METHOD(CorpseApart);
+  RTTI_METHOD(ForgetCorpse);
   RTTI_METHOD(Status);
   RTTI_METHOD(Bearing);
   RTTI_METHOD(Project);

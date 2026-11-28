@@ -3417,18 +3417,27 @@ bool Fits(const NpcVoice &voice);
 // Where and how a dead or knocked-out NPC's body came to rest (appended,
 // protocol 24; regions.md §5, "Corpses"; Event channel, an IsCombat
 // message: the corpse's owner's word, as its wounds). Its owner sends it
-// once, when the body has settled (3 s after the fall and still for 1 s, or 8 s after):
-// the entity's place and heading and its body pose (an ActorPose, the scene
-// actors' coding: hips and the body rig's bones). Every game that shows it
-// lays its own copy there, in that pose, over its own ragdoll's. State, not
-// a one-shot: a repeat lays the body the same way.
+// once, when the body has settled (3 s after the fall and still for 1 s, or
+// 8 s after): the entity's place and heading and its ragdoll's bodies, as
+// the game's cut multiplayer replicated a ragdoll (an
+// entRagdollComponentReplicatedState: each body's transform, research
+// engine/presence.md §13.162). Every game that shows it sets its own copy's
+// ragdoll's bodies there, at rest. State, not a one-shot: a repeat lays the
+// body the same way.
+inline constexpr std::size_t kMaxRagdollBodies = 32;
+struct RagdollBody {
+  std::array<std::int16_t, 3> offset{};   // from the corpse's position, cm
+  std::array<std::int16_t, 4> rotation{}; // its quaternion (i, j, k, r) × 32767
+  friend bool operator==(const RagdollBody &, const RagdollBody &) = default;
+};
 struct CorpsePose {
-  ActorPose pose; // pose.npc: the NPC; seq and timeUs unused
-  Vec3 position;  // the entity's world position
-  float yaw{};    // its heading, radians
+  NpcId npc{};
+  Vec3 position;                   // the entity's world position
+  float yaw{};                     // its heading, radians
+  std::vector<RagdollBody> bodies; // in the ragdoll's own order
   friend bool operator==(const CorpsePose &, const CorpsePose &) = default;
 };
-// An NPC, finite numbers.
+// An NPC, finite numbers, 1 to kMaxRagdollBodies bodies.
 bool Fits(const CorpsePose &corpse);
 
 // The alternatives, in id order. Code uses Message (below).
