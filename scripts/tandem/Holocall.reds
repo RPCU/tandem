@@ -86,6 +86,11 @@ public class TandemHolocall {
     this.m_since = now;
   }
 
+  // Our call to them was placed under a second ago.
+  public func JustCalled(player: Uint32, now: Float) -> Bool {
+    return this.m_player == player && this.m_mode == 2 && now >= this.m_since && now - this.m_since < 1.0;
+  }
+
   // We are calling them now.
   public func IsCalling(player: Uint32) -> Bool {
     return this.m_player == player && this.m_mode == 2;
