@@ -362,6 +362,47 @@ TEST_CASE("a vehicle on top of a player's V is not handed to that player until i
   REQUIRE(s->Until([&] { return s->h.running.contains(car) && s->host->OwnsTraffic(car); }));
 }
 
+TEST_CASE("a vehicle driven remotely is its driver's game's, and stays so while it drives") {
+  auto s = Start(true);
+  Place(*s->host, 0);
+  Place(*s->a, 70);
+  Place(*s->b, 400);
+  REQUIRE(s->Until([&] { return s->a->Linked().size() == 1 && s->a->OwnsArea(); }));
+  // The host's car, 40 m from the host's V and 30 m from a's: a's quickhack
+  // takes control of it (its game drives its proxy, its V stays put).
+  s->h.Announce(1, {40.f, 0.f, 0.f});
+  const auto car = MakeTrafficId(s->host->You(), 1);
+  REQUIRE(s->Until([&] { return s->ga.proxies.contains(car); }));
+  const auto vehicle = static_cast<std::uint32_t>(proto::RemoteSort::Vehicle);
+  s->a->SetLocalActivity({.kind = proto::ActivityKind::Remote,
+                          .device = 77,
+                          .entry = vehicle,
+                          .view = {40.f, 0.f, 0.f},
+                          .traffic = car});
+  // Handed to a at once (no distance rule), with its state.
+  REQUIRE(s->Until([&] { return s->ga.running.contains(car) && s->a->OwnsTraffic(car); }));
+  REQUIRE(s->Until([&] { return s->host->TrafficOwnerOf(car) == s->a->You(); }));
+  CHECK(s->h.proxies.contains(car));
+  // a drives it beside the host's V and away from its own: the rule that
+  // gives a car to the V beside it does not take it from its driver.
+  s->ga.Drive(car, {10.f, 0.f, 0.f});
+  Place(*s->a, 140);
+  s->For(1500ms);
+  CHECK(s->a->OwnsTraffic(car));
+  CHECK(s->h.asked.empty());
+  CHECK(s->ga.asked.empty());
+  // b's takeover of it meanwhile asks nothing of a (its game refuses it).
+  s->b->SetLocalActivity({.kind = proto::ActivityKind::Remote, .entry = vehicle, .traffic = car});
+  s->For(500ms);
+  CHECK(s->a->OwnsTraffic(car));
+  CHECK(s->ga.asked.empty());
+  s->b->SetLocalActivity({});
+  // Out of the car: a car like any other, the host's again by the usual rule.
+  s->a->SetLocalActivity({});
+  REQUIRE(s->Until([&] { return s->h.running.contains(car) && s->host->OwnsTraffic(car); }));
+  CHECK(s->h.duplicateSpawns + s->ga.duplicateSpawns + s->gb.duplicateSpawns == 0);
+}
+
 TEST_CASE("a vehicle handed to a third player: the others show it from its new owner") {
   auto s = Start(true);
   Place(*s->host, 0);

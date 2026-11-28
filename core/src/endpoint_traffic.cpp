@@ -385,12 +385,42 @@ void Endpoint::ArbitrateTraffic(std::uint64_t now, std::vector<SessionEvent> &ou
     ++it;
   }
 
+  // Shared vehicles driven remotely (the take control quickhack: a game
+  // drives one from where its V stands, regions.md "Remote views"): run by
+  // the driver's game, and handed to nobody else while it drives. A driver
+  // that does not run it yet is given it at once, whatever the distances;
+  // one its owner drives itself stays its owner's (two drivers: the owner,
+  // else the lowest id; the second's game refuses its own takeover).
+  std::map<proto::TrafficId, std::set<proto::PlayerId>> remote;
+  for (const auto &[player, busy] : m_activities)
+    if (const auto id = activity::RemoteCar(busy); id != 0 && m_traffic.contains(id))
+      remote[id].insert(player);
+  for (const auto &[id, drivers] : remote) {
+    const auto owner = TrafficOwnerOf(id);
+    if (drivers.contains(owner) || m_trafficHandoffs.contains(id))
+      continue;
+    if (const auto refused = m_trafficRefusedUntilUs.find(id);
+        refused != m_trafficRefusedUntilUs.end() && now < refused->second)
+      continue;
+    const auto driver = *drivers.begin();
+    if (!m_players.contains(driver))
+      continue;
+    m_trafficHandoffs[id] = {.from = owner, .to = driver, .state = std::nullopt, .sentUs = now};
+    if (owner == m_you)
+      out.push_back(events::TrafficGive{.id = id, .to = driver});
+    else if (const auto peer = PeerOf(owner))
+      Send(*peer, proto::TrafficHandover{.id = id, .to = driver});
+  }
+
   // Vehicles whose owner's V is leaving them with another player near: the
   // NPC rule (regions::Taker), on the vehicle's place.
   std::size_t asked = 0;
   for (const auto &[id, spawn] : m_traffic) {
     if (asked >= kHandoversPerPass)
       break;
+    // Driven remotely: its driver's (above).
+    if (remote.contains(id))
+      continue;
     // A gunner on its gun keeps its seat with the game that gave it.
     if (m_trafficHandoffs.contains(id) || m_gunners.contains(proto::StreetCar(id)))
       continue;

@@ -67,6 +67,30 @@ TEST_CASE("players are linked until they are known to be apart, with hysteresis"
   CHECK(links.Linked(1, 2));
 }
 
+TEST_CASE("a remote view links its player where it looks from, with the same hysteresis") {
+  Links links;
+  Places places{{1, At(0)}, {2, At(kLinkOut + 100)}};
+  CHECK(links.Update(places));
+  CHECK_FALSE(links.Linked(1, 2));
+  // Player 1 looks through a camera beside player 2: linked as if there.
+  Views views{{1, {kLinkOut + 60, 0, 0}}};
+  CHECK(Apart(1, places[1], 2, places[2], views) == doctest::Approx(40.f));
+  CHECK(Apart(2, places[2], 1, places[1], views) == doctest::Approx(40.f));
+  CHECK(links.Update(places, views));
+  CHECK(links.Linked(1, 2));
+  // Two views: the nearest of the four places.
+  views[2] = {kLinkOut + 55, 0, 0};
+  CHECK(Apart(1, places[1], 2, places[2], views) == doctest::Approx(5.f));
+  // Out of the camera, still near enough: kLinkOut is the edge as for a V.
+  views.erase(2);
+  views[1] = {kLinkOut + 100 - (kLinkOut - 1), 0, 0};
+  CHECK_FALSE(links.Update(places, views));
+  CHECK(links.Linked(1, 2));
+  views.clear();
+  CHECK(links.Update(places, views));
+  CHECK_FALSE(links.Linked(1, 2));
+}
+
 TEST_CASE("a joiner is linked with nobody until its first place, then only when near") {
   Links links;
   Places places{{1, At(0)}, {2, At(50)}};

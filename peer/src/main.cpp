@@ -879,7 +879,7 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --skip-answer A    yes | no | ignore | sleep: how to answer a time skip (default\n"
          "                     yes; sleep: ask a sleep of our own, two beds at once)\n"
          "  --activity KIND    busy for a while: workspot, sleep, screen, minigame, shop,\n"
-         "                     menu, photo, contest\n"
+         "                     menu, photo, contest, remote (a camera 20 m off)\n"
          "  --contest SORT     --activity contest of a sort: duel (a fist fight with the\n"
          "                     first NPC we know: the others' hits on it are dropped),\n"
          "                     race or range\n"
@@ -1303,7 +1303,7 @@ std::optional<tandem::proto::ActivityKind> ActivityNamed(const std::string &name
       {"sleep", ActivityKind::Sleep},       {"screen", ActivityKind::Screen},
       {"minigame", ActivityKind::Minigame}, {"shop", ActivityKind::Shop},
       {"menu", ActivityKind::Menu},         {"photo", ActivityKind::Photo},
-      {"contest", ActivityKind::Contest}};
+      {"contest", ActivityKind::Contest},   {"remote", ActivityKind::Remote}};
   for (const auto &[n, kind] : kinds)
     if (name == n)
       return kind;
@@ -1311,8 +1311,9 @@ std::optional<tandem::proto::ActivityKind> ActivityNamed(const std::string &name
 }
 
 const char *ActivityName(tandem::proto::ActivityKind kind) {
-  static const char *names[] = {"nothing", "a workspot", "a bed",      "a screen", "a minigame",
-                                "a shop",  "a menu",     "photo mode", "a contest"};
+  static const char *names[] = {"nothing",    "a workspot",   "a bed",  "a screen",
+                                "a minigame", "a shop",       "a menu", "photo mode",
+                                "a contest",  "a remote view"};
   const auto i = static_cast<std::size_t>(kind);
   return i < std::size(names) ? names[i] : "?";
 }
@@ -5657,6 +5658,9 @@ int main(int argc, char **argv) {
                     busy.flags & tandem::proto::kActivityAnchored
                         ? std::format(" at ({:.1f}, {:.1f}, {:.1f})", busy.anchor.x, busy.anchor.y,
                                       busy.anchor.z)
+                    : busy.kind == tandem::proto::ActivityKind::Remote
+                        ? std::format(" viewing from ({:.1f}, {:.1f}, {:.1f}), vehicle {:#x}",
+                                      busy.view.x, busy.view.y, busy.view.z, busy.traffic)
                         : std::string());
             } else if constexpr (std::is_same_v<E, tandem::events::TimeSkipAsked>) {
               const auto &k = e.skip;
@@ -6801,6 +6805,11 @@ int main(int argc, char **argv) {
               }
         }
         Log("contest: sort {}, opponent npc {}", busy.entry, busy.device);
+      } else if (kind == tandem::proto::ActivityKind::Remote) {
+        // A camera's takeover, 20 m off our V: its body stays where it is.
+        busy.entry = static_cast<std::uint32_t>(tandem::proto::RemoteSort::Camera);
+        if (lastSent)
+          busy.view = {lastSent->x + 20.f, lastSent->y, lastSent->z + 3.f};
       } else if (lastSent && kind != tandem::proto::ActivityKind::Photo &&
                  kind != tandem::proto::ActivityKind::Menu) {
         busy.flags |= tandem::proto::kActivityAnchored;

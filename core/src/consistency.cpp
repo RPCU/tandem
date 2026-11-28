@@ -195,7 +195,10 @@ std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self) {
           .Add(std::uint64_t{a.entry})
           .Add(a.anchor.x)
           .Add(a.anchor.y)
-          .Add(a.anchor.z);
+          .Add(a.anchor.z)
+          // A remote view's car (its view moves with it: not hashed, the
+          // next word carries it).
+          .Add(std::uint64_t{a.traffic});
   // Comms: links that share with someone, waypoints that are set (an off
   // link and no waypoint count like one never heard of).
   if (players.links) {

@@ -922,6 +922,16 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::TurretBusy>) {
           // A named turret, held by a player.
           inRange = m.entity != 0 && m.holder != p::kNoPlayer;
+        } else if constexpr (std::is_same_v<M, p::Activity>) {
+          // As activity::Sanitized leaves it: a remote view holds no body and
+          // names a shared vehicle only as a car; no other kind has a view.
+          finite = Finite(m.anchor) && std::isfinite(m.yaw) && Finite(m.view);
+          const auto car = static_cast<std::uint32_t>(p::RemoteSort::Vehicle);
+          inRange = m.kind <= p::ActivityKind::Remote &&
+                    (m.kind == p::ActivityKind::Remote
+                         ? m.entry <= static_cast<std::uint32_t>(p::RemoteSort::Device) &&
+                               m.flags == 0 && (m.traffic == 0 || m.entry == car)
+                         : m.view == p::Vec3{} && m.traffic == 0);
         } else if constexpr (std::is_same_v<M, p::ThrowPath>) {
           // Nothing thrown flies faster than a launcher's round.
           finite = Finite(m.position) && Finite(m.velocity);

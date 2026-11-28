@@ -257,12 +257,12 @@ bool Gate::ShouldSend(std::uint8_t health, std::uint8_t flags, std::uint64_t now
 }
 
 const char *NameOf(Status status) {
-  constexpr const char *names[] = {"up", "down", "out", "elsewhere", "scene", "menu"};
+  constexpr const char *names[] = {"up", "down", "out", "elsewhere", "scene", "menu", "remote"};
   return names[static_cast<std::size_t>(status)];
 }
 
 Status StatusOf(proto::Life life, proto::Place place, std::uint8_t tier, std::uint8_t storyFlags,
-                bool paused, std::uint8_t presenceFlags) {
+                bool paused, std::uint8_t presenceFlags, bool remote) {
   if (life == proto::Life::Out)
     return Status::Out;
   if (life == proto::Life::Down)
@@ -275,6 +275,9 @@ Status StatusOf(proto::Life life, proto::Place place, std::uint8_t tier, std::ui
     return Status::Scene;
   if (paused || (presenceFlags & proto::kPresenceMenu))
     return Status::Menu;
+  // Its body stands where it is; its eyes are on what it controls.
+  if (remote)
+    return Status::Remote;
   return Status::Up;
 }
 

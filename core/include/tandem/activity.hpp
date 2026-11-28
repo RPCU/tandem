@@ -37,6 +37,19 @@ inline bool Anchored(const proto::Activity &state) {
   return state.kind != proto::ActivityKind::None && (state.flags & proto::kActivityAnchored) != 0;
 }
 
+// A remote view (ActivityKind::Remote): where its player's view is, when
+// it says (a view at the origin is none known).
+inline std::optional<proto::Vec3> ViewOf(const proto::Activity &state) {
+  if (state.kind != proto::ActivityKind::Remote ||
+      (state.view.x == 0.f && state.view.y == 0.f && state.view.z == 0.f))
+    return std::nullopt;
+  return state.view;
+}
+// The shared vehicle a remote view drives (0: none).
+inline std::uint32_t RemoteCar(const proto::Activity &state) {
+  return state.kind == proto::ActivityKind::Remote ? state.traffic : 0u;
+}
+
 // What stands in the way of a skip, whoever asks (the session's record).
 struct Blocker {
   std::uint8_t why{}; // proto::kSkip*; kSkipNoReason: nothing

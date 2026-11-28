@@ -650,7 +650,15 @@ void Endpoint::Arbitrate(std::vector<SessionEvent> &out) {
     } else
       ++it;
   }
-  if (m_links.Update(m_places) || released)
+  // A remote view links its player where it looks from too (a camera's
+  // takeover beside another V: the same NPCs on both screens).
+  regions::Views views;
+  for (const auto &[id, busy] : m_activities)
+    if (const auto view = activity::ViewOf(busy);
+        view && m_places[id].known &&
+        regions::Distance(*view, m_places[id].position) <= regions::kViewReach)
+      views[id] = *view;
+  if (m_links.Update(m_places, views) || released)
     OnLinksChanged(before, out);
   SendRegionsNow();
   NoteGroup(out);
