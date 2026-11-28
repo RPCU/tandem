@@ -2463,6 +2463,14 @@ public class TandemSystem extends ScriptableSystem {
       // A copy: its owner's car (driven or parked: a partner's car we ride
       // or drive is theirs everywhere).
       owner = this.CopyOwner(car.GetEntityID());
+    } else {
+      // Our own car driven remotely (RemoteView.reds): ours, no seat of ours
+      // in it; its state streams (SampleLocal), our puppet stays on foot.
+      let remote = TandemRemoteView.OurOwnCar(game);
+      if IsDefined(remote) {
+        record = remote.GetRecordID();
+        slot = n"tandemRemote";
+      }
     }
     if this.m_sentSeat && record == this.m_sentVehicle && Equals(slot, this.m_sentSlot) && owner == this.m_sentOwner {
       return;
@@ -2750,6 +2758,30 @@ public class TandemSystem extends ScriptableSystem {
 
   // The parked copy of `owner`'s car of that record nearest to `near` (30 m
   // at most): the one a partner sat in, in its own game.
+  // The parked copy of `player`'s car of that record nearest to `near` (30
+  // m at most), out of the parked list: its player drives it again (none:
+  // none here).
+  private func UnparkCopyOf(player: Uint32, record: TweakDBID, near: Vector4) -> EntityID {
+    let found = this.ParkedCopyOf(player, record, near);
+    let none = EntityID.FromHash(0ul);
+    if !IsDefined(found) {
+      return none;
+    }
+    let id = found.GetEntityID();
+    let i = ArrayFindFirst(this.m_parked, id);
+    if i < 0 {
+      return none;
+    }
+    ArrayErase(this.m_parked, i);
+    if i < ArraySize(this.m_parkedOwner) {
+      ArrayErase(this.m_parkedOwner, i);
+    }
+    if i < ArraySize(this.m_parkedOwners) {
+      ArrayErase(this.m_parkedOwners, i);
+    }
+    return id;
+  }
+
   private func ParkedCopyOf(owner: Uint32, record: TweakDBID, near: Vector4) -> ref<GameObject> {
     let entities = GameInstance.GetDynamicEntitySystem();
     let best: ref<GameObject>;
@@ -2804,7 +2836,7 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     let name = this.NameOf(owner);
-    let aboard = TDBID.IsValid(TandemNative.RemoteSeatVehicle(owner)) && TandemNative.RemoteSeatOwner(owner) == owner;
+    let aboard = TandemRemoteView.Seated(owner) && TandemNative.RemoteSeatOwner(owner) == owner;
     let present = IsDefined(this.PuppetOf(owner));
     let lend = TandemProgress.CarLendOf(owner);
     if !TandemProgress.MayDrive(lend, aboard, present) {
@@ -3070,7 +3102,11 @@ public class TandemSystem extends ScriptableSystem {
     // own car while we ride in it with nobody at its wheel (a partner drove
     // it: where it stopped is where it is, for everyone).
     let car: wref<VehicleObject>;
-    if VehicleComponent.GetVehicle(game, player, car) && IsDefined(car) {
+    let remote = TandemRemoteView.OurOwnCar(game);
+    if IsDefined(remote) && !VehicleComponent.GetVehicle(game, player, car) {
+      // Our own car driven remotely: its transform, as when we drive it.
+      TandemNative.SendVehicle(remote.GetWorldPosition(), remote.GetWorldOrientation(), remote.GetLinearVelocity());
+    } else if VehicleComponent.GetVehicle(game, player, car) && IsDefined(car) {
       let id = car.GetEntityID();
       let own = this.CopyOwner(id) == 0u;
       let driving = VehicleComponent.IsDriver(game, player);
@@ -3769,14 +3805,27 @@ public class TandemSystem extends ScriptableSystem {
         TandemNative.Log(s"player \(puppet.player): drives the vehicle it took from the street");
       }
     }
+    let remotely = Equals(TandemNative.RemoteSeatSlot(puppet.player), n"tandemRemote");
     if owner == puppet.player && !EntityID.IsDefined(puppet.car) {
       let at = TandemNative.RemoteVehiclePosition(puppet.player);
       if at.W == 0.0 && IsDefined(body) {
         at = body.GetWorldPosition();
       }
       at.W = 1.0;
-      puppet.car = TandemVehicles.SpawnCopy(record, at, TandemNative.RemoteVehicleOrientation(puppet.player));
-      TandemNative.Log(s"player \(puppet.player): drives \(TDBID.ToStringDEBUG(record)), copy spawning");
+      // Driven remotely: the copy of it its player left parked here, if any
+      // (no second car in one place), moved by its state from now on.
+      let parked = remotely ? this.UnparkCopyOf(puppet.player, record, at) : none;
+      if EntityID.IsDefined(parked) {
+        puppet.car = parked;
+        TandemNative.Log(s"player \(puppet.player): drives \(TDBID.ToStringDEBUG(record)) remotely, its parked copy follows it");
+      } else {
+        puppet.car = TandemVehicles.SpawnCopy(record, at, TandemNative.RemoteVehicleOrientation(puppet.player));
+        TandemNative.Log(s"player \(puppet.player): drives \(TDBID.ToStringDEBUG(record))\(remotely ? " remotely" : ""), copy spawning");
+      }
+    }
+    if remotely {
+      // Its body stays where it stands: no seat (remote-views.md).
+      return;
     }
     puppet.seatedSlot = TandemNative.RemoteSeatSlot(puppet.player);
     puppet.wantsSeat = true;

@@ -246,7 +246,8 @@ public class TandemSpectate {
     let here = player.GetWorldPosition();
     let system = TandemSystem.Of(this.m_game);
     let hostCar = IsDefined(system) ? system.CarOf(host) : EntityID.FromHash(0ul);
-    let hostRiding = EntityID.IsDefined(hostCar);
+    // (Not a car it drives remotely: its V is on foot, RemoteView.reds.)
+    let hostRiding = EntityID.IsDefined(hostCar) && TandemRemoteView.Seated(host);
     // Restrictions alone (no scene, no ride its scene or quest drives:
     // Transit kind 3): where its V goes is its own free roam, never (c).
     let hostFree = story.TierOf(host) < 2 && TandemNative.RemoteTransitKind(host) != 3;

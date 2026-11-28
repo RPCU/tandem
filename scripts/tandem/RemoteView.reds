@@ -15,14 +15,18 @@
 // - A car another V drives or drives remotely, or a partner's car, is
 //   refused at the takeover (Hacks.reds, read and queue only): told here,
 //   on the tick, with who drives it.
-// - What the others cannot follow is registered (Degraded): a player's car
-//   driven remotely (remote car unseen), a device with no id every game
-//   knows (held device unshared).
+// - A car of our own driven remotely (our garage's, one our V took) is our
+//   car to the others: its Seat says so with no seat of ours in it
+//   (`tandemRemote`, System.reds SendSeat), its VehicleState streams, their
+//   copy follows it and our puppet stays on foot.
+// - A held sensor device (a camera, a turret, a sniper nest) turns on the
+//   others' copies (Turrets.reds), a spawned one named by its place; another
+//   device held is registered (held device unshared).
 //
 // tools/game.sh cmd remote (ours, and the others') | remote camera (our V
 // takes the nearest camera, as its control gives it) | remote turret |
-// remote car (the take control quickhack's own event on the nearest
-// vehicle) | remote push SPEED (our remote car pushed ahead, m/s) | remote
+// remote nest (a sniper nest) | remote car (the take control quickhack's
+// own event on the nearest vehicle) | remote own (our summoned car) | remote push SPEED (our remote car pushed ahead, m/s) | remote
 // off (back to our V).
 
 // Our V's remote view as read now.
@@ -43,7 +47,6 @@ public class TandemRemoteView {
   // What we last read: its sort, the object, and the fallbacks said.
   private let m_sort: Int32;
   private let m_object: EntityID;
-  private let m_unseen: EntityID;
   private let m_unshared: EntityID;
   private let m_refusals: Int32;
 
@@ -152,6 +155,12 @@ public class TandemRemoteView {
     return view.W != 0.0 ? view : body;
   }
 
+  // Another player sits in a vehicle (its Seat), not one it drives remotely
+  // (the slot `tandemRemote`: its body is on foot).
+  public static func Seated(player: Uint32) -> Bool {
+    return TDBID.IsValid(TandemNative.RemoteSeatVehicle(player)) && !Equals(TandemNative.RemoteSeatSlot(player), n"tandemRemote");
+  }
+
   // Who else drives this shared vehicle remotely (0: nobody).
   public static func RemoteDriverOf(traffic: Uint32) -> Uint32 {
     if traffic == 0u {
@@ -227,16 +236,11 @@ public class TandemRemoteView {
       this.m_sort = ours.sort;
       this.m_object = id;
     }
-    if ours.on && ours.sort == 3 && ours.traffic == 0u && id != this.m_unseen && this.Unshareable(ours.object as VehicleObject) {
-      this.m_unseen = id;
-      TandemDegraded.Fallback("remote car unseen", s"our V drives a player's car remotely (\(TandemNative.EntityHex(id))): the others see it where it was left");
-    }
-    // A camera's and a turret's aim travel (Turrets.reds, TurretHands) when
-    // every game knows them by their static id; another device's does not.
-    if ours.on && ours.sort != 3 && id != this.m_unshared && (ours.sort == 4 || !EntityID.IsStatic(id)) {
+    // A sensor device's aim travels (Turrets.reds, TurretHands: by its static
+    // id, a spawned one by its place); another device's has nothing to turn.
+    if ours.on && ours.sort == 4 && id != this.m_unshared && !IsDefined(ours.object as SensorDevice) {
       this.m_unshared = id;
-      let why = ours.sort == 4 ? "a device that is neither a camera nor a turret" : "a device with a dynamic id";
-      TandemDegraded.Fallback("held device unshared", s"our V holds \(why) (\(TandemNative.EntityHex(id))): its copies do not turn with it");
+      TandemDegraded.Fallback("held device unshared", s"our V holds a device that is no sensor device (\(TandemNative.EntityHex(id))): its copies do not turn with it");
     }
     for refused in TandemStreaming.TakePoints(TandemPointKind.RemoteRefused()) {
       this.m_refusals += 1;
@@ -249,14 +253,20 @@ public class TandemRemoteView {
     return ours;
   }
 
-  // A car of a player's (our garage's, one our V took, a partner's copy):
-  // never a shared world vehicle, so its remote drive is ours alone.
-  private func Unshareable(car: ref<VehicleObject>) -> Bool {
-    if !IsDefined(car) {
-      return false;
+  // The car our V drives remotely when it is a car of ours, not a shared
+  // world vehicle (our garage's, one our V took): our car to the others,
+  // with no seat of ours in it (System.reds SendSeat, SampleLocal).
+  public static func OurOwnCar(game: GameInstance) -> ref<VehicleObject> {
+    let car = TandemRemoteView.OurCar(game, GetPlayer(game));
+    let system = TandemSystem.Of(game);
+    let traffic = TandemTraffic.Of(game);
+    if !IsDefined(car) || !IsDefined(system) || system.CopyOwnerOf(car.GetEntityID()) != 0u {
+      return null;
     }
-    let traffic = TandemTraffic.Of(this.m_game);
-    return car.IsPlayerVehicle() || IsDefined(traffic) && traffic.Taken(car.GetEntityID());
+    if IsDefined(traffic) && traffic.IdOfBody(car.GetEntityID()) != 0u {
+      return null;
+    }
+    return car.IsPlayerVehicle() || IsDefined(traffic) && traffic.Taken(car.GetEntityID()) ? car : null;
   }
 
   public static func SortName(sort: Int32) -> String {
@@ -311,7 +321,7 @@ public class TandemRemoteView {
         }
       }
       TandemNative.Log(s"remote: ours \(line); others:\(StrLen(others) > 0 ? others : " none"); takeovers refused \(this.m_refusals)");
-    } else if Equals(verb, "camera") || Equals(verb, "turret") {
+    } else if Equals(verb, "camera") || Equals(verb, "turret") || Equals(verb, "nest") {
       let devices = TandemDevices.Get(game);
       let device = IsDefined(devices) ? devices.NearestOf(verb, 60.0) : null;
       if !IsDefined(device) {
@@ -339,6 +349,21 @@ public class TandemRemoteView {
       GameInstance.GetPersistencySystem(game).QueuePSEvent(ps.GetID(), ps.GetClassName(), take);
       let id = IsDefined(traffic) ? traffic.IdOfBody(car.GetEntityID()) : 0u;
       TandemNative.Log(s"remote: our V takes control of vehicle \(TandemNative.EntityHex(car.GetEntityID())) (shared vehicle \(id))");
+    } else if Equals(verb, "own") {
+      // Our summoned car (the garage's): the take control quickhack's event.
+      let board = GameInstance.GetBlackboardSystem(game).Get(GetAllBlackboardDefs().VehicleSummonData);
+      let summoned = IsDefined(board) ? board.GetEntityID(GetAllBlackboardDefs().VehicleSummonData.SummonedVehicleEntityID) : EntityID.FromHash(0ul);
+      let car = GameInstance.FindEntityByID(game, summoned) as VehicleObject;
+      let ps = IsDefined(car) ? car.GetVehiclePS() : null;
+      if !IsDefined(ps) {
+        TandemNative.Log("remote: no summoned car of ours here");
+        return;
+      }
+      let take = new ToggleTakeOverControl();
+      take.SetProperties(false, true);
+      take.SetExecutor(player);
+      GameInstance.GetPersistencySystem(game).QueuePSEvent(ps.GetID(), ps.GetClassName(), take);
+      TandemNative.Log(s"remote: our V takes control of our own car \(TandemNative.EntityHex(car.GetEntityID())) (\(TDBID.ToStringDEBUG(car.GetRecordID())))");
     } else if Equals(verb, "push") {
       let car = TandemRemoteView.OurCar(game, player);
       if !IsDefined(car) {

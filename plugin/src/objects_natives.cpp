@@ -115,6 +115,16 @@ struct TandemObjects : Red::IScriptable {
                            .flags = static_cast<std::uint8_t>(flags & proto::kHandsFlags)});
   }
 
+  // A held device no id names (a spawned one): the key of its place, and
+  // the place a key names (devices::PlaceKey, PlaceOf; flags 4 with Hands).
+  static Red::EntityID PlaceKey(Red::Vector4 position) {
+    return Red::EntityID(devices::PlaceKey({position.X, position.Y, position.Z}));
+  }
+  static Red::Vector4 PlaceOf(Red::EntityID key) {
+    const auto at = devices::PlaceOf(key.hash);
+    return {at.x, at.y, at.z, 1.f};
+  }
+
   // What the others' games say since the last call: breaks for ours to
   // replay (those not broken here already), a device's fire.
   static Red::DynArray<TandemObjectEvent> TakeEvents() {
@@ -221,6 +231,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemObjects, "TandemObjects", {
   RTTI_METHOD(Replaying);
   RTTI_METHOD(Fire);
   RTTI_METHOD(Hands);
+  RTTI_METHOD(PlaceKey);
+  RTTI_METHOD(PlaceOf);
   RTTI_METHOD(TakeEvents);
   RTTI_METHOD(Reset);
   RTTI_METHOD(Report);

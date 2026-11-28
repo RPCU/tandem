@@ -1356,7 +1356,7 @@ public class TandemRevive {
   // has none here) and dry.
   private func TrackFoot(player: ref<PlayerPuppet>, p: Uint32) -> Void {
     let at = TandemNative.RemotePosition(p);
-    if at.W <= 0.0 || TandemNative.RemoteLife(p) != 0 || TDBID.IsValid(TandemNative.RemoteSeatVehicle(p))
+    if at.W <= 0.0 || TandemNative.RemoteLife(p) != 0 || TandemRemoteView.Seated(p)
       || TandemNative.RemoteTransitKind(p) != 0 || TandemNative.RemotePlacement(p) != 0
       || TandemElsewhere.IsElsewhere(this.m_game, p) || TandemElsewhere.BodyHidden(this.m_game, p) {
       return;
@@ -1385,7 +1385,7 @@ public class TandemRevive {
 
   // The downed partner sits in a vehicle.
   private func Seated(p: Uint32) -> Bool {
-    return TDBID.IsValid(TandemNative.RemoteSeatVehicle(p));
+    return TandemRemoteView.Seated(p);
   }
 
   // Our camera looks at `body` (within 60 degrees, level): a seated V is

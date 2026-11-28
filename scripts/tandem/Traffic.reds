@@ -1320,7 +1320,7 @@ public class TandemTraffic {
         // drove beside the host's and crashed into its copies, 2026-11-22).
         // So is any other car of our own making there (a parked crowd car),
         // when another game runs our area.
-        let held = !away && !IsDefined(this.FindBody(body)) && (this.HeldBack(vehicle, body, at, owns, entities) || !owns && this.OneSided(vehicle, body, entities));
+        let held = !away && !IsDefined(this.FindBody(body)) && !vehicle.IsVehicleRemoteControlled() && (this.HeldBack(vehicle, body, at, owns, entities) || !owns && this.OneSided(vehicle, body, entities));
         let removed = false;
         if held {
           heldBack += 1;
@@ -1332,8 +1332,9 @@ public class TandemTraffic {
         if !removed {
           ArrayPush(live, vehicle);
         }
-        // A racer of our street race is ours to share wherever it drives.
-        let racer = !held && !away && TandemRaces.Racer(this.m_game, vehicle);
+        // A racer of our street race is ours to share wherever it drives; so
+        // is a car our V drives remotely (remote-views.md).
+        let racer = !held && !away && (TandemRaces.Racer(this.m_game, vehicle) || vehicle.IsVehicleRemoteControlled());
         if (owns || racer) && !held && !away && !IsDefined(this.FindBody(body)) && this.Eligible(vehicle, body, entities) {
           let near = TandemTraffic.Nearest(at, viewers);
           if near <= (racer ? TandemTraffic.RacerRange() : TandemTraffic.ShareRange()) {

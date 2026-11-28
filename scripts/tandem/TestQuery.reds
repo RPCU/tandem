@@ -39,6 +39,8 @@
 //                         TRAFFIC", SORT camera, turret, vehicle, device or
 //                         other, where the view is, the shared vehicle it
 //                         drives (0: none); none: in its body
+//   car player N          our copy of player N's car (driven, or the last it
+//                         left parked): X Y Z
 //   traffic ID position   our body of shared vehicle ID (ours or its proxy):
 //                         X Y Z
 //   car marks             the shared vehicles another player's quickhack is
@@ -193,6 +195,13 @@ public class TandemTestQuery {
       }
     } else if Equals(what, "remote") {
       value = TandemRemoteView.Query(game, Equals(arg, "player") ? Cast<Uint32>(StringToUint64(words[4])) : 0u);
+    } else if Equals(what, "car") && Equals(arg, "player") && count > 4 {
+      // Our copy of player N's car (driven, or the last it left parked).
+      let body = TandemTraffic.Body(game, system.LastCarOf(Cast<Uint32>(StringToUint64(words[4]))));
+      if IsDefined(body) {
+        let at = body.GetWorldPosition();
+        value = s"\(FloatToStringPrec(at.X, 2)) \(FloatToStringPrec(at.Y, 2)) \(FloatToStringPrec(at.Z, 2))";
+      }
     } else if Equals(what, "traffic") && count > 4 && Equals(words[4], "position") {
       let traffic = TandemTraffic.Of(game);
       let body = IsDefined(traffic) ? TandemTraffic.Body(game, traffic.BodyOf(Cast<Uint32>(StringToUint64(arg)))) : null;
