@@ -15,8 +15,8 @@ expect 'holocall: tandem-peer: tandem-peer is busy' 5
 pause 3
 cmd comms holocall
 expect 'holocall: mode 0 .*the phone: tandem_partner_[0-9]+ phase 3 ' 5
-# Declined, 3 s after it rang there.
-peer join "$address" --mode front --body male --link ask --link-outcome decline --link-answer-after 3
+# Declined, 6 s after it rang there.
+peer join "$address" --mode front --body male --link ask --link-outcome decline --link-answer-after 6
 expect 'joined \(player [0-9]+' 20
 cmd phone call tandem-peer
 expect 'holocall: calling tandem-peer: the phone.s own call' 5
