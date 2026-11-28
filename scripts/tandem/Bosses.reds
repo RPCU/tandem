@@ -52,6 +52,8 @@ public class TandemBossBody {
   // found on it), the word waiting for its health, since when.
   public let worn: array<TweakDBID>;
   public let wornOnce: Bool;
+  // Its owner has said a word on it (a new body of it wears it again).
+  public let heard: Bool;
   public let pending: Bool;
   public let pendingSince: Float;
   public let wordHealth: Float;
@@ -73,6 +75,10 @@ public class TandemBosses {
   private let m_you: Uint32;
   // Our V's health at the last sample (percent; -1 none yet).
   private let m_ourHealth: Float;
+  // Owners' words that came before their proxy's body (a late joiner's
+  // records come with the spawn), and the health each was said at.
+  private let m_early: array<Uint32>;
+  private let m_earlyHealth: array<Float>;
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
@@ -86,6 +92,8 @@ public class TandemBosses {
       }
     }
     ArrayClear(this.m_bodies);
+    ArrayClear(this.m_early);
+    ArrayClear(this.m_earlyHealth);
   }
 
   // What a boss is to us: "boss" (NPCRarity Boss), "chimera", "cerberus"
@@ -224,6 +232,7 @@ public class TandemBosses {
     if Equals(kind, "") {
       return;
     }
+    let again = IsDefined(body) && !own && body.heard;
     let fresh = IsDefined(body) ? body : new TandemBossBody();
     fresh.npc = npc;
     fresh.id = id;
@@ -237,8 +246,17 @@ public class TandemBosses {
     ArrayPush(kept, fresh);
     let spots = TandemWeakSpots.Of(entity);
     TandemNative.Log(s"bosses: \(own ? "our boss" : "proxy") \(npc) \(TDBID.ToStringDEBUG(fresh.record)) (\(kind), type \(EnumInt(entity.GetNPCType())), \(ArraySize(spots)) weak spots) \(own ? "shared" : "here"), health \(FloatToStringPrec(TandemBosses.Health(this.m_game, entity), 1))%");
-    // A word that came before its body.
-    if !own && !Equals(kind, "maxtac") {
+    // A word that came before its body; none yet, its own component's
+    // attach-time effects stay until the first.
+    let early = ArrayFindFirst(this.m_early, npc);
+    if !own && early >= 0 {
+      fresh.pending = true;
+      fresh.heard = true;
+      fresh.pendingSince = this.m_now;
+      fresh.wordHealth = this.m_earlyHealth[early];
+      ArrayErase(this.m_early, early);
+      ArrayErase(this.m_earlyHealth, early);
+    } else if again {
       fresh.pending = true;
       fresh.pendingSince = this.m_now;
       fresh.wordHealth = -1.0;
@@ -271,7 +289,8 @@ public class TandemBosses {
           if TandemBosses.Mirrors(record) {
             ArrayPush(mirrored, id);
           }
-          if !ArrayContains(body.lastEffects, id) {
+          // (Not on the first pass: what it wore when found is not news.)
+          if body.sentAt > 0.0 && !ArrayContains(body.lastEffects, id) {
             this.Reacted(body, npc, effect, record);
           }
         }
@@ -341,12 +360,20 @@ public class TandemBosses {
     let body = this.Find(event.npc);
     if !IsDefined(body) {
       // Its body is not here yet: the next scan finds it, its word pending.
+      let early = ArrayFindFirst(this.m_early, event.npc);
+      if early >= 0 {
+        this.m_earlyHealth[early] = event.damage;
+      } else if ArraySize(this.m_early) < 32 {
+        ArrayPush(this.m_early, event.npc);
+        ArrayPush(this.m_earlyHealth, event.damage);
+      }
       return;
     }
     if body.own {
       return;
     }
     body.pending = true;
+    body.heard = true;
     body.pendingSince = this.m_now;
     body.wordHealth = event.damage;
     this.Wear(body, npcs);
