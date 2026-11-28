@@ -858,7 +858,7 @@ false}`), AlreadySummoned honks and flashes; finished Arrived creates the
   arrived; a partner's copy of it honks and flashes the game's way on
   arrival and takes the same copy when summoned again.
 
-### 13.168 The garage's sweep: how a summoned car it no longer needs goes (2026-11-28, game 2.50, exe read; not run in game)
+### 13.166 The garage's sweep: how a summoned car it no longer needs goes (2026-11-28, game 2.50, exe read; not run in game)
 
 - **The garage's list** [2.5-static]: the vehicle system's garage
   (`gameVehicleSystem` +0x1D8, its first entry) keeps its vehicles as
