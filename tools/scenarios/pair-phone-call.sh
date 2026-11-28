@@ -6,9 +6,13 @@
 # pair-phone-on, the game's audio call view with their name.
 ensure host link=ask
 partner_join
+# The partner's consent at the join rang already (and rang out while it
+# joined): the partner asks again, a new request, which rings.
+pcmd comms unlink V
+pause 2
 mark
 pmark
-# The partner consents to everyone (auto): a request to us, which rings.
+pcmd comms link V
 expect 'comms: showing the link request of ' 20
 expect 'holocall: ringing from .*: the phone.s own call' 5
 pause 2
