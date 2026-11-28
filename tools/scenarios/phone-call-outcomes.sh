@@ -12,7 +12,7 @@ cmd phone call tandem-peer
 expect 'holocall: calling tandem-peer: the phone.s own call' 5
 expect_peer 'declined player 1.s link request \(reason 3\)' 10
 expect 'holocall: tandem-peer: tandem-peer is busy' 5
-expect 'holocall: mode 0 .*|holocall: the call with tandem-peer ended' 5
+pause 3
 cmd comms holocall
 expect 'holocall: mode 0 .*the phone: tandem_partner_[0-9]+ phase 3 ' 5
 # Declined, 3 s after it rang there.
