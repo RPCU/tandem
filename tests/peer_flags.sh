@@ -22,7 +22,7 @@ declare -A value=(
   ["--region-placed"]=a0b1c2d3e4f5 ["--region-kill-at"]=10 ["--region-immortal"]=said ["--hack-interrupt"]=3 ["--reveal-device"]=a0b1c2d3e4f5@6 ["--contest"]=duel
   ["--fracture"]="a0b1c2d3e4f5:glass:1,2,3@4" ["--turret-seen"]=a0b1c2d3e4f5@3 ["--turret-shots"]=2 ["--turret-hands"]="a0b1c2d3e4f5:1,2,3@4" ["--turret-hands-for"]=20
   ["--footsteps"]=--check ["--throw-bounce"]=--check
-  ["--charge"]=6 ["--hack-traffic"]=5 ["--hover"]=1 ["--link-answer-after"]=3
+  ["--charge"]=6 ["--hack-traffic"]=5 ["--hover"]=1 ["--link-answer-after"]=3 ["--link-outcome"]=decline
   ["--no-fast-travel"]=--check ["--ricochet"]=--check ["--shot-smart"]=--check ["--vendor-crowd"]=--check
   ["--story"]=x.story ["--answer"]=1 ["--reply"]=12345 ["--suggest"]=0
   ["--restrict"]=GameplayRestriction.NoCombat ["--restrict-at"]=2 ["--restrict-for"]=5 ["--prefabs"]="7a3d0c5e9b1f2468,10" ["--gates"]=3 ["--status"]=BaseStatusEffect.Burning@4-10

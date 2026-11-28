@@ -856,7 +856,8 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           inRange = !finite || (m.prop != 0 && (m.flags & ~p::kPropGone) == 0);
         } else if constexpr (std::is_same_v<M, p::LinkDecline>) {
           // A known reason, to a player.
-          inRange = m.reason == p::kLinkDeclineOther && m.to != p::kNoPlayer;
+          inRange = m.reason >= p::kLinkDeclineOther && m.reason <= p::kLinkDeclineMissed &&
+                    m.to != p::kNoPlayer;
         } else if constexpr (std::is_same_v<M, p::TrafficStatus>) {
           finite = std::isfinite(m.health);
           inRange = !finite || (m.health >= 0.f && m.health <= 1.001f);

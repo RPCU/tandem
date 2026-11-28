@@ -343,6 +343,10 @@ struct Options {
   // --link ask: a request is accepted this long after it came (a person
   // picking up a call; 0: at once).
   int linkAnswerSeconds{0};
+  // --link-outcome: what a person does with a call that rings (--link ask):
+  // answer it, decline it (after --link-answer-after), be busy (declined at
+  // once), or let it ring out (declined as missed 15 s after, as a game does).
+  enum class CallOutcome { Answer, Decline, Busy, Ignore } callOutcome{CallOutcome::Answer};
   int pingSeconds{0};
   int tagSeconds{0};
   int revealSeconds{0};
@@ -813,6 +817,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --link-at N        N seconds after another player is in, ask everyone to link\n"
          "  --link-answer-after N  with --link ask: accept a request N seconds after it\n"
          "                     came (default 0: at once)\n"
+         "  --link-outcome O   with --link ask, a call that rings: answer (default),\n"
+         "                     decline (after --link-answer-after), busy (declined at\n"
+         "                     once), ignore (missed: declined 15 s after) (LinkDecline)\n"
          "  --unlink-at N      N seconds after another player is in, break every link\n"
          "  --ping N           every N seconds a ping: in front of the other V, then the\n"
          "                     nearest shared NPC (enemy), the same again (danger), a\n"
@@ -1841,7 +1848,18 @@ Options Parse(int argc, char **argv) {
       options.linkAtSeconds = Number<int>(value);
     else if (flag == "--link-answer-after")
       options.linkAnswerSeconds = Number<int>(value);
-    else if (flag == "--unlink-at")
+    else if (flag == "--link-outcome") {
+      if (value == "answer")
+        options.callOutcome = Options::CallOutcome::Answer;
+      else if (value == "decline")
+        options.callOutcome = Options::CallOutcome::Decline;
+      else if (value == "busy")
+        options.callOutcome = Options::CallOutcome::Busy;
+      else if (value == "ignore")
+        options.callOutcome = Options::CallOutcome::Ignore;
+      else
+        Usage(std::format("--link-outcome: answer, decline, busy or ignore, not {}", value));
+    } else if (flag == "--unlink-at")
       options.unlinkAtSeconds = Number<int>(value);
     else if (flag == "--ping")
       options.pingSeconds = Number<int>(value);
@@ -4212,6 +4230,13 @@ int main(int argc, char **argv) {
   endpoint->SetLocalLink(ownLink);
   // --link-answer-after: the requests we will accept, and when.
   std::vector<std::pair<tandem::proto::PlayerId, std::uint64_t>> linkAnswers;
+  // --link-outcome: the calls we will decline, when and why.
+  struct CallDecline {
+    tandem::proto::PlayerId player{};
+    std::uint64_t dueUs{};
+    std::uint8_t reason{};
+  };
+  std::vector<CallDecline> linkDeclines;
   if (options.legacyWire) {
     endpoint->SetCompact(false);
     Log("legacy wire: every state every frame, whole poses and NPC lists");
@@ -5415,7 +5440,28 @@ int main(int argc, char **argv) {
                   : weDo          ? "we ask them"
                                   : "not linked");
               // --link ask: every request is accepted.
-              if (theyAsk && !weDo && options.linkConsent == Options::LinkAnswer::Ask) {
+              if (theyAsk && !weDo && options.linkConsent == Options::LinkAnswer::Ask &&
+                  options.callOutcome != Options::CallOutcome::Answer) {
+                const bool waiting = std::ranges::any_of(
+                    linkDeclines, [&](const auto &d) { return d.player == l.player; });
+                if (!waiting) {
+                  using O = Options::CallOutcome;
+                  const auto seconds = options.callOutcome == O::Busy ? 0
+                                       : options.callOutcome == O::Ignore
+                                           ? 15
+                                           : options.linkAnswerSeconds;
+                  const auto reason =
+                      options.callOutcome == O::Busy     ? tandem::proto::kLinkDeclineBusy
+                      : options.callOutcome == O::Ignore ? tandem::proto::kLinkDeclineMissed
+                                                         : tandem::proto::kLinkDeclineRefused;
+                  linkDeclines.push_back(
+                      {l.player,
+                       tandem::net::NowUs() + static_cast<std::uint64_t>(seconds) * 1'000'000,
+                       reason});
+                  Log("player {}'s link request: declined (reason {}) in {} s", l.player, reason,
+                      seconds);
+                }
+              } else if (theyAsk && !weDo && options.linkConsent == Options::LinkAnswer::Ask) {
                 if (options.linkAnswerSeconds > 0) {
                   const bool waiting = std::ranges::any_of(
                       linkAnswers, [&](const auto &answer) { return answer.first == l.player; });
@@ -5433,6 +5479,9 @@ int main(int argc, char **argv) {
                   Log("accepted player {}'s link request", l.player);
                 }
               }
+            } else if constexpr (std::is_same_v<E, tandem::events::LinkDeclined>) {
+              Log("player {} did not take our link request (reason {})", e.decline.from,
+                  e.decline.reason);
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteWaypoint>) {
               const auto &w = e.waypoint;
               if (w.kind == tandem::proto::WaypointKind::None)
@@ -6468,6 +6517,13 @@ int main(int argc, char **argv) {
           to.y, to.z, options.travelPoint.empty() ? "" : " at " + options.travelPoint, offers);
     }
     // Comms: link requests, pings, tags and reveals, our waypoint.
+    std::erase_if(linkDeclines, [&](const auto &d) {
+      if (tandem::net::NowUs() < d.dueUs)
+        return false;
+      endpoint->SendLinkDecline({.to = d.player, .reason = d.reason});
+      Log("declined player {}'s link request (reason {})", d.player, d.reason);
+      return true;
+    });
     std::erase_if(linkAnswers, [&](const auto &answer) {
       if (tandem::net::NowUs() < answer.second)
         return false;
