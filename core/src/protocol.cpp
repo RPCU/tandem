@@ -538,7 +538,9 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
       defended && (defended->how < DefendKind::Blocked || defended->how > DefendKind::Parried))
     return std::nullopt;
   if (const auto *activity = std::get_if<Activity>(&message);
-      activity && activity->kind > ActivityKind::Contest)
+      activity && (activity->kind > ActivityKind::Remote ||
+                   (activity->kind == ActivityKind::Remote &&
+                    activity->entry > static_cast<std::uint32_t>(RemoteSort::Device))))
     return std::nullopt;
   if (const auto *skip = std::get_if<TimeSkip>(&message); skip && skip->reason > SkipReason::Quest)
     return std::nullopt;

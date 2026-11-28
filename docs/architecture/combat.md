@@ -199,8 +199,10 @@
   drives (`VehicleComponentPS.OnVehicleOverride…`) are not applied to the
   copy but sent (`VehicleHack`, through the host) to the driver's game,
   which applies them to its car (`ForceBrakesUntilStoppedOrFor`,
-  `ActivateNetrunnerQuickhack`); taking control of such a car is refused
-  for now (it needs the car handed over to the hacker). One on a shared
+  `ActivateNetrunnerQuickhack`); taking control of such a car (or of one
+  another V drives remotely, or of a partner's own car) is refused, the
+  hacker told who drives it; a shared one is handed to the hacker's game
+  while it drives it ([`remote-views.md`](remote-views.md)). One on a shared
   vehicle no V drives goes to every game (`TrafficHack`): its owner applies
   it, the others mark it (`devices.md`, "A partner's hack, marked"). Not
   yet verified in game (scenarios `hacks-upload`, `hacks-guest`,

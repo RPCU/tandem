@@ -608,6 +608,8 @@ pmark() {
   read -r pmark_file pmark_line < <(remote "cd '$pdir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); echo \"\$f \$(wc -l < \"\$f\")\"")
 }
 psince() { remote "cd '$pdir'; tail -n +$((pmark_line + 1)) '$pmark_file'" | { grep -av '] \[script\] test reset: ' || true; }; }
+# The partner's screen, kept beside ours (a pair: shot NAME, pshot NAME-partner).
+pshot() { mkdir -p "$out" && pgame shot "$1" >/dev/null && cp "$cache/shots/$1.png" "$out/"; }
 pcmd() {
   local text="$*"
   text=${text//27450/$game_port}

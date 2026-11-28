@@ -1652,6 +1652,13 @@ TEST_CASE("activities and time skips: survive encoding, small, reliable, unknown
                       .anchor = {-12.5f, 300.f, 7.25f},
                       .yaw = -1.25f});
   RoundTrips(Activity{.player = 1, .kind = ActivityKind::Photo, .flags = kActivityFrozen});
+  // A remote view: its sort, the object, where the view is, the car it drives.
+  RoundTrips(Activity{.player = 2,
+                      .kind = ActivityKind::Remote,
+                      .device = 0x0102030405060708ull,
+                      .entry = static_cast<std::uint32_t>(RemoteSort::Vehicle),
+                      .anchor = {40.5f, -18.f, 6.75f},
+                      .traffic = 0x01000007u});
   RoundTrips(TimeSkip{.from = 3,
                       .request = 4,
                       .reason = SkipReason::Sleep,
@@ -1678,7 +1685,8 @@ TEST_CASE("activities and time skips: survive encoding, small, reliable, unknown
   CHECK(std::string(NameOf(TimeSkipVote{})) == "TimeSkipVote");
   CHECK(std::string(NameOf(TimeSkipResult{})) == "TimeSkipResult");
   // What this version does not know is refused.
-  CHECK_FALSE(Decode(Encode(Activity{.kind = static_cast<ActivityKind>(9)})).has_value());
+  CHECK_FALSE(Decode(Encode(Activity{.kind = static_cast<ActivityKind>(10)})).has_value());
+  CHECK_FALSE(Decode(Encode(Activity{.kind = ActivityKind::Remote, .entry = 5})).has_value());
   CHECK_FALSE(Decode(Encode(TimeSkip{.reason = static_cast<SkipReason>(3)})).has_value());
   CHECK_FALSE(Decode(Encode(TimeSkipVote{.why = kSkipWhyMax + 1})).has_value());
   CHECK_FALSE(Decode(Encode(TimeSkipResult{.outcome = static_cast<SkipOutcome>(5)})).has_value());

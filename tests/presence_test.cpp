@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <numbers>
+#include <string>
 
 using namespace tandem;
 using movement::Detailed;
@@ -356,6 +357,11 @@ TEST_SUITE("presence") {
     CHECK(presence::StatusOf(Life::Down, Place::Braindance, 4, 0, true, proto::kPresenceMenu) ==
           Status::Down);
     CHECK(presence::StatusOf(Life::Out, Place::City, 1, 0, false, 0) == Status::Out);
+    // A remote view: said unless something weightier holds.
+    CHECK(presence::StatusOf(Life::Up, Place::City, 1, 0, false, 0, true) == Status::Remote);
+    CHECK(presence::StatusOf(Life::Up, Place::City, 1, 0, true, 0, true) == Status::Menu);
+    CHECK(presence::StatusOf(Life::Down, Place::City, 1, 0, false, 0, true) == Status::Down);
+    CHECK(std::string(presence::NameOf(Status::Remote)) == "remote");
     CHECK(std::string_view(presence::NameOf(Status::Scene)) == "scene");
   }
 

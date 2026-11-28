@@ -1422,6 +1422,14 @@ public class TandemSystem extends ScriptableSystem {
   // traffic.md, "Traffic lights"), kept out of RunCommand: a branch more
   // there broke the script VM (the game died on its next command).
   private func RideCommand(command: String) -> Bool {
+    if Equals(command, "remote") || StrBeginsWith(command, "remote ") {
+      // (test, RemoteView.reds) our V's remote view: a camera, a turret, a car.
+      let remote = IsDefined(this.m_activities) ? this.m_activities.Remote() : null;
+      if IsDefined(remote) {
+        remote.Command(command);
+      }
+      return true;
+    }
     if Equals(command, "vehicle seats") {
       // (test) each seat of every car copy of the others: its slot read or
       // not, and who sits in it.
@@ -2869,6 +2877,11 @@ public class TandemSystem extends ScriptableSystem {
   // players sitting in our car, and every car copy we made (driven or parked).
   public func CarOwnerOf(id: EntityID) -> Uint32 {
     return this.CarOwner(id);
+  }
+
+  // Whose car a copy is, driven or parked (0: ours, the world's, no one's).
+  public func CopyOwnerOf(id: EntityID) -> Uint32 {
+    return this.CopyOwner(id);
   }
 
   public func Riders() -> Int32 {

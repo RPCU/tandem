@@ -74,4 +74,7 @@ public abstract class TandemPointKind {
   // A grenade bounced (entity: the grenade; the place of the bounce; value:
   // the engine time of it, in milliseconds).
   public static func ThrowBounce() -> Int32 { return 3; }
+  // Our V's takeover of a car was refused (entity: the car; value: the
+  // player who drives it, remotely or at its wheel; RemoteView.reds).
+  public static func RemoteRefused() -> Int32 { return 4; }
 }

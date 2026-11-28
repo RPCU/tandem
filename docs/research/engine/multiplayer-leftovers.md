@@ -103,7 +103,9 @@ vtables from the exe, values read live with `tools/re/mem.py` on anya.
   system's set control for a peer (`0x140af8258`, slot `0x1f8`, hash 1331962237) writes `+0x155` = peer first. Switching the local
   player's controlled object (`0x140a82c94`, hash 3287687122) is what
   `cpPlayerSystem.LocalPlayerControlExistingObject` (`0x142e689e8` →
-  `0x142e68004`) runs: the camera and turret takeovers. [2.5-verified]
+  `0x142e68004`) runs: the camera and turret takeovers (in the 2.50
+  scripts only the prototype `CCTVCamera` calls it; the takeover activates
+  the device's camera and keeps V controlled: §13.182). [2.5-verified]
 
 ## 13.122 The player system has a per-peer table; the single-player manager has one player (2026-11-21, game 2.50, exe and live process read)
 

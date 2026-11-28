@@ -260,6 +260,54 @@ TEST_CASE("referee: a car's paint is its owner's word, passed on, never back") {
   CHECK(Rules(host).empty());
 }
 
+TEST_CASE("referee: a remote view is its player's word, as its game leaves it") {
+  const auto car = static_cast<std::uint32_t>(proto::RemoteSort::Vehicle);
+  const auto camera = static_cast<std::uint32_t>(proto::RemoteSort::Camera);
+  auto guest = Guest();
+  guest.Received(1,
+                 proto::Activity{.player = 3,
+                                 .kind = proto::ActivityKind::Remote,
+                                 .device = 5,
+                                 .entry = car,
+                                 .anchor = {10.f, 20.f, 3.f},
+                                 .traffic = 0x01000004u},
+                 kSecond);
+  guest.Received(1, proto::Activity{.player = 3}, kSecond);
+  CHECK(Rules(guest).empty());
+  // A camera that names a car, a remote view that holds its body, a
+  // workspot that names a car, a view that is no place.
+  guest.Received(
+      1,
+      proto::Activity{
+          .player = 3, .kind = proto::ActivityKind::Remote, .entry = camera, .traffic = 4},
+      kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1,
+                 proto::Activity{.player = 3,
+                                 .kind = proto::ActivityKind::Remote,
+                                 .flags = proto::kActivityAnchored,
+                                 .entry = camera},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1,
+                 proto::Activity{.player = 3, .kind = proto::ActivityKind::Workspot, .traffic = 4},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+  guest.Received(1,
+                 proto::Activity{.player = 3,
+                                 .kind = proto::ActivityKind::Remote,
+                                 .entry = camera,
+                                 .anchor = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.not-finite"});
+  // Host: a guest says its own, never another's.
+  auto host = Host();
+  host.Received(2,
+                proto::Activity{.player = 2, .kind = proto::ActivityKind::Remote, .entry = camera},
+                kSecond);
+  CHECK(Rules(host).empty());
+}
+
 TEST_CASE("referee: a device's fire is the host's turret's, what a copy sees a guest's") {
   using Kind = proto::DeviceFireKind;
   auto host = Host();

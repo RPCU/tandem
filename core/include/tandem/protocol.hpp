@@ -52,7 +52,9 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 25: Rules.levelGap (the host's level_gap, said to every game: a guest's
 // menu shows the host's rules, coop-menu.md).
 // 26: LinkDecline's reasons 2-4, a call's outcomes (declined, busy, missed).
-inline constexpr std::uint16_t kProtocolVersion = 26;
+// 27: Activity's remote view (ActivityKind::Remote, its RemoteSort in
+// `entry`, its view in `anchor`) and `traffic`: a game of 26 refuses it.
+inline constexpr std::uint16_t kProtocolVersion = 27;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -1922,6 +1924,23 @@ enum class ActivityKind : std::uint8_t {
   Menu = 6,     // the hub menus, the map, the time skip wheel
   Photo = 7,    // photo mode
   Contest = 8,  // a duel or a contest the others must leave alone (`entry`: its ContestSort)
+  // A remote view: its camera left its body for something it controls (a
+  // camera's takeover, a turret's, a car driven remotely). `entry` is its
+  // RemoteSort, `device` that object's EntityID hash (a placed device's is
+  // the same in every game), `anchor` where the view is (nothing holds the
+  // body: never kActivityAnchored), `traffic` the shared world vehicle it
+  // drives (0: none). The body stays where PlayerState says.
+  Remote = 9,
+};
+// What a remote view looks through (Activity::entry of ActivityKind::Remote;
+// research/engine/devices.md §13.182). Read from the takeover system's
+// controlled object and the player state machine's remote-controlled car.
+enum class RemoteSort : std::uint8_t {
+  Other = 0,
+  Camera = 1,  // a security camera (SurveillanceCamera), or a chain of them
+  Turret = 2,  // a security turret (SecurityTurret)
+  Vehicle = 3, // a car or a bike driven remotely (the take control quickhack)
+  Device = 4,  // another device the takeover holds (a sniper nest, a quest's)
 };
 // What a Contest is (Activity::entry, which names no workspot then; engine
 // facts: research/engine/story.md §13.92). Read from the game's own data
@@ -1946,8 +1965,9 @@ struct Activity {
   std::uint64_t workspot{}; // the workspot resource's path hash (0: unknown)
   std::uint32_t entry{};    // its tree entry (Contest: its ContestSort)
   std::uint64_t anim{};     // the animation playing (CName hash)
-  Vec3 anchor;              // kActivityAnchored: where the body is
+  Vec3 anchor;              // kActivityAnchored: where the body is; Remote: where the view is
   float yaw{};              // its heading (radians, sync::YawOf)
+  std::uint32_t traffic{};  // Remote, a vehicle: the shared vehicle (a TrafficId; 0: none)
   friend bool operator==(const Activity &, const Activity &) = default;
 };
 
@@ -3066,7 +3086,9 @@ struct RigTracks {
 // turret in a player's hands") ----
 //
 // A player took control of a turret (the takeover quickhack, a device's
-// control): its game turns it and fires it, as the game does for one V.
+// control), or of a security camera (its takeover, a chain of them: it
+// turns and fires nothing): its game turns it and fires it, as the game
+// does for one V.
 // The controller's game says where it points (a point along its barrels)
 // and whether it fires, a few times a second while it holds it
 // (kTurretHandsHz), and once that it let go. The host stamps the player and

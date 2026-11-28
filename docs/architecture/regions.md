@@ -111,7 +111,12 @@ sees both. Nothing needs a "group owner": every NPC has its own owner.
 
 **Where a V is** is its last `PlayerState` position. For a player in another
 world (`Elsewhere` with `kElsewhereMoved`), that is the body's anchor, as
-sent today. A fast travel or a teleport is just a large move: the next
+sent today. A player in a remote view (a camera's takeover, a car driven
+remotely: its `Activity`'s view) is linked where it looks from too: two
+players' distance is the nearest of their V's and their views' places
+(`regions::Apart`; a view farther than `regions::kViewReach`, 200 m, from
+its V counts for nothing). Who owns an NPC does not move with a view
+([`remote-views.md`](remote-views.md)). A fast travel or a teleport is just a large move: the next
 arbitration pass (every 250 ms) unlinks, and the owner's world epoch (§7)
 moves its NPCs on.
 

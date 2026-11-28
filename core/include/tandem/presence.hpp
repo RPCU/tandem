@@ -160,13 +160,15 @@ enum class Status : std::uint8_t {
   Elsewhere = 3, // cyberspace, a braindance, playing someone else
   Scene = 4,     // in a cinematic scene
   Menu = 5,      // in the pause menu or another full-screen menu
+  Remote = 6,    // looking through a camera, at a turret, driving a car remotely
 };
 const char *NameOf(Status status);
 
 // `tier` is StoryState::tier (GameplayTier 1..5: 3 and up are scenes that
-// take the controls), `storyFlags` its flags.
+// take the controls), `storyFlags` its flags; `remote`: its Activity is a
+// remote view (proto::ActivityKind::Remote).
 Status StatusOf(proto::Life life, proto::Place place, std::uint8_t tier, std::uint8_t storyFlags,
-                bool paused, std::uint8_t presenceFlags);
+                bool paused, std::uint8_t presenceFlags, bool remote = false);
 
 // Where the partner is from our camera: how far, and which way when the
 // camera does not see them.

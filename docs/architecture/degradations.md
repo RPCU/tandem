@@ -198,6 +198,8 @@ names of `engine-access.md`.
 | `no room` | degraded | fallback | `runtime.cpp`, `engine/posestream.cpp` | no slot for another puppet, pose or rig |
 | `puppet not driven` | degraded | fallback | `engine/hooks.cpp` | a puppet without a move component |
 | `hit shown by twitch` | degraded | fallback | `HitsTaken.reds` (the pipeline played nothing, or chose an AI task) | a hit a V took shown as the body's twitch (a hit by nobody the games know twitches by design: not registered) |
+| `remote car unseen` | degraded | fallback | `RemoteView.reds` `Sample` (our V drives a player's car remotely: our garage's, one it took) | the others see that car where it was left ([`remote-views.md`](remote-views.md)) |
+| `held device unshared` | degraded | fallback | `RemoteView.reds` `Sample` (a camera or turret with a dynamic id, or another device: a sniper nest) | its copies do not turn with our V's hands |
 
 Looked at and left out, each for its reason: a rule that drops a message (a
 hit with friendly fire off, a stale or repeated message, an authority

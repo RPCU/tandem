@@ -161,7 +161,10 @@ public class TandemSpectate {
         restricted = true;
       } else if TandemSpectate.IsCamera(record) {
         camera = true;
-      } else if TandemSpectate.IsMode(record) {
+      } else if TandemSpectate.IsMode(record) && !TandemRemoteView.IsOwnRestriction(this.m_game, record) {
+        // (A camera's or a turret's takeover holds the camera with its own
+        // NoCameraControl: our V's remote view, not the story's body mode,
+        // unless the quest holds the takeover: remote-views.md.)
         mode = true;
       }
     }

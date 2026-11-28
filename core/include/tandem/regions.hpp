@@ -77,6 +77,17 @@ struct Place {
   bool known{};
 };
 using Places = std::map<proto::PlayerId, Place>;
+// Where a player's remote view is, while it has one (a camera's takeover, a
+// car driven remotely: proto::ActivityKind::Remote): what its player sees
+// and acts on, away from its body.
+using Views = std::map<proto::PlayerId, proto::Vec3>;
+// A view farther than this from its V counts for nothing: no remote view
+// reaches that far (a car's remote range, a building's chain of cameras).
+inline constexpr float kViewReach = 200.f;
+// How far apart two players are: the nearest of their V's and their view's
+// places (`views` may name neither).
+float Apart(proto::PlayerId a, const Place &atA, proto::PlayerId b, const Place &atB,
+            const Views &views);
 
 // Which players are linked. Two players are linked until both their places
 // are known and more than kLinkOut apart, and again once closer than kLinkIn.
@@ -89,9 +100,11 @@ public:
   // a != b. Players never heard of are linked; a waiting one with nobody.
   bool Linked(proto::PlayerId a, proto::PlayerId b) const;
   // The host: from where everyone is now (the keys are the players in the
-  // session). True when a link formed or broke. A waiting player that is
-  // placed waits no more.
-  bool Update(const Places &places);
+  // session) and where their remote views are (Apart: a V looking through
+  // a camera beside another is linked with it as if it stood there). True
+  // when a link formed or broke. A waiting player that is placed waits no
+  // more.
+  bool Update(const Places &places, const Views &views = {});
   // The host: `player` joined; linked with nobody until Update places it,
   // or until Release (a game that says nothing of where it is: then as any
   // player whose place is unknown).

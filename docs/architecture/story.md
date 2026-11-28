@@ -249,7 +249,10 @@ story restrict` (report), `story restrict on|off REC` (a test
       PhoneInterrupted, which a save can hold through hours of free roam
       and which are then not shared either), a ride its scene drives (`Transit.reds` kind Scene),
       a scripted body mode (GameplayRestriction effects NoMovement,
-      NoCameraControl, ForceCrouch; not its own activities), a camera
+      NoCameraControl, ForceCrouch; not its own activities, nor the
+      takeover's own NoCameraControl while its V looks through a camera or
+      holds a turret, unless a quest holds the takeover:
+      [`remote-views.md`](remote-views.md)), a camera
       animation (the CameraAnimation tag), another world, or a
       moment the moment list marks watch (`moments.txt`, tandem.ini
       `moment_watch`: by the scene it plays, a quest phase that runs, its

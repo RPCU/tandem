@@ -462,14 +462,16 @@ struct TandemPresence : Red::IScriptable {
   }
 
   // The party HUD (presence.hpp): what the partner's entry says
-  // (presence::Status: 0 up, 1 down, 2 out, 3 elsewhere, 4 scene, 5 menu).
+  // (presence::Status: 0 up, 1 down, 2 out, 3 elsewhere, 4 scene, 5 menu,
+  // 6 a remote view: `remote`, its Activity's).
   static std::int32_t Status(std::int32_t life, std::int32_t place, std::int32_t tier,
-                             std::int32_t storyFlags, bool paused, std::int32_t flags) {
+                             std::int32_t storyFlags, bool paused, std::int32_t flags,
+                             bool remote) {
     return static_cast<std::int32_t>(presence::StatusOf(
         static_cast<proto::Life>(Clamped<std::uint8_t>(life, 0, 2)),
         static_cast<proto::Place>(Clamped<std::uint8_t>(place, 0, 4)),
         Clamped<std::uint8_t>(tier, 0, 255), Clamped<std::uint8_t>(storyFlags, 0, 255), paused,
-        Clamped<std::uint8_t>(flags, 0, 255)));
+        Clamped<std::uint8_t>(flags, 0, 255), remote));
   }
   // Where `target` is from the camera (`halfFov` in radians).
   static TandemBearing Bearing(Red::Vector4 camera, Red::Vector4 forward, float halfFov,

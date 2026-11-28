@@ -35,6 +35,12 @@
 //                         it follows: none, V, puppet, other), alarm (its
 //                         security system: SAFE, ALERTED, COMBAT; none), mark
 //                         (the player whose hack is marked on it; 0: none)
+//   remote [player N]     our V's remote view (player N's): "SORT X Y Z
+//                         TRAFFIC", SORT camera, turret, vehicle, device or
+//                         other, where the view is, the shared vehicle it
+//                         drives (0: none); none: in its body
+//   traffic ID position   our body of shared vehicle ID (ours or its proxy):
+//                         X Y Z
 //   car marks             the shared vehicles another player's quickhack is
 //                         marked on now (their traffic ids), or none
 //   paint [puppet]        the custom paint the car's own state says: our
@@ -184,6 +190,15 @@ public class TandemTestQuery {
       let hacks = TandemHacks.Get(game);
       if IsDefined(hacks) {
         value = hacks.CarMarks();
+      }
+    } else if Equals(what, "remote") {
+      value = TandemRemoteView.Query(game, Equals(arg, "player") ? Cast<Uint32>(StringToUint64(words[4])) : 0u);
+    } else if Equals(what, "traffic") && count > 4 && Equals(words[4], "position") {
+      let traffic = TandemTraffic.Of(game);
+      let body = IsDefined(traffic) ? TandemTraffic.Body(game, traffic.BodyOf(Cast<Uint32>(StringToUint64(arg)))) : null;
+      if IsDefined(body) {
+        let at = body.GetWorldPosition();
+        value = s"\(FloatToStringPrec(at.X, 2)) \(FloatToStringPrec(at.Y, 2)) \(FloatToStringPrec(at.Z, 2))";
       }
     } else if Equals(what, "device") && count > 4 {
       let devices = TandemDevices.Get(game);

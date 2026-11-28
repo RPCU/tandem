@@ -19,7 +19,20 @@ bool Links::Linked(proto::PlayerId a, proto::PlayerId b) const {
   return !m_apart.contains(Key(a, b));
 }
 
-bool Links::Update(const Places &places) {
+float Apart(proto::PlayerId a, const Place &atA, proto::PlayerId b, const Place &atB,
+            const Views &views) {
+  float apart = Distance(atA.position, atB.position);
+  const auto viewA = views.find(a), viewB = views.find(b);
+  if (viewA != views.end())
+    apart = std::min(apart, Distance(viewA->second, atB.position));
+  if (viewB != views.end())
+    apart = std::min(apart, Distance(atA.position, viewB->second));
+  if (viewA != views.end() && viewB != views.end())
+    apart = std::min(apart, Distance(viewA->second, viewB->second));
+  return apart;
+}
+
+bool Links::Update(const Places &places, const Views &views) {
   bool changed = false;
   // A pair with a player that left is no pair.
   std::erase_if(m_apart, [&](const Pair &pair) {
@@ -46,7 +59,7 @@ bool Links::Update(const Places &places) {
         }
         continue;
       }
-      const auto distance = Distance(a->second.position, b->second.position);
+      const auto distance = Apart(a->first, a->second, b->first, b->second, views);
       if (!apart && distance > kLinkOut) {
         m_apart.insert(key);
         changed = true;

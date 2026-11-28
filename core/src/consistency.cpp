@@ -186,16 +186,21 @@ std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self) {
           .Add(std::uint64_t{static_cast<std::uint8_t>(h.state)});
   hash.Add(std::uint64_t{0xAA});
   for (const auto &[id, a] : players.activities)
-    if (id != self && a.kind != proto::ActivityKind::None)
+    if (id != self && a.kind != proto::ActivityKind::None) {
+      // A remote view's place moves with a car it drives: not hashed (the
+      // next word carries it), its car is.
+      const auto at = a.kind == proto::ActivityKind::Remote ? proto::Vec3{} : a.anchor;
       hash.Add(std::uint64_t{id})
           .Add(std::uint64_t{static_cast<std::uint8_t>(a.kind)})
           .Add(std::uint64_t{a.flags})
           .Add(a.device)
           .Add(a.workspot)
           .Add(std::uint64_t{a.entry})
-          .Add(a.anchor.x)
-          .Add(a.anchor.y)
-          .Add(a.anchor.z);
+          .Add(at.x)
+          .Add(at.y)
+          .Add(at.z)
+          .Add(std::uint64_t{a.traffic});
+    }
   // Comms: links that share with someone, waypoints that are set (an off
   // link and no waypoint count like one never heard of).
   if (players.links) {

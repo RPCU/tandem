@@ -78,6 +78,54 @@ TEST_CASE("a received activity says only what it can mean") {
   CHECK(activity::Sanitized({.kind = ActivityKind::Contest, .entry = 3}).entry == 3);
 }
 
+TEST_CASE("a remote view says its sort, its object, where it looks from, and its car") {
+  using proto::ActivityKind;
+  using proto::RemoteSort;
+  const auto car = static_cast<std::uint32_t>(RemoteSort::Vehicle);
+  const auto camera = static_cast<std::uint32_t>(RemoteSort::Camera);
+  // A car driven remotely: nothing holds the body, no workspot plays.
+  auto driven = activity::Sanitized({.player = 3,
+                                     .kind = ActivityKind::Remote,
+                                     .flags = proto::kActivityAnchored | proto::kActivityFrozen,
+                                     .device = 9,
+                                     .workspot = 4,
+                                     .entry = car,
+                                     .anim = 8,
+                                     .anchor = {10, 20, 3},
+                                     .yaw = 1.f,
+                                     .traffic = 0x02000005u});
+  CHECK(driven == proto::Activity{.player = 3,
+                                  .kind = ActivityKind::Remote,
+                                  .device = 9,
+                                  .entry = car,
+                                  .anchor = {10, 20, 3},
+                                  .traffic = 0x02000005u});
+  CHECK_FALSE(activity::Anchored(driven));
+  CHECK_FALSE(activity::Frozen(driven));
+  CHECK(activity::ViewOf(driven) == proto::Vec3{10, 20, 3});
+  CHECK(activity::RemoteCar(driven) == 0x02000005u);
+  // Only a car names a shared vehicle; an unknown sort is some other view.
+  auto looking = activity::Sanitized(
+      {.kind = ActivityKind::Remote, .entry = camera, .anchor = {5, 5, 5}, .traffic = 7});
+  CHECK(looking.traffic == 0);
+  CHECK(activity::RemoteCar(looking) == 0);
+  CHECK(activity::Sanitized({.kind = ActivityKind::Remote, .entry = 42}).entry ==
+        static_cast<std::uint32_t>(RemoteSort::Other));
+  // A view that is no place is none known.
+  auto lost = activity::Sanitized({.kind = ActivityKind::Remote,
+                                   .entry = camera,
+                                   .anchor = {std::numeric_limits<float>::infinity(), 0, 0}});
+  CHECK_FALSE(activity::ViewOf(lost).has_value());
+  // Another kind names no car, and its anchor is no view.
+  auto seat = activity::Sanitized({.kind = ActivityKind::Workspot,
+                                   .flags = proto::kActivityAnchored,
+                                   .workspot = 4,
+                                   .anchor = {1, 1, 1},
+                                   .traffic = 3});
+  CHECK(seat.traffic == 0);
+  CHECK_FALSE(activity::ViewOf(seat).has_value());
+}
+
 TEST_CASE("the time skip arbiter: every other player says yes, or nothing moves") {
   activity::SkipArbiter arbiter;
   const proto::TimeSkip skip{.from = 2,

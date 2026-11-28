@@ -127,6 +127,11 @@ public class TandemTurrets extends ScriptableSystem {
     return GameInstance.FindEntityByID(this.GetGameInstance(), entity) as SecurityTurret;
   }
 
+  // A turret or a camera (a sensor device: both turn), for the hands.
+  private func Sensor(entity: EntityID) -> ref<SensorDevice> {
+    return GameInstance.FindEntityByID(this.GetGameInstance(), entity) as SensorDevice;
+  }
+
   // Every tick, session or not (TandemObjectSync.Update): the hooks' queues
   // are always taken. you: 0 out of a session.
   public func Update(you: Uint32, now: Float) -> Void {
@@ -498,17 +503,22 @@ public class TandemTurrets extends ScriptableSystem {
     return IsDefined(control) ? control.GetControlledObject() : null;
   }
 
-  private func OurHands() -> ref<SecurityTurret> {
-    let turret = this.OurDevice() as SecurityTurret;
-    if !IsDefined(turret) || !EntityID.IsStatic(turret.GetEntityID()) {
+  // A turret, or a camera (a security camera's takeover, a chain of them:
+  // remote-views.md): both turn on the others' copies where our V turns
+  // them. One with no id every game knows is ours alone (RemoteView.reds
+  // registers it: held device unshared).
+  private func OurHands() -> ref<SensorDevice> {
+    let held = this.OurDevice();
+    let sensor = IsDefined(held as SecurityTurret) || IsDefined(held as SurveillanceCamera) ? held as SensorDevice : null;
+    if !IsDefined(sensor) || !EntityID.IsStatic(sensor.GetEntityID()) {
       return null;
     }
-    return IsDefined(turret.GetDevicePS()) ? turret : null;
+    return IsDefined(sensor.GetDevicePS()) ? sensor : null;
   }
 
-  // Ours: where it points (40 m along the camera, which is the turret's
-  // while V holds it) and whether it fires, 5 times a second; once that V
-  // let go.
+  // Ours: where it points (40 m along the camera, which is the turret's or
+  // the security camera's while V holds it) and whether it fires (a turret
+  // only), 5 times a second; once that V let go.
   private func PollOurHands(now: Float) -> Void {
     let turret = this.OurHands();
     let held = IsDefined(turret) ? turret.GetEntityID() : EntityID.FromHash(0ul);
@@ -545,7 +555,9 @@ public class TandemTurrets extends ScriptableSystem {
     let forward = Vector4.Normalize(GameInstance.GetCameraSystem(this.GetGameInstance()).GetActiveCameraForward());
     let from = turret.GetWorldPosition();
     let at = new Vector4(from.X + forward.X * 40.0, from.Y + forward.Y * 40.0, from.Z + forward.Z * 40.0, 1.0);
-    TandemObjects.Hands(held, at, turret.TandemIsShooting() ? 1 : 0);
+    let gun = turret as SecurityTurret;
+    let firing = IsDefined(gun) && gun.TandemIsShooting();
+    TandemObjects.Hands(held, at, firing ? 1 : 0);
   }
 
   public static func HandsEvery() -> Float { return 0.2; }
@@ -571,7 +583,7 @@ public class TandemTurrets extends ScriptableSystem {
     if event.player == this.m_you {
       return;
     }
-    let turret = this.Body(event.entity);
+    let turret = this.Sensor(event.entity);
     if !IsDefined(turret) {
       return; // not in our world
     }
@@ -595,9 +607,12 @@ public class TandemTurrets extends ScriptableSystem {
       known = new TandemTurret();
       known.entity = event.entity;
       ArrayPush(this.m_hands, known);
-      // Its own fire and the host's words about it wait.
-      turret.TandemStop();
-      TandemNative.Log(s"turrets: \(TandemNative.EntityHex(event.entity)) is in player \(event.player)'s hands: our copy follows it");
+      // Its own fire and the host's words about it wait (a turret's).
+      let gun = turret as SecurityTurret;
+      if IsDefined(gun) {
+        gun.TandemStop();
+      }
+      TandemNative.Log(s"turrets: \(TandemNative.EntityHex(event.entity)) is in player \(event.player)'s hands: our copy follows it\(IsDefined(gun) ? "" : " (a camera)")");
     }
     known.hands = event.player;
     known.handsHeard = now;
@@ -674,18 +689,20 @@ public class TandemTurrets extends ScriptableSystem {
       this.m_releasedAt = now;
       TakeOverControlSystem.ReleaseControl(this.GetGameInstance());
     }
+    let camera = IsDefined(this.Sensor(event.entity) as SurveillanceCamera);
     TandemNative.Log(s"turrets: our claim on \(TandemNative.EntityHex(event.entity)) refused: player \(event.player) holds it; \(ours ? "our V lets go" : "out of our V's hands already")");
-    TandemText.Notice(this.GetGameInstance(), "Turrets-Busy", TandemCoop.NameOf(event.player));
+    TandemText.Notice(this.GetGameInstance(), camera ? "Turrets-BusyCamera" : "Turrets-Busy", TandemCoop.NameOf(event.player));
   }
 
   // A held turret is its game's again.
   private func LetGo(known: ref<TandemTurret>) -> Void {
-    let turret = this.Body(known.entity);
+    let turret = this.Sensor(known.entity);
     if IsDefined(turret) {
       turret.TandemInHandsFor(0.0);
       turret.TandemHeld(0.0);
-      if known.shooting {
-        turret.TandemShooting(false);
+      let gun = turret as SecurityTurret;
+      if known.shooting && IsDefined(gun) {
+        gun.TandemShooting(false);
       }
     }
     known.shooting = false;

@@ -98,6 +98,10 @@ constexpr Info kCatalogue[] = {
     {"puppet not driven", Degraded, Fallback, "a puppet has no move component to drive"},
     {"hit shown by twitch", Degraded, Fallback,
      "a hit a V took is shown as the body's twitch: the game's pipeline played nothing"},
+    {"remote car unseen", Degraded, Fallback,
+     "a player's car driven remotely is seen by the others where it was left"},
+    {"held device unshared", Degraded, Fallback,
+     "a device in a V's hands has no id the other games know: their copies do not turn with it"},
 };
 
 std::size_t OrderOf(std::string_view id) {

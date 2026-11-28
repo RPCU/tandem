@@ -934,14 +934,17 @@ protected func OnVehicleOverrideAccelerate(evt: ref<VehicleOverrideAccelerate>) 
   return wrappedMethod(evt);
 }
 
-// Taking control of a car another V drives needs the car handed over
-// (ownership moves to the hacker while controlled): not done yet, so the
-// hack does nothing on a copy rather than fight the driver's sync.
+// Taking control of a car (remote-views.md): a car another V drives, at its
+// wheel or remotely, or a partner's own car, is that V's: the takeover is
+// refused, and our V told who has it (RemoteView.reds, on the tick: read
+// and queue only here). Any other car is taken as in single player; a
+// shared one another game runs is handed to ours by the host (traffic.md).
 @wrapMethod(VehicleComponentPS)
 protected func OnToggleTakeOverControl(evt: ref<ToggleTakeOverControl>) -> EntityNotificationType {
-  let driver = TandemHacks.RemoteDriver(this.GetGameInstance(), this.GetOwnerEntity());
+  let car = this.GetOwnerEntity();
+  let driver = TandemRemoteView.TakenBy(this.GetGameInstance(), car);
   if driver != 0u {
-    TandemNative.Log(s"hacks: taking control of player \(driver)'s car is not supported yet");
+    TandemStreaming.QueuePoint(TandemPointKind.RemoteRefused(), car.GetEntityID(), EntityID.FromHash(0ul), n"None", car.GetWorldPosition(), Cast<Int32>(driver));
     return EntityNotificationType.DoNotNotifyEntity;
   }
   return wrappedMethod(evt);

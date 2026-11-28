@@ -390,6 +390,22 @@ The crime, if it is one, is the thief's: its own game ran the mount and
 `StealVehicle`, and its own prevention system counts the witnesses (see
 [`police.md`](police.md)).
 
+## A car driven remotely
+
+The take control quickhack ([`remote-views.md`](remote-views.md)): the
+hacker's game drives the car from where its V stands. A shared vehicle is
+run by that game while it does: its `Activity` names it (`traffic`), the
+host hands it over at once (`ArbitrateTraffic`: no distance rule, no
+`ClearOf`) and hands it to nobody else while its view names it (a second
+driver: the owner keeps it, else the lowest id; the second's game refuses
+its own takeover). The driver's game leaves its proxy to its own V's hands
+the frame it takes the car (`Drive`), keeps it where it drives it when it
+is handed over (no teleport, no traffic drive on), and counts it driven
+(`FlagsOf`: remote controlled is not parked, so its states stream). Its
+giver refuses nothing for it (`OnGive` refuses only a car its own V drives
+remotely). Out of the car, the usual rules. Tested in
+`tests/traffic_regions_test.cpp`.
+
 ## Drivers and passengers
 
 They are the owner's NPCs and travel as NPCs, with the message that

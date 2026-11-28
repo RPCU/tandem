@@ -587,6 +587,8 @@ public class TandemPartyHud {
   }
 
   // The state line (in English for the log: scenarios read it).
+  // `place`: a V elsewhere's proto::Place (status 3), a remote view's sort
+  // (status 6, RemoteView.reds).
   public static func StateText(status: Int32, place: Int32, reviveLeft: Float, opt english: Bool) -> String {
     switch status {
       case 1:
@@ -599,6 +601,8 @@ public class TandemPartyHud {
         return TandemText.T(english, "Party-Scene");
       case 5:
         return TandemText.T(english, "Party-Menu");
+      case 6:
+        return TandemText.T(english, TandemRemoteView.PartyKey(place));
       default:
         return "";
     }
@@ -1206,7 +1210,14 @@ public class TandemPartyHud {
       let known = IsDefined(away) ? away.Find(player) : null;
       let place = IsDefined(known) ? known.place : 0;
       let flags = TandemPresence.Flags(player);
-      let status = TandemPresence.Status(TandemNative.RemoteLife(player), place, IsDefined(story) ? story.TierOf(player) : 0, IsDefined(story) ? story.StoryFlagsOf(player) : 0, ArrayContains(paused, player), flags);
+      // A remote view (RemoteView.reds): its body stands, its eyes are on a
+      // camera, a turret or a car; the entry says which (status 6, `place`
+      // its sort then).
+      let sort = TandemRemoteView.SortOf(player);
+      let status = TandemPresence.Status(TandemNative.RemoteLife(player), place, IsDefined(story) ? story.TierOf(player) : 0, IsDefined(story) ? story.StoryFlagsOf(player) : 0, ArrayContains(paused, player), flags, sort >= 0);
+      if status == 6 {
+        place = sort;
+      }
       let health = TandemPresence.Health(player);
       if health < 0.0 {
         health = 1.0; // never heard: an older game, or a mock player that says nothing
@@ -1375,6 +1386,8 @@ public class TandemPartyHud {
         return "scene";
       case 5:
         return "menu";
+      case 6:
+        return "remote";
       default:
         return "?";
     }
