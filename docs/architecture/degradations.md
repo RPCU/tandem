@@ -199,6 +199,7 @@ names of `engine-access.md`.
 | `no room` | degraded | fallback | `runtime.cpp`, `engine/posestream.cpp` | no slot for another puppet, pose or rig |
 | `puppet not driven` | degraded | fallback | `engine/hooks.cpp` | a puppet without a move component |
 | `activity not marked` | degraded | fallback | `OpenWorld.reds` `Apply` (the pin's phase read back is not the one set) | one NCPD activity's pin shows our own state |
+| `activity untracked` | degraded | fallback | `OpenWorld.reds` `TrackAgain` (the pin not on our map at its put-back, or its track read back is off) | an NCPD activity the player tracked, shown done during the session, is not tracked again |
 | `hit shown by twitch` | degraded | fallback | `HitsTaken.reds` (the pipeline played nothing, or chose an AI task) | a hit a V took shown as the body's twitch (a hit by nobody the games know twitches by design: not registered) |
 | `summoned car unseen` | degraded | fallback | `Summons.reds` (no copy could be spawned of a partner's summoned car) | the car appears only when its owner gets in (its `Seat` spawns a copy) |
 

@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <span>
 #include <vector>
 
@@ -26,11 +27,14 @@ inline constexpr std::uint8_t kPhases = 4;
 struct Seen {
   std::uint32_t marker{}; // its journal path hash (never 0)
   std::uint8_t phase{};   // gamedataMappinPhase
+  bool tracked{};         // the player tracks it (IMappin.IsPlayerTracked)
 };
-// One pin to set: `marker` to `phase`.
+// One pin to set: `marker` to `phase`; `track`: tracked again after (our
+// setter untracked it when it showed the host's done, §13.167).
 struct Step {
   std::uint32_t marker{};
   std::uint8_t phase{};
+  bool track{};
   friend bool operator==(const Step &, const Step &) = default;
 };
 
@@ -47,8 +51,10 @@ std::uint8_t Wanted(bool doneThere, std::uint8_t own);
 // host's state; the ones we changed remember their own phase, and are the
 // only ones we ever put back: when the host's state matches ours again, when
 // we go apart, when we leave. Our game putting a pin back (it streamed in
-// again from its own record) while grouped is set again. Nothing here is our
-// save's: the save keeps what our own game did (the session never saves).
+// again from its own record) while grouped is set again. A pin the player
+// tracked when we set it done (the engine's setter untracks a completed pin)
+// is tracked again when it is put back. Nothing here is our save's: the save
+// keeps what our own game did (the session never saves).
 class Mirror {
 public:
   // The host's set heard. Answers what it adds to the set heard before it
@@ -65,13 +71,18 @@ public:
   const std::map<std::uint32_t, std::uint8_t> &Ours() const { return m_ours; }
   // Ours set again after our game put them back.
   std::uint32_t Reapplied() const { return m_reapplied; }
+  // Ours the player tracked when we set them done: tracked again at the
+  // put-back.
+  const std::set<std::uint32_t> &Untracked() const { return m_untracked; }
 
 private:
   std::vector<Step> Release();
+  Step Back(std::uint32_t marker, std::uint8_t own);
 
   std::vector<std::uint32_t> m_host;
   bool m_heard{};
   std::map<std::uint32_t, std::uint8_t> m_ours;
+  std::set<std::uint32_t> m_untracked;
   std::uint32_t m_reapplied{};
 };
 } // namespace tandem::openworld

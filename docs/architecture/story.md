@@ -629,8 +629,8 @@ openworld.hpp`, `engine/mappins.cpp`, the freeze's activity class in
       freeze's third class, `SetActivitiesGrouped`: held signals given back
       in order when its world leads again), so its game never sets an
       activity's scene again where the host's has finished it. While the
-      host leads (not a third player holding its region: that world sends
-      no word, so ours stay ours), each of its pins shows the host's state (`openworld::Mirror`): done there, done;
+      host leads (not a third player holding its region: known limits,
+      below), each of its pins shows the host's state (`openworld::Mirror`): done there, done;
       done in its own save and open there, discovered (the host's game runs
       it); else its own. The phase is set the engine's way
       (`TandemStory.SetPoiPhase`, the game's own `PointOfInterestMappin`
@@ -643,7 +643,15 @@ openworld.hpp`, `engine/mappins.cpp`, the freeze's activity class in
       goes apart, at the leave (`GuestLeave`, after its journal goes back,
       whose entries the engine's pins follow, and before saving unlocks;
       for 6 s after it, a pin moved again is set back once more and said).
-      A pin its own game puts back (streamed in again) is set again.
+      A pin its own game puts back (streamed in again) is set again. A pin
+      the player tracked when it was set done (the setter untracks it) is
+      tracked again after its put-back, at the next check (3 s; after a
+      leave, within a second), on the pin as the map then has it: the
+      system's own tracker (`TandemStory.TrackPin`, `MappinSystem`'s
+      TrackMappin by hash, what the world map's track calls, §13.168), read
+      back (`IsPlayerTracked`); unless the player has tracked another pin
+      since (theirs wins). One that does not take, or is no longer on the
+      map, is the fallback `activity untracked`.
     - _Credit_: an activity the host's set gains while the guest is
       grouped and within 150 m of the host's V (the reward rule) is a
       ledger entry, once (`TandemStorySystem.NoteActivity`: tier 2, kind
@@ -657,25 +665,44 @@ openworld.hpp`, `engine/mappins.cpp`, the freeze's activity class in
       are held, not finished, and every pin is put back before saving
       unlocks (the setter writes the saved state: the put-back is what
       keeps it out of the save); a crash leaves nothing (no save in a
-      session). A pin the guest tracked is untracked when it shows done,
-      and not tracked again by the put-back. Its own copy
+      session). A pin the guest tracked is tracked again by the
+      put-back. Its own copy
       of an activity done with the host stays playable at home and is
       credited, never paid twice.
-    - Left as each game's: an activity community already active in the
-      guest's save spawns its people while grouped (held phases do not
-      despawn them); they are the guest's NPCs, shown and merged per
-      `regions.md` (twins give way to the host's, §3). Phantom Liberty's
-      Dogtown activities (airdrops, their own phases) and the other
-      open-world content (gigs: "Whose gig is it", `quest-carryover.md`)
-      are not in this class.
+    - _Known limits_ (weighed 2026-11-28 by what a player notices against
+      the cost; each game's own there):
+      - An activity community already active in the guest's save spawns
+        its people while grouped (held phases do not despawn them), also
+        where the host's world has the activity done: an extra fight at a
+        spot the pin shows cleared. They are the guest's NPCs, one owner,
+        the same on both screens (`regions.md`: twins give way to the
+        host's where its world runs the activity too, §3; new spawns in
+        the host's region held back, §6). Stopping them needs the
+        activity's communities (only Codeware's quest-phase parse knows
+        them, not exposed) and a deactivation that writes the save's
+        community state, with no faithful way back at the leave:
+        costlier and riskier than the fight.
+      - Phantom Liberty's Dogtown activities (airdrops) are not in this
+        class: their pins are not points of interest (§13.168), each a
+        repeating drop run by its own quest phases; mirroring one needs
+        that quest's own state (whose drop it is), not found offline.
+        Each game keeps its own drops.
+      - A third player holding its region leads a world that sends no
+        word: a guest grouped under it keeps its own pins. Two-player
+        sessions never meet it, and with three it lasts only while that
+        player's gig runs.
+      - The other open-world content (gigs: "Whose gig is it",
+        `quest-carryover.md`) is not in this class.
     - Tests: `tests/openworld_test.cpp` (the host's set, the mirror, the
       record, the message over loopback), `tests/protocol_test.cpp`,
       `tests/referee_test.cpp` (the host's world only); mock player
       `--activities HASH[,HASH]|off` (`--activities-at S`,
       `--activities-then SET --activities-then-at S`) and the story verb
-      `activities`; scenarios `openworld-guest`, `openworld-host`;
-      `tools/game.sh cmd story activities`, `cmd story activity
-open|done|MARKER`.
+      `activities`; scenarios `openworld-guest`, `openworld-host`,
+      `openworld-track` (a tracked pin untracked while it shows done,
+      tracked again apart and at the leave); `tools/game.sh cmd story
+activities`, `cmd story activity open|done|MARKER|track
+MARKER|untrack`.
   - Not yet verified in game: scenarios `story-guest`, `story-join`, `story-host`, `story-johnny`,
     `story-private`, `story-private-host`, `story-private-calls`, `story-session-items`,
     `story-gigs-apart`, `story-restrict-guest`, `story-restrict-host`,

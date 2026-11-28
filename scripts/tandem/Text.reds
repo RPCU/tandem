@@ -417,6 +417,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-no-room", "no room left for another body or animation");
     this.Text("Tandem-Degraded-Id-puppet-not-driven", "a player's body could not be moved");
     this.Text("Tandem-Degraded-Id-activity-not-marked", "an NCPD activity on your map shows your own state, not the host's");
+    this.Text("Tandem-Degraded-Id-activity-untracked", "an NCPD activity you tracked was not tracked again: track it from the map");
     this.Text("Tandem-Session-JoinedOf", "Joined {1}'s session");
     this.Text("Tandem-Session-Joined", "Joined the co-op session");
     this.Text("Tandem-Session-YouLeft", "You left the co-op session");
@@ -956,6 +957,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Degraded-Id-no-room", "plus de place pour un autre corps ou une autre animation");
     this.Text("Tandem-Degraded-Id-puppet-not-driven", "le corps d'un joueur n'a pas pu être déplacé");
     this.Text("Tandem-Degraded-Id-activity-not-marked", "une activité du NCPD sur votre carte montre votre propre état, pas celui de l'hôte");
+    this.Text("Tandem-Degraded-Id-activity-untracked", "une activité du NCPD que vous suiviez n'est plus suivie : suivez-la depuis la carte");
     this.Text("Tandem-Session-JoinedOf", "Vous avez rejoint la session de {1}");
     this.Text("Tandem-Session-Joined", "Vous avez rejoint la session coop");
     this.Text("Tandem-Session-YouLeft", "Vous avez quitté la session coop");
