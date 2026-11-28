@@ -446,7 +446,8 @@ Scenarios (`tools/scenario.sh NAME`), each checking the game's log:
 | `names-prompt` | the pause menu's Host this game asks for a name while it is V; a bad one asked again; a good one saved, then hosting |
 | `names-duplicate` | two mock players named V and v beside our V: shown as V (2) and v (3), each told its own, markers and HUD entries under those names |
 | `presence-reactions` | as a guest: impact, stagger, knockdown, ragdoll and its end on a proxy |
-| `presence-npc-voices` | as a guest: the host's NPCs' voice lines said by our proxies (`NpcVoice`) |
+| `presence-npc-voices` | as a guest: the host's NPCs' voice lines and voice triggers said by our proxies (`NpcVoice`) |
+| `presence-npc-voices-host` | as host: a voice trigger on one of our shared NPCs (`entTriggerVOEvent`) sent with its variation |
 | `presence-ricochet` | a partner's shots: the drawn bullet and the weapon's trail from the muzzle, each ricochet's leg on from the shot's end |
 | `presence-charge` | a partner charges a tech rifle: its charge effects and glow on the puppet's weapon, full, released with the shot, never left on |
 | `presence-akimbo` | a dual wielding partner: both pistols in the puppet's hands (the game's own slots, `test query held puppet`), the left hand's shot, bullet and ricochet from the left weapon, both away when holstered and back when drawn |

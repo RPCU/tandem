@@ -418,3 +418,43 @@ within 20 s of every ride, five rides in five, at one of two places.
 - Not through these events: scene lines (`scnDialogLine`, scene-replay's)
   and the quest node `questPlayVoiceset_NodeType` (whether it queues an
   `entGameplayVOEvent`, its `isQuest`, is not read). [unverified]
+
+### 13.163 Voice triggers: the audio system's own lines for an NPC, its combat and idle chatter (2026-11-28, 2.50 exe read and RTTI)
+
+- The voice interface of §13.159 (`0x38` bytes, vtable `0x143040808`) is
+  built when an NPC's voice set attaches (`0x1402beb4c`: it reads the
+  entity at `component +0x50`, picks the voice set's variation, then hands
+  the interface to the audio system, `*(0x143bbfb38 +0xc8) +0x140`, list
+  `+0xa0`). Its slots 5 to 7 are how **the audio system** starts a line on
+  that NPC. [2.5-verified, exe read]
+- Slot 7 (`0x140503458`) reads a request from the audio side (`+0x00`
+  base name, `+0x08` variation index, `+0x0c` variation number, `+0x10`
+  the overriding VO context when set, `+0x29`/`+0x2a` the expression and
+  `+0x2b`/`+0x2c` the visual style (value, set), `+0x18` debug context, `+0x20` answering entity hash,
+  `+0x28` ignore the global VO limit, `+0x30` 20 bytes copied unnamed to
+  the event's `+0x50`) and builds an **`entTriggerVOEvent`**
+  (`0x140503538`): `triggerBaseName` `+0x40`, `triggerVariationIndex`
+  `+0x48`, `triggerVariationNumber` `+0x4c`, `debugInitialContext`
+  `+0x68`, `answeringEntityIDHash` `+0x70`, `ignoreGlobalVoLimitCheck`
+  `+0x78`, `overridingVoContext` `+0x79` (**5, `Default_Vo_Context`, when
+  none**), the expression and visual style overrides `+0x7a` to `+0x7d`
+  (off when none); queued on the entity as slots 5 and 6 queue theirs
+  (`0x1401a6790`). [2.5-verified, exe read]
+- What picks them: the audio metadata names a trigger with its variations
+  (`audioCombatVoTriggerVariationsMap`: items of a name,
+  `numberOfVariations`, `shuffle`) and the combat VO manager
+  (`audioCombatVoManagerSettings`: `triggerVoEventBufferTime`,
+  `triggerIdleChattersTime`, the generic relaxed, fear, alerted and combat
+  contexts, hearable and visible distances). So triggers are the audio
+  side's own picks, combat and idle chatter, not a script's. No script
+  builds one (`final.reds (2.50)`: no use; Codeware only imports the
+  class). [2.5-verified, RTTI and scripts; which lines and how often is
+  not heard yet: 2.5-untested]
+- A script handler on the NPC's class (`cb func` taking
+  `ref<entTriggerVOEvent>`) sees each (the event is queued on the
+  entity); one queued by a script with the same fields (the unnamed
+  `+0x50` bytes left zero) is the engine's way to have a voice set say a
+  given variation. Not seen in game yet. [2.5-untested]
+- Whether the audio system picks triggers for an NPC whose brain is off
+  (a proxy) is not read: `NpcVoices.reds` counts any it sees.
+  [unverified]
