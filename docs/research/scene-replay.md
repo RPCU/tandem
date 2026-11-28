@@ -80,6 +80,11 @@ finishedOnClient, finishedOnServer }`, `scnChoiceNode
   (`SDK/scn/PlayerActorDef.hpp:48-50`, `SceneSharedState.hpp`). Whether any
   of it runs in the retail game is [unknown]: `coop-scenes.md` §3.4 found
   the script half always answering "single player".
+- Later, decompiled (`engine/story.md` §13.180): a native can start a
+  scene outside any quest (the scene system's CreateSceneInstance, which
+  the TV, voiceset and chatter scenes and the cut multiplayer's client
+  use), findNetworkPlayer runs in single player (id 0 is the local V),
+  and one dispatcher acquires every actor. [2.5-untested]
 
 ## 2. What a scene resource does besides showing
 

@@ -1113,4 +1113,200 @@ scene of its own whose camera plays the host's camera track?
   each actor to the host's proxy and suppressing every fact, reward and
   choice the guest's copy would emit: a scene engine of our own around
   the game's. Until that is designed (parity.md row 1, "Next"), the watch
-  camera stays, registered as what it is. [unverified]
+  camera stays, registered as what it is. [unverified] What the cut
+  multiplayer replicated for a scene was the scene system's own state,
+  not the quest's; its entry, casting and outputs: §13.180.
+
+### 13.180 Playing one scene on every game: the scene system's entry, its casting, the cut multiplayer's client path (2026-11-28, decompiled 2.50 exe and RTTI; not run)
+
+For `docs/architecture/parity.md` row 1: can tandem take the cut
+multiplayer's path (every game plays the scene, §13.164) instead of the
+watch camera? Read with `tools/re` (`decompile`, `xref.py`, `addr.py`,
+the RTTI dump) on the 2.50 exe; nothing was called in game.
+
+**Starting a scene from code**
+
+- **One engine call starts any scene, quest or not.** `scnSceneSystem`
+  vtable (`0x1430f7d48`) **+0x230 = CreateSceneInstance** (`0x1405053f8`,
+  hash 171003153; the thunk every caller uses, `0x1405053b0`, hash
+  3166522547): `(system, out scnSceneInstanceId, raRef:scnSceneResource,
+u64 ownerHash, params*, …, bool, out error String)`. It refuses (the
+  empty id) when `(resource, owner)` already runs ("Cannot
+  CreateSceneInstance %llu %llu", "Scene already exist!"). The params
+  struct (ctor `0x1402cae4c`, hash 446828003) holds the location at +0
+  (copied by `0x1402bcaa0`), a mode byte at +0x50, the entry point at
+  +0x58, a **context-actor list at +0x98** (`DynArray` of 0x20-byte
+  `{kind, EntityID, …}`), flags at +0xB8. [2.5-untested]
+- **Then requests.** vtable **+0x1b0** (`0x1409dca60`, hash 2083726687)
+  queues `{instanceId, {kind, debug label}}` under a lock (+0x298 =
+  `0x1409dcaa0`, hash 2690000313; the queue at +0xA8, a counter at
+  +0x540). Every non-quest caller sends kind 1 then kind 2 (prepare,
+  start); the quest's listener sends 1, then **kind 9 with an entry-point
+  name** (`ActivateSceneEntryPoint`, `0x140a2acac`, hash 3559855749); the
+  cut multiplayer's cleanup sends 6 for a finished scene. The kinds'
+  meanings are inferred from those callers. [2.5-untested]
+- **The game itself starts scenes outside quests this way**, each under
+  an owner hash of its own (a system id and a counter): the TV
+  (`GlobalTvSystem_PlayScene`, `0x140670d20`, hash 3398506835), voiceset
+  scenes (`0x140504c38`, hash 3763819169: the owner entity passed as
+  context actor kind 1), chatter (`InterestingConversations_PlayScene`,
+  `0x140791c38`, hash 3444523778: each participant as context actor kind
+  3 or 4), radio announcements, the police radio, the loading screen. So
+  no script function starts a scene, but a native can, as the engine
+  does (`research/scene-replay.md` §1 found no reflected way). [2.5-untested]
+- **The quest's scene node** (`questSceneNodeDefinition` execute,
+  `0x140a2a018`, hash 1352280896) calls the same create through its
+  listener (`SceneListener_CreateAndPrepareSceneInstance`, `0x1421fe230`,
+  hash 4230174398) with the node's `sceneFile`, `sceneLocation` and an
+  owner hash from its phase, activates the entry point its input socket
+  names, and **collects the scene's fired output sockets** from a store
+  keyed by that owner, as its outputs to the quest graph. A scene created
+  under an owner no quest node knows fires its out sockets into nobody.
+  [2.5-untested]
+- **Keeping it in step**: no seek for an ordinary section; time control
+  exists only for rewindable (braindance) sections
+  (`scnScriptInterface.JumpRewindableSection`,
+  `SetRewindableSectionPlaySpeed`); fast forward is a mode
+  (`scnFastForwardMode` Default, GameplayReview). A copy can start at the
+  host's start or at a named entry point (`scnSceneResource.entryPoints`),
+  and follow a skip only by fast forwarding itself. Nothing found picks a
+  choice option, forces a randomizer's (`scnRandomizerNode`: Random,
+  IgnoreLastUsed, IgnoreAllUsed) or an xor's output, or feeds a node
+  signal from outside. [2.5-untested]
+
+**The cut multiplayer's client path, still compiled**
+
+- **Run mode**: `worldRuntimeInfo` +0x40 is 2 on a client, 3 on a server
+  (the `IsClient`, `IsServer` natives; `IsMultiplayer` is 2 or 3);
+  single player is neither. [2.5-untested]
+- **Server**: CreateSceneInstance, when the system has a replicator
+  (+0xA68) and the mode is server, builds a `scnSceneSharedState` (0x148:
+  resource +0x38, entry point +0x40, the create params +0x58, owner hash
+  +0x118, instance id +0x120, `finishedOnClient` +0x140,
+  `finishedOnServer` +0x141, `syncNodesVisited` +0x48) and sends it. A
+  server plays no voiceset scene. [2.5-untested]
+- **Client**: the replicator (`0x142ce8b2c`, hash 3618381882; reached
+  from the net receive callback `0x142d0962c`, hash 1446782785) **plays
+  the server's scene locally**: CreateSceneInstance with the state's
+  resource, owner hash and params (its entry point), then requests 1 and
+  2 (label "SystemSharedState"). A cleanup (`0x142ce91dc`, hash 1458247833) ends each state's scene (request 6) once its finished flags
+  say so. This is the engine's own "a scene the host started, played on
+  another game"; tandem can make the same three calls from a message of
+  its own. Who reads `syncNodesVisited` (`scnSyncNodeSignal {nodeId,
+name, ordinal, numRuns}`, the server's visited nodes) was not traced:
+  if it steers a client's branches, it is the lever for choices and
+  randomizers. [2.5-untested]
+- **Choices per peer**: `GetPeerIdDialogChoiceFactName` returns a
+  constant fact name (a global String at `0x143c0f370`, filled at run
+  time; vtable +0x220, `0x142cef9e0`); `questMultiplayerChoiceTokenNodeDefinition
+{timeout, compatibleDeviceName}`, `questMultiplayerJunctionDialogNodeDefinition`
+  and the prereq `SelectedForMultiplayerChoiceDialog` exist; no 2.50
+  script calls them. [2.5-rtti]
+
+**Casting**
+
+- **One dispatcher acquires every actor**: `0x140381d1c` (hash 3969919645) switches on the actor's `scnEntityAcquisitionPlan` (its
+  entry's +0x28) and calls one resolver per plan: 1 findInContext
+  (`0x140e6bbac`, hash 2962112565), 2 findInWorld (`0x140382544`, hash
+  2677880933: resolves the `gameEntityReference`), 3 spawnDespawn
+  (`0x1409d08d8`), 4 findInEntity, 5 spawnSet (`0x140382470`), 6
+  community (`0x140e449b8`), 7 spawner and 8 findInNode (`0x140e6ba00`,
+  hash 1037120594), **9 findNetworkPlayer** (`0x142d07e34`, hash
+  3659936854). Each returns `{kind 2, EntityID +8}` or an error string;
+  the dispatcher binds it to the performer (`0x1401e4138`). **A hook on
+  the dispatcher, or on the bind, is the single point where a guest's
+  copy could be handed our entities**: the host V's proxy for the player
+  actor, the NPC copies for the rest. [2.5-untested]
+- **findInContext** reads `scnContextualActorName` {Player 0,
+  VoicesetHolder 1, Voice 2, SpecificVoicetagHolder 3, ContextActorName
+  4}: Player and Voice give the local player (`gameIPlayerSystem` vfunc
+  +0x1E0; with a peer set, one of up to 7 players matched on its +0x260;
+  in multiplayer Player fails, "Not Supported in multiplayer"); 1, 3 and
+  4 are looked up in the **creator's context-actor list** (params +0x98)
+  by kind, voicetag or name. So a native creator hands entities to
+  findInContext actors without a hook; actors with other plans (the
+  story's NPCs, as their data has them) need the hook. [2.5-untested]
+- **findNetworkPlayer runs in single player.** It asks
+  `gameIPlayerManager` for its players (vfunc +0x208), sorts their peer
+  ids (byte +0xC0), takes the `networkId`-th (an index, not a peer id)
+  and returns that player's puppet's EntityID (vfunc +0x1F0, object
+  +0xB0, +0x48). Single player's `gamePlayerManager` (vtable
+  `0x1430cf520`) lists one player and returns it for any id
+  (`0x142aee188`, hash 3808568678; `0x1419543b0`): networkId 0 is the
+  local V, any other id fails. `mpPlayerManager` (0x128, vtable
+  `0x14376d6e8`) held up to 7, found by peer (`0x142bec574`, hash
+  116725490; `0x142bec6bc`, hash 2501846185). No session is needed to
+  reach it; nothing in it names a remote V without the hook.
+  [2.5-untested]
+
+**What a guest's copy would emit**
+
+- **Out sockets**: into the owner's store only: harmless under an owner
+  hash of ours. [2.5-untested]
+- **Quest nodes inside the scene** (`scnQuestNode`, vtable slot +0x148
+  `0x1402b3ccc`, hash 3646963829) go through the quest node's **vfunc
+  +0x168**, not the +0x158 that `QuestPhaseInstance::ExecuteNode` (§13.15,
+  the freeze's hook) calls: for a signal-stopping node `0x14037ac14`
+  (hash 2256484101); for a fact node its type's +0xF8
+  (`questSetVar_NodeType`: `0x1401d38bc`, hash 2313433512, where the
+  phase path's +0xE8, `0x1409ddcb0`, hash 885529461, writes the fact).
+  Both in-scene paths queue work entries with the phase's own helpers
+  (`0x1402b56ec`, `0x1402b7c14`) instead of acting at once: whether those
+  pass through `ExecuteNode` later, so that the freeze already refuses
+  them, is unknown. [2.5-untested]
+- **Timeline events** (spawn, despawn, equip, mount, clue facts,
+  gameplay transitions: `research/scene-replay.md` §2) act on the
+  guest's world directly. No spectator or replica mode was found: the
+  only mode scene code branches on is the run mode, and making the guest
+  a "client" is global (every `IsClient` path in the scripts too).
+  [2.5-untested]
+- So the choke points are the owner hash (sockets), the actor dispatcher
+  (who is acted on), and for quest nodes and events either the freeze
+  hook (if test 2 shows it sees them) or a hook per node type and per
+  event. [unverified]
+
+**To settle in game** (on an instance; each a plugin test command, none
+written yet):
+
+1. **Start**: CreateSceneInstance and requests 1, 2 for a short vanilla
+   scene under an owner hash of ours: the scene plays (`IsEntityInScene`
+   on its actors), request 6 ends it, a second create with the same owner
+   is refused.
+2. **Outputs**: the same for a scene with a `scnQuestNode` that sets a
+   fact, on a guest with its story frozen: the fact before and after, and
+   whether the `ExecuteNode` hook saw the node.
+3. **Casting**: hook the dispatcher, log each actor's plan and entity for
+   that scene; then hand one actor a spawned puppet: it plays the actor's
+   animation.
+4. **Network player**: a scene actor with plan 9, networkId 0 then 1: the
+   local V, then an error.
+5. **Live read**: `scnSceneSystem` +0xA68 (the replicator) and the run
+   mode, in single player.
+
+**For co-op: every game runs the scene, or the host's scene streamed**
+[unverified: a comparison from the facts above]
+
+- **Feel**: the shared scene is native on the guest (animation, lipsync,
+  cloth and props at its own frame rate, a cinematic scene's own camera
+  cuts). But a scene has one player actor: cast as the host's V, the
+  guest's own V is in no scene and stays parked as today, and in a
+  first-person scene (most of the story) the guest sees from its own V,
+  not through the host's eyes. Streamed, the guest sees the host's exact
+  view, late by the network; a gap is a hitch.
+- **Desync and branches**: each copy evaluates its own randomizers,
+  conditions (the guest's facts are not the host's: its story is frozen),
+  interrupts (distances, combat) and choice timeouts; nothing found forces
+  the host's branch or seeks a section. Streamed: one authority, no
+  branch to lose.
+- **Story safety**: the copy runs quest nodes and timeline events on the
+  guest; only out sockets are proven harmless. Streamed: the guest runs
+  nothing of the scene.
+- **Crash risk and fallback**: new engine paths (a hand-built params
+  struct, a hook inside actor acquisition, workspots driving proxies that
+  tandem's sync also drives). A copy that cannot bind its cast or
+  diverges must end (request 6) and fall back to the watch camera, which
+  must therefore stay. Streamed is that fallback.
+- **Verdict**: the streamed path stays the general one. The shared scene
+  is better only for non-interactive cinematic scenes (no choice,
+  randomizer or quest node; a camera of their own), where the guest would
+  get the scene natively: worth a narrow version once tests 1 to 3 pass.
