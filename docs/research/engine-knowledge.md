@@ -157,6 +157,12 @@ found through this table, each number once.
 | 13.162 | A ragdoll's replicated state: the component's read and apply of its bodies (vtable slots 52, 53), used for corpses | `presence.md` |
 | 13.163 | A call of the game's for a contact that is no journal entry: the phone system takes any name, the call UI a `gameJournalContact` made at run time | `ui.md` |
 | 13.170 | The prevention system's stars follow its agent registry, not its viewers; what a viewer does | `traffic-police.md` |
+| 13.174 | Every replicated state: components' fill/apply in vtable slots 52/53, entities' in 47/48, all null in single player; the table of owners, addresses and hashes | `multiplayer-leftovers.md` |
+| 13.175 | The entity states: puppets, devices, grenades, attachments (a puppet's actions, events, health and armor; a device's versioned script apply; an attach's record) | `multiplayer-leftovers.md` |
+| 13.176 | NPC animation and AI states: the cut pair is the path tandem already takes | `multiplayer-leftovers.md` |
+| 13.177 | Hands, status effects: thin over the transaction and status effect systems | `multiplayer-leftovers.md` |
+| 13.178 | The weapon's shot replay: attack record, target, offset on the target; the shoot under `AI_ShootAt` | `multiplayer-leftovers.md` |
+| 13.179 | Dead ends, and the cut design against tandem's (vehicles, props, destruction, inventory, weather, game systems; domain by domain) | `multiplayer-leftovers.md` |
 | 13.153 | A choice of our own on a puppet's interaction component | `story.md` |
 
 ## Top traps (one line each)
