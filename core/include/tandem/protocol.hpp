@@ -3468,7 +3468,7 @@ bool Fits(const CorpsePose &corpse);
 inline constexpr std::uint8_t kOwnCarMoving = 1; // it drives on its own: the stream is it
 // Its summon ended here (the game's Arrived, or AlreadySummoned): its owner's
 // game honked and flashed it; every copy does the same once (research
-// §13.162).
+// §13.165).
 inline constexpr std::uint8_t kOwnCarArrived = 2;
 inline constexpr std::uint8_t kOwnCarFlags = kOwnCarMoving | kOwnCarArrived;
 struct OwnCar {

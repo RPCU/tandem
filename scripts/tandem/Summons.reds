@@ -125,7 +125,7 @@ public class TandemSummons {
   }
 
   // arrived: the game's summon ended by it (Arrived, AlreadySummoned): it
-  // honked and flashed here, the copies do the same (research §13.162).
+  // honked and flashed here, the copies do the same (research §13.165).
   private func SayAs(car: ref<VehicleObject>, moving: Bool, arrived: Bool) -> Void {
     let none = TDBID.None();
     let record = IsDefined(car) ? car.GetRecordID() : none;
@@ -154,7 +154,7 @@ public class TandemSummons {
     let board = GameInstance.GetBlackboardSystem(this.m_game).Get(GetAllBlackboardDefs().VehicleSummonData);
     let id = IsDefined(board) ? board.GetEntityID(GetAllBlackboardDefs().VehicleSummonData.SummonedVehicleEntityID) : EntityID.FromHash(0ul);
     // The game's own summon state (vehicleSummonState: 1 EnRoute, 2
-    // AlreadySummoned, 4 Arrived; research §13.162).
+    // AlreadySummoned, 4 Arrived; research §13.165).
     let state = IsDefined(board) ? board.GetUint(GetAllBlackboardDefs().VehicleSummonData.SummonState) : 0u;
     let enRoute = state == 1u;
     let ended = (state == 2u || state == 4u) && state != this.m_lastState;
