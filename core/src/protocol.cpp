@@ -69,7 +69,10 @@ bool Fits(const CorpsePose &corpse) {
 
 bool Fits(const NpcVoice &voice) {
   return voice.context != 0 && voice.delayMs <= kNpcVoiceMaxDelayMs &&
-         (voice.flags & ~kVoiceFlags) == 0;
+         (voice.flags & ~kVoiceFlags) == 0 &&
+         ((voice.flags & kVoiceTrigger) != 0
+              ? voice.voContext <= kVoContextMinorActivity || voice.voContext == kVoContextDefault
+              : voice.variation == 0 && voice.variations == 0 && voice.voContext == 0);
 }
 
 bool Fits(const OwnCar &car) {

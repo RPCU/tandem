@@ -1581,7 +1581,25 @@ TEST_CASE("an NPC's voice line is a small reliable one-shot with a known context
   CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12})).has_value());
   CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12, .context = 1, .delayMs = kNpcVoiceMaxDelayMs + 1}))
                   .has_value());
-  CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12, .context = 1, .flags = 2})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12, .context = 1, .flags = 4})).has_value());
+  // A voice trigger (protocol 25): its base name, the variation the owner's
+  // audio picked and their number; still small.
+  const NpcVoice trigger{.npc = 12,
+                         .context = 0x0fed'cba9'8765'4321ULL,
+                         .flags = kVoiceTrigger | kVoiceInVehicle,
+                         .variation = 3,
+                         .variations = 7,
+                         .voContext = kVoContextDefault};
+  RoundTrips(trigger);
+  CHECK(Encode(trigger).size() < 24);
+  // A variation only on a trigger.
+  CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12, .context = 1, .variation = 3})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12, .context = 1, .variations = 7})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcVoice{.npc = 12, .context = 1, .voContext = 2})).has_value());
+  // A VO context locVoiceoverContext does not know (4 is none of its values).
+  CHECK_FALSE(
+      Decode(Encode(NpcVoice{.npc = 12, .context = 1, .flags = kVoiceTrigger, .voContext = 4}))
+          .has_value());
 }
 
 TEST_CASE("a summoned car survives encoding: reliable, small, appended, one form for none") {

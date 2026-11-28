@@ -56,7 +56,9 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 28: OpenWorldDone appended (the host's open-world activities done,
 // story.md "Open-world activities"; a game of 27 cannot read it).
 // 29: PropStates, PropRest, PropPush appended (physics props, props.md).
-inline constexpr std::uint16_t kProtocolVersion = 29;
+// 30: NpcVoice carries a voice trigger (kVoiceTrigger, its variation and
+// their number: the engine's entTriggerVOEvent).
+inline constexpr std::uint16_t kProtocolVersion = 30;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -3416,20 +3418,35 @@ bool Fits(const TrafficLights &lights);
 // screen, a stall: a cry a second late is worth nothing). An owner sends
 // one line an NPC within kNpcVoiceGapUs and kNpcVoicesPerSecond in all (a
 // voice says one line at a time; a crowd's panic asks for dozens).
+// kVoiceTrigger (protocol 25): the line is a voice trigger the audio
+// system picked for the NPC (combat and idle chatter, the engine's
+// entTriggerVOEvent, research §13.163): `context` is the trigger's base
+// name, `variation` and `variations` its variation and their number,
+// `voContext` the VO context it overrides with (locVoiceoverContext, 5 the
+// engine's default), and every proxy says that very variation. A context
+// line carries none of them.
 inline constexpr std::uint8_t kVoiceInVehicle = 1; // canPlayInVehicle
-inline constexpr std::uint8_t kVoiceFlags = kVoiceInVehicle;
+inline constexpr std::uint8_t kVoiceTrigger = 2;   // a voice trigger (entTriggerVOEvent)
+inline constexpr std::uint8_t kVoiceFlags = kVoiceInVehicle | kVoiceTrigger;
+inline constexpr std::uint8_t kVoContextMinorActivity = 3; // the last before the default
+inline constexpr std::uint8_t kVoContextDefault = 5;       // Default_Vo_Context
 inline constexpr std::uint16_t kNpcVoiceMaxDelayMs = 10'000;
 inline constexpr std::uint64_t kNpcVoiceMaxAgeUs = 1'000'000;
 inline constexpr std::uint64_t kNpcVoiceGapUs = 300'000;
 inline constexpr std::size_t kNpcVoicesPerSecond = 10;
 struct NpcVoice {
   NpcId npc{};
-  std::uint64_t context{}; // the voice context's CName hash (never 0)
-  std::uint16_t delayMs{}; // the owner's delay before it plays
-  std::uint8_t flags{};    // kVoice*
+  std::uint64_t context{};    // the voice context's CName hash (never 0)
+  std::uint16_t delayMs{};    // the owner's delay before it plays
+  std::uint8_t flags{};       // kVoice*
+  std::uint16_t variation{};  // kVoiceTrigger: triggerVariationIndex
+  std::uint16_t variations{}; // kVoiceTrigger: triggerVariationNumber
+  std::uint8_t voContext{};   // kVoiceTrigger: overridingVoContext (kVoContext*)
   friend bool operator==(const NpcVoice &, const NpcVoice &) = default;
 };
-// A context, a delay within kNpcVoiceMaxDelayMs, flags this version knows.
+// A context, a delay within kNpcVoiceMaxDelayMs, flags this version knows;
+// a variation and a VO context (one locVoiceoverContext knows) only on a
+// trigger.
 bool Fits(const NpcVoice &voice);
 
 // Where and how a dead or knocked-out NPC's body came to rest (appended,
