@@ -18,9 +18,7 @@ cmd where
 expect 'where: [-0-9.]+ ' 5
 read -r x y z < <(since | grep -oE 'where: [-0-9.]+ [-0-9.]+ [-0-9.]+' | tail -1 | awk '{ print $2, $3, $4 }')
 pat "$(awk -v x="$x" 'BEGIN { print x + 1.0 }') $y $z"
-pmark
-pcmd device near barrel
-expect_partner "devices: nearest barrel $barrel " 10
+pnear barrel "$barrel"
 shot pair-barrel-before
 mark
 pmark

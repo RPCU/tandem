@@ -108,6 +108,7 @@ public class TandemDevices extends ScriptableSystem {
   // Guest: when the host began to send its record again (0: not).
   private let m_resetAt: Float;
   private let m_logged: Int32;
+  private let m_loggedSince: Float;
   // When the partners' hacks were last marked (UpdateMarks).
   private let m_marksAt: Float;
 
@@ -335,6 +336,14 @@ public class TandemDevices extends ScriptableSystem {
       return;
     }
     let device = this.Track(owner.GetEntityID(), ps.GetClassName());
+    // Streamed in again (a device the session keeps while it is away): its
+    // state is our world's own again, read anew by its first look, not a
+    // change of ours. Seen from before, a guest's doors that came back
+    // locked, then unlocked, were each asked of the host as its V's doing,
+    // and the host's doors followed (pair-devices-door, 2026-11-28).
+    if !device.attached {
+      device.seen = false;
+    }
     device.attached = true;
     device.since = this.Now();
   }
@@ -747,8 +756,15 @@ public class TandemDevices extends ScriptableSystem {
     this.LogSome(s"devices: \(TandemDevices.Name(device)) changed here (\(TandemDevices.Describe(status, flags, value))): asked of the host");
   }
 
-  // A line per change is too many in a firefight: the first hundred.
+  // A line per change is too many in a firefight: a hundred a minute (a
+  // hundred for the game's whole run left every later change unsaid, and a
+  // partner game's scenarios waiting for theirs, 2026-11-28).
   private func LogSome(text: String) -> Void {
+    let now = this.Now();
+    if now - this.m_loggedSince >= 60.0 || now < this.m_loggedSince {
+      this.m_loggedSince = now;
+      this.m_logged = 0;
+    }
     if this.m_logged < 100 {
       this.m_logged += 1;
       TandemNative.Log(text);
@@ -1576,7 +1592,9 @@ public class TandemDevices extends ScriptableSystem {
     } else if Equals(verb, "friendly") {
       want = TandemDevices.With(flags, TandemDevices.BitFriendly());
     } else if Equals(verb, "hostile") {
-      want = TandemDevices.Without(flags, TandemDevices.BitFriendly());
+      // Its Friendly Mode over: no longer turned, nor hacked (a camera that
+      // was off stayed "switched off by a quickhack", marked, 2026-11-28).
+      want = TandemDevices.Without(TandemDevices.Without(flags, TandemDevices.BitFriendly()), TandemDevices.BitHacked());
     } else if Equals(verb, "floor") || Equals(verb, "station") {
       // floor other: the ground floor, or the one above it when it is there.
       value = number >= 0 ? number : (value == 0 ? 1 : 0);

@@ -332,7 +332,7 @@ public class TandemSpot {
           let path = this.path;
           this.path = 0ul;
           this.Enter(game, body, hold, path, now, label);
-          TandemNative.LogDebug(s"\(label) left workspot \(path) \(ran) s after its jump: back in, jumped every \(this.period) s");
+          TandemNative.Log(s"\(label) left workspot \(path) \(ran) s after its jump to entry \(this.entry): back in, jumped every \(this.period) s");
         } else if !workspots.IsActorInWorkspot(body) && now - this.since < 3.0 {
           // Out again within 3 s of going in: not played in a loop.
           this.state = 0;
@@ -340,7 +340,7 @@ public class TandemSpot {
             TandemNative.HoldPuppet(hold, false);
             TandemNative.AttachController(hold, body);
           }
-          TandemDegraded.Fallback("workspot not entered", s"\(label) left workspot \(this.path) at once: left standing");
+          TandemDegraded.Fallback("workspot not entered", s"\(label) left workspot \(this.path) at once (entry \(this.entry), \(now - this.jumpedAt) s after its jump, again): left standing");
         } else if !workspots.IsActorInWorkspot(body) {
           // Our copy's tree ran to its end (played once from its start, it
           // reaches the exit; the owner's stays, its spot kept by its AI):

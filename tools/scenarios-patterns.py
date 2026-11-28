@@ -36,7 +36,8 @@ as grep -E reads it) and their product is searched. The match starts in the
 format's own text, or, for a pattern with no ": ", at a wildcard that then
 gives it one word ("tandem-peer left the session"): a value does not hold
 the words a pattern begins with. Only formats with a quarter of the
-pattern's literal trigrams are tried. A shell variable in a pattern ($x)
+pattern's literal trigrams, or whose own text the pattern holds all of,
+are tried. A shell variable in a pattern ($x)
 matches anything. A pattern that matches no format is reported with the
 formats nearest to it; one that grep -E reads otherwise (a \\d) is too.
 
@@ -1230,6 +1231,19 @@ def unique(formats):
     return list(seen.values())
 
 
+SCRIPT = re.escape("[script] ")
+
+
+def own_grams(f):
+    """The trigrams of a format's literal text, without the "[script] " a
+    script line starts with."""
+    regex = f.regex[len(SCRIPT):] if f.regex.startswith(SCRIPT) else f.regex
+    found = set()
+    for piece in literal_pieces(regex):
+        found |= grams(piece)
+    return found
+
+
 class Checker:
     """Patterns against one side's formats."""
 
@@ -1261,8 +1275,16 @@ class Checker:
         # The likeliest first: most of the pattern's trigrams shown, then the
         # plainest. One with less than a quarter of them would have to make
         # the rest of the pattern out of its values.
+        # Unless the pattern holds all of the format's own text (bar the
+        # "[script] " every script line starts with): "story: … off" makes
+        # "story: GameplayRestriction.NoJump off" of one value, a record's
+        # name being most of the pattern's trigrams.
         wanted = len(trigrams) / 4
-        candidates = [n for n in score if score[n] >= wanted]
+        candidates = [
+            n for n in score
+            if score[n] >= wanted
+            or score[n] >= 5 and own_grams(formats[n]) <= trigrams
+        ]
         visible = {n: len(trigrams & formats[n].shown) for n in candidates}
         for n in sorted(candidates, key=lambda n: (-visible[n], -score[n], len(formats[n].regex))):
             f = formats[n]
