@@ -856,12 +856,13 @@ role() {
   local ini="$dir/red4ext/plugins/tandem/tandem.ini" text
   case ${1:-} in
   # log = debug: the scenarios read per-puppet, per-hit lines (log.hpp).
-  host) text="role = host"$'\n'"port = $port"$'\nname = V\nlog = debug\nsaves = off\n' ;;
-  off) text="role = off"$'\n'"port = $port"$'\nname = V\nlog = debug\nsaves = off\n' ;;
+  # The test Vs' names: a hosting game's V is Victor, a joining game's Alan.
+  host) text="role = host"$'\n'"port = $port"$'\nname = Victor\nlog = debug\nsaves = off\n' ;;
+  off) text="role = off"$'\n'"port = $port"$'\nname = Victor\nlog = debug\nsaves = off\n' ;;
   join)
     local address=${2:-}
     [ -n "$address" ] || address=$(here)
-    text="role = join"$'\n'"address = $address"$'\n'"port = $port"$'\nname = V\nlog = debug\nsaves = off\n'
+    text="role = join"$'\n'"address = $address"$'\n'"port = $port"$'\nname = Alan\nlog = debug\nsaves = off\n'
     ;;
   player)
     # Testing is over: no pilot, no pad left behind.
