@@ -25,7 +25,7 @@
 //   same copy follows, a jump over 8 m a teleport (MoveBody). Another car
 //   of theirs (or none out): a copy of that one, and the old copy goes the
 //   way the garage takes a summoned car it no longer needs (research
-//   §13.168): once it is beyond GoneDistance of our V, out of our camera's
+//   §13.166): once it is beyond GoneDistance of our V, out of our camera's
 //   view, and nobody has sat in it for FreeSeconds; until then it stands
 //   where it was, and a summon of that car again takes it back.
 //
@@ -88,7 +88,7 @@ public class TandemSummons {
   private let m_lastOld: TweakDBID;
 
   // An old copy goes beyond this distance of our V, out of view (the
-  // garage's own sweep has a distance of its own, not read yet: §13.168).
+  // garage's own sweep has a distance of its own, not read yet: §13.166).
   public static func GoneDistance() -> Float {
     return 60.0;
   }
@@ -324,7 +324,7 @@ public class TandemSummons {
   }
 
   // The old copies go as the garage takes a summoned car it no longer needs
-  // (its sweep, research §13.168): far from our V (GoneDistance), outside
+  // (its sweep, research §13.166): far from our V (GoneDistance), outside
   // our camera's view, nobody in it; a copy nobody has sat in for
   // FreeSeconds, the car of no one here (TandemSystem.RemoveOldCopy).
   private func Sweep(system: ref<TandemSystem>) -> Void {
@@ -515,7 +515,7 @@ public class TandemSummons {
       entry.body = EntityID.FromHash(0ul);
       entry.spawnedAt = 0.0;
       // That car summoned again before its old copy went: that copy (one
-      // body per garage car, as the garage's own, §13.162).
+      // body per garage car, as the garage's own, §13.165).
       let back = this.TakeOld(other, entry.record);
       if EntityID.IsDefined(back) {
         entry.body = back;
