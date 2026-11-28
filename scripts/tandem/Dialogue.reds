@@ -761,7 +761,7 @@ public class TandemDialogue {
   // (test) the call's hub drawn by the game's widget, our cursor on it.
   public func CallHubDrawn() -> Bool {
     let widget = this.Widget();
-    return this.m_call && IsDefined(widget) && widget.TandemHeldDrawn(this.m_held.id, -1);
+    return this.m_call && IsDefined(widget) && widget.TandemHolding(this.m_held.id);
   }
 
   // (test) as the key on that option.
@@ -1052,6 +1052,15 @@ public final func TandemHeldDrawn(id: Int32, selected: Int32) -> Bool {
     }
   }
   return false;
+}
+
+// True: the widget holds our hub `id` among what it draws, open, its root
+// shown (a phone-style hub's options are spawned by its own controllers,
+// which TandemHeldDrawn does not find: a call's choices on screen read as
+// not drawn, 2026-11-28).
+@addMethod(dialogWidgetGameController)
+public final func TandemHolding(id: Int32) -> Bool {
+  return this.m_tandemHolds && this.m_tandemHeld.id == id && this.m_AreDialogsOpen && IsDefined(this.m_root) && this.m_root.IsVisible();
 }
 
 // Our hub goes (story tick only): the board's hubs, active hub and cursor
