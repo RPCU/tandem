@@ -110,7 +110,11 @@ Decided by the user 2026-11-19 (the recommended defaults):
     everyone's for late joiners and resyncs, a repeat is applied nowhere,
     no car out is kept nowhere, it goes with its player) when it is
     another car, when it starts to move with our V on foot
-    (`kOwnCarMoving`), and when it has stood still 1 s (where it stands).
+    (`kOwnCarMoving`: the game's `SummonState` EnRoute, or moving), when
+    the game's summon ends (Arrived or AlreadySummoned: `kOwnCarArrived`,
+    every copy honks and flashes once the game's way, `HonkAndFlash`, a
+    bike put on its stand; research §13.162), and when it has stood still
+    1 s elsewhere than said (where it stands).
     While it moves its transform goes as our `VehicleState` (30 Hz, the
     compact form and relevance rate of a driven car: one stream per player
     as before, so `tests/budget_test.cpp` is unchanged). Not while our V
@@ -140,7 +144,7 @@ Decided by the user 2026-11-19 (the recommended defaults):
     another summon stays parked on the others' screens (copies are never
     deleted) while the game took it away on its owner's.
   - `tools/game.sh cmd garage cars`: what we say and show; `test query
-summons copies|at|off|lag|seated|ours`: the game's own state of the
+summons copies|at|off|lag|seated|arrivals|ours`: the game's own state of the
     first partner's summoned car (its copies of that record, its place, how
     far from its owner's word and from the stream's drawn place, whether
     its owner's puppet sits in it) and of ours. Mock player (drive mode):

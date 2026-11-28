@@ -58,10 +58,12 @@ public class TandemSummons {
   private let m_lastCheck: Float;
   private let m_lastSent: Float;
   private let m_stillSince: Float;
+  private let m_lastState: Uint32;
   // Theirs.
   private let m_cars: array<ref<TandemSummoned>>;
   private let m_spawned: Int32;
   private let m_adopted: Int32;
+  private let m_honked: Int32;
 
   // A copy is spawned for a partner's car this near our V (as traffic,
   // traffic.md "Budget": shared within 120 m, dropped beyond 150 m).
@@ -119,11 +121,17 @@ public class TandemSummons {
   // ---- ours ----
 
   private func Say(car: ref<VehicleObject>, moving: Bool) -> Void {
+    this.SayAs(car, moving, false);
+  }
+
+  // arrived: the game's summon ended by it (Arrived, AlreadySummoned): it
+  // honked and flashed here, the copies do the same (research §13.162).
+  private func SayAs(car: ref<VehicleObject>, moving: Bool, arrived: Bool) -> Void {
     let none = TDBID.None();
     let record = IsDefined(car) ? car.GetRecordID() : none;
     let at = IsDefined(car) ? car.GetWorldPosition() : new Vector4(0.0, 0.0, 0.0, 0.0);
     let facing = IsDefined(car) ? car.GetWorldOrientation() : new Quaternion(0.0, 0.0, 0.0, 1.0);
-    TandemNative.SendOwnCar(record, moving ? 1 : 0, at, facing, TandemMods.VehicleHint(record));
+    TandemNative.SendOwnCar(record, (moving ? 1 : 0) + (arrived ? 2 : 0), at, facing, TandemMods.VehicleHint(record));
     this.m_said = true;
     this.m_saidCar = IsDefined(car) ? car.GetEntityID() : EntityID.FromHash(0ul);
     this.m_saidRecord = record;
@@ -132,7 +140,7 @@ public class TandemSummons {
     let player = GetPlayer(this.m_game);
     let from = IsDefined(player) ? player.GetWorldPosition() : at;
     if IsDefined(car) {
-      TandemNative.Log(s"summons: our \(TDBID.ToStringDEBUG(record)) is out, \(moving ? "driving in" : "parked") \(Vector4.Distance(at, from)) m from our V");
+      TandemNative.Log(s"summons: our \(TDBID.ToStringDEBUG(record)) is out, \(moving ? "driving in" : "parked")\(arrived ? ", arrived" : "") \(Vector4.Distance(at, from)) m from our V");
     } else {
       TandemNative.Log("summons: no car of ours out");
     }
@@ -145,6 +153,12 @@ public class TandemSummons {
     }
     let board = GameInstance.GetBlackboardSystem(this.m_game).Get(GetAllBlackboardDefs().VehicleSummonData);
     let id = IsDefined(board) ? board.GetEntityID(GetAllBlackboardDefs().VehicleSummonData.SummonedVehicleEntityID) : EntityID.FromHash(0ul);
+    // The game's own summon state (vehicleSummonState: 1 EnRoute, 2
+    // AlreadySummoned, 4 Arrived; research §13.162).
+    let state = IsDefined(board) ? board.GetUint(GetAllBlackboardDefs().VehicleSummonData.SummonState) : 0u;
+    let enRoute = state == 1u;
+    let ended = (state == 2u || state == 4u) && state != this.m_lastState;
+    this.m_lastState = state;
     if !EntityID.IsDefined(id) {
       if !this.m_said || TDBID.IsValid(this.m_saidRecord) {
         this.Say(null, false);
@@ -167,7 +181,7 @@ public class TandemSummons {
     let speed = Vector4.Length(velocity);
     let at = car.GetWorldPosition();
     if id != this.m_saidCar || car.GetRecordID() != this.m_saidRecord {
-      this.Say(car, !busy && speed > TandemSummons.MoveSpeed());
+      this.Say(car, !busy && (enRoute || speed > TandemSummons.MoveSpeed()));
       this.m_stillSince = this.m_now;
       return;
     }
@@ -179,11 +193,19 @@ public class TandemSummons {
       this.m_stillSince = this.m_now;
       return;
     }
-    if speed > TandemSummons.RestSpeed() {
+    if speed > TandemSummons.RestSpeed() || enRoute {
       this.m_stillSince = this.m_now;
     }
+    if ended {
+      // Arrived: where it stopped, honked and flashed on every copy.
+      if this.m_saidMoving {
+        TandemNative.SendVehicle(at, car.GetWorldOrientation(), new Vector4(0.0, 0.0, 0.0, 0.0));
+      }
+      this.SayAs(car, false, true);
+      return;
+    }
     if !this.m_saidMoving {
-      if speed > TandemSummons.MoveSpeed() {
+      if enRoute || speed > TandemSummons.MoveSpeed() {
         this.Say(car, true);
       } else if this.m_now - this.m_lastCheck >= 0.5 {
         // At rest somewhere else than said (we drove it and got out, it was
@@ -298,9 +320,22 @@ public class TandemSummons {
       // Where the stream was drawn when its owner said: a stream that is
       // still another car's (its last car, at rest) does not move from there.
       entry.mark = stream;
-      if !moving && EntityID.IsDefined(entry.body) {
+      let copy = TandemTraffic.Body(game, entry.body);
+      if !moving && IsDefined(copy) {
         entry.placeUntil = this.m_now + 1.0;
         TandemNative.Log(s"summons: player \(other)'s \(TDBID.ToStringDEBUG(entry.record)) parked here, \(Vector4.Distance(said, here)) m from our V");
+        // Its summon ended on its owner's game: the game's own arrival on
+        // our copy (VehicleComponent.HonkAndFlash, a bike on its stand).
+        if (TandemNative.RemoteOwnCarFlags(other) / 2) % 2 == 1 {
+          TandemSummons.Arrive(game, copy);
+          this.m_honked += 1;
+          TandemNative.Log(s"summons: player \(other)'s \(TDBID.ToStringDEBUG(entry.record)) arrived: honked and flashed here");
+        }
+      }
+      if moving && IsDefined(copy) && IsDefined(copy as BikeObject) {
+        let unpark = new VehicleParkedEvent();
+        unpark.park = false;
+        copy.QueueEvent(unpark);
       }
     }
     // Its owner's stream is this car once it moves, or is drawn where the
@@ -369,6 +404,30 @@ public class TandemSummons {
     }
   }
 
+  // A summoned car's arrival, the game's way (VehicleComponent.HonkAndFlash
+  // and SendParkEvent, final.reds (2.50):64354, 64997): its default lights
+  // toggled and back 0.33 s later, a 2 s horn, a bike put on its stand.
+  public static func Arrive(game: GameInstance, car: ref<VehicleObject>) -> Void {
+    let controller = car.GetVehicleComponent().GetVehicleController();
+    let toggle = IsDefined(controller) ? !controller.AreDefaultLightsToggled() : true;
+    let lights = new VehicleLightQuestToggleEvent();
+    lights.toggle = toggle;
+    lights.lightType = vehicleELightType.Default;
+    car.QueueEvent(lights);
+    let back = new VehicleLightQuestToggleEvent();
+    back.toggle = !toggle;
+    back.lightType = vehicleELightType.Default;
+    GameInstance.GetDelaySystem(game).DelayEvent(car, back, 0.33);
+    let horn = new VehicleQuestHornEvent();
+    horn.honkTime = 2.0;
+    car.QueueEvent(horn);
+    if IsDefined(car as BikeObject) {
+      let park = new VehicleParkedEvent();
+      park.park = true;
+      car.QueueEvent(park);
+    }
+  }
+
   // tools/game.sh cmd garage cars
   public func Command(command: String, system: ref<TandemSystem>) -> Void {
     let game = this.m_game;
@@ -379,7 +438,7 @@ public class TandemSummons {
     if IsDefined(ours) {
       line += s" \(Vector4.Distance(ours.GetWorldPosition(), here)) m from our V, said \(this.m_saidMoving ? "driving in" : "parked")";
     }
-    line += s"; copies spawned \(this.m_spawned), adopted \(this.m_adopted)";
+    line += s"; copies spawned \(this.m_spawned), adopted \(this.m_adopted), arrivals \(this.m_honked)";
     for car in this.m_cars {
       let body = TandemTraffic.Body(game, car.body);
       let place = IsDefined(body) ? s"\(Vector4.Distance(body.GetWorldPosition(), here)) m" : "no copy";
@@ -392,7 +451,8 @@ public class TandemSummons {
   // summoned car here: copies (car copies of its record in our world),
   // at (its copy's place, "x y z"), off (metres from where its owner says
   // it stands), lag (metres from where its owner's stream is drawn),
-  // seated (its owner's puppet sits in that copy: yes or no); ours (our
+  // seated (its owner's puppet sits in that copy: yes or no), arrivals
+  // (arrivals honked and flashed here so far); ours (our
   // own summoned car's place, "x y z"). "none": no such car.
   public func Query(system: ref<TandemSystem>, what: String) -> String {
     let game = this.m_game;
@@ -408,6 +468,9 @@ public class TandemSummons {
       return "none";
     }
     let car = this.m_cars[0];
+    if Equals(what, "arrivals") {
+      return IntToString(this.m_honked);
+    }
     if Equals(what, "copies") {
       let n = 0;
       let ids = GameInstance.GetDynamicEntitySystem().GetTaggedIDs(n"Tandem.Vehicle");

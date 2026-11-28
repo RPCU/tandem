@@ -1587,7 +1587,7 @@ TEST_CASE("a summoned car survives encoding: reliable, small, appended, one form
   // Refused on the wire: a flag of another version, no car with anything
   // else said, a place that is no number.
   const auto refused = [](const OwnCar &car) { return !Decode(Encode(car)).has_value(); };
-  CHECK(refused({.vehicle = 7, .flags = 2}));
+  CHECK(refused({.vehicle = 7, .flags = 4}));
   CHECK(refused({.flags = kOwnCarMoving}));
   CHECK(refused({.position = {1.f, 0.f, 0.f}}));
   CHECK(refused({.vehicle = 7, .position = {std::numeric_limits<float>::infinity(), 0.f, 0.f}}));

@@ -3466,7 +3466,11 @@ bool Fits(const CorpsePose &corpse);
 // later puts the owner's puppet in: one body from its arrival on.
 // `vehicle` 0: no car out (what nobody said: kept nowhere). Event channel.
 inline constexpr std::uint8_t kOwnCarMoving = 1; // it drives on its own: the stream is it
-inline constexpr std::uint8_t kOwnCarFlags = kOwnCarMoving;
+// Its summon ended here (the game's Arrived, or AlreadySummoned): its owner's
+// game honked and flashed it; every copy does the same once (research
+// §13.162).
+inline constexpr std::uint8_t kOwnCarArrived = 2;
+inline constexpr std::uint8_t kOwnCarFlags = kOwnCarMoving | kOwnCarArrived;
 struct OwnCar {
   PlayerId player{};
   std::uint64_t vehicle{}; // its TweakDB record (0: no car out)

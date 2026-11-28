@@ -36,6 +36,9 @@ note "parked copy $gap m from the mock player's car"
 expect_value "$gap" '<' 1.0
 query copies summons copies
 expect_value "$copies" = 1
+# Arrived: honked and flashed on our copy, once (the game's own arrival).
+query arrivals summons arrivals
+expect_value "$arrivals" = 1
 shot summon-parked
 # Summoned again: the same car comes from the other side, the same copy
 # moves (a teleport out of the way, then it drives in).
@@ -51,6 +54,8 @@ gap=$(apart "$at")
 expect_value "$gap" '<' 1.0
 query copies summons copies
 expect_value "$copies" = 1
+query arrivals summons arrivals
+expect_value "$arrivals" = 2
 # Its owner gets in: its puppet sits in that copy, none spawns.
 expect_peer 'summon: we get in our car' 20
 expect "player [0-9]+: drives Vehicle\.[A-Za-z0-9_]+, its parked copy" 15
