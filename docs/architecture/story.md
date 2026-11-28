@@ -645,7 +645,7 @@ openworld.hpp`, `engine/mappins.cpp`, the freeze's activity class in
       is set again. A pin the player tracked when it was set done (the
       setter untracks it) is tracked again at its put-back, the system's
       own tracker (`TandemStory.TrackPin`, `MappinSystem`'s TrackMappin by
-      hash, what the world map's track calls, §13.165), read back
+      hash, what the world map's track calls, §13.168), read back
       (`IsPlayerTracked`); unless the player has tracked another pin
       since (theirs wins). One that does not take, or is no longer on the
       map, is the fallback `activity untracked`.
@@ -680,7 +680,7 @@ openworld.hpp`, `engine/mappins.cpp`, the freeze's activity class in
         community state, with no faithful way back at the leave:
         costlier and riskier than the fight.
       - Phantom Liberty's Dogtown activities (airdrops) are not in this
-        class: their pins are not points of interest (§13.165), each a
+        class: their pins are not points of interest (§13.168), each a
         repeating drop run by its own quest phases; mirroring one needs
         that quest's own state (whose drop it is), not found offline.
         Each game keeps its own drops.
