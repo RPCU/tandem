@@ -424,6 +424,7 @@ TEST_CASE("a regroup offer is a reliable event with a bounded label") {
 
 TEST_CASE("a link request not taken is a reliable event") {
   RoundTrips(LinkDecline{.from = 3, .to = 2, .reason = kLinkDeclineOther});
+  RoundTrips(LinkDecline{.from = 3, .to = 2, .reason = kLinkDeclineMissed});
   CHECK(ChannelOf(LinkDecline{}) == Channel::Event);
   CHECK(std::string_view(NameOf(LinkDecline{})) == "LinkDecline");
 }
