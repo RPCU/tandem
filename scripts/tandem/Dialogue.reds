@@ -761,7 +761,7 @@ public class TandemDialogue {
   // (test) the call's hub drawn by the game's widget, our cursor on it.
   public func CallHubDrawn() -> Bool {
     let widget = this.Widget();
-    return this.m_call && IsDefined(widget) && widget.TandemHeldDrawn(this.m_held.id, this.m_callCursor);
+    return this.m_call && IsDefined(widget) && widget.TandemHeldDrawn(this.m_held.id, -1);
   }
 
   // (test) as the key on that option.
